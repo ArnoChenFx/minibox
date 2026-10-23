@@ -48,6 +48,7 @@ import { EgressLog } from "./services/egress-log";
 import { ExecManager } from "./services/exec";
 import { LifecycleWatcher } from "./services/lifecycle";
 import { reconcileHost } from "./services/reconcile";
+import { StartupWatch } from "./services/startup-watch";
 import { TargetService } from "./services/targets";
 import { type RecordNote, TerminalService } from "./services/terminals";
 import { VolumeUsageWatcher } from "./services/volume-usage";
@@ -94,6 +95,8 @@ export interface App {
   execs: ExecManager;
   terminals: TerminalService;
   containers: ContainerWatch;
+  /** Relaunches startup commands when the engine starts a box's container again. Stopped on shutdown. */
+  startups: StartupWatch;
   /** Writes an audit note for an action a route takes outside the operation registry, such as opening a log stream. */
   recordNote: RecordNote;
   /** Sends notices to the notification channels. The event bus feeds it, and the channel operations reach it. */
@@ -324,6 +327,7 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
     ...deps.notify,
   });
   const containers = new ContainerWatch(hosts, recordNote);
+  const startups = new StartupWatch(hosts);
   const agents = new AgentHub({
     store: new AgentStore(cfg.dataDir),
     pairing: new PairingBook(),
@@ -350,10 +354,12 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
     connect: deps.connect ?? createDockerRuntime,
     attach: (host) => {
       containers.watch(host);
+      startups.watch(host);
       host.sampler.start();
     },
     detach: (host) => {
       containers.unwatch(host.host.id);
+      startups.unwatch(host.host.id);
       host.sampler.stop();
     },
     onLive: reconcileOnLive,
@@ -395,6 +401,7 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
     execs,
     terminals,
     containers,
+    startups,
     recordNote,
     mcpSessions: new McpSessions((id, listener) =>
       isTokenId(id) ? tokens.watch(id, listener) : selfTokens.watch(id, listener),

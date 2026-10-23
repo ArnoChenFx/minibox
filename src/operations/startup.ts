@@ -32,9 +32,9 @@ const StartupSchema = z.object({
   revision: z.number().int().describe("The box revision the command belongs to. Send it back as If-Match on a change."),
   command: z.string().nullable().describe("The command as typed, or null when the box has none."),
   status: z
-    .enum(["none", "waiting", "running", "exited", "failed"])
+    .enum(["none", "cloning", "waiting", "running", "exited", "failed"])
     .describe(
-      "none: no command. waiting: set, and not run since the box last started. running: its run is going. exited: the run ended, with exitCode. failed: MiniBox could not start it, with error.",
+      "none: no command. cloning: the repository clone has not ended, and the command starts when it has. waiting: set, and not run since the box last started. running: its run is going. exited: the run ended, with exitCode. failed: MiniBox could not start it, with error.",
     ),
   exitCode: z.number().int().nullable().describe("The exit code of the latest run, once it has ended."),
   startedAt: z.string().nullable().describe("When the latest run started, as an ISO 8601 time."),
@@ -69,7 +69,7 @@ export const boxStartupGet = defineOperation({
     toolset: "core",
     name: "get_startup_command",
     description:
-      "Read a box's startup command as typed, with its status: waiting, running, exited with its exit code, or failed with the reason, and the newest lines of its output. Needs the secret:use scope, because the command and its output may hold secrets.",
+      "Read a box's startup command as typed, with its status: cloning, waiting, running, exited with its exit code, or failed with the reason, and the newest lines of its output. Needs the secret:use scope, because the command and its output may hold secrets.",
   },
   hostFor: (ctx, input) => hostOfBox(ctx, input.id),
   resolve: ({ host }, input) => getBox(host, input.id),

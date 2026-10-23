@@ -83,11 +83,13 @@ function watcher(): LifecycleWatcher {
   return new LifecycleWatcher(options);
 }
 
-function newBox(
+async function newBox(
   name: string,
   patch: { idleTimeoutSec?: number | null; ttlSec?: number | null; startupCommand?: string } = {},
 ): Promise<Box> {
-  return boxes.createBox(host, { name, cpus: 1, memoryMb: 256, ...patch });
+  const box = await boxes.createBox(host, { name, cpus: 1, memoryMb: 256, ...patch });
+  await host.startup.settle();
+  return box;
 }
 
 function backdate(boxId: string, ms: number): void {

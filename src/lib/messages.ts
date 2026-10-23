@@ -648,7 +648,10 @@ export const MESSAGES = {
   startup_command_box_stopped: "The box is stopped, so the startup command cannot run now.",
   startup_command_box_stopped_hint: "Start the box. The command runs at every start.",
   startup_command_failed: "MiniBox could not run the startup command: {detail}",
-  startup_command_timeout: "The startup command did not start within {max} seconds.",
+  startup_command_clone_failed: "The startup command did not start, because the repository clone failed.",
+  startup_command_clone_unfinished:
+    "The startup command did not start, because a server restart cut the repository clone short. Run the command again to start it.",
+  startup_command_awaits_clone: "The startup command waits for the repository clone to finish.",
   startup_command_invalid: "The startup command must be text.",
   startup_command_forbidden:
     "A startup command runs in the box and may hold secrets. This credential may not set, remove or run one. It needs the exec and secret:use scopes, or the admin preset.",

@@ -473,7 +473,9 @@ export default {
   "err.startup_command_box_stopped": "Box 已停止，因此现在无法运行启动命令。",
   "err.startup_command_box_stopped_hint": "请启动该 Box。启动命令会在每次启动时运行。",
   "err.startup_command_failed": "MiniBox 无法运行启动命令：{detail}",
-  "err.startup_command_timeout": "启动命令在 {max} 秒内未能启动。",
+  "err.startup_command_clone_failed": "启动命令未能启动，因为仓库克隆失败。",
+  "err.startup_command_clone_unfinished": "启动命令未能启动，因为服务器重启中断了仓库克隆。请再次运行该命令以启动它。",
+  "err.startup_command_awaits_clone": "启动命令正在等待仓库克隆完成。",
   "err.startup_command_invalid": "启动命令必须是文本。",
   "err.startup_command_forbidden":
     "启动命令在 Box 中运行，并可能包含密钥。此令牌不能设置、移除或运行它。它需要 exec 和 secret:use 范围，或使用 admin 预设。",

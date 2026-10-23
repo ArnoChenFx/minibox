@@ -33,7 +33,7 @@ import {
 } from "./egress";
 import { ensureImageOn } from "./images";
 import { assertSelfTokenHost, provisionSelfToken, selfTokenTmpfs } from "./self-token";
-import { launchStartup } from "./startup";
+import { scheduleStartup } from "./startup";
 import { desiredToolsOf } from "./tools";
 import { type RecordNote, writableWorkspaceVolume, alignVolumeRoot } from "./volume-owner";
 
@@ -119,6 +119,7 @@ async function undoCreate(host: HostCtx, attempt: CreateAttempt): Promise<void> 
     }
   }
   if (attempt.boxId) {
+    host.startup.endClone(attempt.boxId);
     host.selfTokens.revoke(attempt.boxId);
     try {
       host.specs.remove(attempt.boxId);
@@ -157,6 +158,7 @@ async function buildBox(
   const { runtime, keys, prefix, security } = host;
   if (host.specs.findByName(input.name)) throw conflict(msg("box_exists", { name: input.name }));
   if (input.selfToken) assertSelfTokenHost(host);
+  const awaitsClone = input.awaitsClone === true && input.startupCommand !== undefined;
   const env = input.env ?? [];
   assertSecretsSet(host.secrets, env);
 
@@ -260,6 +262,7 @@ async function buildBox(
       env,
       tools: desiredToolsOf(input.tools, loadCatalog(dirname(host.specs.dir()))),
       ...(input.startupCommand !== undefined ? { startupCommand: input.startupCommand } : {}),
+      ...(awaitsClone ? { startupAwaitsClone: true } : {}),
       ...(input.selfToken ? { selfToken: true } : {}),
       labels: {},
       lifecycle: {
@@ -280,6 +283,7 @@ async function buildBox(
       recovery: null,
       history: [],
     };
+    if (awaitsClone) host.startup.beginClone(id);
     host.specs.write(spec);
     return created.id;
   });
@@ -290,7 +294,7 @@ async function buildBox(
   if (input.selfToken) await provisionSelfToken(host, { boxId: id, name: input.name }, containerId);
   await host.sampler.observe(containerId);
   host.pulse.touch(id, "create");
-  await launchStartup(host, containerId, input.startupCommand);
+  if (input.startupCommand !== undefined) scheduleStartup(host, id);
   log.info("box.created", { name: input.name, image, profile, cpus: input.cpus, memoryMb: input.memoryMb });
   return containerId;
 }

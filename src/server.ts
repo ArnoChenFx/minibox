@@ -379,6 +379,7 @@ async function boot(): Promise<void> {
   app.checkpointSweep.start();
   app.checkpointScheduler.start();
   app.containers.start();
+  app.startups.start();
   app.lifecycle.start();
   app.volumeUsage.start();
   const server = startServer(app);
@@ -397,6 +398,7 @@ async function boot(): Promise<void> {
     app.checkpointSweep.stop();
     app.checkpointScheduler.stop();
     app.containers.stop();
+    app.startups.stop();
     app.lifecycle.stop();
     app.volumeUsage.stop();
     app.notify.stop();

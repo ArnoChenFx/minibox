@@ -89,6 +89,80 @@ export const SWEEP_SCRIPT = [
   "exit 0",
 ].join("\n");
 
+/**
+ * Ends the processes of a run from the pid of its pane, `$1`. That pid is the id of the run's session and process group,
+ * and a process the run starts keeps them, so the sweep reaches the run even after its shell has exited. A process whose
+ * parent is a member joins too. That reaches a process `sudo` started, since `sudo` runs its command under a monitor that
+ * stays in the run's session. Each pass follows parents again until none is new. A live pid is used only when its command
+ * line names the runner, so a pid the kernel gave to something else is left alone. Members get SIGTERM, a second to stop,
+ * then SIGKILL. The caller runs it as the user that may signal the run's processes.
+ */
+export const TREE_SWEEP_SCRIPT = [
+  "anchor=$1",
+  "case \"$anchor\" in '' | *[!0-9]*) exit 0 ;; esac",
+  "self=$$",
+  'members=" "',
+  'groups=" $anchor "',
+  "grew=0",
+  "load() {",
+  '  read -r line 2>/dev/null < "/proc/$1/stat" || return 1',
+  "  rest=${line##*) }",
+  "  set -- $rest",
+  "  st_state=$1 st_ppid=$2 st_pgid=$3 st_sid=$4 st_start=${20}",
+  "}",
+  "known() {",
+  '  case $members in *" $1:"*) return 0 ;; esac',
+  "  return 1",
+  "}",
+  "take() {",
+  '  members="$members$1:$st_start "',
+  "  grew=1",
+  "}",
+  "scan() {",
+  "  for d in /proc/[0-9]*; do",
+  "    q=${d#/proc/}",
+  '    [ "$q" -gt 1 ] && [ "$q" != "$self" ] || continue',
+  '    known "$q" && continue',
+  '    load "$q" || continue',
+  "    case $st_state in Z | X) continue ;; esac",
+  "    joined=0",
+  '    case $groups in *" $st_sid "* | *" $st_pgid "*) joined=1 ;; esac',
+  '    known "$st_ppid" && joined=1',
+  '    [ "$joined" = 1 ] || continue',
+  '    take "$q"',
+  '    if [ "$st_sid" = "$q" ] || [ "$st_pgid" = "$q" ]; then groups="$groups$q "; fi',
+  "  done",
+  "}",
+  "expand() {",
+  "  while :; do",
+  "    grew=0",
+  "    scan",
+  '    [ "$grew" = 1 ] || break',
+  "  done",
+  "}",
+  "signal() {",
+  "  for tok in $members; do",
+  "    q=${tok%%:*}",
+  '    load "$q" || continue',
+  '    [ "$st_start" = "${tok#*:}" ] || continue',
+  "    case $st_state in Z | X) continue ;; esac",
+  '    kill -"$1" "$q" 2>/dev/null',
+  "  done",
+  "}",
+  'if load "$anchor" && [ "$st_state" != Z ] && [ "$st_state" != X ]; then',
+  '  case $(cat "/proc/$anchor/cmdline" 2>/dev/null) in *minibox-startup*) ;; *) exit 0 ;; esac',
+  "fi",
+  "expand",
+  '[ "$members" = " " ] && exit 0',
+  "signal TERM",
+  "sleep 1",
+  "for _ in 1 2 3; do",
+  "  expand",
+  "  signal KILL",
+  "done",
+  "exit 0",
+].join("\n");
+
 const STARTED_RE = /^\[minibox\] startup command started at (\S+) \(digest ([0-9a-f]{12})\)$/;
 const EXITED_RE = /^\[minibox\] startup command exited with code (\d+) at (\S+)$/;
 /** The line tmux writes into a pane whose process has exited, which is not part of the output. */
@@ -142,10 +216,11 @@ export interface PaneState {
 }
 
 /**
- * `none`: no command is set. `waiting`: a command is set and has not run in this box's current start. `running`: its
- * pane is alive. `exited`: the run ended, with its code. `failed`: MiniBox could not start the command.
+ * `none`: no command is set. `cloning`: the box's repository clone has not ended, and the command starts when it has.
+ * `waiting`: a command is set and has not run in this box's current start. `running`: its pane is alive. `exited`: the
+ * run ended, with its code. `failed`: MiniBox could not start the command.
  */
-export type StartupStatus = "none" | "waiting" | "running" | "exited" | "failed";
+export type StartupStatus = "none" | "cloning" | "waiting" | "running" | "exited" | "failed";
 
 export interface StartupView {
   readonly status: StartupStatus;
@@ -168,6 +243,11 @@ const EMPTY_VIEW: StartupView = {
   log: [],
   error: null,
 };
+
+/** The view of a command whose box is still cloning its repository. Nothing runs until the clone ends. */
+export function cloningView(): StartupView {
+  return { ...EMPTY_VIEW, status: "cloning" };
+}
 
 /**
  * The status a caller sees. `pane` is null when the init session does not exist. `failure` is the reason the last launch
