@@ -13,7 +13,16 @@ import { type HelperResult, type HelperSpec, RuntimeError } from "../src/runtime
 import * as boxes from "../src/services/boxes";
 import { rebuildBox } from "../src/services/rebuild";
 import { reconcileHost } from "../src/services/reconcile";
-import { attachVolume, createVolume, getPools, listVolumes, measureVolume, savePools } from "../src/services/volumes";
+import {
+  attachVolume,
+  createVolume,
+  deleteVolume,
+  getPools,
+  getVolume,
+  listVolumes,
+  measureVolume,
+  savePools,
+} from "../src/services/volumes";
 import { claimEngineVolumes, labelsFor } from "../src/volumes/engine";
 import { parseDf, probePool, probePools } from "../src/volumes/health";
 import { DEV_OWNER, type StoragePool, type VolumeRecord } from "../src/volumes/types";
@@ -717,6 +726,34 @@ describe("a lost shared tools volume is recreated", () => {
     ).toEqual(recordIds);
     expect(runtime.volumes.has("second-workspace")).toBe(false);
     expect(host.specs.findByName("second")).toBeNull();
+  });
+});
+
+describe("the volume list flags a volume that cannot be used as it is", () => {
+  test("engineMissing marks a record whose engine volume is gone, and ownerMissing one whose box was deleted and kept it", async () => {
+    const alpha = await newBox("alpha");
+    await boxes.stopBox(host, alpha.id);
+    runtime.volumes.delete(alpha.volume);
+    const beta = await newBox("beta");
+    await boxes.deleteBox(host, beta.id, false);
+    await createVolume(host, { name: "notes", role: null, createdBy: "owner" });
+
+    const views = new Map((await listVolumes(host)).map((volume) => [volume.name, volume]));
+    expect(views.get("alpha-workspace")).toMatchObject({ engineMissing: true, ownerMissing: false });
+    expect(views.get("beta-home")).toMatchObject({ engineMissing: false, ownerMissing: true });
+    expect(views.get(sharedToolsRecord().name)).toMatchObject({ engineMissing: false, ownerMissing: false });
+    expect(views.get("notes")).toMatchObject({ engineMissing: false, ownerMissing: false });
+    expect(await getVolume(host, "alpha-workspace")).toMatchObject({ engineMissing: true, ownerMissing: false });
+  });
+
+  test("a volume the engine lost can be deleted, which removes its record and keeps no copy", async () => {
+    const gone = await newBox("gone");
+    await boxes.stopBox(host, gone.id);
+    runtime.volumes.delete(gone.volume);
+    await boxes.deleteBox(host, gone.id, false);
+
+    expect(await deleteVolume(host, "gone-workspace")).toEqual({ name: "gone-workspace", trash: null });
+    expect(host.volumes.list().some((volume) => volume.name === "gone-workspace")).toBe(false);
   });
 });
 

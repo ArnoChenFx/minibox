@@ -343,7 +343,11 @@ export async function claimOne(host: HostCtx, info: VolumeInfo): Promise<VolumeR
 }
 
 export async function claimEngineVolumes(host: HostCtx): Promise<number> {
-  const listed = await host.runtime.listVolumes();
+  return claimListed(host, await host.runtime.listVolumes());
+}
+
+/** Records the listed engine volumes that MiniBox recognises and has no record for. Returns how many it recorded. */
+export async function claimListed(host: HostCtx, listed: VolumeInfo[]): Promise<number> {
   const specs = host.specs.list();
   const now = new Date().toISOString();
   let claimed = 0;

@@ -142,6 +142,14 @@ export const VolumeSchema = z.object({
   mounts: z.array(VolumeMountSchema),
   unattached: z.boolean(),
   rwMounts: z.number(),
+  engineMissing: z.boolean().meta({
+    description:
+      "The engine no longer has this volume, so no box can mount it. A shared tools volume is recreated when a box needs it. Other volumes must be restored in the engine or deleted.",
+  }),
+  ownerMissing: z.boolean().meta({
+    description:
+      "The box that owned this volume was deleted and kept it. Deleting the volume frees its space once no box mounts it.",
+  }),
 });
 
 const volumeTarget = (volume: VolumeView): EventTarget => ({ kind: "volume", id: volume.id, name: volume.name });
@@ -503,13 +511,14 @@ const volumeLimitsSet = defineOperation({
   resolve: ({ host }, input) => getVolume(host, input.id),
   activity: { action: () => "volume.limits", target: (_input, volume) => volume.name },
   audit: { target: (_input, volume) => volume && volumeTarget(volume) },
-  run: async ({ host }, input) => ({
-    volume: setVolumeLimits(host, input.id, {
+  run: async ({ host }, input) => {
+    setVolumeLimits(host, input.id, {
       softBytes: input.softBytes,
       hardBytes: input.hardBytes,
       action: input.action,
-    }),
-  }),
+    });
+    return { volume: await getVolume(host, input.id) };
+  },
 });
 
 export const volumeOperations = [

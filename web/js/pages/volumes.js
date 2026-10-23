@@ -49,6 +49,22 @@ function groupLabel(group) {
   }
 }
 
+/** Flags a record the engine has lost, or whose owner box was deleted and kept it, so the operator can clean it up. */
+function statusBadges(volume) {
+  const badges = [];
+  if (volume.engineMissing) {
+    badges.push(
+      `<span class="badge badge-danger" title="${esc(t("vol.engineMissingHint"))}">${esc(t("vol.engineMissing"))}</span>`,
+    );
+  }
+  if (volume.ownerMissing) {
+    badges.push(
+      `<span class="badge badge-warning" title="${esc(t("vol.ownerMissingHint"))}">${esc(t("vol.ownerMissing"))}</span>`,
+    );
+  }
+  return badges.map((badge) => ` ${badge}`).join("");
+}
+
 function volumeRow(volume) {
   const mounts = volume.mounts
     .map((mount) => `${esc(mount.boxName)}:${esc(mount.path)} (${esc(mountModeLabel(mount.mode))})`)
@@ -60,7 +76,7 @@ function volumeRow(volume) {
       ? `<button class="btn btn-sm" disabled title="${esc(t("vol.limitsNfs"))}">${t("vol.limits")}</button>`
       : `<button class="btn btn-sm" data-action="limits" data-id="${esc(volume.id)}">${t("vol.limits")}</button>`;
   return `<tr class="${over.trim()}">
-    <td><strong>${esc(volume.name)}</strong><div class="subtle mono">${esc(volume.id)}</div></td>
+    <td><strong>${esc(volume.name)}</strong>${statusBadges(volume)}<div class="subtle mono">${esc(volume.id)}</div></td>
     <td>${volume.role ? esc(roleLabel(volume.role)) : "—"}</td>
     <td>${esc(volume.pool)}${volume.backend && volume.backend !== volume.pool ? ` <span class="subtle">${esc(volume.backend)}</span>` : ""}</td>
     <td>${volume.ownership === "owned" ? esc(t("vol.owned")) : esc(t("vol.independent"))}</td>
