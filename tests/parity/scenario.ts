@@ -3,10 +3,8 @@ import { spyOn } from "bun:test";
 import { generateKeyPairPem } from "../../src/agent/identity";
 import type { HostMetrics } from "../../src/host/metrics";
 import { startServer } from "../../src/server";
-import { firstFileData } from "../../src/services/files-tar";
-import { SELF_TOKEN_DIR } from "../../src/services/self-token";
 import { createTestApp, silenceLogs, TEST_KEY } from "../support/app";
-import type { FakeRuntime } from "../support/fake-runtime";
+import { selfTokenOf } from "../support/self";
 
 /** One HTTP exchange of the parity scenario, with ids, timestamps and snapshot stamps replaced by placeholders. */
 export interface Exchange {
@@ -71,15 +69,6 @@ function checkpointIdOf(task: Record<string, unknown>): string {
 function boxIdOfTask(task: Record<string, unknown>): string {
   const box = (task.result as { box?: { id?: string } } | undefined)?.box;
   return String(box?.id ?? "");
-}
-
-/** The self token a container was given, read back from the file the engine received. */
-async function selfTokenOf(runtime: FakeRuntime, containerId: string): Promise<string> {
-  const chunks: Buffer[] = [];
-  for await (const chunk of await runtime.getArchive(containerId, `${SELF_TOKEN_DIR}/self-token`)) {
-    chunks.push(Buffer.from(chunk));
-  }
-  return firstFileData(Buffer.concat(chunks))?.data.toString("utf8").trim() ?? "";
 }
 
 const rollbackAt = (box: string) => `/api/boxes/${box}/rollback`;
