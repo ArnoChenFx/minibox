@@ -59,6 +59,8 @@ export default {
   "err.preview_box_stopped": "请先启动 Box，再打开端口预览。",
   "err.preview_no_ip": "Box 还没有容器 IP。等它完全启动后再试。",
   "err.preview_upstream_failed": "无法连上 Box 内的服务：{detail}",
+  "err.preview_bridge_failed": "无法经由 Box 所在引擎打开预览：{detail}",
+  "err.preview_bridge_hint": "位于其他宿主机上的 Box 需要 python3 才能提供预览。",
   "err.preview_port_invalid": "端口须为 1 到 65535 的整数。",
   "err.preview_port_not_manual": "该端口不在手动预览列表中。",
   "err.preview_unauthorized": "请先登录再打开 Box 端口预览。",

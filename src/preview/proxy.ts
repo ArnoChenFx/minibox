@@ -7,12 +7,16 @@ import type { ActivityPulse } from "../services/activity-pulse";
 import { type Box, hostOfSpecRef, locateBox, wakeIfSleeping } from "../services/boxes";
 import { filterRequestHeaders, filterResponseHeaders, type PreviewIsolation } from "./headers";
 import { type PreviewTarget, parsePreviewPath } from "./path";
+import type { PreviewBridge, PreviewRelay } from "./relay";
+import type { PreviewSocketUpstream } from "./ws";
 
 export interface PreviewResolve {
   readonly box: Box;
   readonly host: HostCtx;
   readonly target: PreviewTarget;
   readonly upstreamOrigin: string;
+  /** Set for a box on another host, which its engine's address cannot reach from here. */
+  readonly bridge?: PreviewBridge;
   /** Ends the hold that keeps the box awake while this request is served. Safe to call more than once. */
   readonly release: () => void;
 }
@@ -21,6 +25,7 @@ export interface PreviewDeps {
   readonly pulse: ActivityPulse;
   /** Audits a wake that this request caused, under the host the box lives on. */
   readonly audit: (hostId: string, note: AuditNote) => void;
+  readonly relay: PreviewRelay;
 }
 
 /**
@@ -43,7 +48,7 @@ export async function resolveTarget(
   deps: PreviewDeps,
 ): Promise<PreviewResolve> {
   const named = hostOfSpecRef(hosts, target.ref);
-  if (named && named.host.transport !== "local") {
+  if (named?.host.transport === "agent") {
     throw new AppError(501, "unsupported", msg("preview_agent_unsupported"));
   }
   const { host, box: found } = await locateBox(hosts, target.ref);
@@ -52,6 +57,10 @@ export async function resolveTarget(
     deps.pulse.touch(found.boxId, "preview");
     const box = await wakeIfSleeping(host, found.boxId, { record: (note) => deps.audit(host.host.id, note) });
     if (!box.running) throw new AppError(409, "conflict", msg("preview_box_stopped"));
+    if (host.host.transport !== "local") {
+      const bridge = await deps.relay.bridge(host, box, target.port);
+      return { box, host, target, upstreamOrigin: `http://${bridge.address}`, bridge, release };
+    }
     const info = await host.runtime.inspectContainer(box.id);
     const ip = info.ipAddress;
     if (!ip) throw new AppError(502, "bad_gateway", msg("preview_no_ip"));
@@ -67,6 +76,16 @@ export function upstreamSocketUrl(resolved: PreviewResolve): string {
   const { forwardPath } = resolved.target;
   const path = forwardPath.startsWith("/") ? forwardPath : `/${forwardPath}`;
   return resolved.upstreamOrigin.replace(/^http/, "ws") + path;
+}
+
+/**
+ * Where a preview socket connects. A box on another host is reached through the relay's proxy, with a grant for this
+ * one connection, so the grant is made when the socket is.
+ */
+export function upstreamSocket(resolved: PreviewResolve): PreviewSocketUpstream {
+  const url = upstreamSocketUrl(resolved);
+  if (!resolved.bridge) return { url };
+  return { url, proxy: { url: resolved.bridge.proxyUrl, token: resolved.bridge.grant() } };
 }
 
 /** Forwards an HTTP (non-upgrade) preview request to the box and returns the filtered response. */
@@ -87,6 +106,7 @@ export async function proxyHttp(
     redirect: "manual",
     signal: AbortSignal.timeout(60_000),
   };
+  if (resolved.bridge) (init as RequestInit & { unix: string }).unix = resolved.bridge.httpSocket;
   if (req.method !== "GET" && req.method !== "HEAD") {
     // The server's body limit is sized for checkpoint packages; a preview keeps the ceiling every other route has.
     init.body = req.body ? limitedBody(req.body, JSON_BODY_MAX_BYTES) : null;

@@ -22,7 +22,7 @@ const launchPreview = route(
     const port = assertPort(Number(params.port));
     const ref = params.id ?? "";
     const named = hostOfSpecRef(app.hosts, ref);
-    if (named && named.host.transport !== "local") {
+    if (named?.host.transport === "agent") {
       throw new AppError(501, "unsupported", msg("preview_agent_unsupported"));
     }
     const { box } = await locateBox(app.hosts, ref);

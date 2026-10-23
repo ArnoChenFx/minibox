@@ -118,6 +118,8 @@ export const MESSAGES = {
   preview_box_stopped: "Start the box before opening a port preview.",
   preview_no_ip: "The box has no container IP yet. Wait until it is fully started, then try again.",
   preview_upstream_failed: "Could not reach the service inside the box: {detail}",
+  preview_bridge_failed: "Could not open the preview through the box's engine: {detail}",
+  preview_bridge_hint: "A box on another host needs python3 to serve a preview.",
   preview_port_invalid: "Port must be an integer between 1 and 65535.",
   preview_port_not_manual: "That port is not on the manual preview list.",
   preview_unauthorized: "Sign in to open a box port preview.",
