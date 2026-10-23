@@ -39,10 +39,11 @@ const TABS = [
   ["files", "bd.tabFiles", "folder"],
 ];
 
-export function render(view, id, tab = "overview") {
+export function render(view, id, tab = "overview", session = undefined) {
   if (tab === "logs") tab = "activity";
   if (tab === "snapshots") tab = "checkpoints";
   if (!TABS.some(([k]) => k === tab)) tab = "overview";
+  let entrySession = session;
   let box = null;
   let disposed = false;
   let painted = false;
@@ -169,11 +170,17 @@ export function render(view, id, tab = "overview") {
     ).join("")}</div>
     <div id="tabBody"></div>`;
     painted = true;
+    // The session the address names opens once. A later mount of this page keeps the session on screen, which the
+    // terminal remembers as the box's last one.
+    const entry = entrySession;
+    entrySession = undefined;
     tabCleanup = TAB_RENDER[tab](view.querySelector("#tabBody"), {
       box: () => box,
       history,
       onChange,
       refreshBox: fetchBox,
+      rerender,
+      session: entry,
     });
   };
 
@@ -257,8 +264,8 @@ export function render(view, id, tab = "overview") {
 const TAB_RENDER = {
   overview: mountOverview,
 
-  terminal(root, { box, onChange, rerender }) {
-    return mountTerminal(root, { box, onChange, rerender });
+  terminal(root, { box, onChange, rerender, session }) {
+    return mountTerminal(root, { box, onChange, rerender, session });
   },
 
   activity(root, { box }) {

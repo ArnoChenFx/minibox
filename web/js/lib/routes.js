@@ -13,6 +13,12 @@ const SECTIONS = {
 };
 const SECTION_RE = /^\/(storage|library)(?:\/([^/]+)(?:\/([^/]+))?)?$/;
 
+/**
+ * A box's address: `/boxes/:id` opens its overview, `/boxes/:id/:tab` one of its tabs, and `/boxes/:id/terminal/:session`
+ * one terminal session. Only the terminal names a session, so the address of any other tab drops it.
+ */
+const BOX_RE = /^\/boxes\/([^/]+)(?:\/(\w+)(?:\/([^/]+))?)?$/;
+
 /** The pages without tabs. `args` gives what the page's render() receives after its view. */
 const PAGES = [
   { re: /^\/overview$/, page: "overview", nav: "overview", crumbs: ["nav.overview"] },
@@ -24,13 +30,6 @@ const PAGES = [
     args: () => ["activity"],
   },
   { re: /^\/boxes$/, page: "boxes", nav: "boxes", crumbs: ["nav.boxes"] },
-  {
-    re: /^\/boxes\/([^/]+)(?:\/(\w+))?$/,
-    page: "boxDetail",
-    nav: "boxes",
-    crumbs: ["nav.boxes"],
-    args: (m) => [decode(m[1]), m[2]],
-  },
   { re: /^\/trash$/, page: "trash", nav: "storage", crumbs: ["nav.storage", "nav.trash"] },
   {
     re: /^\/settings(?:\/([^/]*))?$/,
@@ -58,6 +57,8 @@ export function resolveRoute(path) {
   const address = path || "/overview";
   const section = address.match(SECTION_RE);
   if (section) return resolveSection(section);
+  const box = address.match(BOX_RE);
+  if (box) return resolveBox(box);
   const moved = MOVED.find(({ re }) => re.test(address));
   if (moved) return { redirect: moved.to(address.match(moved.re)) };
   for (const route of PAGES) {
@@ -79,9 +80,21 @@ function resolveSection([, section, tab, arg]) {
   };
 }
 
+function resolveBox([, id, tab, session]) {
+  if (session !== undefined && tab !== "terminal") return { redirect: `/boxes/${id}/${tab}` };
+  const args = [decode(id), tab];
+  if (session !== undefined) args.push(decode(session));
+  return { page: "boxDetail", nav: "boxes", crumbs: ["nav.boxes"], args };
+}
+
 /** The address of a tab, with the box or template it works on when it names one. */
 export function tabHash(section, tab, arg = "") {
   return `#/${section}/${tab}${arg ? `/${encodeURIComponent(arg)}` : ""}`;
+}
+
+/** The address of a box's terminal, on one of its sessions when `session` names one. */
+export function terminalHash(boxId, session = "") {
+  return `#/boxes/${encodeURIComponent(boxId)}/terminal${session ? `/${encodeURIComponent(session)}` : ""}`;
 }
 
 function decode(segment) {
