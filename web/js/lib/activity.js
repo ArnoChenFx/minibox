@@ -82,6 +82,11 @@ export const ACTION_ICON = {
   "target.remove": "trash",
   "target.push": "upload",
   "target.pull": "download",
+  "box.self.revoke": "x",
+  "self.checkpoint": "camera",
+  "self.ask": "alertCircle",
+  "self.status": "activity",
+  "question.answer": "pencil",
 };
 
 /** An action without a label, such as one a newer server records, read as words: `notify.channel.test` → "Notify channel test". */
