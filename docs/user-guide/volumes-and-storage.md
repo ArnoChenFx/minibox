@@ -2,7 +2,7 @@
 
 A volume is a place where files are kept. Volumes are separate from boxes. A box uses zero or more volumes. Its files survive when the box is stopped, rebuilt or deleted, as long as the volume stays.
 
-Open the **Volumes** page in the sidebar to see your volumes and storage pools.
+Click **Storage** in the sidebar to see your volumes and storage pools on the **Volumes** tab.
 
 ## Volume roles
 
@@ -54,7 +54,7 @@ The same volume can be mounted by several boxes. When you mount a volume read-wr
 
 Click **Delete** on the volume. MiniBox does not delete a volume that a box still mounts.
 
-Deleting a volume keeps a copy of its data in the [recycle bin](checkpoints.md#recycle-bin) for `TRASH_RETENTION_DAYS` days, 7 by default. Restore the entry from the **Recycle bin** page to get it back as a new volume. A cache or tools volume keeps nothing. To delete without keeping a copy, tick **Delete without keeping a copy**. Only the owner, or a token with the `trash:skip` scope, can do that.
+Deleting a volume keeps a copy of its data in the [recycle bin](checkpoints.md#recycle-bin) for `TRASH_RETENTION_DAYS` days, 7 by default. Restore the entry from the **Recycle bin**, which you open from **Storage**, to get it back as a new volume. A cache or tools volume keeps nothing. To delete without keeping a copy, tick **Delete without keeping a copy**. Only the owner, or a token with the `trash:skip` scope, can do that.
 
 When you delete a box, you can also delete the volumes that the box owns. See [Boxes](boxes.md#delete-a-box).
 
@@ -71,7 +71,7 @@ MiniBox measures every volume's usage every 10 minutes by default. You can set a
 - The trend keeps the last 24 samples. A restart clears the trend, and the last figure stays.
 - The interval is set with `VOLUME_USAGE_INTERVAL_SEC`, from 60 to 86400 seconds. See [Configuration](../reference/configuration.md#volumes-and-storage).
 
-To measure a volume now, click **Measure** on the **Volumes** page, or call `POST /api/volumes/{id}/usage`. The new figure counts at once for starting boxes. The alerts and the stop action come from the background sampling, at its next pass.
+To measure a volume now, click **Measure** on the **Volumes** tab, or call `POST /api/volumes/{id}/usage`. The new figure counts at once for starting boxes. The alerts and the stop action come from the background sampling, at its next pass.
 
 ### Soft and hard limits
 
@@ -79,7 +79,7 @@ Click **Limits** on a volume to set its limits. Each limit is in GB, and an empt
 
 | Limit reached | What MiniBox does |
 |---|---|
-| **Soft limit** | Records a `volume.usage_high` event, which a notification channel can send, and highlights the volume on the **Volumes** page. The event is recorded once for each crossing, and again only after the volume drops below the soft limit. |
+| **Soft limit** | Records a `volume.usage_high` event, which a notification channel can send, and highlights the volume on the **Volumes** tab. The event is recorded once for each crossing, and again only after the volume drops below the soft limit. |
 | **Hard limit**, action **warn** (the default) | Records a `volume.usage_limit` event and sends a notice. Boxes keep running. |
 | **Hard limit**, action **stop** | As for **warn**, and it also stops each running box that mounts the volume. A stopped box stays stopped, and its page shows the reason, **volume over its hard limit**. |
 

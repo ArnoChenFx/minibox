@@ -6,7 +6,7 @@ This page is for people who change MiniBox. To run MiniBox, read [Install](admin
 
 - [Bun](https://bun.sh) 1.4.4 or later. `package.json` sets this as the minimum version.
 - Docker Engine, for the template check and the real-engine tests. The unit tests do not need Docker.
-- Chromium, for the homepage browser tests, the preview isolation test and `bun run screenshots`. See [Tests](#tests).
+- Chromium, for the homepage browser tests, the console navigation test, the preview isolation test and `bun run screenshots`. See [Tests](#tests).
 
 ## Set up
 
@@ -42,7 +42,7 @@ For a quicker local run, `bun run check:quick` runs the same three static checks
 
 | Command | Needs | What it covers |
 |---|---|---|
-| `bun test` | Nothing, except Chromium for the preview isolation test | Unit and API tests. Part of `bun run check`. `tests/preview-browser.test.ts` uses Chromium when one is available. |
+| `bun test` | Nothing, except Chromium for the browser tests | Unit and API tests. Part of `bun run check`. `tests/preview-browser.test.ts` and `tests/web-console-browser.test.ts` use Chromium when one is available. |
 | `bun run test:docker` | Docker | Real-engine tests in `tests/docker-*.test.ts`. Not part of `bun run check`. |
 | `bun run build:template` and `bun run check:template` | Docker | The base template: its user, tools, mount points and each security profile. |
 | `bun run test:site` | Chromium | Browser tests for the homepage. |
@@ -93,7 +93,7 @@ bun run openapi
 
 `bun run screenshots` captures the console for the README, the homepage and the docs. Run it by hand before a release. CI does not run it.
 
-The script starts its own MiniBox server, with a temporary data directory, a free port, the label prefix `minibox-demo` and its own Docker network. It seeds fixed demo content and captures 14 screens in light and dark, in English and Simplified Chinese, into `dist/screenshots/`. It publishes the overview, the box list and the box terminal to `docs/screenshots/en/` and `docs/screenshots/zh-CN/`. When `pngquant` is installed, it compresses the published images. The host name in the captures is `workstation`, and the version comes from `package.json`.
+The script starts its own MiniBox server, with a temporary data directory, a free port, the label prefix `minibox-demo` and its own Docker network. It seeds fixed demo content and captures 15 screens in light and dark, in English and Simplified Chinese, into `dist/screenshots/`. It publishes the overview, the box list and the box terminal to `docs/screenshots/en/` and `docs/screenshots/zh-CN/`. When `pngquant` is installed, it compresses the published images. The host name in the captures is `workstation`, and the version comes from `package.json`.
 
 The run removes the containers, images, volumes and networks it created, and its data directory, even when a capture fails. The first run builds the base template, which takes a few minutes.
 
@@ -121,7 +121,7 @@ bun run test:site
 
 To use an installed Chromium instead, set `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH`, for example `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium bun run test:site`. Playwright starts and stops its own preview server.
 
-`bun test` runs the preview isolation test, `tests/preview-browser.test.ts`, with the same browser. It uses `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` when that is set, and Playwright's own Chromium otherwise. Without either, the test is skipped, except in CI, where a missing browser fails the run.
+`bun test` runs the preview isolation test, `tests/preview-browser.test.ts`, and the console navigation test, `tests/web-console-browser.test.ts`, with the same browser. They use `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` when that is set, and Playwright's own Chromium otherwise. Without either, they are skipped, except in CI, where a missing browser fails the run.
 
 ### Deployment
 

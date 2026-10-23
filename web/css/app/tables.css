@@ -112,16 +112,21 @@ table.table {
 .group-toggle[aria-expanded="false"] .icon {
   transform: rotate(-90deg);
 }
-.group-by {
+.group-by,
+.box-pick {
   display: flex;
   align-items: center;
   gap: 8px;
   font-size: 13px;
   color: var(--text-2);
 }
-.group-by .select {
+.group-by .select,
+.box-pick .select {
   width: auto;
   min-width: 160px;
+}
+.box-pick[hidden] {
+  display: none;
 }
 .session-ua {
   display: -webkit-box;

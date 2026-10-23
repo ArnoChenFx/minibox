@@ -168,7 +168,7 @@ For a source install, copy the `data/` folder of the checkout, or the folder tha
 
 ## Back up a volume
 
-Box files live in Docker volumes named `vol_…`. Boxes created before volumes existed use `minibox-ws-<name>`. The checkpoint repository is the volume `minibox-checkpoints-local`, or `minibox-checkpoints-<host id>` on another host. The **Volumes** page shows the ID of each box volume under its name.
+Box files live in Docker volumes named `vol_…`. Boxes created before volumes existed use `minibox-ws-<name>`. The checkpoint repository is the volume `minibox-checkpoints-local`, or `minibox-checkpoints-<host id>` on another host. The **Volumes** tab of **Storage** shows the ID of each box volume under its name.
 
 Stop the box that uses a volume first, so that its files do not change during the copy. Stop MiniBox before you copy the checkpoint repository, so that no checkpoint is written during the copy.
 

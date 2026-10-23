@@ -70,7 +70,7 @@ export function render(view, focusName = "") {
 
   view.innerHTML = `
     <div class="page-head">
-      <div><h1>${t("nav.templates")}</h1><p>${t("tp.subtitle")}</p></div>
+      <div><p>${t("tp.subtitle")}</p></div>
       <div class="page-actions">
         ${searchBoxHtml({ id: "tpSearch", placeholder: t("tp.searchPlaceholder"), label: t("tp.search") })}
         <button class="btn" data-action="pull">${icon("download")}${t("tp.pull")}</button>

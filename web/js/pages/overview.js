@@ -17,10 +17,18 @@ function metricSkeleton() {
   return '<div class="card"><div class="skeleton sk-block"></div></div>';
 }
 
+/** Highlights the recent-activity card and brings it to the middle of the view, which the Activity entry asks for. */
+function revealRecent(view) {
+  const card = view.querySelector("#ovRecentCard");
+  card.classList.add("is-focus");
+  card.scrollIntoView({ block: "center" });
+}
+
 /** How often the host cards re-read what each host runs and uses. The sampler keeps its figures current between reads. */
 const HOST_USAGE_MS = 10_000;
 
-export function render(view) {
+/** `focus` is "activity" when the Activity entry opened the page: the recent-activity card is then brought into view. */
+export function render(view, focus = "") {
   view.innerHTML = `
     <div class="page-head">
       <div><h1>${t("nav.overview")}</h1><p id="ovSub">${t("ov.subtitle")}</p></div>
@@ -34,7 +42,7 @@ export function render(view) {
     </div>
     <div class="grid grid-2" style="margin-top:16px">
       <div class="card"><div class="card-head"><h3>${t("nav.boxes")}</h3><a class="hint" href="#/boxes">${t("ov.viewAll")}</a></div><div id="ovBoxes"><div class="card-body"><div class="skeleton sk-line"></div></div></div></div>
-      <div class="card"><div class="card-head"><h3>${t("ov.recent")}</h3><span class="hint">${t("ov.thisRun")}</span></div><div id="ovActivity"><div class="card-body"><div class="skeleton sk-line"></div></div></div></div>
+      <div class="card" id="ovRecentCard"><div class="card-head"><h3>${t("ov.recent")}</h3><span class="hint">${t("ov.thisRun")}</span></div><div id="ovActivity"><div class="card-body"><div class="skeleton sk-line"></div></div></div></div>
     </div>`;
 
   delegate(view, { create: () => openCreateBox({ onCreated: (b) => (location.hash = `#/boxes/${b.id}`) }) });
@@ -55,11 +63,16 @@ export function render(view) {
       /* the host pill already signals connectivity issues */
     }
   };
+  let revealPending = focus === "activity";
   const loadActivity = async () => {
     try {
       renderActivity(view, (await api("/api/activity")).activity);
     } catch {
       /* the host pill already signals connectivity issues */
+    }
+    if (revealPending) {
+      revealPending = false;
+      revealRecent(view);
     }
   };
   const loadAll = () => {

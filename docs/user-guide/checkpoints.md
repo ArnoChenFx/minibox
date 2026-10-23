@@ -81,7 +81,7 @@ It is taken by default. To skip it, clear **Take a safety checkpoint first** in 
 
 ## Recycle bin
 
-When you delete a box or a volume, MiniBox keeps a copy of its data in the recycle bin, so you can bring it back for a while. Open **Recycle bin** in the sidebar to see the entries, newest deletion first, with their size and the time each one has left.
+When you delete a box or a volume, MiniBox keeps a copy of its data in the recycle bin, so you can bring it back for a while. Open **Storage** in the sidebar and click **Recycle bin** to see the entries, newest deletion first, with their size and the time each one has left.
 
 A delete keeps:
 

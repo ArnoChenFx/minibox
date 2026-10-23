@@ -44,6 +44,7 @@ const SCREENS = [
   "box-checkpoints",
   "box-files",
   "volumes",
+  "storage-checkpoints",
   "templates",
   "tools",
   "settings-hosts",
@@ -315,8 +316,8 @@ async function typeIntoSession(api: Api, box: string, text: string, settleMs: nu
 }
 
 async function createBox(api: Api, body: Json): Promise<string> {
-  const { box } = await api<{ box: { id: string } }>("POST", "/api/boxes", body);
-  return box.id;
+  const { box } = await api<{ box: { boxId: string } }>("POST", "/api/boxes", body);
+  return box.boxId;
 }
 
 /** Fixed demo content: three boxes, secrets, tokens, a volume, templates, checkpoints, a schedule and a terminal. */
@@ -501,15 +502,19 @@ const CAPTURES: Record<Screen, Capture> = {
     await page.screenshot({ path: out });
   },
   volumes: async (page, ctx, out) => {
-    await openRoute(page, ctx, "/volumes", exactText(page, "datasets"));
+    await openRoute(page, ctx, "/storage/volumes", exactText(page, "datasets"));
+    await page.screenshot({ path: out });
+  },
+  "storage-checkpoints": async (page, ctx, out) => {
+    await openRoute(page, ctx, `/storage/checkpoints/${ctx.demo.api}`, exactText(page, "baseline"));
     await page.screenshot({ path: out });
   },
   templates: async (page, ctx, out) => {
-    await openRoute(page, ctx, "/templates", exactText(page, "node-api"));
+    await openRoute(page, ctx, "/library/templates", exactText(page, "node-api"));
     await page.screenshot({ path: out });
   },
   tools: async (page, ctx, out) => {
-    await openRoute(page, ctx, `/boxes/${ctx.demo.api}/tools`, exactText(page, "Claude Code"));
+    await openRoute(page, ctx, `/library/tools/${ctx.demo.api}`, exactText(page, "Claude Code"));
     await page.screenshot({ path: out });
   },
   "settings-hosts": async (page, ctx, out) => {

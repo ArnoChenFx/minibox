@@ -159,7 +159,7 @@ If you want to keep software that you installed by hand, save the box as a templ
 
 Deleting a box keeps a copy of its workspace and home data in the [recycle bin](checkpoints.md#recycle-bin), whether or not you tick the volumes option. The copy is kept for `TRASH_RETENTION_DAYS` days, 7 by default. To bring the box back, restore the entry from the **Recycle bin** page, which creates a new box. To delete without keeping a copy, tick **Delete without keeping a copy**. Only the owner, or a token with the `trash:skip` scope, can do that.
 
-Volumes that other boxes use, and volumes that you created on the **Volumes** page, stay. Deleting a box never deletes a volume that another box still mounts.
+Volumes that other boxes use, and volumes that you created on the **Volumes** tab of **Storage**, stay. Deleting a box never deletes a volume that another box still mounts.
 
 ## Use boxes from the command line
 

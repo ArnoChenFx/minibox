@@ -14,6 +14,6 @@ Open **Settings** in the sidebar to manage the console and the server's access. 
 | **Off-site targets** | Add S3-compatible or SFTP targets for checkpoint packages and backups, check them, and remove them. See [Backups](../admin/backups.md#off-site-targets). |
 | **Notifications** | Add, change, pause and delete notification channels, send a test notice, and see recent deliveries. Owner only. See [Notifications](notifications.md). |
 
-The **About** page in the sidebar shows the version of MiniBox that is running, and links to the documentation, the changelog and the license.
+The **About** page shows the version of MiniBox that is running, and links to the documentation, the changelog and the license. Click the version at the foot of the sidebar to open it.
 
 Changes that you make on the **Settings** page take effect at once. Secrets and tokens are shown only once, when you create them.

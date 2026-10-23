@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { AGENT_IMAGE, agentBashCommand, agentPowerShellCommand } from "../web/js/lib/agent-command.js";
-import { agentState, boxesOnHost, hostOfBox, isUnreachable } from "../web/js/lib/host-list.js";
+import { agentState, boxesOnHost, hostFilterShown, hostOfBox, isUnreachable } from "../web/js/lib/host-list.js";
 
 const boxes = [
   { name: "alpha", hostId: "local", state: "running" },
@@ -25,6 +25,14 @@ describe("host filter and host state in the console", () => {
 
   test("a box the control plane lists as unreachable is the only one greyed out", () => {
     expect(boxes.filter(isUnreachable).map((b) => b.name)).toEqual(["gamma"]);
+  });
+});
+
+describe("the host filter in the top bar", () => {
+  test("it shows only once more than one host is configured", () => {
+    expect(hostFilterShown([])).toBe(false);
+    expect(hostFilterShown([{ id: "local" }])).toBe(false);
+    expect(hostFilterShown([{ id: "local" }, { id: "lab" }])).toBe(true);
   });
 });
 

@@ -24,7 +24,6 @@ import {
   volumeChoices,
 } from "../web/js/lib/mounts.js";
 import { ownerKeyNotice } from "../web/js/lib/owner-key.js";
-import { retiredRedirect } from "../web/js/lib/retired-routes.js";
 import { daysLeft } from "../web/js/lib/trash.js";
 
 const LIB = join(ROOT, "web", "js", "lib");
@@ -1018,18 +1017,6 @@ describe("owner key notice", () => {
 
   test("an outcome the console does not know shows nothing", () => {
     expect(ownerKeyNotice({ mcpOwnerKey: { outcome: "maybe" as "accepted", lastUsedAt } })).toBeNull();
-  });
-});
-
-describe("retired console addresses", () => {
-  test("the old Snapshots address opens Templates, which lists the snapshots that remain", () => {
-    expect(retiredRedirect("/snapshots")).toBe("#/templates");
-  });
-
-  test("a path that still has a page is not redirected", () => {
-    for (const path of ["/templates", "/templates/python-ml", "/boxes/bx_1", "/snapshotsx", "/constructor"]) {
-      expect([path, retiredRedirect(path)]).toEqual([path, ""]);
-    }
   });
 });
 

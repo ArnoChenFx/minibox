@@ -22,6 +22,10 @@
 - 更改已有 Box 的出站档位属于重建：API 与 MCP 先返回预览，带 `confirm: true` 确认后才会重建。Box 保留名称、ID 与卷。
 - 出站档位不为 `open` 的 Box 无法迁移到其他宿主机（返回 `409`，`egress_move_refused`）。回收站恢复与检查点派生会保留出站策略，并为其创建新的私有网络。Box 视图仅在档位不是 `open` 时包含 `egress` 字段。
 - `devcontainer.json` 中不支持的设置不再拒绝整个构建。它们在构建日志中以 `Warning:` 列出，其余设置照常应用。无法按原样应用的设置仍会拒绝构建，例如取值中的 `${…}` 引用，或 `postCreateCommand` 中的 devcontainer 变量（Refs #15）。
+- 控制台导航改为六项：概览、Box、存储、库、活动、设置（[#26](https://github.com/ArnoChenFx/minibox/issues/26)，本次仅改导航与路由）。**存储**包含**卷**与**检查点**两个标签页，**库**包含**模板**与**工具目录**两个标签页。标签页写在地址中，刷新或收藏后仍停留在原标签页，检查点与工具目录标签页的地址还包含所选 Box。原来的「资源」「系统」分组与独立的「回收站」入口已取消：回收站从**存储**页面打开，「关于」改为侧栏底部的版本号链接。
+- 旧地址继续可用：`#/volumes` 打开存储的卷标签页，`#/templates` 与 `#/templates/<名称>` 打开库的模板标签页，`#/snapshots` 打开模板标签页。
+- 「活动」打开概览页并定位到「最近活动」卡片。全局审计时间线（[#25](https://github.com/ArnoChenFx/minibox/issues/25)）尚未实现，因此暂用这一处。
+- 顶栏的宿主机筛选器只在配置了不止一台宿主机时显示。
 - 设置页改为左侧分类导航（窄屏时为可横向滚动的一行）。每次只显示一个分类，每个分类有自己的地址（如 `#/settings/secrets`），浏览器的前进与后退可在分类之间切换，默认显示「会话」。令牌横幅的链接直接打开「Agent API 令牌」分类。
 - 长列表默认只显示前 5 项，其余通过「展开全部（N）」展开，「收起」收回。涉及设置页的会话、令牌、密钥、通知渠道与投递记录、宿主机与异地目标，创建 Box 的工具与模板选择器，以及模板页的卡片列表。设置页中当前会话排在最前。
 
@@ -30,10 +34,12 @@
 
 ### 工程化
 - 新增真实引擎的出站集成测试 `tests/docker-egress.test.ts`，由 `bun run test:docker` 运行。它覆盖 `none` 的断网、exec、SSH 与端口预览，`proxy-only` 的允许、拒绝、事件与绕过，以及 `BLOCK_HOST_GATEWAY`。测试使用独立的标签前缀、数据目录与网络，并清理其代理、网络、防火墙规则与镜像。
+- 控制台导航的测试：`tests/web-routes.test.ts` 覆盖地址解析、标签页与旧地址的跳转，`tests/web-console-browser.test.ts` 用 Chromium 覆盖导航、标签页切换、刷新后的状态、宿主机筛选器与中文界面。浏览器测试与预览隔离测试一样，未配置 Chromium 时跳过，CI 中缺失则失败。
 
 ### 文档
 - 新增网络出站文档：英文 `docs/admin/network-egress.md` 与中文 `docs/zh-CN/admin/network-egress.md`，说明各档位、白名单、事件、`BLOCK_HOST_GATEWAY` 与限制（[#120](https://github.com/ArnoChenFx/minibox/issues/120)）。安全指南、配置、CLI、检查点与 Box 指南，以及 `.env.example` 同步更新。
 - 模板指南的 `devcontainer.json` 一节改写：列出支持的设置、构建日志中的警告与被拒绝的设置，以及 Box 设置任务的顺序、运行用户、工作目录、时限与失败行为，中英文版本同步。API、CLI、MCP、安全与架构文档同步更新（Refs #15）。
+- 快速开始、用户指南与管理文档中提到侧栏「模板」「卷」「回收站」的地方，改为新的导航位置，中英文同步。开发文档同步说明新增的控制台导航浏览器测试。
 - Box 内 Agent 与宿主机指南（中英文）说明：Agent 宿主机无法把令牌文件写入 Box，因此不能在其上创建带自助令牌的 Box（[#118](https://github.com/ArnoChenFx/minibox/issues/118)）。
 
 ## [0.5.1] - 2026-10-23
