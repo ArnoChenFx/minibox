@@ -6,7 +6,7 @@ This page is for the person who runs MiniBox on a server. It covers the release 
 
 - A Linux host with Docker Engine. MiniBox reads `/proc` for host metrics.
 - Access to the Docker socket for the user that runs MiniBox. The socket is `/var/run/docker.sock` by default.
-- For a source install, [Bun](https://bun.sh) 1.4.4 or later.
+- For a source install, [Bun](https://bun.sh) 1.4.3 or later.
 
 Docker access is root-equivalent. Read the [security guide](security.md) before you install.
 
@@ -51,7 +51,7 @@ Use at least 20 random characters. See [Security](security.md).
 
 ### The base template
 
-The release image does not include the base template. Build it once before you create boxes, from the **Templates** page in the console: click **Build base template**. See [Templates](../user-guide/templates.md).
+The release image does not include the base template. Build it once before you create boxes, from the **Templates** tab of **Library** in the console: click **Build base template**. See [Templates](../user-guide/templates.md).
 
 ### Build the image yourself
 
@@ -78,7 +78,7 @@ The server listens on `127.0.0.1:3920`. Open <http://127.0.0.1:3920>, and sign i
 
 If no `ACCESS_KEY` is set in the environment or in `.env`, MiniBox writes a generated key to `DATA_DIR/access_key`. The file has mode 600. MiniBox never writes `.env`.
 
-`bun run build:template` always tags the image `minibox-template:base`. If you change `LABEL_PREFIX` or `BASE_TEMPLATE`, build the base template from the **Templates** page instead.
+`bun run build:template` always tags the image `minibox-template:base`. If you change `LABEL_PREFIX` or `BASE_TEMPLATE`, build the base template from the **Templates** tab of **Library** instead.
 
 ### Run as a service
 

@@ -45,7 +45,7 @@ Credentials are saved on the MiniBox host, and the console never shows them agai
 
 In the create dialog, choose the **Host**. The default is **local**. Choose **Auto** to let MiniBox pick: it uses the online host that holds the template and has the most CPU and memory left once the box is placed. An agent token picks only among the hosts it is granted.
 
-A box on another host needs its template image on that host's Docker engine. If the host does not have the template, MiniBox copies it there first. The create dialog says how large the copy is, the copy runs as a **Sync template** task, and the create waits for it to finish. To copy a template without creating a box, click **Copy here** on the template's card in **Templates**, or run `minibox template sync <ref> --host <id>`.
+A box on another host needs its template image on that host's Docker engine. If the host does not have the template, MiniBox copies it there first. The create dialog says how large the copy is, the copy runs as a **Sync template** task, and the create waits for it to finish. To copy a template without creating a box, click **Copy here** on the template's card in the **Templates** tab of **Library**, or run `minibox template sync <ref> --host <id>`.
 
 A copy sends the image the same way a move does, so the target engine must keep image IDs. See [Limits](#limits).
 

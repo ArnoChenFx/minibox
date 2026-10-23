@@ -44,7 +44,7 @@ These are the manual steps for changes made in 0.4 and later. Read the ones that
 
 ### Boxes and tools
 
-- **Templates without tmux.** A box made from a template without tmux cannot run sessions, and session calls return `409`. Its startup command does not run, but the box still starts. Rebuild the base template from **Templates**, then rebuild those boxes onto it. A read-only bearer terminal needs tmux 3.2 or later.
+- **Templates without tmux.** A box made from a template without tmux cannot run sessions, and session calls return `409`. Its startup command does not run, but the box still starts. Rebuild the base template from the **Templates** tab of **Library**, then rebuild those boxes onto it. A read-only bearer terminal needs tmux 3.2 or later.
 - **Standard profile.** New boxes use the standard profile by default. It drops the `MKNOD`, `SETPCAP` and `SYS_CHROOT` capabilities and sets a process limit. For a tool that needs them, create the box with the relaxed profile, or set `BOX_PROFILE=relaxed` for new boxes. Existing boxes keep their profile.
 - **Mounts and networks.** Creating or rebuilding a box can return `403` (`forbidden`) when it mounts a volume without the MiniBox label, a volume of another box, or `minibox-data`, or when it uses a network that is neither the box network nor the one it already uses. Existing boxes keep their mounts and network until you change them.
 - **The `node` user.** The base template no longer includes the image's `node` user. Its uid 1000 now belongs to `dev`, so scripts that run as `node` need `dev` in boxes made from the new base template.
@@ -52,7 +52,7 @@ These are the manual steps for changes made in 0.4 and later. Read the ones that
 
 ### Storage, uploads and notifications
 
-- **Recycle bin and safety checkpoints.** Deleting a box or a volume now keeps a copy of its data for `TRASH_RETENTION_DAYS` days (7 by default). A rebuild, an attach or a detach takes a safety checkpoint first. Both use space in the checkpoint repository, and they count against `CHECKPOINT_CAPACITY_MB`. To free the space at once, purge the entries on the **Recycle bin** page. Send `skipTrash=true` on a delete, or `safetyCheckpoint: false` on a rebuild, to keep no copy.
+- **Recycle bin and safety checkpoints.** Deleting a box or a volume now keeps a copy of its data for `TRASH_RETENTION_DAYS` days (7 by default). A rebuild, an attach or a detach takes a safety checkpoint first. Both use space in the checkpoint repository, and they count against `CHECKPOINT_CAPACITY_MB`. To free the space at once, purge the entries on the **Recycle bin** page, which you open from **Storage**. Send `skipTrash=true` on a delete, or `safetyCheckpoint: false` on a rebuild, to keep no copy.
 - **Upload limits behind a proxy.** Uploaded files (`FILE_UPLOAD_MAX_MB`, 1024 by default) and checkpoint packages (`CHECKPOINT_PACKAGE_MAX_MB`, 2048 by default) can be larger than 128 MiB. A reverse proxy has its own limit, such as nginx `client_max_body_size`, which is 1 MB by default. Raise it, or uploads fail at the proxy.
 - **NFS volumes.** Creating a volume on an NFS export fails with `502` (`storage_unwritable` or `storage_permission_denied`) when the export uses `root_squash` with the default anonymous user, `nobody`. Set `all_squash,anonuid=1000,anongid=1000` or `root_squash,anonuid=1000,anongid=1000` on the export. See [NFS](../user-guide/nfs.md).
 - **Notifications to private addresses.** MiniBox refuses to send notifications to loopback, private and other non-public addresses, unless `NOTIFY_ALLOW_PRIVATE=true`. The `198.18.0.0/15` range stays allowed, for DNS proxies that answer with fake IP addresses. Set it only for a channel that must reach your network.
@@ -108,7 +108,7 @@ Then restart the server. If you run it with systemd, restart the service. Check 
 ## After an upgrade
 
 - **Boxes keep their existing image.** Rebuild a box to use a newer template. Rebuilding keeps the volumes. See [Boxes](../user-guide/boxes.md).
-- **Rebuild the base template** from the **Templates** page, or run `bun run build:template` in a source checkout, when the changelog says the base template changed. New boxes use it.
+- **Rebuild the base template** from the **Templates** tab of **Library**, or run `bun run build:template` in a source checkout, when the changelog says the base template changed. New boxes use it.
 - **Check the sign-in.** Browser sign-ins can end after an upgrade, for example when the access key changed. Upgrading from before 0.4 signs every browser out once. See [Manual steps since 0.4](#manual-steps-since-04).
 
 ## Boxes from before the `dev` user

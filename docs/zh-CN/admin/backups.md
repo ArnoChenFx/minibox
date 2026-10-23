@@ -168,7 +168,7 @@ docker start minibox
 
 ## 备份卷
 
-Box 的文件存放在名为 `vol_…` 的 Docker 卷中。在卷出现之前创建的 Box 使用 `minibox-ws-<name>`。检查点仓库是卷 `minibox-checkpoints-local`，在其他宿主机上则是 `minibox-checkpoints-<宿主机 ID>`。**卷**页面会在每个 Box 卷的名称下显示它的 ID。
+Box 的文件存放在名为 `vol_…` 的 Docker 卷中。在卷出现之前创建的 Box 使用 `minibox-ws-<name>`。检查点仓库是卷 `minibox-checkpoints-local`，在其他宿主机上则是 `minibox-checkpoints-<宿主机 ID>`。**存储** 中的 **卷** 标签页会在每个 Box 卷的名称下显示它的 ID。
 
 先停止使用该卷的 Box，使其文件在复制期间不再变化。复制检查点仓库之前请先停止 MiniBox，使复制期间不会写入新的检查点。
 

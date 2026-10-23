@@ -6,7 +6,7 @@ A template does not include your files. The `/workspace` folder and the home fol
 
 ## The base template
 
-MiniBox ships a bundled base template that you build on the **Templates** page.
+MiniBox ships a bundled base template that you build on the **Templates** tab of **Library**.
 
 The base template contains:
 
@@ -16,7 +16,7 @@ The base template contains:
 
 The MiniBox image does not include the base template. Build it once from the console:
 
-1. Click **Templates** in the sidebar.
+1. Click **Library** in the sidebar. Its **Templates** tab opens.
 2. Click **Build base template**.
 3. Wait for the build to finish.
 
@@ -41,7 +41,7 @@ A box whose environment references a host secret cannot be saved as a template, 
 
 You can also build a template from a Dockerfile, a Git repository, a build context archive or a repository's `devcontainer.json`. A template built this way can be rebuilt from the same source.
 
-1. Click **Templates** in the sidebar, then click **New template**.
+1. Click **Library** in the sidebar, then click **New template**.
 2. In **Template name**, type a name, such as `node-tools`. It follows the same rules as a box name: letters, digits, dots, underscores and hyphens, starting with a letter or digit, and at most 63 characters. Add a **Description** if you like.
 3. In **Source**, choose where the files come from, and fill in its fields:
 
@@ -83,7 +83,7 @@ A box keeps the image it runs until you rebuild the box. See [Rebuild a box](box
 
 Pulling downloads an image to the host ahead of time, so that templates and boxes start without waiting.
 
-1. Click **Pull image** on the **Templates** page.
+1. Click **Pull image** on the **Templates** tab.
 2. In **Image**, type a name, with an optional tag, such as `node:24-bookworm-slim`.
 3. Click **Pull image**.
 
@@ -109,13 +109,13 @@ Deleting a template in the console removes its copy on every host. A rebuild cha
 
 ## Built-in and custom templates
 
-The **Templates** page shows these labels:
+The **Templates** tab shows these labels:
 
 - **Built-in** marks the bundled base template.
 - **Custom** templates are the ones that you saved from a box.
 - **Built from** names the source of a template that you built from a Dockerfile, a repository, a build context or a `devcontainer.json`.
 
-Deleting a template does not affect the boxes that you created from it. A template that you built in the console can be built again on the same page.
+Deleting a template does not affect the boxes that you created from it. A template that you built in the console can be built again on the same tab.
 
 ## Who can build, and what a build can reach
 

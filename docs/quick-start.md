@@ -41,7 +41,7 @@ Copy the 64-character key. Keep it private. Anyone with the key controls MiniBox
 
 A box starts from a template. The MiniBox image does not include the base template, so build it once.
 
-1. Click **Templates** in the sidebar.
+1. Click **Library** in the sidebar. Its **Templates** tab opens.
 2. Click **Build base template**.
 3. Wait for the build to finish. The first build can take a few minutes, because it downloads images.
 4. To follow the progress, click **Tasks** in the top bar.
