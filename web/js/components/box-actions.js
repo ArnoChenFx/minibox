@@ -5,6 +5,7 @@ import { cpus as formatCpus, dateTime, gbOrMb } from "../lib/format.js";
 import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
 import { canonicalMounts } from "../lib/mounts.js";
+import { movedBoxHash } from "../lib/routes.js";
 import { hostNow, refreshHost } from "../lib/store.js";
 import { checkboxField, confirmDialog, openDialog, toast, toastError, withBusy } from "../lib/ui.js";
 import { bindEnvRows, envProblemText, envRow, readEnvRows, secretNames } from "./env-editor.js";
@@ -222,12 +223,16 @@ export async function openRebuild(box) {
       <div class="field"><label class="label" for="rbNetwork">${esc(t("rb.network"))}</label>
         <input class="input" id="rbNetwork" value="${esc(box.network || "")}" /></div>
       <div class="field"><span class="label">${esc(t("rb.env"))}</span>
-        <div class="env-rows" id="rbEnvRows"></div>
-        <button type="button" class="btn" id="rbAddEnv">${icon("plus")}${esc(t("env.add"))}</button>
+        <div class="row-editor">
+          <div class="env-rows" id="rbEnvRows"></div>
+          <button type="button" class="btn" id="rbAddEnv">${icon("plus")}${esc(t("env.add"))}</button>
+        </div>
         <div class="help">${esc(t("rb.envHelp"))}</div></div>
       <div class="field"><span class="label">${esc(t("rb.mounts"))}</span>
-        <div class="rebuild-mounts" id="rbMounts"></div>
-        <button type="button" class="btn" id="rbAddMount">${esc(t("mount.add"))}</button>
+        <div class="row-editor">
+          <div class="rebuild-mounts" id="rbMounts"></div>
+          <button type="button" class="btn" id="rbAddMount">${esc(t("mount.add"))}</button>
+        </div>
         <div class="help">${esc(t("rb.mountsHelp"))}</div></div>
       <div class="error-text" id="rbErr"></div>
       <div id="rbPreview" hidden></div>`,
@@ -303,7 +308,8 @@ export async function openRebuild(box) {
       toast(t("rb.done"), { message: t("rb.doneText", { name: box.name }) + safety });
       refreshHost();
       const next = result?.box?.id;
-      if (next && next !== box.id) location.hash = `#/boxes/${next}`;
+      const address = next && next !== box.id ? movedBoxHash(location.hash, box.id, next) : null;
+      if (address) location.hash = address;
     } catch (err) {
       root.querySelector("#rbErr").textContent = err?.message ?? String(err);
       toastError(t("rb.failed"), err);

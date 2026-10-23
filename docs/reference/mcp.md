@@ -35,7 +35,7 @@ The default is `core,meta`. The `minibox mcp` command takes the same list with `
 | `session` | Terminal sessions in boxes |
 | `rebuild` | Rebuilding a box. Not on by default. Enable it with `toolsets=rebuild`. |
 | `move` | Moving a box to another host. Not on by default. Enable it with `toolsets=move`. |
-| `storage` | Volumes, storage pools, the owner's recycle bin, the owner's checkpoint export, import and schedules, and the owner's backups and off-site targets |
+| `storage` | Volumes, storage pools, the owner's recycle bin, the owner's checkpoint export, import, copy and schedules, and the owner's backups and off-site targets |
 | `tools` | Installing tools, custom tools, saving templates, building and rebuilding templates, pulling images, and copying templates to another host |
 | `network` | Preview ports |
 | `self` | A box's own agent, with its self token. Only that agent is offered it, and it is its default. See [Connecting AI agents](../user-guide/agents.md#a-boxs-own-agent). |
@@ -122,6 +122,7 @@ The tables below list each tool and the operation it calls, taken from the `x-mc
 | `replace_pools` | `PUT /api/pools` |
 | `export_checkpoint` | `POST /api/checkpoints/{id}/export`. Owner only. The task result holds the package |
 | `import_checkpoint` | `POST /api/packages/{id}/import`. Owner only |
+| `copy_checkpoint` | `POST /api/checkpoints/{id}/copy`. Owner only. The task result holds the copy |
 | `get_checkpoint_schedule` | `GET /api/boxes/{id}/checkpoint-schedule`. Owner only |
 | `set_checkpoint_schedule` | `PUT /api/boxes/{id}/checkpoint-schedule`. Owner only |
 | `clear_checkpoint_schedule` | `DELETE /api/boxes/{id}/checkpoint-schedule`. Owner only |

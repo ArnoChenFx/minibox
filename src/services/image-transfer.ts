@@ -1,6 +1,9 @@
+import { Readable } from "node:stream";
+
 import type { HostCtx } from "../host/registry";
 import { AppError, conflict } from "../lib/errors";
 import { msg } from "../lib/messages";
+import { type ByteProgress, countingChunks } from "../lib/transfer";
 import { type ImageDetails, isRuntimeError } from "../runtime";
 
 /**
@@ -26,7 +29,7 @@ export async function needsImage(host: HostCtx, ref: string, image: ImageDetails
 /**
  * Sends the image `ref` from `from` to `to`, and loads it there under the id it has on the source, so a box's digest
  * holds on the target. The archive is streamed, so no copy is kept on the control plane. A load that lands another id
- * fails, and the caller's `signal` stops the transfer.
+ * fails, and the caller's `signal` stops the transfer. `onBytes` reports the bytes sent so far.
  */
 export async function sendImage(
   from: HostCtx,
@@ -34,12 +37,15 @@ export async function sendImage(
   ref: string,
   expectedId: string,
   signal: AbortSignal | undefined,
+  onBytes?: ByteProgress,
 ): Promise<void> {
   const archive = await from.runtime.saveImage(ref);
   const stop = () => archive.destroy();
   signal?.addEventListener("abort", stop, { once: true });
   try {
-    await to.runtime.loadImage(archive);
+    await to.runtime.loadImage(
+      onBytes ? Readable.from(countingChunks(archive, onBytes), { objectMode: false }) : archive,
+    );
   } finally {
     signal?.removeEventListener("abort", stop);
     archive.destroy();

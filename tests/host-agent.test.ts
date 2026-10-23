@@ -201,7 +201,7 @@ describe("the control plane's agent API, over HTTP and a real socket", () => {
     app = createApp(testConfig({ labelPrefix: "mbtest", dataDir: tempDir() }), "0.0.0-test", {
       runtime: local,
       connect: () => new FakeRuntime(),
-      checkpointEngine: new FakeCheckpointEngine(local),
+      checkpointEngine: new FakeCheckpointEngine(),
       eventsPath: ":memory:",
     });
     const keys = app.hosts.get().keys;

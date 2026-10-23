@@ -56,14 +56,25 @@ Click a box in the list to open it. The box page has these tabs:
 
 | Tab | What it shows |
 |---|---|
-| **Overview** | Details, environment variables, the startup command, mounts, the idle timeout and TTL, and the **Rebuild** button |
-| **Terminal** | A shell in the box. See [Terminals and sessions](terminal-and-sessions.md). |
-| **Activity** | Recent commands, container events and terminal sessions. Below them, **Container output (docker logs)** shows the box's log, with **Auto-refresh**. |
-| **Resources** | The CPU and memory limits, the current use, and the **Adjust quota** button |
-| **Checkpoints** | Copies of the box's data. See [Checkpoints](checkpoints.md). |
-| **Ports** | Listening ports, and ports you add for preview. See [Port preview](port-preview.md). |
-| **Tools** | Tools that you can install, upgrade or remove. See [Tools](tools.md). |
+| **Overview** | The CPU, memory and uptime of the box, its details, and the **Agent** card when an agent is waiting for an answer |
+| **Terminal** | Every tmux session in the box, each marked **Created by you** or **Created by agent**. See [Terminals and sessions](terminal-and-sessions.md). |
 | **Files** | Browse, upload and download the files in the box's volumes, even while the box is stopped. See [Files](files.md). |
+| **Ports** | Listening ports, and ports you add for preview. See [Port preview](port-preview.md). |
+| **Activity** | Recent commands, container events and terminal sessions. Below them, **Container output (docker logs)** shows the box's log, with **Auto-refresh**. |
+| **Settings** | The box's settings, in seven sections: **Resources**, **Storage and mounts**, **Tools**, **Environment variables**, **Lifecycle**, **Security** and **Checkpoints** |
+
+The **Resources** section shows the CPU and memory limits, the current use, and the **Adjust quota** button. The **Lifecycle** section holds the startup command, the idle timeout and the TTL. The **Security** section shows the network egress and the security profile. The **Checkpoints** section lists the box's copies of its data. See [Checkpoints](checkpoints.md).
+
+The **Create checkpoint** button in the title bar takes a checkpoint from any tab, and the title bar also has the **Rebuild** button.
+
+## Overview and the box list
+
+The **Overview** page is the first screen. It has two lists:
+
+- **In progress** shows the boxes an agent is working on. See [Watch an agent on the overview](terminal-and-sessions.md#watch-an-agent-on-the-overview).
+- **Needs attention** shows the problems MiniBox has recorded: a box that ran out of memory, a failed checkpoint, a box whose live settings differ from its spec, a rollback waiting for you to confirm or undo it, a volume over its hard limit, a storage pool that did not answer, an offline host, and a host whose disk is below its free-space minimum. Out-of-memory kills and failed checkpoints stay listed for a day. The other items stay listed while their condition lasts. **View** opens the box tab, the volumes or the host settings where the problem shows.
+
+The **Boxes** list shows **Agent active · 12 seconds ago** beside a box while an agent is working in it. An agent is working in a box when it acted there in the last 10 minutes, or a command it started still runs. The time is when the agent last acted there.
 
 ## Start, stop and restart
 
@@ -81,7 +92,7 @@ A startup command is a shell command that runs each time the box's container sta
 
 The command runs when the box is created, started or woken from sleep, restarted, rebuilt, or restored from a checkpoint. A box created from a template, a snapshot or a checkpoint does not get the source box's command. Set one on the new box if you want it. A template does not carry a startup command.
 
-To set the command, open the **Startup command** card on the **Overview** tab, click **Set command** or **Edit**, and then **Save**. You can also enter it in the create dialog, under **Advanced**. You can change or remove it at any time, including while the box is stopped or asleep, and no rebuild is needed. A change takes effect at the next start. On a running box, tick **Run it now as well** before you save to run the new command at once. **Run again** runs the saved command without changing it.
+To set the command, open the **Startup command** card in the **Settings** tab, under **Lifecycle**, click **Set command** or **Edit**, and then **Save**. You can also enter it in the create dialog, under **Advanced**. You can change or remove it at any time, including while the box is stopped or asleep, and no rebuild is needed. A change takes effect at the next start. On a running box, tick **Run it now as well** before you save to run the new command at once. **Run again** runs the saved command without changing it.
 
 The command runs:
 
@@ -121,7 +132,7 @@ The [REST API](../reference/api.md) and the MCP tools `get_startup_command`, `se
 
 ## Change CPU and memory
 
-1. Open the box, and click the **Resources** tab.
+1. Open the box, click **Settings**, and then **Resources**.
 2. Click **Adjust quota**.
 3. Set the CPU and memory limits, and click **Save**.
 
@@ -131,7 +142,7 @@ Lowering the memory below the current use can fail, or stop the box with the out
 
 Rebuilding replaces the box's container with a new one. Use it when you change the template, the environment variables, the mounts or the security profile.
 
-1. Open the box, and click **Rebuild** on the **Overview** tab.
+1. Open the box, and click **Rebuild** in the title bar.
 2. Read the preview. It lists what changes.
 3. Click **Apply rebuild**.
 

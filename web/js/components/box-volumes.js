@@ -4,6 +4,7 @@ import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
 import { toastError, openDialog, confirmDialog, toast } from "../lib/ui.js";
 import { rebuildPreviewHtml } from "./box-actions.js";
+import { mountModeLabel } from "./mount-editor.js";
 import { usageInlineHtml } from "./volume-usage.js";
 
 const ROLE_LABEL = {
@@ -23,14 +24,14 @@ export function mountsCard(box, volumes) {
         <td class="mono">${esc(mount.path)}</td>
         <td>${esc(mount.volumeName || mount.volume)}</td>
         <td>${mount.role ? esc(t(ROLE_LABEL[mount.role])) : "—"}</td>
-        <td>${esc(mount.mode)}</td>
+        <td>${esc(mountModeLabel(mount.mode))}</td>
         <td>${esc(mount.pool || "—")}</td>
         <td>${usageInlineHtml(volumes.get(mount.volumeId))}</td>
         <td>${detach}</td>
       </tr>`;
     })
     .join("");
-  return `<div class="card" style="margin-top:16px"><div class="card-head"><h3>${t("vol.mounts")}</h3>
+  return `<div class="card"><div class="card-head"><h3>${t("vol.mounts")}</h3>
     <button class="btn btn-sm" data-action="attach-volume">${icon("plus")}${t("vol.attach")}</button></div>
     <div class="table-wrap">${
       rows
@@ -38,6 +39,32 @@ export function mountsCard(box, volumes) {
         : `<div class="card-body"><p class="subtle">${t("vol.noMounts")}</p></div>`
     }</div>
     <div class="card-body"><p class="help">${t("vol.rebuildNote")}</p></div></div>`;
+}
+
+/**
+ * The storage section of a box: its mounts with the volumes' sizes. The volumes are read once, after the card has
+ * shown, and the card is drawn again as the box changes. Attaching or detaching a volume rebuilds the box, and the
+ * page mounts the section again when it does.
+ */
+export function mountMounts(root, { box, onChange }) {
+  let volumes = new Map();
+  let open = true;
+  const draw = () => {
+    if (open) root.innerHTML = mountsCard(box(), volumes);
+  };
+  draw();
+  api("/api/volumes")
+    .then(({ volumes: listed }) => {
+      if (!open) return;
+      volumes = new Map(listed.map((volume) => [volume.id, volume]));
+      draw();
+    })
+    .catch(() => undefined);
+  const off = onChange(draw);
+  return () => {
+    open = false;
+    off();
+  };
 }
 
 export async function attachVolume(box) {
@@ -65,7 +92,7 @@ export async function attachVolume(box) {
       onClose: () => resolve(value),
       body: `<label class="field"><span>${t("vol.choose")}</span><select class="select" id="m-vol">${options}</select></label>
         <label class="field"><span>${t("vol.pathLabel")}</span><input class="input" id="m-path" value="/srv/data" /></label>
-        <label class="field"><span>${t("vol.colMode")}</span><select class="select" id="m-mode"><option value="rw">${esc(t("vol.modeRw"))}</option><option value="ro">${esc(t("vol.modeRo"))}</option></select></label>`,
+        <label class="field"><span>${t("vol.colMode")}</span><select class="select" id="m-mode"><option value="rw">${esc(mountModeLabel("rw"))}</option><option value="ro">${esc(mountModeLabel("ro"))}</option></select></label>`,
       footer: `<button class="btn" data-close>${t("common.cancel")}</button><button class="btn btn-primary" id="m-ok">${t("vol.attach")}</button>`,
     });
     const vol = root.querySelector("#m-vol");

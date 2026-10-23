@@ -9,8 +9,10 @@
 
 ### 新增
 - 卷的批量删除与清理孤立卷（[#178](https://github.com/ArnoChenFx/minibox/issues/178)）：卷页可勾选多个卷批量删除，删除前列出每个卷的去向。「清理孤立卷」预览没有任何 Box 或容器使用的卷，确认后删除。接口为 `POST /api/volumes/delete` 与 `POST /api/volumes/prune`（`dryRun` 默认为 `true`），需要新令牌权限 `volume:delete`，且只能操作令牌自己创建的卷。命令行新增 `minibox volume delete` 与 `minibox volume prune`，MCP 的 `storage` 工具集新增 `delete_volumes` 与 `prune_volumes`。
+- 宿主机之间复制检查点（Refs [#21](https://github.com/ArnoChenFx/minibox/issues/21)）：`POST /api/checkpoints/{id}/copy`（请求体 `{ host }`，返回 `202` 与任务）、`minibox checkpoint copy <id> --host ID` 与 MCP 工具 `copy_checkpoint`（`storage` 工具集，仅所有者）把检查点复制到另一台宿主机，检查点行中的「复制到宿主机」按钮提供同样的操作。源宿主机把数据打包成一个口令只为本次复制而生的密封包，包经控制面转交目标宿主机，用完（无论成功与否）即删除。目标缺少基础模板或检查点所用的模板时，先复制这些模板。副本是目标上的新检查点，保留原检查点的标签、置顶、创建时间与 Box 设置；失败时目标上不留下副本的快照，已复制过去的模板保留。包的大小受 `CHECKPOINT_PACKAGE_MAX_MB` 限制，带系统层的检查点暂不能复制。
+- 设置 → 宿主机在配置了多台宿主机且其中含非本机宿主机时显示访问提醒：本控制台是所有宿主机的入口，能登录的人可以操作全部宿主机，因此应只给每个 Agent 令牌它需要的宿主机（Refs [#21](https://github.com/ArnoChenFx/minibox/issues/21)）。
 - 网络出站策略（[#120](https://github.com/ArnoChenFx/minibox/issues/120)）：`POST /api/boxes`、`minibox box create --egress` 与 MCP 的 `create_box` 接受 `egress` 对象，其中 `mode` 为 `open`、`none` 或 `proxy-only`，`proxy-only` 另可指定 `presets` 与 `domains`。`POST /api/boxes/{id}/rebuild` 与 `rebuild_box` 同样接受它。预设为 `agent-default` 与 `package-registries`；白名单最多 100 个主机，支持 `*.` 通配子域名。`none` 与 `proxy-only` 的 Box 使用各自的私有网络，并由各安装自己的宿主机防火墙链 `MINIBOX-EGRESS-<hash>` 阻止访问宿主机。
-- `proxy-only` 代理只转发 80 与 443 端口，拒绝私有、回环与保留地址，并为每次连接记录 `egress.allowed`、`egress.denied` 或 `egress.failed` 事件。事件只含主机、端口、字节数、耗时与原因，不记录路径、查询、请求头或正文。Box 概览显示档位、允许的主机与最近被拒绝的连接，活动列表可按**出站**筛选，创建对话框的**高级**中新增**网络出站**选择器。
+- `proxy-only` 代理只转发 80 与 443 端口，拒绝私有、回环与保留地址，并为每次连接记录 `egress.allowed`、`egress.denied` 或 `egress.failed` 事件。事件只含主机、端口、字节数、耗时与原因，不记录路径、查询、请求头或正文。Box 的**设置**中，**安全**分组显示档位、允许的主机与最近被拒绝的连接，活动列表可按**出站**筛选，创建对话框的**高级**中新增**网络出站**选择器。
 - `BLOCK_HOST_GATEWAY`（[#120](https://github.com/ArnoChenFx/minibox/issues/120)）：设为 `true` 后，默认网络上的 Box 无法通过桥接网关访问宿主机上的服务。默认关闭。
 - 远程宿主机的 Agent 只接受出站地址池 `240.0.0.0/12` 内的网段，或其引擎上某个网络的网段，作为宿主机防火墙的阻止来源，因此控制面无法借此切断宿主机的入站连接。MiniBox 重启或宿主机重启后的对账会重新设置防火墙规则，并继续读取已在运行的代理日志。
 - `devcontainer.json` 子集（Refs #15）：从 `.devcontainer/devcontainer.json` 构建的模板现在还读取 `build.target`、`remoteEnv`、`postCreateCommand`、`forwardPorts` 与 `remoteUser`（仅 `dev` 或 `1000`）。由它创建的 Box 在设置任务（`setup.taskId`）中依次克隆代码仓库、把 `forwardPorts` 加为手动预览端口，并以用户 `dev` 运行一次 `postCreateCommand`：挂载了 `/workspace` 时在其中运行，否则在 `/` 中运行。命令上限 30 分钟，失败或超时时保留 Box。`POST /api/boxes` 的响应新增 `setup`，`clone` 仍在并指向同一任务；`minibox box create` 会等待该任务。以令牌创建这类 Box 需要 `exec`（`postCreateCommand`）与 `port:expose`（`forwardPorts`）作用域。设置只在创建时运行，模板保存的 Box 不继承。复制到其他宿主机（同步或迁移）的模板则保留设置。见[模板](docs/zh-CN/user-guide/templates.md#devcontainerjson)。
@@ -18,32 +20,57 @@
 - 创建 Box 的模板选择器支持按名称、标签、描述与镜像搜索，可折叠，搜索时显示全部匹配项，已选模板在折叠时始终可见。模板页的卡片列表过长时同样可以折叠。
 - 创建 Box 的工具选择器可按分类折叠，已选工具在折叠时始终可见，搜索时自动展开匹配项。
 - 创建 Box 对话框的「工具」与「模板」两节可在标题前的箭头按钮处整节折叠，折叠状态保存在浏览器中；折叠时标题旁仍显示已选的模板或工具。「模板」一节移到「规格」下方。
+- Box 详情页改为六个标签页：概览、终端、文件、端口、活动与设置（[#26](https://github.com/ArnoChenFx/minibox/issues/26)）。每个标签页有自己的地址，例如 `#/boxes/<id>/terminal`，刷新或收藏后仍停留在原标签页。
+- 「设置」标签页分为资源、存储与挂载、工具、环境变量、生命周期、安全与检查点七组，每组有自己的地址，例如 `#/boxes/<id>/settings/checkpoints`。工具分组默认展开，可逐组折叠。手机上标签页与设置分组可横向滚动，打开时当前项在视野内，标题栏按钮收为一行（除启动/停止外只显示图标）。
+- 终端标签页列出 Box 内的全部 tmux 会话，并标明每个会话是你创建的还是 Agent 创建的。
+- 标题栏的「创建检查点」在任何标签页都可用。在「设置」的检查点分组中创建后，列表立即显示新检查点，无需刷新页面。
+- 概览页「正在进行」与「需要关注」（[#26](https://github.com/ArnoChenFx/minibox/issues/26)）：`GET /api/overview`（`overview.get`，作用域 `overview:read`，仅所有者可读）返回 `inProgress` 与 `attention`。「正在进行」列出最近 10 分钟内 Agent 操作过的 Box，以及仍在运行命令的 Box；两张卡片位于容量卡片下方；每行占一行，依次为操作者（令牌名，或 Box 内的 Agent）、最近命令与最近使用的会话、时间和操作，运行中命令的最后 3 行输出与 Agent 备注通过行末的箭头展开。没有需要关注的事项时，「需要关注」收成一行。「需要关注」只列服务器已记录的事项：内存耗尽与检查点失败保留 24 小时，配置漂移、待确认的回滚、卷超出硬上限、存储池不可达、宿主机离线与磁盘不足在其条件存续期间列出。
+- 「观察」以只读方式打开会话，「接管」打开同一会话，由人在终端中点击才会接管。不属于任何会话的命令只提供「观察」，它打开 Box 的活动。
+- Box 列表中，Agent 正在工作的 Box 显示「Agent 活动中 · 12 秒前」。
+- 终端会话有自己的地址（`#/boxes/<id>/terminal/<会话名>`）。在列表中切换会话会更新地址，刷新或分享链接后仍会打开该会话。
+- 概览的列表默认只显示前几项：「正在进行」3 项，「需要关注」、概览中的「Box」与「最近活动」5 项。其余通过「展开全部（N）」展开，「收起」收回。
 
 ### 变更
 - **破坏性变更：`/mcp` 默认拒绝所有者访问密钥。** `MCP_ALLOW_OWNER_KEY` 的默认值由 `true` 改为 `false`。此后，用访问密钥访问 `/mcp` 的请求返回 `401`（`mcp_owner_key_refused`），Agent 令牌不受影响。升级前请为每个 Agent 创建令牌（控制台的**设置**，或 `minibox token create <name>`），并把它设为 Agent 的 Bearer 密钥或 `MINIBOX_ACCESS_KEY`。若要暂时保留旧行为，设置 `MCP_ALLOW_OWNER_KEY=true`，每次使用仍会被记录。启动时若最近 7 天内有访问密钥访问过 `/mcp`，日志会写入 `mcp.owner_key_now_refused` 警告，控制台横幅也会给出同样的做法。`minibox mcp` 遇到拒绝时会说明原因，并提示 `minibox token create`。见[升级说明](docs/admin/upgrades.md)（[#121](https://github.com/ArnoChenFx/minibox/issues/121)）。
+- 离线宿主机的后台检查改为退避。此前每 30 秒检查一次所有宿主机；现在每次连续失败后等待更久，最长约五分钟检查一次。宿主机恢复在线后，检查恢复为每 30 秒一次（Refs [#21](https://github.com/ArnoChenFx/minibox/issues/21)）。
 - 更改已有 Box 的出站档位属于重建：API 与 MCP 先返回预览，带 `confirm: true` 确认后才会重建。Box 保留名称、ID 与卷。
 - 出站档位不为 `open` 的 Box 无法迁移到其他宿主机（返回 `409`，`egress_move_refused`）。回收站恢复与检查点派生会保留出站策略，并为其创建新的私有网络。Box 视图仅在档位不是 `open` 时包含 `egress` 字段。
 - `devcontainer.json` 中不支持的设置不再拒绝整个构建。它们在构建日志中以 `Warning:` 列出，其余设置照常应用。无法按原样应用的设置仍会拒绝构建，例如取值中的 `${…}` 引用，或 `postCreateCommand` 中的 devcontainer 变量（Refs #15）。
 - 控制台导航改为六项：概览、Box、存储、库、活动、设置（[#26](https://github.com/ArnoChenFx/minibox/issues/26)，本次仅改导航与路由）。**存储**包含**卷**与**检查点**两个标签页，**库**包含**模板**与**工具目录**两个标签页。标签页写在地址中，刷新或收藏后仍停留在原标签页，检查点与工具目录标签页的地址还包含所选 Box。原来的「资源」「系统」分组与独立的「回收站」入口已取消：回收站从**存储**页面打开，「关于」改为侧栏底部的版本号链接。
 - 旧地址继续可用：`#/volumes` 打开存储的卷标签页，`#/templates` 与 `#/templates/<名称>` 打开库的模板标签页，`#/snapshots` 打开模板标签页。
+- Box 详情页的「资源」「工具」「检查点」标签页并入「设置」。旧地址继续可用：`#/boxes/<id>/resources`、`/tools` 与 `/checkpoints` 打开「设置」中的对应分组，`/snapshots` 打开检查点分组，`/logs` 打开活动标签页。
+- Box 概览精简为状态、指标、Agent 卡片与基本信息，不再需要滚动。出站与安全、环境变量、启动命令、生命周期与挂载移入「设置」的对应分组。
+- Box 详情页的标题栏按钮始终靠右对齐，窄屏换行后也靠右，且不遮住 Box 名称。
 - 「活动」打开概览页并定位到「最近活动」卡片。全局审计时间线（[#25](https://github.com/ArnoChenFx/minibox/issues/25)）尚未实现，因此暂用这一处。
 - 顶栏的宿主机筛选器只在配置了不止一台宿主机时显示。
 - 设置页改为左侧分类导航（窄屏时为可横向滚动的一行）。每次只显示一个分类，每个分类有自己的地址（如 `#/settings/secrets`），浏览器的前进与后退可在分类之间切换，默认显示「会话」。令牌横幅的链接直接打开「Agent API 令牌」分类。
 - 长列表默认只显示前 5 项，其余通过「展开全部（N）」展开，「收起」收回。涉及设置页的会话、令牌、密钥、通知渠道与投递记录、宿主机与异地目标，创建 Box 的工具与模板选择器，以及模板页的卡片列表。设置页中当前会话排在最前。
 
 ### 修复
+- 创建 Box 对话框中可折叠的各节（模板、高级、克隆代码仓库、工具、卷、环境变量）统一使用同一种箭头折叠按钮，样式一致并左对齐。
+- 多行文本框（如「额外允许的主机」）按行数显示高度，文字上下留白与「启动命令」一致。
+- 挂载的访问模式显示为「只读」/「读写」，不再显示 ro / rw。
+- 挂载与环境变量列表（创建 Box、重建 Box、Box 详情）中，「添加挂载」「添加变量」按钮与最后一行之间留出与行间相同的间距，不再紧贴；窄屏下各行之间的间距也更大。
 - Box 内 Agent 自助（[#118](https://github.com/ArnoChenFx/minibox/issues/118)）：在 Agent 宿主机上创建带自助令牌的 Box 时，请求在创建流程开始前即返回 `501`（`self_token_host_unsupported`），不再进入后续检查。
+- 休眠中的 Box 在终端标签页唤醒后，会话启动完成时页面没有切换到实时终端：终端标签页原先缺少重新渲染的回调，唤醒后停留在「正在唤醒」。
+- 重建、移动 Box，或挂载与卸载卷之后，页面留在原来的标签页与设置分组上，不再跳回概览。
 
 ### 工程化
+- 新增 `.cursor/environment.json` 与 `.cursor/install.sh`：Cursor 云端 Agent 构建环境时把 Bun 升到最新版并对照 `engines.bun` 检查，再安装依赖；新增 `AGENTS.md`，要求 Agent 不得降低 Bun 版本或改回 `tsc` 类型检查。
 - 新增真实引擎的出站集成测试 `tests/docker-egress.test.ts`，由 `bun run test:docker` 运行。它覆盖 `none` 的断网、exec、SSH 与端口预览，`proxy-only` 的允许、拒绝、事件与绕过，以及 `BLOCK_HOST_GATEWAY`。测试使用独立的标签前缀、数据目录与网络，并清理其代理、网络、防火墙规则与镜像。
 - 控制台导航的测试：`tests/web-routes.test.ts` 覆盖地址解析、标签页与旧地址的跳转，`tests/web-console-browser.test.ts` 用 Chromium 覆盖导航、标签页切换、刷新后的状态、宿主机筛选器与中文界面。浏览器测试与预览隔离测试一样，未配置 Chromium 时跳过，CI 中缺失则失败。
+- Box 详情页的测试：`tests/web-box-detail.test.ts` 为无 DOM 的组件测试，覆盖设置分组与会话来源标记；`tests/web-box-detail-browser.test.ts` 用 Chromium 覆盖六个标签页的地址与切换、概览不滚动、设置分组、标题栏的「创建检查点」、会话来源、休眠的 Box 在终端中唤醒、工具栏对齐、手机上的单行工具栏与当前标签页可见，以及旧地址跳转。`tests/web-routes.test.ts` 补充了标签页、设置分组与移动后的地址。截图脚本改为打开检查点分组。
+- 概览的测试：`tests/overview.test.ts` 以行为方式覆盖 `GET /api/overview` 的权限、正在进行的命令与输出、各类需要关注的事项，以及跨宿主机的情况；`tests/web-overview.test.ts` 覆盖概览的文字、链接与轮询间隔，并核对事项类型与服务器输出 schema 一致；`tests/web-console-browser.test.ts` 在 Chromium 中覆盖概览的四个列表及其展开按钮、观察与接管的地址、会话的切换与刷新、需要关注的链接，以及 Box 列表的活动标记。
 
 ### 文档
+- 检查点指南新增「复制到其他宿主机」一节，宿主机指南新增「对所有宿主机的访问」，并说明 `auto` 只考虑持有模板的宿主机、暂不按 `arch` 或 `gpu` 标签放置。API、CLI、MCP 参考与 Agent 指南同步更新，中英文版本一致（Refs [#21](https://github.com/ArnoChenFx/minibox/issues/21)）。
 - 新增网络出站文档：英文 `docs/admin/network-egress.md` 与中文 `docs/zh-CN/admin/network-egress.md`，说明各档位、白名单、事件、`BLOCK_HOST_GATEWAY` 与限制（[#120](https://github.com/ArnoChenFx/minibox/issues/120)）。安全指南、配置、CLI、检查点与 Box 指南，以及 `.env.example` 同步更新。
 - 模板指南的 `devcontainer.json` 一节改写：列出支持的设置、构建日志中的警告与被拒绝的设置，以及 Box 设置任务的顺序、运行用户、工作目录、时限与失败行为，中英文版本同步。API、CLI、MCP、安全与架构文档同步更新（Refs #15）。
 - `/mcp` 访问密钥的说明更新：安全指南、升级说明、配置、MCP 与 CLI 参考，以及 Agent 与访问和令牌指南，中英文同步（[#121](https://github.com/ArnoChenFx/minibox/issues/121)）。
 - 快速开始、用户指南与管理文档中提到侧栏「模板」「卷」「回收站」的地方，改为新的导航位置，中英文同步。开发文档同步说明新增的控制台导航浏览器测试。
 - Box 内 Agent 与宿主机指南（中英文）说明：Agent 宿主机无法把令牌文件写入 Box，因此不能在其上创建带自助令牌的 Box（[#118](https://github.com/ArnoChenFx/minibox/issues/118)）。
+- Box 指南、检查点、环境变量与密钥、空闲休眠、NFS、工具、终端与会话，以及管理文档的网络出站，中英文同步改为新的标签页与设置分组（[#26](https://github.com/ArnoChenFx/minibox/issues/26)）。
+- 终端与会话指南新增「在概览中观察 Agent」一节，Box 指南新增「概览与 Box 列表」一节，中英文同步（[#26](https://github.com/ArnoChenFx/minibox/issues/26)）。
 
 ## [0.5.1] - 2026-10-23
 

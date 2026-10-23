@@ -70,6 +70,14 @@
     border-color 0.12s,
     box-shadow 0.12s;
 }
+/* A textarea holds several lines: its rows set the height, and the text is padded like the start command's. */
+.textarea {
+  height: auto;
+  min-height: 36px;
+  padding: 8px 12px;
+  line-height: 1.5;
+  resize: vertical;
+}
 /* Native selects keep their keyboard and screen-reader behaviour; only the box is restyled to match .input. */
 .select {
   appearance: none;

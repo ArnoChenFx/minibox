@@ -1,7 +1,14 @@
 import { describe, expect, test } from "bun:test";
 
 import { AGENT_IMAGE, agentBashCommand, agentPowerShellCommand } from "../web/js/lib/agent-command.js";
-import { agentState, boxesOnHost, hostFilterShown, hostOfBox, isUnreachable } from "../web/js/lib/host-list.js";
+import {
+  accessWarningShown,
+  agentState,
+  boxesOnHost,
+  hostFilterShown,
+  hostOfBox,
+  isUnreachable,
+} from "../web/js/lib/host-list.js";
 
 const boxes = [
   { name: "alpha", hostId: "local", state: "running" },
@@ -33,6 +40,28 @@ describe("the host filter in the top bar", () => {
     expect(hostFilterShown([])).toBe(false);
     expect(hostFilterShown([{ id: "local" }])).toBe(false);
     expect(hostFilterShown([{ id: "local" }, { id: "lab" }])).toBe(true);
+  });
+});
+
+describe("the access warning on the hosts page", () => {
+  test("a console that holds only this machine shows no warning", () => {
+    expect(accessWarningShown([])).toBe(false);
+    expect(accessWarningShown([{ id: "local", transport: "local" }])).toBe(false);
+  });
+
+  test("once a host other than this machine is held, the console is the entry to several and the warning shows", () => {
+    expect(
+      accessWarningShown([
+        { id: "local", transport: "local" },
+        { id: "lab", transport: "ssh" },
+      ]),
+    ).toBe(true);
+    expect(
+      accessWarningShown([
+        { id: "local", transport: "local" },
+        { id: "edge", transport: "tcp" },
+      ]),
+    ).toBe(true);
   });
 });
 

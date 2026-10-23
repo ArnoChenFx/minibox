@@ -58,7 +58,7 @@ function viewHtml({ state, running, forbidden, loadError }) {
     if (state.command !== null && running) actions.push(actionButton("run", t("sc.rerun"), "play"));
     if (state.command !== null) actions.push(actionButton("remove", t("sc.remove"), "trash"));
   }
-  return `<div class="card" style="margin-top:16px">
+  return `<div class="card">
     <div class="card-head"><h3>${esc(t("sc.section"))}</h3><div class="startup-actions">${actions.join("")}</div></div>
     <div class="card-body stack">
       <p class="help">${esc(t("sc.help"))}</p>
@@ -77,7 +77,7 @@ function editHtml({ draft, applyNow, error }, running) {
         <span class="check-body"><span class="check-title"><strong>${esc(t("sc.applyNow"))}</strong></span><span class="help">${esc(t("sc.applyNowHelp"))}</span></span>
       </label>`
     : "";
-  return `<div class="card" style="margin-top:16px">
+  return `<div class="card">
     <div class="card-head"><h3>${esc(t("sc.section"))}</h3></div>
     <div class="card-body stack">
       <p class="help">${esc(t("sc.editHelp"))}</p>
@@ -117,7 +117,7 @@ export function mountStartupCard(container, { box }) {
   let shown = "";
   let seen = { revision: null, running: null };
 
-  container.innerHTML = `<div class="card" style="margin-top:16px"><div class="card-body"><span class="spinner"></span></div></div>`;
+  container.innerHTML = `<div class="card"><div class="card-body"><span class="spinner"></span></div></div>`;
 
   const apply = (next) => {
     reads += 1;
