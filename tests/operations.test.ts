@@ -226,6 +226,7 @@ const SAMPLES: Record<string, (boxId: string, app: App) => unknown> = {
   "task.get": () => ({ id: "01ARZ3NDEKTSV4RRFFQ69G5FAV" }),
   "task.cancel": () => ({ id: "01ARZ3NDEKTSV4RRFFQ69G5FAV" }),
   "events.list": () => ({ op: "box.create" }),
+  "overview.get": () => ({}),
   "token.list": () => ({}),
   "token.create": () => ({ name: "ci", preset: "readonly" }),
   "token.revoke": (_boxId, app) => ({

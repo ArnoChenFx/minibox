@@ -19,6 +19,11 @@
 - 创建 Box 的模板选择器支持按名称、标签、描述与镜像搜索，可折叠，搜索时显示全部匹配项，已选模板在折叠时始终可见。模板页的卡片列表过长时同样可以折叠。
 - 创建 Box 的工具选择器可按分类折叠，已选工具在折叠时始终可见，搜索时自动展开匹配项。
 - 创建 Box 对话框的「工具」与「模板」两节可在标题前的箭头按钮处整节折叠，折叠状态保存在浏览器中；折叠时标题旁仍显示已选的模板或工具。「模板」一节移到「规格」下方。
+- 概览页「正在进行」与「需要关注」（[#26](https://github.com/ArnoChenFx/minibox/issues/26)）：`GET /api/overview`（`overview.get`，作用域 `overview:read`，仅所有者可读）返回 `inProgress` 与 `attention`。「正在进行」列出最近 10 分钟内 Agent 操作过的 Box，以及仍在运行命令的 Box；两张卡片位于容量卡片下方；每行占一行，依次为操作者（令牌名，或 Box 内的 Agent）、最近命令与最近使用的会话、时间和操作，运行中命令的最后 3 行输出与 Agent 备注通过行末的箭头展开。没有需要关注的事项时，「需要关注」收成一行。「需要关注」只列服务器已记录的事项：内存耗尽与检查点失败保留 24 小时，配置漂移、待确认的回滚、卷超出硬上限、存储池不可达、宿主机离线与磁盘不足在其条件存续期间列出。
+- 「观察」以只读方式打开会话，「接管」打开同一会话，由人在终端中点击才会接管。不属于任何会话的命令只提供「观察」，它打开 Box 的活动。
+- Box 列表中，Agent 正在工作的 Box 显示「Agent 活动中 · 12 秒前」。
+- 终端会话有自己的地址（`#/boxes/<id>/terminal/<会话名>`）。在列表中切换会话会更新地址，刷新或分享链接后仍会打开该会话。
+- 概览的列表默认只显示前几项：「正在进行」3 项，「需要关注」、概览中的「Box」与「最近活动」5 项。其余通过「展开全部（N）」展开，「收起」收回。
 
 ### 变更
 - **破坏性变更：`/mcp` 默认拒绝所有者访问密钥。** `MCP_ALLOW_OWNER_KEY` 的默认值由 `true` 改为 `false`。此后，用访问密钥访问 `/mcp` 的请求返回 `401`（`mcp_owner_key_refused`），Agent 令牌不受影响。升级前请为每个 Agent 创建令牌（控制台的**设置**，或 `minibox token create <name>`），并把它设为 Agent 的 Bearer 密钥或 `MINIBOX_ACCESS_KEY`。若要暂时保留旧行为，设置 `MCP_ALLOW_OWNER_KEY=true`，每次使用仍会被记录。启动时若最近 7 天内有访问密钥访问过 `/mcp`，日志会写入 `mcp.owner_key_now_refused` 警告，控制台横幅也会给出同样的做法。`minibox mcp` 遇到拒绝时会说明原因，并提示 `minibox token create`。见[升级说明](docs/admin/upgrades.md)（[#121](https://github.com/ArnoChenFx/minibox/issues/121)）。
@@ -37,12 +42,14 @@
 - 创建 Box 对话框中可折叠的各节（模板、高级、克隆代码仓库、工具、卷、环境变量）统一使用同一种箭头折叠按钮，样式一致并左对齐。
 - 多行文本框（如「额外允许的主机」）按行数显示高度，文字上下留白与「启动命令」一致。
 - 挂载的访问模式显示为「只读」/「读写」，不再显示 ro / rw。
+- 挂载与环境变量列表（创建 Box、重建 Box、Box 详情）中，「添加挂载」「添加变量」按钮与最后一行之间留出与行间相同的间距，不再紧贴；窄屏下各行之间的间距也更大。
 - Box 内 Agent 自助（[#118](https://github.com/ArnoChenFx/minibox/issues/118)）：在 Agent 宿主机上创建带自助令牌的 Box 时，请求在创建流程开始前即返回 `501`（`self_token_host_unsupported`），不再进入后续检查。
 
 ### 工程化
 - 新增 `.cursor/environment.json` 与 `.cursor/install.sh`：Cursor 云端 Agent 构建环境时把 Bun 升到最新版并对照 `engines.bun` 检查，再安装依赖；新增 `AGENTS.md`，要求 Agent 不得降低 Bun 版本或改回 `tsc` 类型检查。
 - 新增真实引擎的出站集成测试 `tests/docker-egress.test.ts`，由 `bun run test:docker` 运行。它覆盖 `none` 的断网、exec、SSH 与端口预览，`proxy-only` 的允许、拒绝、事件与绕过，以及 `BLOCK_HOST_GATEWAY`。测试使用独立的标签前缀、数据目录与网络，并清理其代理、网络、防火墙规则与镜像。
 - 控制台导航的测试：`tests/web-routes.test.ts` 覆盖地址解析、标签页与旧地址的跳转，`tests/web-console-browser.test.ts` 用 Chromium 覆盖导航、标签页切换、刷新后的状态、宿主机筛选器与中文界面。浏览器测试与预览隔离测试一样，未配置 Chromium 时跳过，CI 中缺失则失败。
+- 概览的测试：`tests/overview.test.ts` 以行为方式覆盖 `GET /api/overview` 的权限、正在进行的命令与输出、各类需要关注的事项，以及跨宿主机的情况；`tests/web-overview.test.ts` 覆盖概览的文字、链接与轮询间隔，并核对事项类型与服务器输出 schema 一致；`tests/web-console-browser.test.ts` 在 Chromium 中覆盖概览的四个列表及其展开按钮、观察与接管的地址、会话的切换与刷新、需要关注的链接，以及 Box 列表的活动标记。
 
 ### 文档
 - 检查点指南新增「复制到其他宿主机」一节，宿主机指南新增「对所有宿主机的访问」，并说明 `auto` 只考虑持有模板的宿主机、暂不按 `arch` 或 `gpu` 标签放置。API、CLI、MCP 参考与 Agent 指南同步更新，中英文版本一致（Refs [#21](https://github.com/ArnoChenFx/minibox/issues/21)）。
@@ -51,6 +58,7 @@
 - `/mcp` 访问密钥的说明更新：安全指南、升级说明、配置、MCP 与 CLI 参考，以及 Agent 与访问和令牌指南，中英文同步（[#121](https://github.com/ArnoChenFx/minibox/issues/121)）。
 - 快速开始、用户指南与管理文档中提到侧栏「模板」「卷」「回收站」的地方，改为新的导航位置，中英文同步。开发文档同步说明新增的控制台导航浏览器测试。
 - Box 内 Agent 与宿主机指南（中英文）说明：Agent 宿主机无法把令牌文件写入 Box，因此不能在其上创建带自助令牌的 Box（[#118](https://github.com/ArnoChenFx/minibox/issues/118)）。
+- 终端与会话指南新增「在概览中观察 Agent」一节，Box 指南新增「概览与 Box 列表」一节，中英文同步（[#26](https://github.com/ArnoChenFx/minibox/issues/26)）。
 
 ## [0.5.1] - 2026-10-23
 

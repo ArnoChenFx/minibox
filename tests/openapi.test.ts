@@ -139,6 +139,7 @@ describe("OpenAPI document", () => {
       "notify.channel.set",
       "notify.channel.test",
       "notify.delivery.list",
+      "overview.get",
       "pool.list",
       "pool.replace",
       "port.expose",
