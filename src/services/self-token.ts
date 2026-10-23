@@ -2,12 +2,13 @@ import type { HostCtx } from "../host/registry";
 import { AppError, notFound } from "../lib/errors";
 import { msg } from "../lib/messages";
 import { pushHistory } from "../specs/history";
-import { DEV_GID, DEV_UID, fileArchive } from "./files-tar";
+import { DEV_GID, DEV_UID } from "./files-tar";
 import { beginChange } from "./moving";
 
 /** The directory the token file lives in, inside the box. */
 export const SELF_TOKEN_DIR = "/run/minibox";
 const SELF_TOKEN_NAME = "self-token";
+export const SELF_TOKEN_PATH = `${SELF_TOKEN_DIR}/${SELF_TOKEN_NAME}`;
 
 /**
  * The tmpfs the directory is mounted on. The token is written after each start and is gone when the container stops, so it
@@ -24,7 +25,9 @@ export function assertSelfTokenHost(host: HostCtx): void {
 
 /**
  * Issues the box's token and writes it into its running container. A token is issued on every start, so the file always
- * holds the token the store knows. A failed write revokes the token it issued, and the error goes to the caller.
+ * holds the token the store knows. The file is written by a process in the container, because an archive write would
+ * land beneath the tmpfs mount, where the box's agent cannot see it. A failed write revokes the token it issued, and the
+ * error goes to the caller.
  */
 export async function provisionSelfToken(
   host: HostCtx,
@@ -32,9 +35,11 @@ export async function provisionSelfToken(
   containerId: string,
 ): Promise<void> {
   const secret = host.selfTokens.issue(box.boxId, box.name);
-  const file = fileArchive(SELF_TOKEN_NAME, Buffer.from(`${secret}\n`), { mode: 0o600 });
   try {
-    await host.runtime.putArchive(containerId, SELF_TOKEN_DIR, file);
+    await host.runtime.writeContainerFile(containerId, SELF_TOKEN_PATH, Buffer.from(`${secret}\n`), {
+      user: `${DEV_UID}:${DEV_GID}`,
+      mode: 0o600,
+    });
   } catch (e) {
     host.selfTokens.revoke(box.boxId);
     throw e;

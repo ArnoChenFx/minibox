@@ -415,6 +415,12 @@ export interface Runtime {
   commitContainer(id: string, spec: CommitSpec): Promise<void>;
   /** Extracts a tar archive into `path`. Works on created containers that are not running. */
   putArchive(id: string, path: string, tar: Readable | Buffer): Promise<void>;
+  /**
+   * Writes one file into a running container through a process in it. putArchive cannot place a file under a tmpfs
+   * mount: it writes beneath the mount, and the mount hides the file. The file gets `mode` and belongs to `user`, the
+   * user the write runs as. `data` goes in on stdin, so it is never in a command line or an environment.
+   */
+  writeContainerFile(id: string, path: string, data: Buffer, opts: { user: string; mode: number }): Promise<void>;
   /** Tar archive of `path`. Works on created containers that are not running. */
   getArchive(id: string, path: string): Promise<Readable>;
   /**

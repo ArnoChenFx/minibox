@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { questionsPath, selfTokensPath } from "../src/data-dir";
 import { AppError } from "../src/lib/errors";
 import { RuntimeError } from "../src/runtime";
+import { SELF_TOKEN_PATH } from "../src/services/self-token";
 import { SELF_QUOTA } from "../src/tokens/self-policy";
 import { SelfTokenStore } from "../src/tokens/self-store";
 import { silenceLogs } from "./support/app";
@@ -167,11 +168,12 @@ describe("a box's self token through its lifecycle", () => {
     expect(box.selfToken).toBeFalsy();
   });
 
-  test("a stop revokes the token, and the next start gives the box a new one", async () => {
+  test("a stop revokes the token and takes its file with it, and the next start gives the box a new one", async () => {
     const box = await createBox("alpha", { selfToken: true });
     const old = await selfTokenOf(harness.runtime, box.id);
     expect((await act(box.id, "stop")).status).toBe(200);
     expect(refusedOf(await whoAmI(old))).toEqual({ status: 401, key: "unauthorized" });
+    expect(harness.runtime.containerFile(box.id, SELF_TOKEN_PATH)).toBeUndefined();
 
     expect((await act(box.id, "start")).status).toBe(200);
     const fresh = await selfTokenOf(harness.runtime, box.id);
@@ -256,7 +258,7 @@ describe("a box's self token through its lifecycle", () => {
   });
 
   test("a create whose token cannot be written is rolled back: no token stays issued and no box is kept", async () => {
-    harness.runtime.fail("putArchive", new RuntimeError("engine", "archive refused"));
+    harness.runtime.fail("writeContainerFile", new RuntimeError("engine", "exec refused"));
     const res = await call(harness.base, "/api/boxes", {
       body: { name: "alpha", cpus: 1, memoryMb: 256, selfToken: true },
     });
