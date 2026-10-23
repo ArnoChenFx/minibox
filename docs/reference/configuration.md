@@ -64,7 +64,7 @@ MiniBox reads its settings from environment variables. The precedence is:
 | `CHECKPOINT_KEEP_DAYS` | `30` | Automatic checkpoints older than this many days are removed. A whole number from 0 to 3650. `0` keeps them whatever their age. |
 | `CHECKPOINT_CAPACITY_MB` | `0` | The size limit of the checkpoint repository, in MB. A whole number from 0 to 1000000000. `0` sets no limit. At the limit, MiniBox refuses new automatic checkpoints. |
 | `TRASH_RETENTION_DAYS` | `7` | How many days the data of a deleted box or volume is kept in the [recycle bin](../user-guide/checkpoints.md#recycle-bin) before it is purged. A whole number from 1 to 365. Recycle bin entries count against `CHECKPOINT_CAPACITY_MB`. |
-| `CHECKPOINT_PACKAGE_MAX_MB` | `2048` | The largest checkpoint package, in MB. A whole number from 1 to 65536. An export or upload of a larger package fails. The package upload (`POST /api/packages`) accepts a body up to this size plus 1 MB. Only that upload and the volume file upload may exceed 128 MB; every other request, including JSON bodies and previews, stays capped at 128 MB. See [Export and import](../user-guide/checkpoints.md#export-and-import). |
+| `CHECKPOINT_PACKAGE_MAX_MB` | `2048` | The largest checkpoint package, in MB. A whole number from 1 to 65536. An export, a copy to another host or an upload of a larger package fails. The package upload (`POST /api/packages`) accepts a body up to this size plus 1 MB. Only that upload and the volume file upload may exceed 128 MB; every other request, including JSON bodies and previews, stays capped at 128 MB. See [Export and import](../user-guide/checkpoints.md#export-and-import). |
 
 ## Volumes and storage
 
