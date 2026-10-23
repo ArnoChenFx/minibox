@@ -272,7 +272,7 @@ afterAll(async () => {
     if (network.name.startsWith(`${prefix}-`)) await runtime.removeNetwork(network.name).catch(() => {});
   }
   for (const volume of await runtime.listVolumes().catch(() => [])) {
-    if (volume.name.startsWith(`${prefix}-`)) await runtime.removeVolume(volume.name).catch(() => {});
+    if (volume.labels[prefix] === "true") await runtime.removeVolume(volume.name).catch(() => {});
   }
   await runtime.setHostIngressBlock([]).catch(() => {});
   await runtime.removeImage(BOX_IMAGE, { force: true }).catch(() => {});
