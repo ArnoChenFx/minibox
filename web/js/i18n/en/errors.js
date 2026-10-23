@@ -248,6 +248,23 @@ export default {
     "Volume {volume} no longer exists in the engine. MiniBox does not recreate it. Restore the engine volume, or delete the volume record if you no longer need it.",
   "err.network_reserved": "Boxes cannot join network {network}. Host, none and container networks are refused.",
   "err.network_not_managed": "Boxes cannot join network {network}. Boxes join {managed}.",
+  "err.egress_mode_invalid": "Egress must be open, none or proxy-only, not {mode}.",
+  "err.egress_preset_invalid": "Egress preset {preset} is not one of agent-default or package-registries.",
+  "err.egress_domain_invalid":
+    "{domain} is not a host name. Use a name such as api.example.com, or a wildcard such as *.example.com.",
+  "err.egress_options_need_proxy":
+    "Presets and domains apply to proxy-only egress only. The {mode} mode takes neither.",
+  "err.egress_domains_too_many": "An egress allowlist holds at most {max} hosts.",
+  "err.egress_pool_full":
+    "No address is left for another box's egress network. Remove a box with egress none or proxy-only, then try again.",
+  "err.egress_proxy_failed": "The egress proxy for box {box} could not start: {detail}",
+  "err.egress_move_refused":
+    "Box {box} has egress {mode}. A box with a network egress policy cannot move to another host yet.",
+  "err.egress_network_conflict":
+    "The private network {network} already exists with other settings. Remove it, then try again.",
+  "err.egress_host_gateway_failed": "The host firewall could not be updated: {detail}",
+  "err.egress_needs_network":
+    "Egress {mode} and network {network} cannot be set together. Egress sets the box network.",
   "err.cpu_over_host": "CPU cores exceed the host limit ({cores} cores).",
   "err.memory_over_host": "Memory exceeds the host limit ({gb} GB).",
   "err.cpu_booked_over_host": "Running boxes on this host would take {booked} CPUs, more than its limit of {limit}.",

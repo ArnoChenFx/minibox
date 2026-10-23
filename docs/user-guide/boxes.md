@@ -22,7 +22,7 @@ Every box runs as the user `dev`, user ID 1000. Inside a box, `sudo` works witho
 
 5. To give the box's agent a token for this box alone, tick **Give the box's agent a self token**. It is off by default, and a box made from a snapshot does not offer it. See [A box's own agent](agents.md#a-boxs-own-agent).
 6. If MiniBox has more than one host, choose the **Host** where the box runs. See [Hosts](hosts.md).
-7. To change the security profile, open **Advanced** and choose a profile. The default is `standard`. The same section takes an optional **Startup command**. See [Startup command](#startup-command).
+7. To change the security profile, open **Advanced** and choose a profile. The default is `standard`. The same section takes an optional **Network egress**, which limits what the box can reach outside the host, and an optional **Startup command**. See [Network egress](../admin/network-egress.md) and [Startup command](#startup-command).
 8. To clone a Git repository into `/workspace`, open **Clone a repository into /workspace**. See [Clone a repository](#clone-a-repository).
 9. To install agent CLIs or other tools with the box, tick them under **Tools**. See [Tools](tools.md).
 10. Open **Volumes: defaults**, then choose **Defaults** to mount the workspace, home, cache and tools volumes, or **Customize** to pick the volumes yourself. See [Volumes and storage](volumes-and-storage.md).

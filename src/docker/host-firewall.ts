@@ -1,0 +1,78 @@
+import { createHash } from "node:crypto";
+
+import { formatIpv4Cidr, parseIpv4Cidr } from "../lib/cidr";
+import { RuntimeError, type Runtime } from "../runtime";
+import type { Engine } from "./engine";
+import { runHelper } from "./helpers";
+import { imageMethods } from "./images";
+
+/**
+ * Carries iptables, which the base template does not. Pinned to a release line; the helper pulls it on first use. A
+ * remote agent host pulls it on its own engine.
+ */
+export const HOST_FIREWALL_IMAGE = "alpine:3.20";
+
+/**
+ * The chains MiniBox owns start with this. Each install has its own, named after a hash of its label prefix, so two
+ * installs on one host, such as a test instance next to a live one, never replace each other's rules.
+ */
+export const HOST_FIREWALL_CHAIN_PREFIX = "MINIBOX-EGRESS-";
+
+/** An install's chain: the prefix and 8 hex digits, well inside iptables' 28-character limit. */
+export function hostFirewallChain(owner: string): string {
+  return `${HOST_FIREWALL_CHAIN_PREFIX}${createHash("sha256").update(owner).digest("hex").slice(0, 8)}`;
+}
+
+/**
+ * Runs as root with NET_ADMIN on the host network. The chain is emptied first and refilled, so a second run with the
+ * same sources changes nothing. An empty source list removes the jump and the chain. Other chains are not touched.
+ */
+const FIREWALL_SCRIPT = [
+  "set -eu",
+  "apk add -q --no-cache iptables >/dev/null",
+  'chain="$MINIBOX_FIREWALL_CHAIN"',
+  'iptables -N "$chain" 2>/dev/null || true',
+  'iptables -F "$chain"',
+  'if [ -n "${MINIBOX_BLOCK_SOURCES:-}" ]; then',
+  "  for source in $MINIBOX_BLOCK_SOURCES; do",
+  '    iptables -A "$chain" -s "$source" -m conntrack --ctstate NEW -j DROP',
+  "  done",
+  '  iptables -C INPUT -j "$chain" 2>/dev/null || iptables -I INPUT 1 -j "$chain"',
+  "else",
+  '  while iptables -D INPUT -j "$chain" 2>/dev/null; do :; done',
+  '  iptables -X "$chain" 2>/dev/null || true',
+  "fi",
+].join("\n");
+
+const LOG_TAIL_CHARS = 512;
+
+export function hostFirewallMethods(engine: Engine): Pick<Runtime, "setHostIngressBlock"> {
+  const images = imageMethods(engine);
+  return {
+    async setHostIngressBlock(owner, sources) {
+      const canonical = sources.map((source) => {
+        const network = parseIpv4Cidr(source);
+        if (!network) throw new RuntimeError("invalid", `${source} is not an IPv4 CIDR`);
+        return formatIpv4Cidr(network);
+      });
+      await images.pullImage(HOST_FIREWALL_IMAGE);
+      const result = await runHelper(engine.docker, {
+        image: HOST_FIREWALL_IMAGE,
+        cmd: ["sh", "-c", FIREWALL_SCRIPT],
+        env: [`MINIBOX_FIREWALL_CHAIN=${hostFirewallChain(owner)}`, `MINIBOX_BLOCK_SOURCES=${canonical.join(" ")}`],
+        capAdd: ["NET_ADMIN"],
+        hostNetwork: true,
+        readonlyRoot: false,
+        timeoutSec: 120,
+      });
+      if (result.exitCode !== 0) {
+        const tail = result.logs.trim().slice(-LOG_TAIL_CHARS);
+        throw new RuntimeError(
+          "engine",
+          `host firewall helper exited with ${result.exitCode}: ${tail}`,
+          `the host firewall could not be updated (exit ${result.exitCode})`,
+        );
+      }
+    },
+  };
+}

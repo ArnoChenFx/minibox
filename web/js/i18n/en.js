@@ -4,6 +4,7 @@ import boxes from "./en/boxes.js";
 import checkpoints from "./en/checkpoints.js";
 // UI strings. Flat keys shared by en.js and zh-CN.js; `{name}` marks a placeholder.
 import common from "./en/common.js";
+import egress from "./en/egress.js";
 import errors from "./en/errors.js";
 import files from "./en/files.js";
 import settings from "./en/settings.js";
@@ -14,6 +15,7 @@ import volumes from "./en/volumes.js";
 
 export default {
   ...common,
+  ...egress,
   ...errors,
   ...boxes,
   ...boxDetail,

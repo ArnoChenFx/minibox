@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { BOX_PROFILES } from "../box-profile";
 import { CONSISTENCY_MODES, TRASH_KINDS } from "../checkpoints/types";
+import { EGRESS_MODES, EGRESS_PRESETS } from "../egress/policy";
 import { BUILD_KINDS } from "../services/template-builds";
 import { VOLUME_ROLES } from "../volumes/types";
 
@@ -38,6 +39,13 @@ export const BoxEnvSchema = z.object({
   secretRef: z.string().optional(),
 });
 
+export const BoxEgressSchema = z.object({
+  mode: z.enum(EGRESS_MODES),
+  presets: z.array(z.enum(EGRESS_PRESETS)),
+  domains: z.array(z.string()),
+  allow: z.array(z.string()),
+});
+
 export const BoxDriftSchema = z.object({
   field: z.string(),
   expected: z.string(),
@@ -64,6 +72,8 @@ export const BoxSchema = z.object({
   profile: z.enum(BOX_PROFILES).nullable(),
   /** Boxes created before profiles stay on the engine's default `bridge` network. */
   network: z.string(),
+  /** Present only when the box is not `open`. An open box keeps the default network and reports no egress. */
+  egress: BoxEgressSchema.optional(),
   cpus: z.number().nullable(),
   memory: z.number().nullable(),
   pids: z.number().nullable(),

@@ -152,6 +152,13 @@ export interface HelperResult {
   logs: string;
 }
 
+/** A network the engine holds, with the IPv4 subnets it has. */
+export interface NetworkSummary {
+  name: string;
+  /** IPv4 subnets the engine assigned or was given. Empty when the network has none. */
+  subnets: string[];
+}
+
 /** Where a helper finds its `HelperSpec.secrets`, read-only. */
 export const HELPER_SECRETS_DIR = "/run/secrets";
 
@@ -192,6 +199,11 @@ export interface HelperSpec {
    * Absent or false keeps NetworkMode `none` (volume probes and chown).
    */
   network?: boolean;
+  /**
+   * Joins the engine host's network namespace, so that firewall changes made by the helper apply to the host. Only the
+   * host firewall sets this, with `capAdd` NET_ADMIN.
+   */
+  hostNetwork?: boolean;
   /**
    * When false, the root filesystem is writable (needed for package managers that write outside the tools mount).
    * Absent or true keeps the read-only root with a small `/tmp`.
@@ -499,9 +511,38 @@ export interface Runtime {
 
   /**
    * Creates a bridge network named `name` if it does not exist. An existing network must be a bridge whose
-   * inter-container communication matches `interContainerComm`; otherwise this fails with `conflict`.
+   * inter-container communication matches `interContainerComm`, whose `internal` flag matches, and whose subnet is
+   * `subnet` when one is given. Otherwise this fails with `conflict`.
+   * An `internal` network has no route out of the host: its containers reach each other and the host, and nothing
+   * else. Traffic to the host is not stopped here; see `setHostIngressBlock`.
    */
-  ensureBridgeNetwork(name: string, opts: { interContainerComm: boolean }): Promise<void>;
+  ensureBridgeNetwork(
+    name: string,
+    opts: { interContainerComm: boolean; internal?: boolean; subnet?: string },
+  ): Promise<void>;
+
+  /** Removes a network. One that does not exist is left alone. A network that still has containers attached fails with `conflict`. */
+  removeNetwork(name: string): Promise<void>;
+
+  /**
+   * Attaches a container to a second network, with `alias` as a name the containers on that network resolve it by. A
+   * container already attached to `name` is left as it is, and one attached to an older network with that name is
+   * moved to the current one.
+   */
+  connectNetwork(containerId: string, name: string, opts?: { alias?: string }): Promise<void>;
+
+  /** The networks the engine holds, with their IPv4 subnets. */
+  listNetworks(): Promise<NetworkSummary[]>;
+
+  /**
+   * Replaces one install's host firewall rules: new connections that the host itself receives from any of `sources`
+   * (IPv4 CIDRs) are dropped. A container's connection to the bridge gateway is one of these, so this is what stops a
+   * box reaching services on the host. `owner` is the install's label prefix: each owner has its own chain, so two
+   * installs on one host do not replace each other's rules. An owner's rules are replaced as a whole, and an empty
+   * list removes them. Runs a short-lived privileged helper on the host network, so a remote agent host runs it on its
+   * own engine.
+   */
+  setHostIngressBlock(owner: string, sources: string[]): Promise<void>;
 
   /**
    * Attaches a container to the network named `name` as it is now. The engine pins a container to the ID of the

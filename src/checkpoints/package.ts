@@ -5,6 +5,7 @@ import { open, unlink } from "node:fs/promises";
 import { z } from "zod";
 
 import { BOX_PROFILES } from "../box-profile";
+import { EGRESS_MODES, EGRESS_PRESETS, MAX_EGRESS_DOMAINS } from "../egress/policy";
 import { AppError } from "../lib/errors";
 import { msg } from "../lib/messages";
 import { cString, MAX_RECORD, numeric, parsePax } from "../lib/tar";
@@ -362,6 +363,14 @@ export const ManifestSchema = z
       cpus: z.number().nullable(),
       memoryBytes: z.number().int().min(0).nullable(),
       profile: z.enum(BOX_PROFILES).nullable(),
+      egress: z
+        .strictObject({
+          mode: z.enum(EGRESS_MODES),
+          presets: z.array(z.enum(EGRESS_PRESETS)).max(EGRESS_PRESETS.length),
+          domains: z.array(z.string().max(253)).max(MAX_EGRESS_DOMAINS),
+          allow: z.array(z.string().max(255)).max(MAX_EGRESS_DOMAINS),
+        })
+        .optional(),
     }),
     data: z.array(LayerSchema).min(1).max(256),
     createdAt: z.iso.datetime(),

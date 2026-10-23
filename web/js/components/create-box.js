@@ -1,5 +1,14 @@
 import { api, enc } from "../lib/api.js";
 import { $$, esc } from "../lib/dom.js";
+import {
+  EGRESS_PRESETS,
+  EGRESS_TIERS,
+  egressRequestOf,
+  presetHintKey,
+  presetKey,
+  tierHintKey,
+  tierKey,
+} from "../lib/egress.js";
 import { checkEnvRows, isEnvErrorKey } from "../lib/env.js";
 import { bytes, gbOrMb } from "../lib/format.js";
 import { hostFilter, hostsNow, multiHost } from "../lib/hosts.js";
@@ -120,6 +129,7 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
     template: templates.find((tp) => tp.ref === template)?.ref ?? templates[0]?.ref ?? "",
     profile: defaultProfile,
     volumesMode: "default",
+    egressMode: "open",
   };
   let choices = null;
   let seeded = false;
@@ -205,6 +215,26 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
           <textarea class="textarea command-input" id="cbStartup" rows="2" spellcheck="false" placeholder="${esc(t("cb.startupPlaceholder"))}"></textarea>
           <div class="help">${t("cb.startupHelp")}</div>
           <div class="error-text" id="cbStartupErr"></div></div>`;
+  const egressField = `<div class="field" id="cbEgressField">
+          <span class="label">${t("cb.egress")}</span>
+          <div class="segmented segmented-3" id="cbEgressTiers">${EGRESS_TIERS.map(
+            (mode) =>
+              `<button type="button" class="seg" data-egress="${mode}" aria-pressed="${mode === state.egressMode}"><strong>${t(tierKey(mode))}</strong><span>${t(tierHintKey(mode))}</span></button>`,
+          ).join("")}</div>
+          <div class="help">${t("cb.egressHelp")}</div>
+          <div id="cbEgressProxy" hidden>
+            <div class="field"><span class="label">${t("egress.presets")}</span>
+              <div class="tool-checks" id="cbEgressPresets">${EGRESS_PRESETS.map(
+                (preset) => `<label class="check-row">
+                  <input class="sr-only" type="checkbox" value="${preset}" />
+                  <span class="check-mark" aria-hidden="true">${icon("check")}</span>
+                  <span class="check-body"><span class="check-title"><strong>${t(presetKey(preset))}</strong></span><span class="help">${t(presetHintKey(preset))}</span></span></label>`,
+              ).join("")}</div></div>
+            <div class="field"><label class="label" for="cbEgressDomains">${t("egress.domains")}</label>
+              <textarea class="textarea mono" id="cbEgressDomains" rows="2" spellcheck="false" autocapitalize="off" placeholder="pypi.org, *.example.com"></textarea>
+              <div class="help">${t("egress.domainsHelp")}</div></div>
+          </div>
+          <div class="error-text" id="cbEgressErr"></div></div>`;
   const selfTokenSection = snapshot
     ? ""
     : `<label class="check-row" id="cbSelfTokenRow">
@@ -266,6 +296,7 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
               `<button type="button" class="seg" data-profile="${p}" aria-pressed="${p === state.profile}"><strong>${t(`profile.${p}`)}</strong><span>${t(`profile.${p}Hint`)}</span></button>`,
           ).join("")}</div>
           <div class="help">${t("cb.profileHelp")}</div></div>
+        ${egressField}
         ${startupSection}
       </details>${repoSection}${toolsSection}${volumesSection}${envSection}`,
     footer: `<button class="btn" data-close>${t("common.cancel")}</button><button class="btn btn-primary" id="cbSubmit">${icon("play")}${t("cb.submit")}</button>`,
@@ -378,6 +409,17 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
     $$("#cbProfiles .seg", root).forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
     q("#cbAdvanced summary").textContent = t("cb.advancedSummary", { profile: t(`profile.${state.profile}`) });
   });
+  q("#cbEgressTiers").addEventListener("click", (e) => {
+    const b = e.target.closest(".seg");
+    if (!b) return;
+    state.egressMode = b.dataset.egress;
+    $$("#cbEgressTiers .seg", root).forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+    q("#cbEgressProxy").hidden = state.egressMode !== "proxy-only";
+    q("#cbEgressErr").textContent = "";
+  });
+  q("#cbEgressDomains").addEventListener("input", () => {
+    q("#cbEgressErr").textContent = "";
+  });
   q("#cbName").addEventListener("input", () => {
     q("#cbName").classList.remove("invalid");
     q("#cbNameErr").textContent = "";
@@ -400,6 +442,11 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
   const showStartupError = (message) => {
     q("#cbAdvanced").open = true;
     q("#cbStartupErr").textContent = message;
+  };
+
+  const showEgressError = (message) => {
+    q("#cbAdvanced").open = true;
+    q("#cbEgressErr").textContent = message;
   };
 
   q("#cbStartup").addEventListener("input", () => {
@@ -591,6 +638,12 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
       if (mounts) body.mounts = mounts;
       if (env?.length) body.env = env;
       if (startupCommand !== undefined) body.startupCommand = startupCommand;
+      const egress = egressRequestOf({
+        mode: state.egressMode,
+        presets: $$("#cbEgressPresets input:checked", root).map((input) => input.value),
+        domains: q("#cbEgressDomains").value,
+      });
+      if (egress) body.egress = egress;
       if (repo) body.repo = repo;
       if (q("#cbSelfToken")?.checked) body.selfToken = true;
       const selectedToolIds = [...selectedTools];
@@ -630,6 +683,8 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
         showVolumeError(e.message);
       } else if (!snapshot && (e.details?.field === "env" || isEnvErrorKey(e.key))) {
         showEnvError(`${e.message}${e.hint ? ` ${e.hint}` : ""}`);
+      } else if (e.details?.field === "egress" || e.key?.startsWith("egress_")) {
+        showEgressError(`${e.message}${e.hint ? ` ${e.hint}` : ""}`);
       } else if (e.details?.field === "startupCommand" || e.key === "startup_command_forbidden") {
         showStartupError(e.message);
       } else if (!snapshot && e.details?.field === "repo") {

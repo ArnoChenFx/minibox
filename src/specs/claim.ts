@@ -1,3 +1,4 @@
+import { parseBoxEgress } from "../egress/policy";
 import type { HostCtx } from "../host/registry";
 import { log } from "../lib/logger";
 import { NAME_RE } from "../lib/validation";
@@ -97,6 +98,7 @@ export function specFromContainer(host: HostCtx, info: ContainerInfo, now: strin
   const profileLabel = labels[keys.profile];
   const profile =
     profileLabel === "standard" || profileLabel === "strict" || profileLabel === "relaxed" ? profileLabel : null;
+  const egress = parseBoxEgress(labels[keys.egress]);
 
   return {
     version: 1,
@@ -124,6 +126,7 @@ export function specFromContainer(host: HostCtx, info: ContainerInfo, now: strin
     },
     profile,
     network: info.network,
+    ...(egress ? { egress } : {}),
     restart: "no",
     containerName: info.name,
     containerId: info.id,

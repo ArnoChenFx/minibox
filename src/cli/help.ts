@@ -11,6 +11,7 @@ Commands:
   minibox box ls [--json]              List boxes
   minibox box list [--json]            Same as box ls
   minibox box create <name> [--template IMAGE] [--cpus N] [--memory MB] [--profile P]
+                       [--egress open|none|proxy-only [--egress-preset NAME] [--egress-domain HOST]...]
                        [--repo URL [--branch BRANCH] [--secret NAME]]
                        [--startup-command TEXT | --startup-command-stdin] [--self-token] [--no-wait] [--json]
                                        Create and start a box. --repo clones into /workspace on the first create.

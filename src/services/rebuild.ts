@@ -1,4 +1,5 @@
 import { type BoxProfile, hardeningFor } from "../box-profile";
+import type { BoxEgress } from "../egress/policy";
 import type { HostCtx } from "../host/registry";
 import { AppError, badRequest, conflict, notFound } from "../lib/errors";
 import { log } from "../lib/logger";
@@ -22,6 +23,18 @@ import { assertVolumesPresent } from "../volumes/engine";
 import { createIndependentVolume } from "../volumes/provision";
 import { assertMountAllowed, assertRebuildAttachments, engineRefs, mountTarget } from "./attachments";
 import { type Box, getBox, locked, refuseExpired } from "./boxes";
+import {
+  egressEnvOf,
+  ensureEgressNetwork,
+  ensureEgressProxy,
+  planEgress,
+  prepareEgress,
+  removeEgress,
+  removeProxies,
+  stopEgressProxies,
+  syncHostFirewall,
+  withoutRawSockets,
+} from "./egress";
 import { assertImageAvailable, ensureImageOn } from "./images";
 import { beginChange } from "./moving";
 import { provisionSelfToken, selfTokenTmpfs } from "./self-token";
@@ -35,6 +48,10 @@ interface SwapState {
   oldRenamed: boolean;
   started: boolean;
   wasRunning: boolean;
+  /** True when this attempt created the box's private network, so a rollback takes it away again. */
+  networkMade: boolean;
+  /** True once this attempt may have removed or replaced the box's proxies, so a rollback puts them back. */
+  proxies: boolean;
   changes: VolumeChanges;
   /** The workspace root this attempt changed, with the owner it had. A rollback puts that owner back. */
   aligned: { volume: string; owner: VolumeOwner; image: string } | null;
@@ -143,10 +160,12 @@ async function rebuildChanging(
       named,
       await movedTag(host, spec),
       await rotatedSecrets(host, spec, named.env ?? spec.env),
+      await egressAfter(host, spec, named),
+      host.security.network,
     );
     if (planned.changes.length === 0) throw badRequest(msg("rebuild_empty"));
     assertSecretsSet(host.secrets, planned.env);
-    await assertRebuildAttachments(host, spec, planned.mounts, planned.network);
+    await assertRebuildAttachments(host, spec, planned.mounts, planned.network, planned.egress !== null);
 
     if (planned.templateRef) await assertImageAvailable(host, planned.templateRef);
     if (!confirm) {
@@ -207,6 +226,12 @@ export async function movedTag(host: HostCtx, spec: BoxSpec): Promise<MovedTag |
   const running = await inspectOld(host, spec.containerId);
   if (running.imageId === tagged.id) return null;
   return { tag: spec.template.image, from: running.imageId, to: tagged.id };
+}
+
+/** The egress the rebuilt box holds: the policy the request names, or the one the box holds now when it names none. */
+async function egressAfter(host: HostCtx, spec: BoxSpec, request: RebuildRequest): Promise<BoxEgress | null> {
+  if (request.egress === undefined) return spec.egress ?? null;
+  return planEgress(host, request.egress, spec.egress ?? null);
 }
 
 /**
@@ -317,6 +342,7 @@ function containerLabels(
   if (spec.resources.memoryBytes !== null) labels[keys.memory] = String(spec.resources.memoryBytes);
   if (spec.resources.pids !== null) labels[keys.pids] = String(spec.resources.pids);
   if (spec.createdBy) labels[keys.createdBy] = spec.createdBy;
+  if (planned.egress) labels[keys.egress] = JSON.stringify(planned.egress);
   return labels;
 }
 
@@ -329,7 +355,8 @@ export function containerSpec(
   env: string[],
 ): CreateContainerSpec {
   const workspace = planned.mounts.some((mount) => mount.path === "/workspace");
-  const hardening = hardeningOf(host, spec, planned.profile);
+  const profileHardening = hardeningOf(host, spec, planned.profile);
+  const hardening = planned.egress ? withoutRawSockets(profileHardening ?? {}) : profileHardening;
   const created: CreateContainerSpec = {
     name,
     image: template.image,
@@ -399,7 +426,7 @@ function writeNext(
   containerId: string,
   request: RebuildRequest,
 ): void {
-  host.specs.write({
+  const next: BoxSpec = {
     ...previous,
     template,
     mounts: planned.mounts,
@@ -414,7 +441,10 @@ function writeNext(
     revision: previous.revision + 1,
     updatedAt: new Date().toISOString(),
     history: pushHistory(previous),
-  });
+  };
+  if (planned.egress) next.egress = planned.egress;
+  else delete next.egress;
+  host.specs.write(next);
 }
 
 /** Puts the box back as it was. Returns false when any step could not be undone, so the box may not match its spec. */
@@ -437,6 +467,7 @@ async function undo(host: HostCtx, previous: BoxSpec, state: SwapState, record?:
     const createdId = state.createdId;
     await fail(() => host.runtime.removeContainer(createdId, { force: true }));
   }
+  if (state.networkMade) await fail(() => removeEgress(host, previous.id));
   if (state.oldRenamed) {
     await fail(() => host.runtime.renameContainer(previous.containerId, previous.containerName));
   }
@@ -444,6 +475,7 @@ async function undo(host: HostCtx, previous: BoxSpec, state: SwapState, record?:
     const { volume, owner, image } = state.aligned;
     await fail(() => restoreVolumeRoot(host, { volume, owner, image }, record));
   }
+  if (state.proxies) await fail(() => restoreProxies(host, previous, state.wasRunning));
   if (state.oldStopped && state.wasRunning) {
     await fail(async () => {
       await assertVolumesPresent(
@@ -465,7 +497,46 @@ async function undo(host: HostCtx, previous: BoxSpec, state: SwapState, record?:
     clean = false;
     log.warn("box.rebuild_rollback_failed", { id: previous.id, error: String(e) });
   }
+  await fail(() => syncHostFirewall(host));
   return clean;
+}
+
+/**
+ * Puts a box's proxies back as its spec had them. A proxy starts only for a box that is running, since a stopped box's
+ * proxy is stopped with it.
+ */
+async function restoreProxies(host: HostCtx, previous: BoxSpec, running: boolean): Promise<void> {
+  await removeProxies(host, previous.id);
+  if (running && previous.egress?.mode === "proxy-only") {
+    await ensureEgressProxy(
+      host,
+      { boxId: previous.id, id: previous.containerId, name: previous.name },
+      previous.egress,
+    );
+  }
+}
+
+/**
+ * Brings the rebuilt box's egress up before its new container starts. The box's previous proxy goes first when the new
+ * policy does not keep it, so the proxy alias on the box's network names one proxy only. The firewall is set last, so
+ * the new box's source is blocked before it runs.
+ */
+async function raiseEgress(
+  host: HostCtx,
+  previous: BoxSpec,
+  planned: PlannedRebuild,
+  containerId: string,
+  state: SwapState,
+): Promise<void> {
+  state.proxies = previous.egress?.mode === "proxy-only" || planned.egress?.mode === "proxy-only";
+  if (previous.egress?.mode === "proxy-only" && planned.egress?.mode !== "proxy-only") {
+    await removeProxies(host, previous.id);
+  }
+  await prepareEgress(
+    host,
+    { boxId: previous.id, id: containerId, name: previous.name, running: false },
+    previous.egress ?? null,
+  );
 }
 
 async function swap(
@@ -484,6 +555,8 @@ async function swap(
     oldRenamed: false,
     started: false,
     wasRunning: false,
+    networkMade: false,
+    proxies: false,
     changes: new VolumeChanges(),
     aligned: null,
   };
@@ -491,10 +564,15 @@ async function swap(
   const scratch = `${formal}-new`;
   const oldAlias = `${previous.containerName}-old`;
   try {
-    const env = containerEnv(host.secrets, planned.env);
+    const env = [...egressEnvOf(planned.egress), ...containerEnv(host.secrets, planned.env)];
     const old = await inspectOld(host, previous.containerId);
     state.wasRunning = old.running;
-    if (planned.network === host.security.network) await ensureBoxNetwork(host);
+    if (planned.egress) {
+      await ensureEgressNetwork(host, previous.id, planned.egress);
+      state.networkMade = !previous.egress;
+    } else if (planned.network === host.security.network) {
+      await ensureBoxNetwork(host);
+    }
     await clearLeftover(host, scratch, previous);
     await clearLeftover(host, oldAlias, previous);
     const resolved: PlannedRebuild = {
@@ -527,16 +605,23 @@ async function swap(
     await host.runtime.renameContainer(previous.containerId, oldAlias);
     state.oldRenamed = true;
     await host.runtime.renameContainer(created.id, formal);
+    await raiseEgress(host, previous, resolved, created.id, state);
     await host.runtime.startContainer(created.id);
     state.started = true;
     const started = await host.runtime.inspectContainer(created.id);
     if (!started.running) throw new AppError(502, "docker_error", msg("rebuild_start_failed"));
     if (previous.lifecycle.desired === "stopped") {
       await host.runtime.stopContainer(created.id, { timeoutSec: host.stopTimeoutSec });
+      if (resolved.egress) await stopEgressProxies(host, previous.id);
     } else if (previous.selfToken) {
       await provisionSelfToken(host, { boxId: previous.id, name: previous.name }, created.id);
     }
     await host.runtime.removeContainer(previous.containerId, { force: true });
+    if (previous.egress && !resolved.egress) {
+      await removeEgress(host, previous.id).catch((e: unknown) => {
+        log.warn("box.rebuild_egress_cleanup_failed", { id: previous.id, error: String(e) });
+      });
+    }
     if (previous.lifecycle.desired === "running") await launchStartup(host, created.id, previous.startupCommand);
     log.info("box.rebuilt", {
       id: previous.id,

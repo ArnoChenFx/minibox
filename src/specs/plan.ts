@@ -1,5 +1,8 @@
 import type { BoxProfile } from "../box-profile";
-import { containerName } from "../labels";
+import type { BoxEgress, EgressPolicy } from "../egress/policy";
+import { containerName, egressNetworkName } from "../labels";
+import { badRequest } from "../lib/errors";
+import { msg } from "../lib/messages";
 import type { ContainerChange } from "../runtime";
 import type { BoxEnv, BoxMount, BoxSpec } from "./types";
 
@@ -15,10 +18,12 @@ export interface RebuildRequest {
   env?: BoxEnv[];
   network?: string;
   profile?: BoxProfile | null;
+  /** A checked policy (see `normalizeEgress`). Egress sets the box network, so it cannot come with `network`. */
+  egress?: EgressPolicy;
 }
 
 export interface RebuildChange {
-  field: "template" | "mounts" | "env" | "network" | "profile" | "containerName";
+  field: "template" | "mounts" | "env" | "network" | "egress" | "profile" | "containerName";
   from: string;
   to: string;
 }
@@ -44,6 +49,8 @@ export interface PlannedRebuild {
   mounts: BoxMount[];
   env: BoxEnv[];
   network: string;
+  /** The egress the box holds once rebuilt, on its private subnet. Null when it is open. */
+  egress: BoxEgress | null;
   profile: BoxProfile | null;
   /** `<prefix>-<id>`. Applied only when `changes` is not empty. */
   containerName: string;
@@ -64,6 +71,7 @@ export function hasRebuildFields(request: RebuildRequest): boolean {
     request.mounts !== undefined ||
     request.env !== undefined ||
     request.network !== undefined ||
+    request.egress !== undefined ||
     request.profile !== undefined
   );
 }
@@ -88,17 +96,23 @@ function canonEnv(env: BoxEnv[]): string {
 const shortImageId = (id: string): string => id.replace(/^sha256:/, "").slice(0, 12);
 
 /**
- * The rebuild a request would perform. Mounts, env, network and profile stay as they are when omitted.
+ * The rebuild a request would perform. Mounts, env, network, egress and profile stay as they are when omitted.
  * An empty request still follows a moved tag. The container is renamed to `<prefix>-<id>` only when something
  * else changes (decision D6). A moved tag is a template change, unless the request names another template:
  * that template is the one rebuilt onto.
+ *
+ * `egress` is the policy the box holds once rebuilt, which the service resolves because it allocates a subnet. A box
+ * that holds egress joins its own private network; a box that leaves egress joins `defaultNetwork`, the host's box
+ * network, unless it already runs on another network.
  */
 export function planRebuild(
   prefix: string,
   spec: BoxSpec,
   request: RebuildRequest,
-  moved: MovedTag | null = null,
-  rotated: readonly string[] = [],
+  moved: MovedTag | null,
+  rotated: readonly string[],
+  egress: BoxEgress | null,
+  defaultNetwork: string,
 ): PlannedRebuild {
   const changes: RebuildChange[] = [];
   const requestedRef =
@@ -127,9 +141,22 @@ export function planRebuild(
     changes.push({ field: "env", from: `secret ${name}: value in use`, to: `secret ${name}: new value` });
   }
 
-  const network = request.network ?? spec.network;
+  const ownNetwork = egressNetworkName(prefix, spec.id);
+  if (
+    request.network !== undefined &&
+    (request.egress !== undefined || (egress !== null && request.network !== ownNetwork))
+  ) {
+    throw badRequest(
+      msg("egress_needs_network", { mode: request.egress?.mode ?? egress?.mode ?? "open", network: request.network }),
+    );
+  }
+  const network = egress ? ownNetwork : (request.network ?? (spec.egress ? defaultNetwork : spec.network));
   if (request.network !== undefined && request.network !== spec.network) {
     changes.push({ field: "network", from: spec.network, to: network });
+  }
+
+  if (egressKey(spec.egress ?? null) !== egressKey(egress)) {
+    changes.push({ field: "egress", from: egressText(spec.egress ?? null), to: egressText(egress) });
   }
 
   const profile = request.profile !== undefined ? request.profile : spec.profile;
@@ -142,7 +169,17 @@ export function planRebuild(
     changes.push({ field: "containerName", from: spec.containerName, to: nextName });
   }
 
-  return { changes, templateRef, mounts, env, network, profile, containerName: nextName };
+  return { changes, templateRef, mounts, env, network, egress, profile, containerName: nextName };
+}
+
+/** The tier and the lists a policy enforces. The subnet is not part of the policy, so it is not part of the key. */
+const egressKey = (egress: BoxEgress | null): string =>
+  egress === null ? "open" : JSON.stringify([egress.mode, egress.presets, egress.domains, egress.allow]);
+
+/** The egress as a change shows it: its tier, and for proxy-only the hosts the proxy forwards to. */
+function egressText(egress: BoxEgress | null): string {
+  if (egress === null) return "open";
+  return egress.mode === "proxy-only" ? `proxy-only: ${egress.allow.join(", ") || "no hosts"}` : egress.mode;
 }
 
 export function previewOf(spec: BoxSpec, planned: PlannedRebuild, diff: ContainerChange[]): RebuildPreview {

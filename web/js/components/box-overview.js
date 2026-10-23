@@ -6,6 +6,7 @@ import { icon } from "../lib/icons.js";
 import { usageBar } from "../lib/ui.js";
 import { mountAgentCard } from "./box-agent.js";
 import { mountsCard } from "./box-volumes.js";
+import { mountEgressCard } from "./egress-card.js";
 import { mountEnvCard } from "./env-card.js";
 import { mountStartupCard } from "./startup-card.js";
 
@@ -47,7 +48,8 @@ function specBanners(box) {
 }
 
 export function mountOverview(root, { box, onChange }) {
-  root.innerHTML = `<div id="ovMain"></div><div id="ovAgent"></div><div id="ovEnv"></div><div id="ovStartup"></div><div id="ovMounts"></div>`;
+  root.innerHTML = `<div id="ovMain"></div><div id="ovEgress"></div><div id="ovAgent"></div><div id="ovEnv"></div><div id="ovStartup"></div><div id="ovMounts"></div>`;
+  const egress = mountEgressCard(root.querySelector("#ovEgress"), { box });
   const agent = mountAgentCard(root.querySelector("#ovAgent"), { box });
   const env = mountEnvCard(root.querySelector("#ovEnv"), { box });
   const startup = mountStartupCard(root.querySelector("#ovStartup"), { box });
@@ -102,6 +104,7 @@ export function mountOverview(root, { box, onChange }) {
     .catch(() => undefined);
   const off = onChange(() => {
     draw();
+    egress.onBoxChange();
     agent.onBoxChange();
     env.onBoxChange();
     startup.onBoxChange();
@@ -109,6 +112,7 @@ export function mountOverview(root, { box, onChange }) {
   return () => {
     open = false;
     off();
+    egress.dispose();
     agent.dispose();
     env.dispose();
     startup.dispose();

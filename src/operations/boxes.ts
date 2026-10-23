@@ -66,6 +66,7 @@ import {
   confirmFlag,
   cpusWithDefault,
   deleteVolumeFlag,
+  egressInput,
   expectedRevision,
   idleTimeout,
   safetyCheckpointFlag,
@@ -235,6 +236,7 @@ export const boxCreate = defineOperation({
     cpus: cpusWithDefault(DEFAULT_RESOURCES.cpus),
     memoryMb: memoryWithDefault(DEFAULT_RESOURCES.memoryMb),
     profile: boxProfile(),
+    egress: egressInput(),
     mounts: z
       .array(
         z.object({
@@ -286,7 +288,7 @@ export const boxCreate = defineOperation({
     toolset: "core",
     name: "create_box",
     description:
-      "Create and start a box from a template with the given CPU and memory limits and security profile. Optional selfToken gives the box's agent a self token, written to /run/minibox/self-token, for the self operations (see get_info); the token is rotated on every start and removed on stop. Optional repo clones a Git repository into /workspace once, on this first create: url, optional branch, and secretRef for a token or base64 deploy key, which is read from the secret store and never stored in the box. A template built from a devcontainer.json may also forward its ports and run its postCreateCommand once, in /workspace as dev; creating from it needs the exec scope for the command and port:expose for the ports. The setup runs as a task, returned as setup.taskId (clone.taskId as well when repo is given), and the clone needs a writable /workspace. When the host lacks the template and another host holds it, an owner's create first copies the template there as a task, returned as sync.taskId, and waits for the copy. Optional host names the machine to create it on: a host id from list_hosts, or auto to pick the online host with the most room that holds the template (default local). Running boxes on a host may not book more CPU or memory than the host has times its overcommit ratio, checked on a control plane with more than one host. Omitting the profile uses the host default. Omitting mounts creates workspace, home, tools and cache volumes. An empty mounts list creates a box with no mounts. Optional idleTimeoutSec (0 disables sleep) and ttlSec set lifecycle. Optional tools is a list of catalog ids recorded on the spec; call reconcile_tools afterwards to install them. Optional env entries are { name, value } for a plain value or { name, secretRef } for a secret set with the secret API; a secret that is not set fails the create, and a reference needs the secret:use scope. Optional startupCommand is a shell command the box runs at every start, through bash -lc in /workspace; it needs the exec and secret:use scopes, and get_startup_command reads it back. A box created from a template does not inherit a startup command unless one is passed. Mounting an existing volume requires volume:attach. A read-write mount, and the workspace, home and cache volumes a new box creates, also require volume:write.",
+      "Create and start a box from a template with the given CPU and memory limits and security profile. Optional selfToken gives the box's agent a self token, written to /run/minibox/self-token, for the self operations (see get_info); the token is rotated on every start and removed on stop. Optional repo clones a Git repository into /workspace once, on this first create: url, optional branch, and secretRef for a token or base64 deploy key, which is read from the secret store and never stored in the box. A template built from a devcontainer.json may also forward its ports and run its postCreateCommand once, in /workspace as dev; creating from it needs the exec scope for the command and port:expose for the ports. The setup runs as a task, returned as setup.taskId (clone.taskId as well when repo is given), and the clone needs a writable /workspace. When the host lacks the template and another host holds it, an owner's create first copies the template there as a task, returned as sync.taskId, and waits for the copy. Optional host names the machine to create it on: a host id from list_hosts, or auto to pick the online host with the most room that holds the template (default local). Running boxes on a host may not book more CPU or memory than the host has times its overcommit ratio, checked on a control plane with more than one host. Omitting the profile uses the host default. Optional egress sets the box's network access: open (the default, which reaches the internet), none (a private network with no route out, while exec, SSH and preview still work), or proxy-only with presets and domains, which reach the internet only through a MiniBox proxy that logs each host it allows or refuses. Omitting mounts creates workspace, home, tools and cache volumes. An empty mounts list creates a box with no mounts. Optional idleTimeoutSec (0 disables sleep) and ttlSec set lifecycle. Optional tools is a list of catalog ids recorded on the spec; call reconcile_tools afterwards to install them. Optional env entries are { name, value } for a plain value or { name, secretRef } for a secret set with the secret API; a secret that is not set fails the create, and a reference needs the secret:use scope. Optional startupCommand is a shell command the box runs at every start, through bash -lc in /workspace; it needs the exec and secret:use scopes, and get_startup_command reads it back. A box created from a template does not inherit a startup command unless one is passed. Mounting an existing volume requires volume:attach. A read-write mount, and the workspace, home and cache volumes a new box creates, also require volume:write.",
   },
   hostFor: (ctx, input) => {
     if (input.host !== AUTO_HOST) return hostById(ctx, input.host ?? LOCAL_HOST_ID);
@@ -339,6 +341,7 @@ export const boxCreate = defineOperation({
           ttlSec: ttlFor(principal, input.ttlSec),
           tools: input.tools,
           startupCommand: input.startupCommand,
+          egress: input.egress,
           selfToken: input.selfToken,
         },
         record,
@@ -503,6 +506,7 @@ export const boxUpdate = defineOperation({
       mounts: rebuildMounts(),
       env: rebuildEnv(),
       network: rebuildNetwork(),
+      egress: egressInput(),
       profile: boxProfile(),
       expectedRevision: expectedRevision(),
     })
@@ -514,7 +518,7 @@ export const boxUpdate = defineOperation({
     toolset: "core",
     name: "update_box",
     description:
-      "Change a box in place: name, CPU, memory, process limit, labels, idle timeout or TTL. Pass expectedRevision, the box's current revision. Container labels are not changed. Template, mounts, env, network and profile are not applied in place: a difference returns 409 confirmation_required with a preview. Apply those with rebuild_box and confirm true. Attaching or detaching a volume rebuilds the box the same way, through attach_volume and detach_volume.",
+      "Change a box in place: name, CPU, memory, process limit, labels, idle timeout or TTL. Pass expectedRevision, the box's current revision. Container labels are not changed. Template, mounts, env, network, egress and profile are not applied in place: a difference returns 409 confirmation_required with a preview. Apply those with rebuild_box and confirm true. Attaching or detaching a volume rebuilds the box the same way, through attach_volume and detach_volume.",
   },
   precondition: ({ host }, input) => assertCapacity(host, input),
   hostFor: (ctx, input) => hostOfBox(ctx, input.id),
@@ -532,6 +536,7 @@ export const boxUpdate = defineOperation({
       mounts: input.mounts,
       env: input.env,
       network: input.network,
+      egress: input.egress,
       profile: input.profile,
     };
     const patch = inPlacePatch({
@@ -572,6 +577,7 @@ export const boxRebuild = defineOperation({
     mounts: rebuildMounts(),
     env: rebuildEnv(),
     network: rebuildNetwork(),
+    egress: egressInput(),
     profile: boxProfile(),
     confirm: confirmFlag(),
     safetyCheckpoint: safetyCheckpointFlag(),
@@ -589,7 +595,7 @@ export const boxRebuild = defineOperation({
     toolset: "rebuild",
     name: "rebuild_box",
     description:
-      "Rebuild a box when the template, mounts, env, network or security profile must change. Without confirm true, the call is refused and the result includes a preview of the docker diff and the planned changes. The writable layer, running processes and the container IP are lost. Volumes, the stable id, the name and revision history are kept. A confirmed rebuild renames the container to <prefix>-<id> (decision D6: claim does not rename). A box whose template is a tag follows the tag: when the tag names another image, the preview lists it as a template change, and a confirmed rebuild runs the box on that image. A secret's value is read at rebuild, so a secret changed since the box was built takes effect here. Before a confirmed rebuild, a checkpoint of the box's data is taken unless safetyCheckpoint is false; a failed rebuild is rolled back to the box as it was, and output.safety names the checkpoint. Pass expectedRevision, the box's current revision.",
+      "Rebuild a box when the template, mounts, env, network, egress or security profile must change. egress moves the box between open, none and proxy-only; the box keeps its private subnet when it stays private. Without confirm true, the call is refused and the result includes a preview of the docker diff and the planned changes. The writable layer, running processes and the container IP are lost. Volumes, the stable id, the name and revision history are kept. A confirmed rebuild renames the container to <prefix>-<id> (decision D6: claim does not rename). A box whose template is a tag follows the tag: when the tag names another image, the preview lists it as a template change, and a confirmed rebuild runs the box on that image. A secret's value is read at rebuild, so a secret changed since the box was built takes effect here. Before a confirmed rebuild, a checkpoint of the box's data is taken unless safetyCheckpoint is false; a failed rebuild is rolled back to the box as it was, and output.safety names the checkpoint. Pass expectedRevision, the box's current revision.",
   },
   hostFor: (ctx, input) => hostOfBox(ctx, input.id),
   resolve: ({ host }, input) => getBox(host, input.id),
@@ -602,6 +608,7 @@ export const boxRebuild = defineOperation({
       template: input.template,
       profile: input.profile,
       network: input.network,
+      egress: input.egress,
       mounts: input.mounts,
       env: envNames(input.env),
     }),
@@ -617,6 +624,7 @@ export const boxRebuild = defineOperation({
         mounts: input.mounts,
         env: input.env,
         network: input.network,
+        egress: input.egress,
         profile: input.profile,
       },
       input.confirm,

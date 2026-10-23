@@ -48,7 +48,7 @@ For a quicker local run, `bun run check:quick` runs the same three static checks
 | `bun run test:site` | Chromium | Browser tests for the homepage. |
 | `bun run screenshots` | Docker and Chromium | Captures the console screenshots for the README and the homepage. Not part of CI. See [Screenshots](#screenshots). |
 
-`bun run test:docker` runs nine test files, one process each. Every run uses its own label prefix, which starts with `mbit`, and removes the containers, images, volumes and networks it created, even when a test fails. `DOCKER_SOCKET` selects another Docker socket. `MINIBOX_TEST_IMAGE` replaces the default test image, `alpine:3.20`.
+`bun run test:docker` runs the real-engine test files listed in `scripts/docker-integration.ts`, one process each. Every run uses its own label prefix, which starts with `mbit`, and removes the containers, images, volumes and networks it created, even when a test fails. `DOCKER_SOCKET` selects another Docker socket. `MINIBOX_TEST_IMAGE` replaces the default test image, `alpine:3.20`.
 
 To run one real-engine test file by itself, set `MINIBOX_TEST_DOCKER=1` and a `MINIBOX_TEST_PREFIX` that matches `mbit` followed by 3 to 40 lowercase letters, digits or hyphens:
 

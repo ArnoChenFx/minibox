@@ -156,6 +156,7 @@ async function planMove(from: HostCtx, to: HostCtx, box: Box, spec: BoxSpec, rev
   if (spec.hostId !== from.host.id) throw notFound(msg("box_not_found"));
   if (spec.revision !== revision) throw revisionMismatch(spec.revision, revision);
   if (to.host.id === from.host.id) throw badRequest(msg("move_same_host", { host: to.host.id }), { field: "host" });
+  if (spec.egress) throw conflict(msg("egress_move_refused", { box: box.name, mode: spec.egress.mode }));
   if (from.host.transport === "agent" || to.host.transport === "agent") {
     throw new AppError(501, "unsupported", msg("move_agent_unsupported"));
   }
@@ -326,6 +327,7 @@ async function runMove(
       mounts,
       env: spec.env,
       network: spec.network,
+      egress: null,
       profile: spec.profile,
       containerName: name,
     };

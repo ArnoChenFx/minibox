@@ -234,3 +234,94 @@ describe("volumes", () => {
     expect(runtime.volumeOwners.get("data")).toEqual({ uid: 1000, gid: 1000 });
   });
 });
+
+describe("networks", () => {
+  test("an internal bridge with a subnet is created as the caller asked", async () => {
+    const { executor, frames, runtime } = setup();
+    await executor.request("n1", "ensureBridgeNetwork", {
+      name: "mbx-egress-a",
+      opts: { interContainerComm: true, internal: true, subnet: "240.0.8.0/28" },
+    });
+    expect(responseTo(frames, "n1")).toMatchObject({ ok: true });
+    expect(runtime.networks.get("mbx-egress-a")).toMatchObject({ internal: true, subnets: ["240.0.8.0/28"] });
+  });
+
+  test("a subnet that is not an IPv4 CIDR is refused before the runtime runs", async () => {
+    const { executor, frames, runtime } = setup();
+    await executor.request("n2", "ensureBridgeNetwork", {
+      name: "mbx-egress-a",
+      opts: { interContainerComm: true, subnet: "240.0.8.0/33" },
+    });
+    expect(responseTo(frames, "n2")).toMatchObject({ ok: false, error: { kind: "invalid" } });
+    expect(runtime.ops()).toEqual([]);
+  });
+
+  test("a host firewall source list that is not a list of IPv4 CIDRs is refused before the runtime runs", async () => {
+    const { executor, frames, runtime } = setup();
+    await executor.request("n3", "setHostIngressBlock", { owner: "mbx", sources: ["240.0.0.0/12", "not-a-network"] });
+    expect(responseTo(frames, "n3")).toMatchObject({ ok: false, error: { kind: "invalid" } });
+    await executor.request("n4", "setHostIngressBlock", {
+      owner: "mbx",
+      sources: Array.from({ length: 4097 }, () => "240.0.0.0/12"),
+    });
+    expect(responseTo(frames, "n4")).toMatchObject({ ok: false, error: { kind: "invalid" } });
+    expect(runtime.ops()).toEqual([]);
+  });
+
+  test("a host firewall source outside the egress pool must be the subnet of a network on the engine", async () => {
+    const { executor, frames, runtime } = setup();
+    runtime.seedNetwork("mbx-boxes");
+    const boxes = runtime.networks.get("mbx-boxes");
+    if (boxes) boxes.subnets = ["172.30.0.0/16"];
+    const many = Array.from({ length: 64 }, (_, i) => `240.0.${i + 1}.0/28`);
+    await executor.request("f1", "setHostIngressBlock", { owner: "mbx", sources: [...many, "172.30.0.0/16"] });
+    expect(responseTo(frames, "f1")).toMatchObject({ ok: true });
+    expect(runtime.hostIngressBlock).toEqual([...many, "172.30.0.0/16"]);
+    expect(runtime.hostIngressOwner).toBe("mbx");
+
+    for (const [id, source] of [
+      ["f2", "0.0.0.0/0"],
+      ["f3", "240.0.0.0/8"],
+      ["f4", "172.30.0.0/15"],
+    ] as const) {
+      await executor.request(id, "setHostIngressBlock", { owner: "mbx", sources: ["240.0.1.0/28", source] });
+      expect(responseTo(frames, id)).toMatchObject({ ok: false, error: { kind: "invalid" } });
+    }
+    expect(runtime.hostIngressBlock).toEqual([...many, "172.30.0.0/16"]);
+  });
+
+  test("a container is connected to a second network with its alias, and listed networks come back with their subnets", async () => {
+    const { executor, frames, runtime } = setup();
+    runtime.seedImage("alpine:3.20");
+    runtime.seedNetwork("mbx-uplink");
+    const { id } = await runtime.createContainer({ image: "alpine:3.20", name: "proxy" });
+    await executor.request("n5", "connectNetwork", {
+      containerId: id,
+      name: "mbx-uplink",
+      opts: { alias: "minibox-proxy" },
+    });
+    expect(responseTo(frames, "n5")).toMatchObject({ ok: true });
+    expect(runtime.callsTo("connectNetwork")).toHaveLength(1);
+
+    await executor.request("n6", "listNetworks", {});
+    expect(responseTo(frames, "n6")).toMatchObject({
+      ok: true,
+      result: [{ name: "mbx-uplink", subnets: [] }],
+    });
+  });
+
+  test("a network with a running container attached is a conflict, and one with only stopped containers is removed", async () => {
+    const { executor, frames, runtime } = setup();
+    runtime.seedImage("alpine:3.20");
+    runtime.seedNetwork("mbx-egress-b");
+    runtime.seedContainer({ image: "alpine:3.20", network: "mbx-egress-b", running: true });
+    await executor.request("n7", "removeNetwork", { name: "mbx-egress-b" });
+    expect(responseTo(frames, "n7")).toMatchObject({ ok: false, error: { kind: "conflict" } });
+
+    runtime.seedNetwork("mbx-egress-c");
+    runtime.seedContainer({ image: "alpine:3.20", network: "mbx-egress-c", running: false });
+    await executor.request("n8", "removeNetwork", { name: "mbx-egress-c" });
+    expect(responseTo(frames, "n8")).toMatchObject({ ok: true });
+    expect(runtime.networks.has("mbx-egress-c")).toBe(false);
+  });
+});

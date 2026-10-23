@@ -1,4 +1,5 @@
 import type { DataLayer } from "../checkpoints/types";
+import { normalizeEgress } from "../egress/policy";
 import type { HostCtx } from "../host/registry";
 import { abortError } from "../lib/abort";
 import { conflict } from "../lib/errors";
@@ -138,6 +139,7 @@ export async function forkFrom(
         mounts,
         ttlSec: input.ttlSec,
         templateLabel: spec.template.ref,
+        ...(spec.egress ? { egress: normalizeEgress(spec.egress) } : {}),
       },
       record,
     );
