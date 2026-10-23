@@ -2,7 +2,7 @@ import { z } from "zod";
 
 import type { HostCtx } from "../host/registry";
 import { type ErrorCode, AppError, notFound } from "../lib/errors";
-import { msg } from "../lib/messages";
+import { type MessageKey, msg } from "../lib/messages";
 import { assertNoSecretInImage } from "../secrets/env";
 import { getBox } from "../services/boxes";
 import { createDeclaredTemplate, declaredTemplate, rebuildDeclaredTemplate } from "../services/template-builds";
@@ -16,6 +16,7 @@ import {
   promoteSnapshot,
   saveBoxAsTemplate,
 } from "../services/templates";
+import type { TaskError } from "../tasks/types";
 import { templateVisible } from "../tokens/model";
 import { defineOperation } from "./define";
 import { fromEveryHost, hostById, hostNamed, hostOfBox, hostOfImage, imageHosts, refuseAgent } from "./routing";
@@ -297,11 +298,16 @@ export async function ensureTemplateOn(
   }
   await ctx.tasks.done(taskId);
   const finished = ctx.tasks.get(taskId, { output: false });
-  if (finished?.status !== "succeeded") {
-    const error = finished?.error;
-    throw new AppError(error?.status ?? 502, (error?.code ?? "docker_error") as ErrorCode, error?.message ?? "");
-  }
+  if (finished?.status !== "succeeded") throw copyFailure(finished?.error);
   return { taskId };
+}
+
+/** The error a failed copy gives its create, with the copy's own message key so the console can translate it. */
+function copyFailure(error: TaskError | undefined): AppError {
+  if (!error)
+    return new AppError(502, "docker_error", msg("docker_error", { detail: "the template copy did not finish" }));
+  const message = error.key ? msg(error.key as MessageKey, error.params) : error.message;
+  return new AppError(error.status, error.code as ErrorCode, message);
 }
 
 function runningTaskOf(details: unknown): string | undefined {

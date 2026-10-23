@@ -1227,6 +1227,18 @@
                         "taskId"
                       ],
                       "additionalProperties": false
+                    },
+                    "sync": {
+                      "type": "object",
+                      "properties": {
+                        "taskId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "taskId"
+                      ],
+                      "additionalProperties": false
                     }
                   },
                   "required": [
