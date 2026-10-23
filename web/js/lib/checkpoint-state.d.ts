@@ -44,6 +44,7 @@ export interface RowActions {
 export interface RowState {
   held?: boolean;
   pending?: boolean;
+  elsewhere?: boolean;
 }
 
 export interface Usage {
