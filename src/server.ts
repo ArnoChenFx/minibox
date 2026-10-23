@@ -171,6 +171,7 @@ async function dispatch(app: App, req: Request, url: URL, server: Server<SocketD
     const { host, box: found } = await locateBox(app.hosts, decodeURIComponent(tm[1] ?? ""));
     const principal = caller.principal;
     const source: Source = caller.sessionId ? "ui" : "rest";
+    if (principal.type === "box-self") throw refusal("box_out_of_scope");
     if (
       principal.type === "token" &&
       (!scopeAllowed(principal.grants, "box:session") || !boxVisible(principal, viewOfBox(found, host.host.id)))

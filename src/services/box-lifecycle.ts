@@ -14,6 +14,7 @@ import type { VolumeRecord } from "../volumes/types";
 import type { Box, StartOptions, EnsureResult, DeleteBoxOptions, DeleteBoxResult } from "./box-model";
 import { attachToBoxNetwork } from "./box-network";
 import { getBox } from "./box-query";
+import { deliverSelfToken } from "./self-token";
 import { launchStartup } from "./startup";
 
 /** Bumps the revision only when the desired state actually changes, so a reconcile does not invalidate If-Match. */
@@ -88,6 +89,7 @@ export async function startLocked(host: HostCtx, box: Box, options: StartOptions
   await attachToBoxNetwork(host, box);
   await host.runtime.startContainer(box.id);
   await setDesired(host, box.boxId, "running", null);
+  if (!box.running || !host.selfTokens.has(box.boxId)) await deliverSelfToken(host, box.boxId, box.id);
   await host.sampler.observe(box.id);
   host.pulse.touch(box.boxId, "wake");
   if (!box.running) await launchStartup(host, box.id, host.specs.read(box.boxId)?.startupCommand);
@@ -128,6 +130,7 @@ export async function wakeIfSleeping(host: HostCtx, ref: string, options: StartO
 /** Stops the box for a caller that already holds its power lock (see `locked`). */
 export async function stopLocked(host: HostCtx, box: Box, reason?: StopReason): Promise<void> {
   await host.runtime.stopContainer(box.id, { timeoutSec: host.stopTimeoutSec });
+  host.selfTokens.revoke(box.boxId);
   const existing = host.specs.read(box.boxId)?.lifecycle.stopReason ?? null;
   // Omitted reason: keep an existing idle/ttl reason (reconcile), otherwise mark manual.
   const next: StopReason = reason ?? existing ?? "manual";
@@ -166,8 +169,10 @@ export async function restartBox(host: HostCtx, ref: string): Promise<Box> {
     assertMountsWithinLimits(host, host.specs.read(box.boxId)?.mounts ?? box.mounts);
     await ensureRunningStorage(host, box);
     await attachToBoxNetwork(host, box);
+    host.selfTokens.revoke(box.boxId);
     await host.runtime.restartContainer(box.id, { timeoutSec: host.stopTimeoutSec });
     await setDesired(host, box.boxId, "running", null);
+    await deliverSelfToken(host, box.boxId, box.id);
     await host.sampler.observe(box.id);
     // Same as a start: clear a stale idle heartbeat so LifecycleWatcher does not re-sleep the box at once.
     host.pulse.touch(box.boxId, "wake");
@@ -195,6 +200,7 @@ export async function deleteBox(
     try {
       await host.specs.exclusive(async () => {
         await host.runtime.removeContainer(box.id, { force: true });
+        host.selfTokens.revoke(box.boxId);
         host.specs.retire(box.id);
         host.specs.remove(box.boxId);
       });
@@ -202,6 +208,7 @@ export async function deleteBox(
       if (trash !== null && box.running) await restartAfterFailedDelete(host, box);
       throw e;
     }
+    host.questions.forget(box.boxId);
     await host.sampler.observe(box.id);
     host.pulse.clear(box.boxId);
     const result: DeleteBoxResult = { name: box.name, volumeDeleted: false, trash };

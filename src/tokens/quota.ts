@@ -1,6 +1,7 @@
-import type { OperationContext, TokenPrincipal } from "../operations/types";
+import type { OperationContext, Principal, TokenPrincipal } from "../operations/types";
 import type { BoxSpec } from "../specs/types";
 import { ownedBoxes, refusal } from "./model";
+import { SELF_QUOTA } from "./self-policy";
 
 const MB = 1024 * 1024;
 
@@ -110,10 +111,15 @@ export function underQuota<T>(
  * policy bounds those per box, and a rollback takes them, not the token. The store is shared by every host, so one
  * listing counts them all.
  */
+function checkpointLimit(principal: Principal): number | null {
+  if (principal.type === "box-self") return SELF_QUOTA.maxCheckpoints;
+  if (principal.type === "token") return principal.grants.quotas.maxCheckpoints;
+  return null;
+}
+
 export function assertCheckpointQuota(ctx: Pick<OperationContext, "principal" | "host">): void {
   const { principal } = ctx;
-  if (principal.type !== "token") return;
-  const max = principal.grants.quotas.maxCheckpoints;
+  const max = checkpointLimit(principal);
   if (max === null) return;
   const taken = ctx.host.checkpoints
     .list()
@@ -123,14 +129,14 @@ export function assertCheckpointQuota(ctx: Pick<OperationContext, "principal" | 
 
 /**
  * Checks the token's checkpoint quota and then runs `work`, both inside the token's queue for checkpoints, so two takes
- * by one token cannot both pass the last place. The owner, and a token with no checkpoint limit, run `work` directly.
+ * by one token cannot both pass the last place. The owner, and a principal with no checkpoint limit, run `work` directly.
  */
 export function underCheckpointQuota<T>(
   ctx: Pick<OperationContext, "principal" | "host">,
   work: () => Promise<T>,
 ): Promise<T> {
   const { principal } = ctx;
-  if (principal.type !== "token" || principal.grants.quotas.maxCheckpoints === null) return work();
+  if (checkpointLimit(principal) === null) return work();
   return serialized(`checkpoint-quota:${principal.id}`, async () => {
     assertCheckpointQuota(ctx);
     return work();

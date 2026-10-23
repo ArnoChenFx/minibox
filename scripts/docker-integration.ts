@@ -3,7 +3,8 @@
  * tests/docker-sessions.test.ts, tests/docker-startup-command.test.ts, tests/docker-ssh.test.ts,
  * tests/docker-templates.test.ts, tests/docker-declared-templates.test.ts, tests/docker-tools.test.ts,
  * tests/docker-hosts.test.ts, tests/docker-remote-host.test.ts, tests/docker-move.test.ts, tests/docker-agent.test.ts,
- * tests/docker-files.test.ts and tests/docker-trash.test.ts) against the local Docker engine, one file per process.
+ * tests/docker-files.test.ts, tests/docker-trash.test.ts and tests/docker-self-token.test.ts) against the local Docker
+ * engine, one file per process.
  *
  *   bun run test:docker
  *
@@ -105,6 +106,7 @@ const TEST_FILES = [
   "tests/docker-agent.test.ts",
   "tests/docker-files.test.ts",
   "tests/docker-trash.test.ts",
+  "tests/docker-self-token.test.ts",
 ];
 
 /**

@@ -11,6 +11,7 @@ export const NOTICE_KINDS = {
   "box.ttl_soon": { summary: "A box's TTL is about to end, so it will stop.", priority: 3, tag: "hourglass" },
   "box.idle_soon": { summary: "A box is about to sleep for being idle.", priority: 3, tag: "zzz" },
   "session.takeover": { summary: "A person took over an agent's terminal session.", priority: 3, tag: "eyes" },
+  "agent.question": { summary: "A box's agent asked a person a question.", priority: 4, tag: "question" },
   "host.offline": { summary: "A host stopped answering.", priority: 4, tag: "warning" },
   "volume.usage_high": {
     summary: "A volume passed its soft usage limit. The limit is best effort, not a quota.",

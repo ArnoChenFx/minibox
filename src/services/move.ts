@@ -24,6 +24,7 @@ import { type Progress, underBox } from "./checkpoints";
 import { needsImage, sendImage } from "./image-transfer";
 import { beginMove } from "./moving";
 import { assertFresh, containerSpec, movedTag } from "./rebuild";
+import { provisionSelfToken } from "./self-token";
 import { launchStartup } from "./startup";
 
 /** What a move keeps. Volumes are copied to the target, or attached again where the storage is shared. */
@@ -100,6 +101,8 @@ interface MovePlan {
 interface RunState {
   created: string | null;
   paused: boolean;
+  /** The box's self token was issued on the target, which replaces the source's: undo must issue the source a new one. */
+  tokenIssued: boolean;
 }
 
 /** The 409 a move answers without `confirm`. It carries the preview, and nothing has changed. */
@@ -292,7 +295,7 @@ async function runMove(
   const { spec } = plan;
   const oldId = spec.containerId;
   const changes = new VolumeChanges();
-  const state: RunState = { created: null, paused: false };
+  const state: RunState = { created: null, paused: false, tokenIssued: false };
   const say = (text: string) => progress?.log?.(`${text}\n`);
   let moved: MovedVolumes = { resolved: new Map(), copies: [], remounts: [] };
   try {
@@ -334,9 +337,14 @@ async function runMove(
       await to.runtime.startContainer(created.id);
       const started = await to.runtime.inspectContainer(created.id);
       if (!started.running) throw new AppError(502, "docker_error", msg("move_start_failed", { host: to.host.id }));
+      if (spec.selfToken) {
+        state.tokenIssued = true;
+        await provisionSelfToken(to, { boxId: spec.id, name: spec.name }, created.id);
+      }
     }
     throwIfCancelled(progress);
     await commitMove(from, to, spec.id, revision, { containerId: created.id, containerName: name, mounts, template });
+    if (!plan.starts) to.selfTokens.revoke(spec.id);
     if (plan.starts) await launchStartup(to, created.id, spec.startupCommand);
     say(`The box now runs on ${to.host.id}.`);
   } catch (e) {
@@ -570,10 +578,14 @@ async function undoMove(
       }
     }
   }
+  if (state.tokenIssued) to.selfTokens.revoke(spec.id);
   await changes.rollback();
   if (state.paused) {
     try {
       await from.runtime.unpauseContainer(oldId);
+      if (state.tokenIssued) {
+        await provisionSelfToken(from, { boxId: spec.id, name: spec.name }, oldId);
+      }
     } catch (e) {
       log.warn("box.move_rollback_failed", { id: spec.id, container: oldId, error: String(e) });
     }

@@ -257,6 +257,22 @@ export default {
   "err.token_limit": "At most {max} live tokens can exist. Revoke one, then create another.",
   "err.token_rate_limited": "This token has used its rate limit. Try again in a moment.",
   "err.box_out_of_scope": "This credential cannot use that box.",
+  "err.box_taken_over": "A person has taken over box {name}, so the agent may not take a checkpoint of it now.",
+  "err.box_taken_over_hint": "A person is working in this box. Try again once they have finished.",
+  "err.self_token_host_unsupported":
+    "A self token cannot be given to a box on this host, because a paired host agent cannot write a file into a box.",
+  "err.question_not_found": "Question {id} does not exist.",
+  "err.question_answered": "Question {id} has already been answered.",
+  "err.question_option_invalid": "The answer must be one of the options the question offered.",
+  "err.question_answer_long": "The answer is too long.",
+  "err.question_limit": "This box already has {max} unanswered questions. Wait for a person to answer one.",
+  "err.question_limit_total": "The question log holds {max} unanswered questions. Answer one before asking another.",
+  "err.question_message_invalid": "A question needs a message of 1 to {max} characters.",
+  "err.question_options_invalid":
+    "Options must be up to {max} different choices, each one line of 1 to {length} characters, or none for a free-text answer.",
+  "err.question_answer_invalid": "An answer needs 1 to {max} characters.",
+  "err.self_state_invalid": "The state must be one of {states}.",
+  "err.self_note_invalid": "A note needs 1 to {max} characters on one line.",
   "err.volume_not_granted":
     "This credential cannot mount the volume “{volume}”. It needs volume:attach on that volume.",
   "err.host_not_granted": "This credential cannot use host “{host}”.",

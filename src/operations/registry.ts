@@ -10,7 +10,9 @@ import { imageOperations } from "./images";
 import { notifyOperations } from "./notify";
 import { operationIdOf } from "./openapi";
 import { portOperations } from "./ports";
+import { questionOperations } from "./questions";
 import { secretOperations } from "./secrets";
+import { selfOperations } from "./self";
 import { sessionOperations } from "./sessions";
 import { snapshotOperations } from "./snapshots";
 import { startupOperations } from "./startup";
@@ -47,6 +49,8 @@ export const OPERATIONS: readonly Operation[] = [
   ...tokenOperations,
   ...hostOperations,
   ...notifyOperations,
+  ...selfOperations,
+  ...questionOperations,
 ];
 
 const OPERATION_NAME = /^[a-z]+(\.[a-z]+)+$/;

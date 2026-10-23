@@ -7,6 +7,7 @@ import type { BoxSpec } from "../specs/types";
 import { claimEngineVolumes } from "../volumes/engine";
 import { sleepBox, startBox, stopBox } from "./boxes";
 import { settlePendingRollbacks } from "./rollback";
+import { deliverSelfToken } from "./self-token";
 
 export interface ReconcileReport {
   /** Stable ids of containers that had no spec file and were claimed on this pass. */
@@ -141,6 +142,10 @@ async function converge(host: HostCtx, info: ContainerInfo, spec: BoxSpec, repor
   } else if (spec.lifecycle.desired === "stopped" && info.running) {
     await stopBox(host, spec.id);
     report.stopped.push(spec.id);
+  } else if (!info.running) {
+    host.selfTokens.revoke(spec.id);
+  } else if (!host.selfTokens.has(spec.id)) {
+    await deliverSelfToken(host, spec.id, info.id);
   }
 }
 

@@ -238,3 +238,34 @@ describe("volume and host notices", () => {
     expect(noticeOfEvent(eventOf({ op: "host.disk_low", target: notes, detail: {} }))).toBeNull();
   });
 });
+
+describe("questions a box's agent asks", () => {
+  test("a question is agent.question, named by the box, with its message and options", () => {
+    expect(
+      noticeOfEvent(
+        eventOf({
+          op: "self.ask",
+          target: alpha,
+          detail: { boxId: "bx_alpha", message: "Ship the release?", options: ["yes", "no"] },
+        }),
+      ),
+    ).toEqual({
+      kind: "agent.question",
+      title: "Question from the agent in alpha",
+      body: "Ship the release?\nOptions: yes, no",
+      box: { name: "alpha", ids: ["bx_alpha", "cid-alpha"] },
+      at: TS,
+    });
+  });
+
+  test("a free-text question has only its message as the body, and a refused one is not a notice", () => {
+    expect(
+      noticeOfEvent(eventOf({ op: "self.ask", target: alpha, detail: { boxId: "bx_alpha", message: "Anything?" } })),
+    ).toMatchObject({ kind: "agent.question", body: "Anything?" });
+    expect(
+      noticeOfEvent(
+        eventOf({ op: "self.ask", status: "denied", target: alpha, detail: { boxId: "bx_alpha", message: "Refused" } }),
+      ),
+    ).toBeNull();
+  });
+});

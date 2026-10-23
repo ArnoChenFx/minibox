@@ -1,6 +1,6 @@
 # Notifications
 
-MiniBox can tell you about a problem without you watching the console. It sends a short message to a **webhook**, an **ntfy** topic or a **Telegram** chat when a box runs out of memory, a command fails, a box is about to stop or sleep, a terminal session is taken over, or a host goes offline.
+MiniBox can tell you about a problem without you watching the console. It sends a short message to a **webhook**, an **ntfy** topic or a **Telegram** chat when a box runs out of memory, a command fails, a box is about to stop or sleep, a terminal session is taken over, a host goes offline, or a box's agent asks you a question.
 
 Only the owner sets up notifications, in **Settings**, under **Notifications**. A failed send never stops the action that caused it.
 
@@ -14,12 +14,11 @@ Only the owner sets up notifications, in **Settings**, under **Notifications**. 
 | `box.ttl_soon` | A box's TTL ends within 5 minutes, so the box will stop. |
 | `box.idle_soon` | A box will sleep for being idle within 5 minutes. |
 | `session.takeover` | A person took over an agent's terminal session. |
+| `agent.question` | A box's agent asked a person a question. The notice gives the question. Answer it on the box's page. See [A box's own agent](agents.md#a-boxs-own-agent). |
 | `host.offline` | A host that was online stopped answering. A host that is already down when MiniBox starts does not send one. |
 | `volume.usage_high` | A volume reaches its soft usage limit. The limit is best effort, not a quota. See [Volumes and storage](volumes-and-storage.md#soft-and-hard-limits). |
 | `volume.usage_limit` | A volume reaches its hard usage limit. The notice gives the reason and the action, and names the boxes that were stopped. |
 | `host.disk_low` | The host disk falls below its free-space minimum, so new volumes and checkpoints are refused. |
-
-Questions from agents are not sent yet.
 
 ## Set up a channel
 
@@ -71,7 +70,7 @@ const valid = expected.length === received.length && timingSafeEqual(Buffer.from
 
 ### ntfy
 
-MiniBox posts the notice to `<server>/<topic>`. The **ntfy server** defaults to `https://ntfy.sh`. The text is the title, then a new line and the body. The title is sent in a header, which allows only printable ASCII, so other characters appear as `?`. Each notice has a priority: 4 for `box.oom`, `checkpoint.failed`, `host.offline`, `volume.usage_limit` and `host.disk_low`, and 3 for the others. It also has a tag that matches the notice, such as `warning` or `zzz`.
+MiniBox posts the notice to `<server>/<topic>`. The **ntfy server** defaults to `https://ntfy.sh`. The text is the title, then a new line and the body. The title is sent in a header, which allows only printable ASCII, so other characters appear as `?`. Each notice has a priority: 4 for `box.oom`, `checkpoint.failed`, `agent.question`, `host.offline`, `volume.usage_limit` and `host.disk_low`, and 3 for the others. It also has a tag that matches the notice, such as `warning` or `zzz`.
 
 Anyone who knows the topic can read it, so choose a name that is hard to guess. If the topic needs a token, give it as the **Access token**. MiniBox sends it as `Authorization: Bearer`.
 

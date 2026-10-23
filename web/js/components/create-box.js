@@ -205,6 +205,13 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
           <textarea class="textarea command-input" id="cbStartup" rows="2" spellcheck="false" placeholder="${esc(t("cb.startupPlaceholder"))}"></textarea>
           <div class="help">${t("cb.startupHelp")}</div>
           <div class="error-text" id="cbStartupErr"></div></div>`;
+  const selfTokenSection = snapshot
+    ? ""
+    : `<label class="check-row" id="cbSelfTokenRow">
+        <input class="sr-only" type="checkbox" id="cbSelfToken" />
+        <span class="check-mark" aria-hidden="true">${icon("check")}</span>
+        <span class="check-body"><span class="check-title"><strong>${t("cb.selfToken")}</strong></span><span class="help">${t("cb.selfTokenHelp")}</span></span>
+      </label>`;
   const repoSection = snapshot
     ? ""
     : `<details class="advanced" id="cbRepo">
@@ -250,6 +257,7 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
         <div class="slider-row"><input type="range" id="cbMemR" min="256" max="${maxMem}" step="256" /><input class="input" id="cbMem" type="number" min="128" max="${maxMem}" step="128" /></div>
         <div class="error-text" id="cbResErr"></div></div>
       <div id="cbCapacity"></div>
+      ${selfTokenSection}
       <details class="advanced" id="cbAdvanced">
         <summary>${t("cb.advancedSummary", { profile: t(`profile.${state.profile}`) })}</summary>
         <div class="field"><span class="label">${t("cb.profile")}</span>
@@ -584,6 +592,7 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
       if (env?.length) body.env = env;
       if (startupCommand !== undefined) body.startupCommand = startupCommand;
       if (repo) body.repo = repo;
+      if (q("#cbSelfToken")?.checked) body.selfToken = true;
       const selectedToolIds = [...selectedTools];
       if (selectedToolIds.length) body.tools = selectedToolIds;
       const copy = pendingCopy();

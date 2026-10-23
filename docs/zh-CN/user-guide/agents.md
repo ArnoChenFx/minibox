@@ -6,6 +6,8 @@ MiniBox 让 AI Agent 在 Box 内工作。Agent 可通过三种方式连接：
 - **`minibox` 命令行工具**，Agent 在其 shell 中运行。`minibox mcp` 在标准输入输出上启动 MCP 服务器，并转发到 `/mcp`。
 - **REST API**，供脚本和其他工具使用。见 [API 参考（英文）](../../reference/api.md)。
 
+Box 内还可以有自己的 Agent，它使用只对该 Box 有效的令牌连接 MiniBox。见 [Box 内的 Agent](#box-内的-agent)。
+
 每个 Agent 应使用 Agent 令牌，而不是访问密钥。访问密钥是所有者的密钥。拥有它的 Agent 可以在未使用 `strict` 档位的任意 Box 中以 root 运行命令，并可以删除和重建 Box。Agent 令牌只有你选择的权限。
 
 ## 为 Agent 创建令牌
@@ -53,6 +55,35 @@ Agent 不能查看或使用其令牌未允许的 Box、卷或宿主机。
 拍摄、列出、派生与回滚检查点仅通过 [REST API（英文）](../../reference/api.md) 提供。令牌需要 `checkpoint:create` 或 `checkpoint:restore` scope。
 
 检查点包的导出与导入，以及检查点计划的设置，仅限所有者，因此任何 Agent 令牌都不能执行它们。[MCP 参考（英文）](../../reference/mcp.md) 列出了执行这些操作的存储工具。
+
+## Box 内的 Agent
+
+Box 内的 Agent 可以用它自己的**自助令牌**（self 令牌）使用 MiniBox。自助令牌默认关闭。创建 Box 时开启：在创建表单中勾选**为 Box 的 Agent 启用自助令牌**，对 `POST /api/boxes` 发送 `"selfToken": true`，或运行 `minibox box create <名称> --self-token`。
+
+- **存放位置。** MiniBox 把令牌写入 Box 内的 `/run/minibox/self-token`，权限为 600，位于内存文件系统中。令牌不在 Box 的环境变量、事件或镜像中，MiniBox 只保存它的哈希值。
+- **能访问的范围。** 只有它自己的 Box。Agent 可以读取 Box 的信息、为 Box 拍摄检查点、报告状态，并向你提问、读取你的回答。它不能访问其他 Box、密钥、令牌、宿主机或 API 的其余部分，也不能修改 Box 的规格或删除 Box。
+- **何时变化。** 每次启动都会给 Box 一个新令牌，因此重启或重建会替换旧令牌。停止或删除 Box 会使它失效。若想在 Box 运行时使其失效，在 Box 页面的 **Agent** 卡片中点击**吊销令牌**，或发送 `DELETE /api/boxes/{id}/self-token`。这会关闭该 Box 的功能，并且在重新创建带令牌的 Box 之前保持关闭。
+- **提问。** Agent 提出的问题会显示在 Box 页面的 **Agent** 卡片中，你可以在那里回复。若已设置通知，还会发送 `agent.question` 通知。Agent 不会等待你的回复，它会在此期间继续工作。一个 Box 最多保留 20 个未回答的问题。
+- **网络。** Agent 通过网络连接 MiniBox。Box 通过 `minibox-boxes` 网络的网关访问宿主机，因此 MiniBox 必须监听该网络能够访问的地址。`HOST` 不能保持为 `127.0.0.1`，Box 无法访问它。发行镜像监听 `0.0.0.0`。MiniBox 不会把自己的地址告诉 Box，需要你自己提供，例如在 Box 的环境变量中设置 `MINIBOX_URL`。用 `docker network inspect minibox-boxes` 查看网关地址。
+
+Agent 的 MCP 端点为 `/mcp`，只提供 `self` 工具集：`get_info`、`checkpoint`、`get_task`、`ask_human`、`get_question` 与 `report_status`。它的请求限制为每分钟 60 次，手动检查点限制为 20 个。见 [MCP 参考（英文）](../../reference/mcp.md#self-tools)。
+
+### 给 Box 内 Agent 的说明
+
+将以下内容粘贴到 Box 内项目的 `AGENTS.md` 中，让 Box 内的 Agent 了解它的自助令牌：
+
+```markdown
+## MiniBox self token
+
+This box has a MiniBox self token when `/run/minibox/self-token` exists. It reaches this box only.
+
+- `MINIBOX_URL` is the MiniBox address. If it is not set, ask the owner for it.
+- Call `$MINIBOX_URL/mcp` with `Authorization: Bearer` and the contents of `/run/minibox/self-token`. The tools are get_info, checkpoint, get_task, ask_human, get_question and report_status.
+- Call report_status when you start, when you wait for a person, and when you finish.
+- To ask a person something only they can answer, call ask_human and keep working. It does not wait for an answer: poll get_question for it.
+- Never print the token, write it to a file in /workspace, or commit it.
+- If a call returns 401, read the file again once. If it still fails, the owner has turned the token off: report failed and stop.
+```
 
 ## 停止 Agent
 

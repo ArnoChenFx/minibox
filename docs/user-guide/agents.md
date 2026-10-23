@@ -6,6 +6,8 @@ MiniBox lets AI agents work inside boxes. An agent can connect in three ways:
 - **The `minibox` command-line tool**, which the agent runs from its shell. `minibox mcp` starts an MCP server over standard input and output, and forwards it to `/mcp`.
 - **The REST API**, for scripts and other tools. See the [API reference](../reference/api.md).
 
+A box can also have its own agent, which reaches MiniBox with a token that works only for that box. See [A box's own agent](#a-boxs-own-agent).
+
 Use an agent token for each agent, not the access key. The access key is the owner's key. An agent with it can run commands as root in any box that does not use the `strict` profile, and it can delete and rebuild boxes. An agent token gives only the permissions that you choose.
 
 ## Create a token for an agent
@@ -53,6 +55,35 @@ An agent cannot see or use a box, a volume or a host that its token does not all
 Taking, listing, forking and rolling back checkpoints are available through the [REST API](../reference/api.md) only. A token needs the `checkpoint:create` or `checkpoint:restore` scope.
 
 Exporting and importing checkpoint packages, and setting a checkpoint schedule, are owner only, so no agent token can do them. The [MCP reference](../reference/mcp.md) lists the storage tools that do.
+
+## A box's own agent
+
+An agent inside a box can use MiniBox with its own **self token**, which is off by default. Turn it on when you create the box: tick **Give the box's agent a self token** in the create form, send `"selfToken": true` to `POST /api/boxes`, or run `minibox box create <name> --self-token`.
+
+- **Where it is.** MiniBox writes the token to `/run/minibox/self-token` in the box, with mode 600, on a memory filesystem. It is not in the box's environment, its events or its image, and MiniBox keeps only a hash of it.
+- **What it reaches.** Only its own box. The agent can read the box's details, take a checkpoint of the box, report its status, ask you a question and read your answer. It cannot reach another box, a secret, a token, a host or the rest of the API, and it cannot change the box's spec or delete the box.
+- **When it changes.** Each start gives the box a new token, so a restart or a rebuild replaces the old one. Stopping or deleting the box ends it. To end it while the box runs, click **Revoke token** in the **Agent** card on the box's page, or send `DELETE /api/boxes/{id}/self-token`. That turns the feature off for the box, and it stays off until the box is created again with a token.
+- **Questions.** The questions the agent asks appear in the **Agent** card on the box's page, where you reply. They also send an `agent.question` notice when notifications are set up. The agent does not wait for your reply, so it keeps working meanwhile. A box holds at most 20 unanswered questions.
+- **Network.** The agent calls MiniBox over the network. Boxes reach the host through the gateway of the `minibox-boxes` network, so MiniBox must listen on an address that network can reach. `HOST` must not stay on `127.0.0.1`, which a box cannot reach. The release image listens on `0.0.0.0`. MiniBox does not tell the box its address, so pass it yourself, for example as `MINIBOX_URL` in the box's environment. Find the gateway with `docker network inspect minibox-boxes`.
+
+The agent's MCP endpoint is `/mcp`. It offers only the `self` toolset: `get_info`, `checkpoint`, `get_task`, `ask_human`, `get_question` and `report_status`. Its requests are limited to 60 a minute, and its checkpoints to 20 manual ones. See the [MCP reference](../reference/mcp.md#self-tools).
+
+### Instructions for the box's agent
+
+Paste this into the `AGENTS.md` of the project in the box, so that its agent knows about the self token:
+
+```markdown
+## MiniBox self token
+
+This box has a MiniBox self token when `/run/minibox/self-token` exists. It reaches this box only.
+
+- `MINIBOX_URL` is the MiniBox address. If it is not set, ask the owner for it.
+- Call `$MINIBOX_URL/mcp` with `Authorization: Bearer` and the contents of `/run/minibox/self-token`. The tools are get_info, checkpoint, get_task, ask_human, get_question and report_status.
+- Call report_status when you start, when you wait for a person, and when you finish.
+- To ask a person something only they can answer, call ask_human and keep working. It does not wait for an answer: poll get_question for it.
+- Never print the token, write it to a file in /workspace, or commit it.
+- If a call returns 401, read the file again once. If it still fails, the owner has turned the token off: report failed and stop.
+```
 
 ## Stop an agent
 

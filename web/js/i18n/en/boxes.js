@@ -79,6 +79,11 @@ export default {
   "act.target.remove": "Removed off-site target",
   "act.target.push": "Pushed to off-site target",
   "act.target.pull": "Pulled from off-site target",
+  "act.self.checkpoint": "Agent took a checkpoint",
+  "act.self.ask": "Agent asked a question",
+  "act.self.status": "Agent reported its status",
+  "act.question.answer": "Answered agent question",
+  "act.box.self.revoke": "Revoked agent token",
   "box.create": "Create box",
   "bx.subtitle": "Each box is an isolated dev environment that agents can use via the terminal or the API.",
   "bx.search": "Search by name or template",
@@ -177,6 +182,9 @@ export default {
   "cb.startupHelp":
     "Runs every time the box starts, once its container is up, in /workspace as the box user. Leave it empty to run nothing.",
   "cb.startupPlaceholder": "npm run dev",
+  "cb.selfToken": "Give the box's agent a self token",
+  "cb.selfTokenHelp":
+    "The agent can then ask you questions and report its status, through a token that reaches this box only. The token is rotated on every start and removed on stop. Off by default.",
   "cb.submit": "Create and start",
   "cb.creating": "Creating…",
   "cb.cpuRange": "CPU must be between 0.1 and {max} cores.",

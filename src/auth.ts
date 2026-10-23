@@ -7,6 +7,7 @@ import { log } from "./lib/logger";
 import { msg } from "./lib/messages";
 import { OWNER, type Principal } from "./operations/types";
 import type { SessionStore } from "./sessions";
+import type { SelfTokenStore } from "./tokens/self-store";
 import type { TokenStore } from "./tokens/store";
 
 export const COOKIE_NAME = "minibox_session";
@@ -329,6 +330,7 @@ export interface CallerGate {
   readonly accessKey: string;
   readonly sessions: SessionStore;
   readonly tokens: TokenStore;
+  readonly selfTokens: SelfTokenStore;
   readonly throttle: LoginLimiter;
 }
 
@@ -345,6 +347,8 @@ export async function resolveCaller(req: Request, gate: CallerGate, address: str
   if (safeEqual(presented, gate.accessKey)) return { principal: OWNER, sessionId: null };
   const token = gate.tokens.authenticate(presented, address);
   if (token) return { principal: token, sessionId: null };
+  const self = gate.selfTokens.authenticate(presented);
+  if (self) return { principal: self, sessionId: null };
   const ip = rateLimitKey(address);
   const refused = gate.throttle.refuses(ip);
   gate.throttle.recordFailure(ip);
@@ -356,6 +360,12 @@ export async function resolveCaller(req: Request, gate: CallerGate, address: str
   return null;
 }
 
-export function callerGate(app: Pick<App, "cfg" | "sessions" | "tokens" | "throttle">): CallerGate {
-  return { accessKey: app.cfg.accessKey, sessions: app.sessions, tokens: app.tokens, throttle: app.throttle };
+export function callerGate(app: Pick<App, "cfg" | "sessions" | "tokens" | "selfTokens" | "throttle">): CallerGate {
+  return {
+    accessKey: app.cfg.accessKey,
+    sessions: app.sessions,
+    tokens: app.tokens,
+    selfTokens: app.selfTokens,
+    throttle: app.throttle,
+  };
 }

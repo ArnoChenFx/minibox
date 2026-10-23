@@ -121,6 +121,7 @@ export class SshGateway {
   private async authorize(host: HostCtx, ref: string, caller: Caller): Promise<{ box: Box; forward: boolean }> {
     if (caller.sessionId !== null) throw new AppError(401, "unauthorized", msg("ssh_bearer_required"));
     const { principal } = caller;
+    if (principal.type === "box-self") throw forbidden(msg("ssh_forbidden"), { hint: msg("ssh_forbidden_hint") });
     if (principal.type === "token" && !scopeAllowed(principal.grants, "box:ssh")) {
       throw forbidden(msg("ssh_forbidden"), { hint: msg("ssh_forbidden_hint") });
     }

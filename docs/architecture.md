@@ -130,6 +130,8 @@ Every path is under `DATA_DIR`.
 | `boxes/<id>.json` | `src/specs/store.ts` | Box specs, which are the desired state |
 | `volumes/<id>.json`, `pools.json` | `src/volumes/store.ts` | Volume records and storage pools |
 | `tokens.json`, `sessions.json`, `access_key` | `src/tokens/store.ts`, `src/sessions.ts`, `src/data-dir.ts` | Hashed agent tokens, browser sessions and the access key |
+| `self-tokens.json` | `src/tokens/self-store.ts` | Hashed self tokens of boxes, one per box. The secret is written only into the box, to `/run/minibox/self-token` |
+| `questions.json` | `src/questions/store.ts` | Questions that box agents asked, and their answers |
 | `secrets/env/` | `src/secrets/store.ts` | Host secrets |
 | `notify.json` | `src/notify/store.ts` | Notification channels: their settings and endpoints, never a secret or a webhook URL |
 | `secrets/notify/` | `src/notify/store.ts` | Notification channel secrets: signing keys, ntfy tokens, Telegram bot tokens and webhook URLs |
