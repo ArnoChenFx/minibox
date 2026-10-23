@@ -490,6 +490,8 @@ export function findSharedTools(host: HostCtx, poolName: string): VolumeRecord |
  * Returns false when the engine already has the volume.
  */
 export async function restoreSharedTools(host: HostCtx, volume: VolumeRecord, known: Set<string>): Promise<boolean> {
+  // Only the shared tools volume holds no user data. Workspace, home and cache volumes are never recreated.
+  if (!isSharedTools(host, volume)) return false;
   if ((await inspectVolumeOrNull(host, volume.engineName)) !== null) return false;
   const pool = host.volumes.readPools().pools.find((item) => item.name === volume.pool);
   if (!pool) throw notFound(msg("pool_not_found", { pool: volume.pool }));

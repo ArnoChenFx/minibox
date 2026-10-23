@@ -23,7 +23,7 @@ import {
   measureVolume,
   savePools,
 } from "../src/services/volumes";
-import { claimEngineVolumes, labelsFor } from "../src/volumes/engine";
+import { claimEngineVolumes, labelsFor, restoreSharedTools } from "../src/volumes/engine";
 import { parseDf, probePool, probePools } from "../src/volumes/health";
 import { DEV_OWNER, type StoragePool, type VolumeRecord } from "../src/volumes/types";
 import { createTestApp, rejectionOf, silenceLogs } from "./support/app";
@@ -637,6 +637,18 @@ describe("a lost shared tools volume is recreated", () => {
     const rebuilt = await rebuildBox(host, box.id, box.revision, { profile: "strict" }, true);
     expect(rebuilt.mounts).toContainEqual(expect.objectContaining({ volume: tools.engineName, role: "tools" }));
     expect(runtime.volumes.has(tools.engineName)).toBe(true);
+  });
+
+  test("restoring is refused for a workspace, home or cache record, so a lost data volume is never recreated", async () => {
+    const box = await newBox("alpha");
+    await boxes.stopBox(host, box.id);
+    for (const role of ["workspace", "home", "cache"] as const) {
+      const record = host.volumes.list().find((item) => item.role === role && item.ownerBoxId === box.boxId);
+      if (!record) throw new Error(`no ${role} record`);
+      runtime.volumes.delete(record.engineName);
+      expect(await restoreSharedTools(host, record, new Set())).toBe(false);
+      expect(runtime.volumes.has(record.engineName)).toBe(false);
+    }
   });
 
   test("reconcile recreates a lost shared tools volume once, and reports it only on the pass that did it", async () => {
