@@ -32,7 +32,7 @@ function openSet(root) {
 }
 
 /**
- * One line per box: icon | name, state and actor | command | time | actions. The last lines the command printed, and
+ * One line per box: icon | name | state | actor | command | time | actions. The last lines the command printed, and
  * the agent's note, sit behind a toggle under the line.
  */
 function progressRow(row, open) {
@@ -48,11 +48,11 @@ function progressRow(row, open) {
     <span class="watch-ico">${icon("terminal")}</span>
     <div class="watch-who">
       <a class="watch-name" href="#/boxes/${enc(box.id)}">${esc(box.name)}</a>
-      ${running ? `<span class="badge badge-success"><span class="dot"></span>${esc(t("ov.running"))}</span>` : ""}
-      <span class="subtle">${esc(who)}${hostSuffix(box.hostId)}</span>
+      <span class="watch-state">${running ? `<span class="badge badge-success"><span class="dot"></span>${esc(t("ov.running"))}</span>` : command ? `<span class="subtle">${esc(t("ov.lastCommand"))}</span>` : ""}</span>
+      <span class="subtle watch-actor">${esc(who)}${hostSuffix(box.hostId)}</span>
     </div>
     <div class="watch-cmd">
-      ${command ? `${running ? "" : `<span class="subtle">${esc(t("ov.lastCommand"))}</span>`}<code class="watch-code" title="${esc(command.text)}">${esc(command.text)}</code>` : note ? `<span class="subtle watch-code">${esc(note)}</span>` : ""}
+      ${command ? `<code class="watch-code" title="${esc(command.text)}">${esc(command.text)}</code>` : note ? `<span class="subtle watch-code">${esc(note)}</span>` : ""}
       ${session ? `<span class="watch-meta"><span class="tag">${esc(t("ov.session", { name: session }))}</span></span>` : ""}
       ${
         hasMore
@@ -83,7 +83,7 @@ function attentionRow(item) {
   const said = text ? t(text.key, text.params) : "";
   return `<li class="watch-row${error ? " is-error" : ""}">
     <span class="watch-ico${error ? " fail" : ""}">${icon(error ? "alertCircle" : "alert")}</span>
-    <div class="watch-who"><strong>${esc(label)}</strong><span class="subtle">${esc(item.subject)}${hostSuffix(item.hostId)}</span></div>
+    <div class="watch-who"><strong>${esc(label)}</strong><span class="subtle watch-actor">${esc(item.subject)}${hostSuffix(item.hostId)}</span></div>
     <div class="watch-cmd"><span class="watch-text subtle" title="${esc(said)}">${esc(said)}</span></div>
     <span class="time">${item.at ? esc(relTime(item.at)) : ""}</span>
     <div class="watch-actions">

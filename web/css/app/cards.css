@@ -77,23 +77,21 @@
 .metric-top .icon {
   color: var(--text-3);
 }
-/* The figure and its detail wrap as whole pieces, so a value like "11.3 GB / 15.6 GB" never breaks inside. */
 .metric-value {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  column-gap: 6px;
   font-size: 26px;
   font-weight: 650;
   letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
   line-height: 1.1;
 }
+/* The detail moves below the figure as a whole when the card is too narrow, so "11.3 GB / 15.6 GB" never breaks inside. */
 .metric-value small {
+  display: inline-block;
   white-space: nowrap;
   font-size: 13px;
   font-weight: 500;
   color: var(--text-3);
+  margin-left: 4px;
   letter-spacing: 0;
 }
 .metric-sub {

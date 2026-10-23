@@ -41,8 +41,8 @@
 #ovAttentionCard.is-empty .watch-empty span {
   color: var(--text-2);
 }
-/* Each row shares the list's columns, so the command, time and actions line up from row to row:
-   icon | name, state, actor | command | time | actions. */
+/* Each row shares the list's columns, so the name, state, actor, command, time and actions line up from row to row:
+   icon | name | state | actor | command | time | actions. */
 .watch-list {
   list-style: none;
   margin: 0;
@@ -51,7 +51,10 @@
   column-gap: 12px;
 }
 .watch-list {
-  grid-template-columns: max-content minmax(0, max-content) minmax(120px, 1fr) max-content max-content;
+  grid-template-columns: max-content max-content max-content minmax(0, max-content) minmax(
+      120px,
+      1fr
+    ) max-content max-content;
 }
 .watch-row {
   grid-column: 1 / -1;
@@ -80,18 +83,25 @@
   background: var(--danger-soft);
   color: var(--danger);
 }
+/* Name, state and actor take three of the list's columns. An attention row has no state, so its subject spans two. */
 .watch-who {
-  display: flex;
+  grid-column: 2 / span 3;
+  display: grid;
+  grid-template-columns: subgrid;
   align-items: center;
-  gap: 8px;
   min-width: 0;
   white-space: nowrap;
-  overflow: hidden;
 }
 .watch-who > * {
   min-width: 0;
 }
-.watch-who .subtle {
+.watch-who > strong + .watch-actor {
+  grid-column: span 2;
+}
+.watch-state {
+  display: inline-flex;
+}
+.watch-actor {
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -224,6 +234,12 @@
   }
   .watch-who {
     grid-area: who;
+    display: flex;
+    gap: 8px;
+    overflow: hidden;
+  }
+  .watch-state:empty {
+    display: none;
   }
   .watch-row .time {
     grid-area: time;
@@ -238,23 +254,5 @@
   }
   .watch-detail {
     grid-area: detail;
-  }
-}
-/* A phone keeps the capacity cards two to a row, so the watch lists come up without a long scroll. */
-@media (max-width: 560px) {
-  #ovMetrics {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 10px;
-  }
-  #ovMetrics .metric {
-    min-height: 0;
-    padding: 12px 14px;
-    gap: 8px;
-  }
-  #ovMetrics .metric-value {
-    font-size: 22px;
-  }
-  #ovMetrics .metric-value small {
-    font-size: 12px;
   }
 }
