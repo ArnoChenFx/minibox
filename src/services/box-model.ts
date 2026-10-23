@@ -30,6 +30,8 @@ export interface CreateBoxInput {
   tools?: string[];
   /** Runs in the box's init session at every start. Absent means none. Templates and snapshots never pass one. */
   startupCommand?: string;
+  /** Give the box's agent a `self` token, delivered as a file in the box. Absent or false means none. */
+  selfToken?: boolean;
 }
 
 export interface BoxUpdate {
@@ -96,6 +98,8 @@ export interface Box {
   stats?: ContainerStats | null;
   /** The host the box runs on. Present only when the control plane holds more than one host. */
   hostId?: string;
+  /** True when the box was created with a `self` token. Absent otherwise, so older payloads do not change. */
+  selfToken?: boolean;
 }
 
 export interface BoxMountView extends BoxMount {

@@ -47,6 +47,16 @@ export function tokensPath(dataDir: string): string {
   return join(dataDir, "tokens.json");
 }
 
+/** The `self` tokens of boxes: hashes and box ids, never the tokens. Mode 600. */
+export function selfTokensPath(dataDir: string): string {
+  return join(dataDir, "self-tokens.json");
+}
+
+/** Questions a box's agent asked a person, with their options and answers. Mode 600. */
+export function questionsPath(dataDir: string): string {
+  return join(dataDir, "questions.json");
+}
+
 /** Remote hosts: their ids, names and endpoints, never a credential. Mode 600. Credentials live under `hosts/<id>`. */
 export function hostsPath(dataDir: string): string {
   return join(dataDir, "hosts.json");

@@ -7,6 +7,7 @@ import { AppError } from "../lib/errors";
 import { msg } from "../lib/messages";
 import type { Principal } from "../operations/types";
 import { scopeAllowed } from "../tokens/model";
+import { SELF_SCOPE } from "../tokens/self-policy";
 
 export interface RouteCtx {
   app: App;
@@ -72,6 +73,7 @@ export function route(
 export function routeAllows(route: Pick<Route, "public" | "access">, principal: Principal): boolean {
   if (route.public) return true;
   if (principal.type === "owner") return true;
+  if (principal.type === "box-self") return route.access.kind === "scope" && route.access.scope === SELF_SCOPE;
   if (principal.type !== "token") return false;
   return route.access.kind === "scope" && scopeAllowed(principal.grants, route.access.scope);
 }
@@ -91,6 +93,9 @@ export function abortWhenEnded(app: App, caller: Caller | null, controller: Abor
   if (caller?.sessionId) stops.push(app.sessions.watch(caller.sessionId, () => controller.abort()));
   if (caller?.principal.type === "token") {
     stops.push(app.tokens.watch(caller.principal.id, () => controller.abort()));
+  }
+  if (caller?.principal.type === "box-self") {
+    stops.push(app.selfTokens.watch(caller.principal.id, () => controller.abort()));
   }
   return () => {
     for (const stop of stops) stop();

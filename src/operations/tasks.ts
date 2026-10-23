@@ -28,7 +28,7 @@ function checkLimit(value: unknown): Checked<number> {
   return accept(n);
 }
 
-const taskId = () =>
+export const taskId = () =>
   field(
     (value) => {
       if (typeof value !== "string" || !TASK_ID_RE.test(value)) return reject(msg("task_id_invalid"), "id");
@@ -43,7 +43,7 @@ const taskId = () =>
     },
   );
 
-function tasksOf(tasks: TaskReader | undefined): TaskReader {
+export function tasksOf(tasks: TaskReader | undefined): TaskReader {
   if (!tasks) throw new Error("task operations require a task manager");
   return tasks;
 }

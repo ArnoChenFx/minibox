@@ -632,6 +632,20 @@ export const startupCommandOption = () =>
     STARTUP_COMMAND_META,
   ).optional();
 
+function checkSelfToken(value: unknown): Checked<boolean | undefined> {
+  if (value === undefined || value === null) return accept(undefined);
+  if (typeof value === "boolean") return accept(value);
+  return reject(msg("not_boolean", { field: "selfToken" }), "selfToken");
+}
+
+/** Whether a create gives the box's agent a `self` token. Omitted or false gives none. */
+export const selfTokenOption = () =>
+  field(checkSelfToken, {
+    type: "boolean",
+    description:
+      "Give the box's agent a self token, written to /run/minibox/self-token, for the self operations. Omitted or false gives none.",
+  }).optional();
+
 function checkApplyNow(value: unknown): Checked<boolean> {
   if (value === undefined || value === null || value === "") return accept(false);
   if (value === true || value === "true" || value === "1") return accept(true);

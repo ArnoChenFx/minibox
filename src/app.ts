@@ -8,7 +8,7 @@ import { CheckpointStore } from "./checkpoints/store";
 import { type CliBuilder } from "./cli-dist/build";
 import { CliDistribution } from "./cli-dist/distribution";
 import { type Config, ROOT } from "./config";
-import { sessionsPath, tokensPath } from "./data-dir";
+import { questionsPath, selfTokensPath, sessionsPath, tokensPath } from "./data-dir";
 import { createDockerRuntime } from "./docker/runtime";
 import { OutputStore } from "./events/outputs";
 import { createRedactor, type Redactor } from "./events/redact";
@@ -34,6 +34,7 @@ import { OPERATIONS } from "./operations/registry";
 import { OWNER } from "./operations/types";
 import { PreviewGrants } from "./preview/grants";
 import { type PreviewProbe, systemProbe } from "./preview/selfcheck";
+import { QuestionStore } from "./questions/store";
 import type { EngineTarget, Runtime } from "./runtime";
 import { SecretStore } from "./secrets/store";
 import { ActivityPulse } from "./services/activity-pulse";
@@ -53,6 +54,8 @@ import { TaskManager, type TaskSubject } from "./tasks/manager";
 import { TaskStore } from "./tasks/store";
 import type { TaskStreamEvent } from "./tasks/types";
 import { authorizeOperation } from "./tokens/authorize";
+import { isTokenId } from "./tokens/model";
+import { SelfTokenStore } from "./tokens/self-store";
 import { TokenStore } from "./tokens/store";
 import { VolumeStore } from "./volumes/store";
 
@@ -106,6 +109,8 @@ export interface App {
   /** The network the preview self-check uses. Tests replace it. */
   previewProbe: PreviewProbe;
   tokens: TokenStore;
+  /** The `self` token each box's agent holds. Authenticates the box-self principal; see `tokens/self-store`. */
+  selfTokens: SelfTokenStore;
   streams: StreamSlots;
   pulse: ActivityPulse;
   lifecycle: LifecycleWatcher;
@@ -226,6 +231,8 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
   const checkpointEngine = deps.checkpointEngine ?? new ResticEngine({ dataDir: cfg.dataDir });
   const multiHost = () => hosts.list().length > 1;
   const secrets = new SecretStore(cfg.dataDir);
+  const selfTokens = new SelfTokenStore({ file: selfTokensPath(cfg.dataDir) });
+  const questions = new QuestionStore({ file: questionsPath(cfg.dataDir) });
   const local = createLocalHost(
     cfg,
     deps.runtime ?? createDockerRuntime(cfg.dockerSocket),
@@ -233,7 +240,7 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
     volumes,
     bus,
     pulse,
-    { checkpoints, checkpointEngine, multiHost, secrets },
+    { checkpoints, checkpointEngine, multiHost, secrets, selfTokens, questions },
   );
   hosts.add(local);
   const activity = new ActivityLog();
@@ -294,7 +301,18 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
     cfg,
     registry: hosts,
     store: new HostStore(cfg.dataDir),
-    shared: { specs, volumes, secrets, live: bus, pulse, checkpoints, checkpointEngine, multiHost },
+    shared: {
+      specs,
+      volumes,
+      secrets,
+      live: bus,
+      pulse,
+      checkpoints,
+      checkpointEngine,
+      multiHost,
+      selfTokens,
+      questions,
+    },
     connect: deps.connect ?? createDockerRuntime,
     attach: (host) => {
       containers.watch(host);
@@ -344,7 +362,9 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
     terminals,
     containers,
     recordNote,
-    mcpSessions: new McpSessions((id, listener) => tokens.watch(id, listener)),
+    mcpSessions: new McpSessions((id, listener) =>
+      isTokenId(id) ? tokens.watch(id, listener) : selfTokens.watch(id, listener),
+    ),
     bus,
     retention,
     checkpointSweep: new CheckpointSweep(hosts),
@@ -367,6 +387,7 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
     previewGrants: new PreviewGrants({ sessionLive: (id) => sessions.hasLive(id) }),
     previewProbe: deps.previewProbe ?? systemProbe,
     tokens,
+    selfTokens,
     streams: new StreamSlots(cfg.streamMaxConnections),
     pulse,
     lifecycle,

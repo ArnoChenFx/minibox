@@ -8,11 +8,22 @@ import { OPERATIONS } from "../operations/registry";
 import { RUN_ID_PATTERN } from "../operations/run";
 import type { Operation, Principal, Toolset } from "../operations/types";
 import { scopeAllowed } from "../tokens/model";
+import { SELF_SCOPE } from "../tokens/self-policy";
 import { MCP_INSTRUCTIONS } from "./instructions";
 
 const PROTOCOL_VERSIONS = ["2025-06-18", "2025-03-26"] as const;
 const DEFAULT_PROTOCOL: (typeof PROTOCOL_VERSIONS)[number] = "2025-06-18";
-const TOOLSETS: readonly Toolset[] = ["core", "session", "network", "storage", "tools", "meta", "rebuild", "move"];
+const TOOLSETS: readonly Toolset[] = [
+  "core",
+  "session",
+  "network",
+  "storage",
+  "tools",
+  "meta",
+  "rebuild",
+  "move",
+  "self",
+];
 
 interface RpcRequest {
   jsonrpc?: unknown;
@@ -91,12 +102,21 @@ function toolResult(id: unknown, payload: unknown, isError: boolean, headers: Re
   );
 }
 
-/** The tools a principal may see: the owner's all of them, and a token's those its scopes reach. */
+/**
+ * The tools a principal may see. The owner's are every tool but the self ones, which only a box's own agent may run. A
+ * box's agent sees the self tools alone, and a token sees those its scopes reach.
+ */
 function callableBy(principal: Principal): readonly Operation[] {
-  if (principal.type === "owner") return OPERATIONS;
+  if (principal.type === "owner") return OPERATIONS.filter((operation) => operation.scope !== SELF_SCOPE);
+  if (principal.type === "box-self") return OPERATIONS.filter((operation) => operation.scope === SELF_SCOPE);
   return OPERATIONS.filter(
     (operation) => principal.type === "token" && scopeAllowed(principal.grants, operation.scope),
   );
+}
+
+/** A box's agent starts with the self toolset. Everyone else gets core and meta. */
+function defaultToolsets(principal: Principal): readonly Toolset[] {
+  return principal.type === "box-self" ? ["self"] : ["core", "meta"];
 }
 
 function wireTools(principal: Principal, toolsets: readonly Toolset[]) {
@@ -112,7 +132,8 @@ function wireTools(principal: Principal, toolsets: readonly Toolset[]) {
 /**
  * Streamable HTTP MCP at POST /mcp. There is no GET event stream. A Bearer credential is required: the access key or an
  * agent token. A session cookie is not accepted. Every tool call runs as the caller's principal, so a token's scopes and
- * grants apply exactly as they do on REST. `?toolsets=core,session` selects tools. The default is core and meta.
+ * grants apply exactly as they do on REST. `?toolsets=core,session` selects tools. The default is core and meta, or the
+ * self toolset for a box's own agent.
  */
 export async function handleMcp(app: App, req: Request, url: URL, address: string): Promise<Response> {
   if (req.method === "GET" || (req.method !== "POST" && req.method !== "DELETE")) return methodNotAllowed();
@@ -145,7 +166,7 @@ export async function handleMcp(app: App, req: Request, url: URL, address: strin
 
   const sessionId = req.headers.get("mcp-session-id") ?? undefined;
   const session = sessionId ? app.mcpSessions.get(sessionId, principal) : undefined;
-  const selected = toolsets ?? session?.toolsets ?? ["core", "meta"];
+  const selected = toolsets ?? session?.toolsets ?? defaultToolsets(principal);
   const protocol = session?.protocol ?? DEFAULT_PROTOCOL;
   const headers: Record<string, string> = { "mcp-protocol-version": protocol };
   if (sessionId && session) headers["mcp-session-id"] = sessionId;

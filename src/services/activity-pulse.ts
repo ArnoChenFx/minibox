@@ -1,7 +1,17 @@
 /**
  * In-memory last-activity heartbeats per box. Used for idle sleep (#12); not persisted and not the events table.
  */
-export type ActivityKind = "terminal" | "exec" | "session" | "file" | "preview" | "create" | "wake" | "task" | "ssh";
+export type ActivityKind =
+  | "terminal"
+  | "exec"
+  | "session"
+  | "file"
+  | "preview"
+  | "create"
+  | "wake"
+  | "task"
+  | "ssh"
+  | "self";
 
 export class ActivityPulse {
   private readonly last = new Map<string, number>();

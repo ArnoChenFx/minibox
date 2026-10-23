@@ -15,7 +15,7 @@ import type { TokenStore } from "../tokens/store";
 /** `read` never changes state, `write` changes it, `destructive` removes data that cannot be recovered. */
 export type Kind = "read" | "write" | "destructive";
 
-export type Toolset = "core" | "session" | "network" | "storage" | "tools" | "meta" | "rebuild" | "move";
+export type Toolset = "core" | "session" | "network" | "storage" | "tools" | "meta" | "rebuild" | "move" | "self";
 
 export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
@@ -34,8 +34,18 @@ export interface TokenPrincipal {
   readonly grants: TokenGrants;
 }
 
+/**
+ * The agent of one box, holding that box's `self` token. Its id is the box's stable `bx_…` id, so the box's own events
+ * and records match it. It may call only the self operations, and each of them acts on that box alone.
+ */
+export interface BoxSelfPrincipal {
+  readonly type: "box-self";
+  readonly id: string;
+  readonly name: string;
+}
+
 /** Who is calling. A principal's id is what boxes, volumes, snapshots and tasks record as their creator. */
-export type Principal = OwnerPrincipal | TokenPrincipal;
+export type Principal = OwnerPrincipal | TokenPrincipal | BoxSelfPrincipal;
 
 export const OWNER: OwnerPrincipal = { type: "owner", id: "owner", name: "owner" };
 

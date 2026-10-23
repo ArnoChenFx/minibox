@@ -24,6 +24,7 @@ import { assertMountAllowed, assertRebuildAttachments, engineRefs, mountTarget }
 import { type Box, getBox, refuseExpired } from "./boxes";
 import { assertImageAvailable, ensureImageOn } from "./images";
 import { beginChange } from "./moving";
+import { provisionSelfToken, selfTokenTmpfs } from "./self-token";
 import { launchStartup } from "./startup";
 import { alignVolumeRoot, type RecordNote, restoreVolumeRoot, writableWorkspaceVolume } from "./volume-owner";
 
@@ -286,6 +287,7 @@ export function containerSpec(
     created.swapBytes = spec.resources.memoryBytes;
   }
   if (env.length > 0) created.env = env;
+  if (spec.selfToken) created.tmpfs = selfTokenTmpfs();
   if (hardening) created.hardening = hardening;
   return created;
 }
@@ -366,6 +368,7 @@ async function undo(host: HostCtx, previous: BoxSpec, state: SwapState, record?:
     const createdId = state.createdId;
     await fail(() => host.runtime.stopContainer(createdId, { timeoutSec: host.stopTimeoutSec }));
   }
+  if (state.started) host.selfTokens.revoke(previous.id);
   if (state.createdId) {
     const createdId = state.createdId;
     await fail(() => host.runtime.removeContainer(createdId, { force: true }));
@@ -384,6 +387,9 @@ async function undo(host: HostCtx, previous: BoxSpec, state: SwapState, record?:
         previous.mounts.map((mount) => mount.volume),
       );
       await host.runtime.startContainer(previous.containerId);
+      if (previous.selfToken) {
+        await provisionSelfToken(host, { boxId: previous.id, name: previous.name }, previous.containerId);
+      }
       await launchStartup(host, previous.containerId, previous.startupCommand);
     });
   }
@@ -441,6 +447,7 @@ async function swap(
       await host.runtime.stopContainer(previous.containerId, { timeoutSec: host.stopTimeoutSec });
       state.oldStopped = true;
     }
+    host.selfTokens.revoke(previous.id);
     const workspace = writableWorkspaceVolume(resolved.mounts);
     if (workspace) {
       const replaced = await alignVolumeRoot(
@@ -459,6 +466,8 @@ async function swap(
     if (!started.running) throw new AppError(502, "docker_error", msg("rebuild_start_failed"));
     if (previous.lifecycle.desired === "stopped") {
       await host.runtime.stopContainer(created.id, { timeoutSec: host.stopTimeoutSec });
+    } else if (previous.selfToken) {
+      await provisionSelfToken(host, { boxId: previous.id, name: previous.name }, created.id);
     }
     await host.runtime.removeContainer(previous.containerId, { force: true });
     if (previous.lifecycle.desired === "running") await launchStartup(host, created.id, previous.startupCommand);

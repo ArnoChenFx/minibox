@@ -26,6 +26,7 @@ export async function quiesce(
   }
   progress?.log?.("Stopping the box…\n");
   await host.runtime.stopContainer(box.id, { timeoutSec: host.stopTimeoutSec });
+  host.selfTokens.revoke(box.boxId);
   await host.sampler.observe(box.id);
   return () =>
     resumeStep(box, progress, "Starting the box again…\n", async () => {

@@ -3,7 +3,10 @@ import { spyOn } from "bun:test";
 import { generateKeyPairPem } from "../../src/agent/identity";
 import type { HostMetrics } from "../../src/host/metrics";
 import { startServer } from "../../src/server";
+import { firstFileData } from "../../src/services/files-tar";
+import { SELF_TOKEN_DIR } from "../../src/services/self-token";
 import { createTestApp, silenceLogs, TEST_KEY } from "../support/app";
+import type { FakeRuntime } from "../support/fake-runtime";
 
 /** One HTTP exchange of the parity scenario, with ids, timestamps and snapshot stamps replaced by placeholders. */
 export interface Exchange {
@@ -44,6 +47,8 @@ export function normalize(text: string): string {
     .replace(/"taskId":"[0-9A-HJKMNP-TV-Z]{26}"/g, '"taskId":"<ulid>"')
     .replace(/"parentId":"[0-9A-HJKMNP-TV-Z]{26}"/g, '"parentId":"<ulid>"')
     .replace(/\/api\/tasks\/[0-9A-HJKMNP-TV-Z]{26}/g, "/api/tasks/<ulid>")
+    .replace(/\/api\/self\/tasks\/[0-9A-HJKMNP-TV-Z]{26}/g, "/api/self/tasks/<ulid>")
+    .replace(/\bq_[0-9A-HJKMNP-TV-Z]{26}\b/g, "q_<ulid>")
     .replace(/"cursor":"[0-9a-f]{12}\./g, '"cursor":"<epoch>.')
     .replace(/"ts":\d+/g, '"ts":0')
     .replace(/"durationMs":\d+/g, '"durationMs":0')
@@ -66,6 +71,15 @@ function checkpointIdOf(task: Record<string, unknown>): string {
 function boxIdOfTask(task: Record<string, unknown>): string {
   const box = (task.result as { box?: { id?: string } } | undefined)?.box;
   return String(box?.id ?? "");
+}
+
+/** The self token a container was given, read back from the file the engine received. */
+async function selfTokenOf(runtime: FakeRuntime, containerId: string): Promise<string> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of await runtime.getArchive(containerId, `${SELF_TOKEN_DIR}/self-token`)) {
+    chunks.push(Buffer.from(chunk));
+  }
+  return firstFileData(Buffer.concat(chunks))?.data.toString("utf8").trim() ?? "";
 }
 
 const rollbackAt = (box: string) => `/api/boxes/${box}/rollback`;
@@ -991,6 +1005,61 @@ async function recordScenario(): Promise<Exchange[]> {
     await send("list notification deliveries with a zero limit", "GET", "/api/notify/deliveries?limit=0");
     await send("delete the webhook channel", "DELETE", alerts);
     await send("delete the webhook channel again", "DELETE", alerts);
+
+    const selfBox = boxId(
+      (
+        await post("create a box with a self token", "/api/boxes", {
+          name: "selfbox",
+          cpus: 1,
+          memoryMb: 256,
+          selfToken: true,
+        })
+      ).json,
+    );
+    const self = await selfTokenOf(runtime, selfBox);
+    const asBox = (step: string, method: string, path: string, secret: string, body?: unknown) =>
+      send(step, method, path, {
+        ...(body === undefined ? {} : { body: JSON.stringify(body), contentType: JSON_TYPE }),
+        headers: { authorization: `Bearer ${secret}` },
+      });
+    await asBox("the box reads its own info", "GET", "/api/self", self);
+    await asBox("the box reports its status", "POST", "/api/self/status", self, {
+      state: "working",
+      note: "Running the tests",
+    });
+    const asked = await asBox("the box asks a person a question", "POST", "/api/self/questions", self, {
+      message: "Ship the release?",
+      options: ["yes", "no"],
+    });
+    const questionId = String((asked.json?.question as { id?: string } | undefined)?.id ?? "");
+    await asBox("the box reads its question", "GET", `/api/self/questions/${questionId}`, self);
+    const selfCheckpoint = await asBox("the box takes a checkpoint of itself", "POST", "/api/self/checkpoints", self, {
+      label: "before the release",
+      reason: "Before a risky step",
+    });
+    await waitTask(base, selfCheckpoint.json);
+    await asBox(
+      "the box reads its checkpoint task",
+      "GET",
+      `/api/self/tasks/${String(selfCheckpoint.json?.taskId ?? "")}`,
+      self,
+    );
+    await send("list the questions of the box", "GET", `/api/boxes/${selfBox}/questions`);
+    await post("answer the question with an option it does not offer", `/api/questions/${questionId}/answer`, {
+      answer: "maybe",
+    });
+    await post("answer the question", `/api/questions/${questionId}/answer`, { answer: "yes" });
+    await post("answer the question again", `/api/questions/${questionId}/answer`, { answer: "no" });
+    await asBox("the box reads its answered question", "GET", `/api/self/questions/${questionId}`, self);
+    await asBox("the box reads another box", "GET", `/api/boxes/${mover}`, self);
+    await asBox("the box lists another box's questions", "GET", `/api/boxes/${mover}/questions`, self);
+    await asBox("the box lists tokens", "GET", "/api/tokens", self);
+    await asBox("the box lists secrets", "GET", "/api/secrets", self);
+    await asBox("the box deletes itself", "DELETE", `/api/boxes/${selfBox}`, self);
+    await send("revoke the box's self token", "DELETE", `/api/boxes/${selfBox}/self-token`);
+    await send("revoke the box's self token again", "DELETE", `/api/boxes/${selfBox}/self-token`);
+    await asBox("the revoked self token is refused", "GET", "/api/self", self);
+    await send("delete the self box", "DELETE", `/api/boxes/${selfBox}`);
   } finally {
     server.stop(true);
     app.throttle.stop();

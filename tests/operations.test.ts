@@ -186,6 +186,15 @@ const SAMPLES: Record<string, (boxId: string, app: App) => unknown> = {
   "notify.channel.delete": () => ({ id: NOTIFY_CHANNEL.id }),
   "notify.channel.test": () => ({ id: NOTIFY_CHANNEL.id }),
   "notify.delivery.list": () => ({}),
+  "self.info": () => ({}),
+  "self.checkpoint": () => ({ label: "before-edit", reason: "Before a risky edit" }),
+  "self.task": () => ({ id: "01ARZ3NDEKTSV4RRFFQ69G5FAV" }),
+  "self.ask": () => ({ message: "Ship the change?", options: ["yes", "no"] }),
+  "self.question": () => ({ id: `q_${"0".repeat(26)}` }),
+  "self.status": () => ({ state: "working", note: "Running the tests" }),
+  "box.self.revoke": (id) => ({ id }),
+  "box.questions": (id) => ({ id }),
+  "question.answer": () => ({ id: `q_${"0".repeat(26)}`, answer: "yes" }),
 };
 
 /** Operations that act on a checkpoint which must already exist, so `preparedInput` takes one first. */
@@ -262,13 +271,56 @@ function rawBodyOf(bytes: Buffer): RawBody {
 }
 
 /** A real id for operations that cannot succeed against the placeholder in `SAMPLES`. */
+interface Prepared {
+  input: unknown;
+  release?: () => void;
+  body?: RawBody;
+  /** Set when the operation acts as a box's own agent, which the owner may not be. */
+  principal?: Principal;
+}
+
+/** The context an operation runs under: the caller's, with the principal and body a prepared input needs. */
+function runContext(ctx: OperationContext, prepared: Prepared): OperationContext {
+  return {
+    ...ctx,
+    ...(prepared.principal ? { principal: prepared.principal } : {}),
+    ...(prepared.body ? { body: prepared.body } : {}),
+  };
+}
+
+/** The box's own agent: the principal a self token authenticates, whose id is the box's stable id. */
+async function agentOf(app: App, ctx: OperationContext, boxId: string): Promise<OperationContext> {
+  const { box } = (await app.operations.run("box.get", ctx, { id: boxId })) as { box: { boxId: string; name: string } };
+  return { ...ctx, principal: { type: "box-self", id: box.boxId, name: box.name } };
+}
+
 async function preparedInput(
   app: App,
   ctx: OperationContext,
   runtime: FakeRuntime,
   operation: Operation,
   boxId: string,
-): Promise<{ input: unknown; release?: () => void; body?: RawBody }> {
+): Promise<Prepared> {
+  if (operation.name === "self.task") {
+    const agent = await agentOf(app, ctx, boxId);
+    const started = (await app.operations.run("self.checkpoint", agent, SAMPLES["self.checkpoint"]?.(boxId, app))) as {
+      taskId: string;
+    };
+    await app.tasks.drain();
+    return { input: { id: started.taskId }, principal: agent.principal };
+  }
+  if (operation.name === "self.question" || operation.name === "question.answer") {
+    const agent = await agentOf(app, ctx, boxId);
+    const asked = (await app.operations.run("self.ask", agent, SAMPLES["self.ask"]?.(boxId, app))) as {
+      question: { id: string };
+    };
+    if (operation.name === "question.answer") return { input: { id: asked.question.id, answer: "yes" } };
+    return { input: { id: asked.question.id }, principal: agent.principal };
+  }
+  if (operation.name.startsWith("self.")) {
+    const agent = await agentOf(app, ctx, boxId);
+    return { input: SAMPLES[operation.name]?.(boxId, app), principal: agent.principal };
+  }
   if (operation.name === "template.rebuild") {
     await app.operations.run("template.create", ctx, SAMPLES["template.create"]?.(boxId, app));
     await app.tasks.drain();
@@ -602,11 +654,7 @@ describe("executor", () => {
     const prepared = await preparedInput(app, ctx, runtime, operation, boxId);
     events.length = 0;
     try {
-      const result = await app.operations.run(
-        operation.name,
-        prepared.body ? { ...ctx, body: prepared.body } : ctx,
-        prepared.input,
-      );
+      const result = await app.operations.run(operation.name, runContext(ctx, prepared), prepared.input);
       if (isByteStream(result)) await result.body.cancel();
       prepared.release?.();
       await app.tasks.drain();
@@ -789,11 +837,7 @@ describe("event log", () => {
       const prepared = await preparedInput(app, ctx, runtime, operation, boxId);
       const before = app.events.head();
       try {
-        const result = await app.operations.run(
-          operation.name,
-          prepared.body ? { ...ctx, body: prepared.body } : ctx,
-          prepared.input,
-        );
+        const result = await app.operations.run(operation.name, runContext(ctx, prepared), prepared.input);
         if (isByteStream(result)) await result.body.cancel();
         prepared.release?.();
         await app.tasks.drain();
@@ -1049,6 +1093,7 @@ describe("projections", () => {
       "host",
       "tools",
       "startupCommand",
+      "selfToken",
       "repo",
     ]);
     expect(create?.outputSchema).toMatchObject({ type: "object", required: ["box"] });

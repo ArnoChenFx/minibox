@@ -73,6 +73,14 @@ export class TerminalService {
     return false;
   }
 
+  /** True when a person has taken over a session in this container, so the box's agent is locked out of it for now. */
+  humanHolds(containerId: string): boolean {
+    for (const tracked of this.tracked.values()) {
+      if (tracked.containerId === containerId && tracked.controller === "human") return true;
+    }
+    return false;
+  }
+
   async list(host: HostCtx, box: Box): Promise<ListedSession[]> {
     if (!box.running) {
       this.forgetBox(box.id, new Set());

@@ -30,6 +30,8 @@ import {
   volumeVisible,
   volumeWritable,
 } from "./model";
+import { selfAllowed } from "./self";
+import { SELF_SCOPE } from "./self-policy";
 
 /**
  * The authorize hook. The owner passes every check. A token passes the scope check for the operation, then the
@@ -39,7 +41,8 @@ import {
  */
 export async function authorizeOperation(request: AuthorizeRequest): Promise<boolean> {
   const { principal } = request;
-  if (principal.type === "owner") return true;
+  if (principal.type === "owner") return request.operation.scope !== SELF_SCOPE;
+  if (principal.type === "box-self") return selfAllowed(request, principal);
   if (principal.type !== "token") return false;
   const phase = request.phase ?? "scope";
   if (phase === "scope") return scopeAllowed(principal.grants, request.operation.scope);
@@ -457,6 +460,14 @@ const volumeAttachRule: Rule = async ({ principal, host, input }) => {
   assertSecretUse(principal, storedEnv(host, box.boxId));
 };
 
+/** A question belongs to the box that asked it, so a token answers one only when it may see that box. */
+const questionRule: Rule = async ({ principal, host, resolved }) => {
+  const question = resolved as { boxId?: unknown } | undefined;
+  const spec = typeof question?.boxId === "string" ? host.specs.read(question.boxId) : undefined;
+  if (!spec) throw refusal("box_out_of_scope");
+  assertBoxVisible(principal, viewOfSpec(spec));
+};
+
 /** A template name a token promotes into must be free: promotion would otherwise overwrite that tag. */
 async function assertTemplateNameFree(host: HostCtx, name: string): Promise<void> {
   const ref = `${host.prefix}-template:${name}`;
@@ -562,6 +573,9 @@ const RULES: ReadonlyMap<string, Rule> = new Map<string, Rule>([
   ["port.list", boxRule],
   ["port.expose", boxRule],
   ["port.unexpose", boxRule],
+  ["box.questions", boxRule],
+  ["question.answer", questionRule],
+  ["box.self.revoke", boxRule],
 ]);
 
 /** Whether a token may reach an operation at all. The tests use it to hold every token-reachable operation to a rule. */
