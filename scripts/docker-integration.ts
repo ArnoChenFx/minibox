@@ -2,14 +2,14 @@
  * Runs the real-engine integration tests (tests/docker-runtime.test.ts, tests/docker-checkpoint.test.ts,
  * tests/docker-sessions.test.ts, tests/docker-startup-command.test.ts, tests/docker-ssh.test.ts,
  * tests/docker-templates.test.ts, tests/docker-declared-templates.test.ts, tests/docker-tools.test.ts,
- * tests/docker-hosts.test.ts, tests/docker-move.test.ts, tests/docker-agent.test.ts, tests/docker-files.test.ts and
- * tests/docker-trash.test.ts) against the local Docker engine, one file per process.
+ * tests/docker-hosts.test.ts, tests/docker-move.test.ts, tests/docker-agent.test.ts, tests/docker-files.test.ts,
+ * tests/docker-trash.test.ts and tests/docker-egress.test.ts) against the local Docker engine, one file per process.
  *
  *   bun run test:docker
  *
  * Every run gets its own label prefix, so nothing it creates can be mistaken for a real install. Containers, images
- * and volumes labelled with the prefix, volumes named with it (the checkpoint repository is one), and networks named
- * with it are removed afterwards, even when the tests fail.
+ * and volumes labelled with the prefix, egress proxies (labelled with the prefix's egress-proxy key), volumes named with
+ * it (the checkpoint repository is one), and networks named with it are removed afterwards, even when the tests fail.
  *
  * Environment: DOCKER_SOCKET (default /var/run/docker.sock), MINIBOX_TEST_IMAGE (default alpine:3.20). The SSH test
  * builds its box image on debian:bookworm-slim, and the tools test builds its box from templates/base on
@@ -90,6 +90,7 @@ const TEST_FILES = [
   "tests/docker-agent.test.ts",
   "tests/docker-files.test.ts",
   "tests/docker-trash.test.ts",
+  "tests/docker-egress.test.ts",
 ];
 
 /**
@@ -121,7 +122,12 @@ async function runTests(): Promise<number> {
 
 /** Removes everything this run made, containers first so that images and volumes are no longer in use. */
 async function sweep(): Promise<void> {
-  const containers = lines(await docker(["ps", "-aq", "--filter", `label=${prefix}`]));
+  const containers = [
+    ...new Set([
+      ...lines(await docker(["ps", "-aq", "--filter", `label=${prefix}`])),
+      ...lines(await docker(["ps", "-aq", "--filter", `label=${prefix}.egress-proxy`])),
+    ]),
+  ];
   if (containers.length > 0) await docker(["rm", "-f", ...containers]);
 
   const images = [
