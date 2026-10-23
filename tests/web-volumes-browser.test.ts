@@ -121,6 +121,10 @@ describe.skipIf(!executablePath)("the volumes page: batch delete and prune (real
     "each row has a checkbox; the volume a box mounts and the tools volume cannot be picked",
     async () => {
       await page.goto(`${consoleUrl}/#/storage/volumes`);
+      // Twelve volumes: the table shows ten and folds the rest behind a toggle.
+      await webExpect(row(page, "extra-6")).toBeVisible();
+      await webExpect(row(page, "notes")).toHaveCount(0);
+      await page.locator("#volRows .toggle-row button", { hasText: "Show all (12)" }).click();
       await webExpect(row(page, "notes")).toBeVisible();
       await webExpect(pick(page, "notes")).toBeEnabled();
       await webExpect(pick(page, "alpha-workspace")).toBeDisabled();

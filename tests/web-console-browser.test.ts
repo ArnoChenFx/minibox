@@ -228,36 +228,38 @@ describe.skipIf(!executablePath)("the console's top navigation (real browser)", 
     );
 
     test(
-      "Checkpoints puts the box it shows into the address, and picking another box changes the address",
+      "Checkpoints lists every box, and a box in the address narrows it to that box",
       async () => {
         await tab(page, "Checkpoints").click();
-        await webExpect(page.locator("#boxPick")).toBeVisible();
-        const first = await page.locator("#boxPick").inputValue();
-        expect([alpha, beta]).toContain(first);
-        await webExpect(page).toHaveURL(at(`#/storage/checkpoints/${first}`));
-        await webExpect(page.locator("#boxTabBody")).toContainText("No checkpoints yet");
-        const other = first === alpha ? beta : alpha;
-        await page.locator("#boxPick").selectOption(other);
-        await webExpect(page).toHaveURL(at(`#/storage/checkpoints/${other}`));
+        await webExpect(page).toHaveURL(at("#/storage/checkpoints"));
         await webExpect(tab(page, "Checkpoints")).toHaveAttribute("aria-selected", "true");
+        await webExpect(page.locator("#sckRows")).toContainText("alpha");
+        await webExpect(page.locator("#sckRows")).toContainText("beta");
+        await webExpect(page.locator(".sck-filter")).toHaveCount(0);
+
+        await page.goto(`${consoleUrl}/#/storage/checkpoints/${beta}`);
+        await webExpect(page.locator(".sck-filter")).toContainText("Showing only beta.");
+        await webExpect(page.locator("#sckRows")).toContainText("beta");
+        await webExpect(page.locator("#sckRows")).not.toContainText("alpha");
+
+        await page.locator(".sck-filter a", { hasText: "Show every box" }).click();
+        await webExpect(page).toHaveURL(at("#/storage/checkpoints"));
+        await webExpect(page.locator("#sckRows")).toContainText("alpha");
+        await webExpect(page.locator(".sck-filter")).toHaveCount(0);
       },
       TIMEOUT_MS,
     );
 
     test(
-      "the tab and the box it shows survive a reload",
+      "the tab and the box it narrows to survive a reload",
       async () => {
-        const options = await Promise.all(
-          (await page.locator("#boxPick option").all()).map((option) => option.getAttribute("value")),
-        );
-        const chosen = options[1] ?? "";
-        expect(options).toHaveLength(2);
-        await page.locator("#boxPick").selectOption(chosen);
-        await webExpect(page).toHaveURL(at(`#/storage/checkpoints/${chosen}`));
+        await page.goto(`${consoleUrl}/#/storage/checkpoints/${alpha}`);
+        await webExpect(page.locator(".sck-filter")).toContainText("Showing only alpha.");
         await page.reload();
-        await webExpect(page).toHaveURL(at(`#/storage/checkpoints/${chosen}`));
+        await webExpect(page).toHaveURL(at(`#/storage/checkpoints/${alpha}`));
         await webExpect(tab(page, "Checkpoints")).toHaveAttribute("aria-selected", "true");
-        await webExpect(page.locator("#boxPick")).toHaveValue(chosen);
+        await webExpect(page.locator(".sck-filter")).toContainText("Showing only alpha.");
+        await webExpect(page.locator("#sckRows")).not.toContainText("beta");
       },
       TIMEOUT_MS,
     );

@@ -213,4 +213,16 @@ export default {
   "sn.deleteMessage":
     "Delete snapshot <code>{ref}</code>? This can't be undone. Boxes created from it are not affected.",
   "sn.deleted": "Snapshot deleted",
+  "ck.timeline": "Checkpoints by box",
+  "ck.timelineCount": "{n} checkpoints across {boxes} boxes",
+  "ck.pendingLine": "{box} was rolled back to “{label}”",
+  "ck.pendingKept": "Old volumes {volumes} are kept since {time}",
+  "ck.pendingLineHelp": "Confirm and clean up deletes them; undo the rollback mounts them again.",
+  "ck.reasonBoxDeleted": "The box was deleted; fork the checkpoint to get its data back",
+  "ck.boxDeleted": "Box deleted",
+  "ck.openBox": "Open the box's checkpoint settings",
+  "ck.focusOnly": "Showing only {box}.",
+  "ck.focusAll": "Show every box",
+  "ck.noneAnywhere": "No checkpoints yet",
+  "ck.noneAnywhereText": "Create a box first, then take a checkpoint of it here or on its settings page.",
 };
