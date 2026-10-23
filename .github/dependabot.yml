@@ -38,3 +38,35 @@ updates:
     commit-message:
       prefix: build
       include: scope
+
+  - package-ecosystem: docker
+    directory: /templates/official/node
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: build
+      include: scope
+
+  - package-ecosystem: docker
+    directory: /templates/official/python
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: build
+      include: scope
+
+  - package-ecosystem: docker
+    directory: /templates/official/go
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: build
+      include: scope
+
+  - package-ecosystem: docker
+    directory: /templates/official/minimal
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: build
+      include: scope

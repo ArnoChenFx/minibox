@@ -11,7 +11,7 @@ import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
 import { filterBySearch, searchTerms } from "../lib/search.js";
 import { invalidateTemplates } from "../lib/store.js";
-import { templateCards, templateSearchFields } from "../lib/template-list.js";
+import { isUnbuilt, templateCards, templateSearchFields, withOfficialCards } from "../lib/template-list.js";
 import { imageRefOk, KIND_LABEL_KEYS } from "../lib/template-source.js";
 import { confirmDialog, emptyState, nameError, promptDialog, toast, toastError, withBusy } from "../lib/ui.js";
 
@@ -22,6 +22,7 @@ const TEMPLATE_TASK_OPS = new Set([
   "template.create",
   "template.rebuild",
   "template.sync",
+  "template.official.build",
 ]);
 
 function legacyRow(s) {
@@ -38,8 +39,12 @@ function legacyRow(s) {
         </div></td></tr>`;
 }
 
-/** One row per host: whether the host holds the template, and a copy button for a host that lacks it and can take one. */
+/**
+ * One row per host: whether the host holds the template, and for a host that lacks it, a button that copies it from a
+ * host that holds it, or builds an official template no host holds yet. An agent host can take neither.
+ */
 function presenceHtml(card) {
+  const unbuilt = isUnbuilt(card);
   return hostsNow()
     .map((host) => {
       const name = esc(host.name ?? host.id);
@@ -52,8 +57,11 @@ function presenceHtml(card) {
           : host.status === "online"
             ? ""
             : t("tp.hostOffline");
+      const action = unbuilt
+        ? `data-action="build-official" data-name="${esc(card.name)}" data-host="${esc(host.id)}"`
+        : `data-action="sync" data-ref="${esc(card.ref)}" data-host="${esc(host.id)}"`;
       return `<div class="row between"><span>${name}</span><span class="row" style="gap:8px"><span class="badge">${esc(t("tp.absent"))}</span>
-        <button class="btn btn-sm" data-action="sync" data-ref="${esc(card.ref)}" data-host="${esc(host.id)}"${blocked ? ` disabled title="${esc(blocked)}"` : ""}>${icon("copy")}${esc(t("tp.copyHere"))}</button></span></div>`;
+        <button class="btn btn-sm" ${action}${blocked ? ` disabled title="${esc(blocked)}"` : ""}>${icon(unbuilt ? "hammer" : "copy")}${esc(t(unbuilt ? "tp.buildHere" : "tp.copyHere"))}</button></span></div>`;
     })
     .join("");
 }
@@ -61,6 +69,7 @@ function presenceHtml(card) {
 export function render(view, focusName = "") {
   let base = "";
   let templates = null;
+  let officials = [];
   let cards = [];
   let loadError = null;
   let legacy = null;
@@ -93,7 +102,8 @@ export function render(view, focusName = "") {
   const legacyBox = view.querySelector("#tpLegacy");
   const legacyBody = view.querySelector("#tpLegacyBody");
 
-  const badge = (tp) => (tp.ref === base ? t("tp.builtin") : t("tp.custom"));
+  const badge = (tp) =>
+    tp.ref === base ? t("tp.builtin") : tp.buildKind === "official" ? t("tp.official") : t("tp.custom");
 
   const draw = () => {
     if (loadError) {
@@ -102,8 +112,8 @@ export function render(view, focusName = "") {
       return;
     }
     if (!templates) return;
-    cards = templateCards(templates);
-    if (!templates.length) {
+    cards = withOfficialCards(templateCards(templates), officials);
+    if (!cards.length) {
       more.innerHTML = "";
       grid.innerHTML = `<div class="card" style="grid-column:1/-1">${emptyState({
         iconName: "layers",
@@ -129,26 +139,29 @@ export function render(view, focusName = "") {
       searching: searchTerms(query).length > 0,
     });
     grid.innerHTML = shown
-      .map(
-        (tp) => `<div class="card" style="display:flex;flex-direction:column" data-name="${esc(tp.name)}">
+      .map((tp) => {
+        const unbuilt = isUnbuilt(tp);
+        return `<div class="card" style="display:flex;flex-direction:column" data-name="${esc(tp.name)}">
         <div class="card-body" style="flex:1">
           <div class="row between" style="margin-bottom:12px"><span class="avatar" style="width:36px;height:36px;border-radius:10px;display:grid;place-items:center;background:var(--accent-soft);color:var(--accent-text)">${icon("layers")}</span>
           <span class="badge${tp.ref === base ? " badge-accent" : ""}">${esc(badge(tp))}</span></div>
           <h3 style="font-size:15px">${esc(tp.name)}</h3>
           <p class="muted" style="font-size:13px;margin-top:4px;min-height:40px">${esc(tp.description ?? t("tp.noDesc"))}</p>
           ${tp.source ? `<div class="help" style="margin-top:-4px;margin-bottom:8px">${esc(t("tp.fromBox", { name: tp.source }))}</div>` : ""}
-          ${tp.buildKind ? `<div class="help" style="margin-top:-4px;margin-bottom:8px">${esc(t("tp.builtFrom", { kind: t(KIND_LABEL_KEYS[tp.buildKind]) }))}</div>` : ""}
+          ${tp.buildKind && !unbuilt ? `<div class="help" style="margin-top:-4px;margin-bottom:8px">${esc(t("tp.builtFrom", { kind: t(KIND_LABEL_KEYS[tp.buildKind]) }))}</div>` : ""}
+          ${unbuilt ? `<div class="help" style="margin-top:-4px;margin-bottom:8px">${esc(t("tp.notBuiltHelp"))}</div>` : ""}
           <dl class="kv" style="margin-top:14px;font-size:12.5px"><dt>${t("tp.image")}</dt><dd class="mono">${esc(tp.ref)}</dd><dt>${t("tp.size")}</dt><dd>${bytes(tp.size)}</dd><dt>${t("tp.created")}</dt><dd>${dateTime(tp.createdAt)}</dd></dl>
           ${multiHost() ? `<div class="stack" style="margin-top:14px;gap:6px"><div class="help">${esc(t("tp.hosts"))}</div>${presenceHtml(tp)}</div>` : ""}
         </div>
         <div class="dialog-foot" style="justify-content:space-between;background:transparent">
-          <button class="icon-btn danger" data-action="delete" data-ref="${esc(tp.ref)}" title="${t("tp.delete")}" aria-label="${t("tp.delete")}">${icon("trash")}</button>
+          ${unbuilt ? "<span></span>" : `<button class="icon-btn danger" data-action="delete" data-ref="${esc(tp.ref)}" title="${t("tp.delete")}" aria-label="${t("tp.delete")}">${icon("trash")}</button>`}
           <div class="actions">
-            ${tp.buildKind ? `<button class="btn btn-sm" data-action="rebuild" data-ref="${esc(tp.ref)}" data-host="${esc(tp.holders[0])}">${icon("refresh")}${t("tp.rebuild")}</button>` : ""}
+            ${unbuilt && !multiHost() ? `<button class="btn btn-sm" data-action="build-official" data-name="${esc(tp.name)}">${icon("hammer")}${t("tp.buildOfficial")}</button>` : ""}
+            ${tp.buildKind && !unbuilt ? `<button class="btn btn-sm" data-action="rebuild" data-ref="${esc(tp.ref)}" data-host="${esc(tp.holders[0])}">${icon("refresh")}${t("tp.rebuild")}</button>` : ""}
             <button class="btn btn-sm btn-primary" data-action="use" data-ref="${esc(tp.ref)}">${icon("plus")}${t("tp.use")}</button>
           </div>
-        </div></div>`,
-      )
+        </div></div>`;
+      })
       .join("");
     more.innerHTML = toggle;
     bindToggles(view, more, draw);
@@ -177,8 +190,9 @@ export function render(view, focusName = "") {
   const loadTemplates = async () => {
     await refreshHosts();
     try {
-      const r = await api("/api/templates");
+      const [r, catalog] = await Promise.all([api("/api/templates"), api("/api/templates/official")]);
       templates = r.templates;
+      officials = catalog.templates;
       base = r.baseTemplate;
       loadError = null;
     } catch (e) {
@@ -247,6 +261,22 @@ export function render(view, focusName = "") {
       try {
         const r = await withBusy(btn, () => api("/api/templates/base/build", { method: "POST" }));
         toast(t("tp.buildStarted"), { type: "info", message: t("tp.buildStartedText") });
+        trackTask(r.taskId);
+      } catch (e) {
+        if (e.details?.taskId) {
+          toast(t("task.alreadyRunning"), { type: "info" });
+          openTasks(e.details.taskId);
+          return;
+        }
+        toastError(t("tp.buildFailed"), e);
+      }
+    },
+    "build-official": async (b) => {
+      try {
+        const query = b.dataset.host ? `?host=${enc(b.dataset.host)}` : "";
+        const path = `/api/templates/official/${enc(b.dataset.name)}/build${query}`;
+        const r = await withBusy(b, () => api(path, { method: "POST" }));
+        toast(t("tp.officialBuildStarted"), { type: "info", message: t("tp.buildStartedText") });
         trackTask(r.taskId);
       } catch (e) {
         if (e.details?.taskId) {

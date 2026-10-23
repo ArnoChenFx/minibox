@@ -34,7 +34,9 @@ describe("base template", () => {
     const major = /^FROM node:(\d+)/m.exec(dockerfile)?.[1];
     for (const path of [
       "templates/base/Dockerfile",
+      "templates/official/node/Dockerfile",
       "src/services/templates.ts",
+      "src/services/official-templates.ts",
       "web/js/i18n/en.js",
       "web/js/i18n/zh-CN.js",
       "README.md",

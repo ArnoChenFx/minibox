@@ -1,6 +1,13 @@
 import { describe, expect, test } from "bun:test";
 
-import { needsSync, syncSizeMb, templateCards } from "../web/js/lib/template-list.js";
+import {
+  isUnbuilt,
+  needsSync,
+  syncSizeMb,
+  templateCards,
+  templateSearchFields,
+  withOfficialCards,
+} from "../web/js/lib/template-list.js";
 
 const MB = 1024 * 1024;
 
@@ -67,5 +74,56 @@ describe("copying a template to a host before a box is created there", () => {
     expect(card && syncSizeMb(card)).toBe(300);
     expect(syncSizeMb({ size: 1.5 * MB })).toBe(2);
     expect(syncSizeMb({ size: 1000 })).toBe(1);
+  });
+
+  test("a template no host holds is never copied, because there is no host to copy from", () => {
+    const [card] = withOfficialCards([], OFFICIAL.slice(0, 1));
+    expect(needsSync(card, "lab")).toBe(false);
+  });
+});
+
+const OFFICIAL = [
+  { name: "node", ref: "minibox-template:node", description: "Node.js 26", base: "node:26-bookworm-slim" },
+  { name: "python", ref: "minibox-template:python", description: "Python 3.14", base: "python:3.14-slim-bookworm" },
+];
+
+const builtNode = () =>
+  templateCards([copy("local", { ref: "minibox-template:node", name: "node", buildKind: "official" })]);
+
+describe("official templates no host holds yet", () => {
+  test("a built official template is one card with its holders, and an unbuilt one follows in catalog order", () => {
+    const cards = withOfficialCards(builtNode(), OFFICIAL);
+    expect(cards.map((card) => card.ref)).toEqual(["minibox-template:node", "minibox-template:python"]);
+    expect(cards[0]?.holders).toEqual(["local"]);
+  });
+
+  test("an unbuilt one has no holder and no size, and is unbuilt", () => {
+    const [, python] = withOfficialCards(builtNode(), OFFICIAL);
+    expect(python && isUnbuilt(python)).toBe(true);
+    expect(python?.holders).toEqual([]);
+    expect(python?.size).toBeNull();
+    expect(python?.buildKind).toBe("official");
+  });
+
+  test("a built template is not unbuilt, and a host without it needs a copy", () => {
+    const [node] = withOfficialCards(builtNode(), OFFICIAL);
+    expect(isUnbuilt(node)).toBe(false);
+    expect(needsSync(node, "lab")).toBe(true);
+  });
+
+  test("with nothing built, every official template is an unbuilt card", () => {
+    expect(withOfficialCards([], OFFICIAL).map((card) => isUnbuilt(card))).toEqual([true, true]);
+  });
+
+  test("an unbuilt card can be searched by its name and description like any other", () => {
+    const [, python] = withOfficialCards([], OFFICIAL);
+    expect(python && templateSearchFields(python, "")).toContain("Python 3.14");
+    expect(() => python && templateSearchFields(python, "Official")).not.toThrow();
+  });
+
+  test("the rows the official catalog is read from are not changed", () => {
+    const catalog = OFFICIAL.map((template) => ({ ...template }));
+    withOfficialCards(builtNode(), catalog);
+    expect(catalog).toEqual(OFFICIAL);
   });
 });
