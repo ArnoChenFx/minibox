@@ -432,7 +432,7 @@ const volumePrune = defineOperation({
     toolset: "storage",
     name: "prune_volumes",
     description:
-      "Find or remove orphaned volumes: volumes MiniBox made that no box spec or container mounts. The shared tools volume and template volumes are never orphans, and a volume created or last used within the last five minutes is left alone. dryRun defaults to true and only lists the orphans; send dryRun false to remove them. olderThan such as 30d keeps the volumes used more recently. A removed volume's data is kept in the recycle bin, as delete_volume keeps it. A token prunes only the volumes it created.",
+      "Find or remove orphaned volumes: volumes MiniBox made that no box spec or container mounts. The shared tools volume and MiniBox's internal volumes are never orphans, and a volume created or last used within the last five minutes is left alone. dryRun defaults to true and only lists the orphans; send dryRun false to remove them. olderThan such as 30d keeps the volumes used more recently. A removed volume's data is kept in the recycle bin, as delete_volume keeps it. A token prunes only the volumes it created.",
   },
   activity: { action: () => "volume.prune", target: () => "volumes", when: (input) => !input.dryRun },
   run: async (ctx, input) => {
