@@ -12,14 +12,14 @@
 - 回收站与重建安全检查点（[#115](https://github.com/ArnoChenFx/minibox/issues/115)）：删除 Box 或卷时保留其数据副本，保留期由 `TRASH_RETENTION_DAYS` 设定（默认 7，范围 1 到 365），到期后每小时清理一次。删除 Box 时保留其自有的 `/workspace` 与 home 卷；删除卷时保留卷的数据，缓存卷与工具卷除外。控制台的「回收站」页面列出各条记录，可恢复为新的 Box 或卷，或立即彻底删除。恢复 Box 时需要新名称，Box 保留模板、数据、资源与安全档位，但不保留环境变量、启动命令、标签、网络、TTL 与共享挂载。接口为 `GET /api/trash`、`POST /api/trash/:id/restore`（202，任务，可设置 `name`、`cpus`、`memoryMb`）与 `DELETE /api/trash/:id`（202，任务），仅所有者可用。回收站条目计入 `CHECKPOINT_CAPACITY_MB`：超过上限时先清除最旧的条目，仍不够则拒绝删除并说明原因，且不停止、不删除任何内容。宿主机剩余空间低于下限时，保留副本的删除返回 `507`。`DELETE /api/boxes/:id` 与 `DELETE /api/volumes/:id` 接受 `skipTrash=true`，表示不保留副本，需要所有者或持有新令牌权限 `trash:skip` 的令牌；该权限不属于任何预设。删除响应的 `trash` 字段给出保留的条目，没有保留时为 `null`。重建 Box（`POST /api/boxes/:id/rebuild`）以及挂载与卸载卷（`attach`、`detach`）默认先拍摄「重建前」的安全检查点，`safetyCheckpoint: false` 可关闭它。重建失败且 Box 恢复原状时丢弃该检查点；无法原样恢复时保留它，并在错误中给出 id。新增事件 `box.trashed`、`volume.trashed`、`trash.restored` 与 `trash.purged`。命令行新增 `minibox trash ls`、`restore` 与 `purge`；MCP 新增 `list_trash`、`restore_trash` 与 `purge_trash`，位于 `storage` 工具集，仅所有者可用。
 - `/mcp` 所有者访问密钥的记录与提示：新增 `MCP_ALLOW_OWNER_KEY`（默认 `true`）。访问密钥每次用于 `/mcp` 都会记入事件，同一分钟内的读取合并为一行；首次使用时写入 `mcp.owner_key_used` 警告日志，控制台在最近 7 天内有使用时显示横幅。`minibox mcp` 使用访问密钥时在标准错误输出警告，并提示 `minibox token create`。新增 `minibox token create <name>`，在标准输出打印一次密钥，支持 `--preset`、`--scopes`、`--expires-in` 与 `--json`（[#121](https://github.com/ArnoChenFx/minibox/issues/121)）。
 - 在线备份与异地目标（[#116](https://github.com/ArnoChenFx/minibox/issues/116)）：`POST /api/backups`（任务）在 MiniBox 运行时生成数据目录的一致备份。数据库取自 SQLite 的 `VACUUM INTO` 快照，其余文件逐个复制。归档用口令封装（AES-256-GCM，密钥由 scrypt 派生），口令为 12 到 1024 个字符，只用于封装，不写入归档、日志、审计或任务结果。备份可下载（`GET /api/backups/:id/download`）、列出与删除。命令行：`minibox backup` 创建备份，`--out FILE` 下载到本机，`--passphrase-stdin` 从标准输入读取口令；`minibox backup ls` 与 `minibox backup rm <id>` 列出与删除；`minibox restore <文件> --data-dir DIR` 离线恢复到空目录，口令错误、文件损坏、不是备份或目录非空时拒绝恢复。异地目标（`/api/targets`，推送与拉取为任务）支持 S3 兼容存储与 SFTP：凭据保存为 `target.<id>.*` 密钥，SFTP 的主机密钥须先确认才能保存。检查点包与备份可推送到目标或从目标拉取，同一目标同一时间只运行一次传输。设置页新增「异地目标」卡片（中英文），MCP 的 `storage` 工具集提供对应工具。备份与目标操作只对所有者开放，令牌不能使用。
-- Box 内 Agent 自助（[#118](https://github.com/ArnoChenFx/minibox/issues/118)）：创建 Box 时可以为其 Agent 开启自助令牌（默认关闭；`POST /api/boxes` 的 `selfToken`、`minibox box create --self-token` 与控制台的创建表单）。令牌只写入 Box 内的 `/run/minibox/self-token`（权限 600，位于内存文件系统），不进入环境变量、事件、审计或镜像，服务器只保存其哈希。每次启动、重启、重建或迁移都会轮换令牌；停止或删除 Box 会使其失效；所有者可在 Box 页面吊销，或调用 `DELETE /api/boxes/{id}/self-token`（吊销后该 Box 的功能关闭，需重新创建才能再次开启）。令牌只能使用本 Box 的 `get_info`、`checkpoint`、`get_task`、`ask_human`、`get_question` 与 `report_status`（REST 位于 `/api/self`）；访问其他 Box、令牌管理、密钥或宿主机时返回 `403`。`self` 工具集只对该 Box 的 Agent 可见，每个令牌每分钟最多 60 次请求。Agent 宿主机无法写入令牌文件，因此在其上创建带令牌的 Box 返回 `501`。
-- Agent 提问：`ask_human` 提出的问题保存在 `DATA_DIR/questions.json`，每个 Box 最多 20 个未回答的问题。问题显示在 Box 页面的 **Agent** 卡片中，所有者可以回复；每个新问题发送 `agent.question` 通知。REST 接口为 `GET /api/boxes/{id}/questions` 与 `POST /api/questions/{id}/answer`。
-- Agent 状态：`report_status` 报告的状态记入事件日志，并显示在活动面板中。
 - 宿主机功能对等（[#114](https://github.com/ArnoChenFx/minibox/issues/114)）：模板、快照、存为模板与镜像拉取可在 ssh、tcp 与 Unix 套接字宿主机上运行，不再返回 `501`。Agent 宿主机仍返回 `501`。
 - 创建 Box 时自动同步模板：目标宿主机没有所选模板时，创建前先把模板镜像复制过去，复制与迁移使用同一条镜像传输路径。创建对话框会显示复制的大小，复制以「同步模板」任务显示进度，创建会等待其完成。新增 `POST /api/templates/:ref/sync`（请求体 `{ host }`）、MCP 工具 `sync_template` 与命令 `minibox template sync <ref> --host ID`。
 - 模板列表按宿主机显示每个模板是否已有，并可用「同步到此宿主机」把模板复制到缺少它的宿主机。
 - 远程宿主机上的端口预览：HTTP 与 WebSocket 经该宿主机的引擎转发，访问休眠中的 Box 会将其唤醒，响应或 WebSocket 打开期间保持唤醒。Box 内需要 `python3`。
 - 检查点显示其所在宿主机。不在 Box 当前宿主机上的检查点不能回滚，迁移预览改为说明检查点留在原宿主机。
+- Box 内 Agent 自助（[#118](https://github.com/ArnoChenFx/minibox/issues/118)）：创建 Box 时可以为其 Agent 开启自助令牌（默认关闭；`POST /api/boxes` 的 `selfToken`、`minibox box create --self-token` 与控制台的创建表单）。令牌只写入 Box 内的 `/run/minibox/self-token`（权限 600，位于内存文件系统），不进入环境变量、事件、审计或镜像，服务器只保存其哈希。每次启动、重启、重建或迁移都会轮换令牌；停止或删除 Box 会使其失效；所有者可在 Box 页面吊销，或调用 `DELETE /api/boxes/{id}/self-token`（吊销后该 Box 的功能关闭，需重新创建才能再次开启）。令牌只能使用本 Box 的 `get_info`、`checkpoint`、`get_task`、`ask_human`、`get_question` 与 `report_status`（REST 位于 `/api/self`）；访问其他 Box、令牌管理、密钥或宿主机时返回 `403`。`self` 工具集只对该 Box 的 Agent 可见，每个令牌每分钟最多 60 次请求。Agent 宿主机无法写入令牌文件，因此在其上创建带令牌的 Box 返回 `501`。
+- Agent 提问：`ask_human` 提出的问题保存在 `DATA_DIR/questions.json`，每个 Box 最多 20 个未回答的问题。问题显示在 Box 页面的 **Agent** 卡片中，所有者可以回复；每个新问题发送 `agent.question` 通知。REST 接口为 `GET /api/boxes/{id}/questions` 与 `POST /api/questions/{id}/answer`。
+- Agent 状态：`report_status` 报告的状态记入事件日志，并显示在活动面板中。
 
 ### 变更
 - 删除 Box 与卷的默认行为改变：数据先保留在回收站中，而不是立即删除。要立即删除且不保留副本，需传入 `skipTrash=true`（所有者或 `trash:skip`）。
@@ -41,9 +41,9 @@
 ### 文档
 - 检查点、Box、卷、令牌、配置、API、CLI、MCP 与架构文档，以及 `.env.example`，补充回收站与安全检查点的说明，并提供中文版本。
 - 备份指南（`docs/admin/backups.md`，并提供 `docs/zh-CN/admin/backups.md` 中文版本）说明备份内容、一致性、恢复、卷备份与异地目标，并在检查点、设置、密钥、CLI、API、MCP、数据目录、安全与架构文档中补充相关内容（[#116](https://github.com/ArnoChenFx/minibox/issues/116)）。
-- 新增 Box 内 Agent 指南（`docs/user-guide/agents.md` 与 `docs/zh-CN/user-guide/agents.md`），含供 Box 内 Agent 使用的 `AGENTS.md` 说明文本，并在 API、MCP、CLI、通知、访问与令牌、Box、安全、配置与数据目录文档中补充相关内容。Box 访问 MiniBox 需要服务器监听 `minibox-boxes` 网络可达的地址，见配置中的 `HOST`。
 - 宿主机、模板、端口预览与检查点指南去掉「模板不复制」与「不支持端口预览」的说明，并写明镜像复制与迁移要求目标引擎保留镜像 ID：Docker 的经典镜像存储满足此要求，containerd 镜像存储不满足。
 - 命令行与 API 参考补充模板同步与各操作的 `host` 参数。
+- 新增 Box 内 Agent 指南（`docs/user-guide/agents.md` 与 `docs/zh-CN/user-guide/agents.md`），含供 Box 内 Agent 使用的 `AGENTS.md` 说明文本，并在 API、MCP、CLI、通知、访问与令牌、Box、安全、配置与数据目录文档中补充相关内容。Box 访问 MiniBox 需要服务器监听 `minibox-boxes` 网络可达的地址，见配置中的 `HOST`。
 
 ## [0.5.0] - 2026-10-23
 

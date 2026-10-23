@@ -235,6 +235,14 @@ Pass other secrets, such as API keys, in `env`, not in `argv` or `cmd`. The audi
 
 `set_notify_channel` takes the fields of `PUT /api/notify/channels/{id}`: `id`, `name`, `type` and `events`, and optionally `boxes`, `enabled`, `url`, `server`, `topic`, `chatId` and `secret`. A secret is never returned. `list_notify_channels` shows only whether one is stored, as `hasSecret`. Omit `secret` to keep the stored one, or send `null` to clear it. The tools are for the owner only, and a token does not see them in `tools/list`. See [Notifications](../user-guide/notifications.md).
 
+## Backup and target tools
+
+The backup and target tools are for the owner only, so a token does not see them in `tools/list`.
+
+- `create_backup` takes a `passphrase`, so the MCP client that calls it sees the passphrase. Use the [command-line tool](cli.md#backups) with `MINIBOX_BACKUP_PASSPHRASE` when an agent should not see it.
+- `add_target` takes the target's credentials as arguments, so the client sees them as well. MiniBox stores them as secrets, and no tool returns them. For an SFTP server, call `test_target` first. If the server's host key is not yet known, the call fails with the fingerprint the server presented. Pass that fingerprint to `add_target` as `hostKeyFingerprint` once you have confirmed it.
+- `push_to_target` and `pull_from_target` take an object ID, `pk_…` or `bk_…`. See [Backups](../admin/backups.md#push-and-pull).
+
 ## Self tools
 
 These tools serve a box's own agent. See [Connecting AI agents](../user-guide/agents.md#a-boxs-own-agent).
@@ -244,11 +252,3 @@ These tools serve a box's own agent. See [Connecting AI agents](../user-guide/ag
 - `report_status` takes `state`, which is `working`, `waiting`, `done` or `failed`, and a `note` of one line, up to 500 characters.
 
 Every self token is limited to 60 calls a minute, counted per box. A call over the limit gets `429` with `too_many_requests` until the minute ends. The endpoint refuses a call to any other tool.
-
-## Backup and target tools
-
-The backup and target tools are for the owner only, so a token does not see them in `tools/list`.
-
-- `create_backup` takes a `passphrase`, so the MCP client that calls it sees the passphrase. Use the [command-line tool](cli.md#backups) with `MINIBOX_BACKUP_PASSPHRASE` when an agent should not see it.
-- `add_target` takes the target's credentials as arguments, so the client sees them as well. MiniBox stores them as secrets, and no tool returns them. For an SFTP server, call `test_target` first. If the server's host key is not yet known, the call fails with the fingerprint the server presented. Pass that fingerprint to `add_target` as `hostKeyFingerprint` once you have confirmed it.
-- `push_to_target` and `pull_from_target` take an object ID, `pk_…` or `bk_…`. See [Backups](../admin/backups.md#push-and-pull).
