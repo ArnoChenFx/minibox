@@ -36,64 +36,66 @@
   transform: rotate(180deg);
 }
 
-/* A picker's heading: its label at the left and its search at the right, wrapping when the dialog is narrow. */
-.picker-head {
+/* A section of the create dialog that folds under a chevron button. Every section uses the same heading, so they line
+   up: the chevron's stroke starts at the dialog's left edge. A search in the heading sits at the right and folds too. */
+.fold-section,
+.fold-section + .check-row {
+  margin-top: 16px;
+}
+.fold-head {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 8px 12px;
+  min-height: 20px;
 }
-
-/* A foldable section's heading button in the create dialog. The summary of what is chosen stays visible when folded. */
-.section-toggle {
+.fold-toggle {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   min-width: 0;
+  margin-left: -4px;
   padding: 0;
   border: 0;
   background: none;
-  color: var(--text);
+  color: var(--text-2);
   font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
   text-align: left;
   cursor: pointer;
+  user-select: none;
 }
-.section-toggle .label {
-  margin: 0;
+.fold-toggle:hover {
+  color: var(--text);
 }
-.section-toggle .icon {
-  flex: none;
-  color: var(--text-3);
-  transition: transform 0.12s;
-}
-.section-toggle[aria-expanded="false"] .icon {
-  transform: rotate(-90deg);
-}
-.section-toggle:hover .label {
-  color: var(--accent-text);
-}
-.section-toggle:focus-visible {
+.fold-toggle:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
   border-radius: 4px;
 }
-.section-summary {
+.fold-toggle .icon {
+  color: var(--text-3);
+  transition: transform 0.12s;
+}
+.fold-toggle[aria-expanded="false"] .icon {
+  transform: rotate(-90deg);
+}
+.fold-summary {
   overflow: hidden;
   color: var(--text-3);
   font-size: 12px;
+  font-weight: 400;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
-.section-body[hidden],
-.picker-head .search-box[hidden] {
+.fold-summary:empty,
+.fold-section[data-open="false"] .fold-head > .search-box,
+.fold-body[hidden] {
   display: none;
 }
-/* The sections sit after details and callouts as well as fields, so they space themselves. */
-.fold-section {
-  margin: 16px 0;
-}
-.section-toggle .label,
-.section-summary {
-  line-height: 20px;
+.fold-body {
+  margin-top: 12px;
 }
