@@ -374,7 +374,13 @@ export class FakeRuntime implements Runtime {
   /** References a pull cannot fetch, as a registry without that repository answers. Others are pulled on demand. */
   readonly unpullable = new Set<string>();
   /** Each build context as `buildImage` received it: the files on disk when the call was made, keyed by relative path. */
-  readonly builds: { tag: string; dockerfile: string; args: Record<string, string>; files: Map<string, string> }[] = [];
+  readonly builds: {
+    tag: string;
+    dockerfile: string;
+    args: Record<string, string>;
+    target: string | undefined;
+    files: Map<string, string>;
+  }[] = [];
   /** Bytes reported by `diskUsage`. Tests shrink `freeBytes` to exercise the low-space flag. */
   disk: DiskUsage = { totalBytes: 100_000_000_000, freeBytes: 40_000_000_000 };
   /** Answers `runHelper`. The default pretends `df`, `du` and `chown` succeeded. */
@@ -1369,7 +1375,13 @@ export class FakeRuntime implements Runtime {
     if (!files.has(spec.dockerfile)) {
       throw new RuntimeError("engine", `failed to read dockerfile: open ${spec.dockerfile}: no such file or directory`);
     }
-    this.builds.push({ tag: spec.tag, dockerfile: spec.dockerfile, args: { ...spec.args }, files });
+    this.builds.push({
+      tag: spec.tag,
+      dockerfile: spec.dockerfile,
+      args: { ...spec.args },
+      target: spec.target,
+      files,
+    });
     spec.onLog?.(this.buildLog);
     await this.gate("buildImage", [spec]);
     if (spec.signal?.aborted) throw abortError();

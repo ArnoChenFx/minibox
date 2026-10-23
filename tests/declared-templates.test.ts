@@ -4,14 +4,16 @@ import { createServer } from "node:http";
 import type { App } from "../src/app";
 import type { HostCtx } from "../src/host/registry";
 import { RuntimeError, type HelperSpec } from "../src/runtime";
+import * as boxes from "../src/services/boxes";
 import {
   createDeclaredTemplate,
   declaredTemplate,
   readRecipe,
   rebuildDeclaredTemplate,
+  templateSetupOf,
   type TemplateSource,
 } from "../src/services/template-builds";
-import { listTemplates, deleteTemplate } from "../src/services/templates";
+import { deleteTemplate, listTemplates, saveBoxAsTemplate } from "../src/services/templates";
 import { createTestApp, rejectionOf, silenceLogs } from "./support/app";
 import type { FakeRuntime } from "./support/fake-runtime";
 import { archive, entry, tarBytes } from "./support/tar";
@@ -356,9 +358,153 @@ describe("a template built from a devcontainer.json", () => {
     expect(build?.files.has("src/main.txt")).toBe(true);
   });
 
-  test("a devcontainer.json that asks for postCreateCommand is refused, with the reason as a hint", async () => {
+  test("a setting minibox does not apply is a warning in the build log, and the build goes on", async () => {
+    const l = lab();
+    l.repo.set(
+      ".devcontainer/devcontainer.json",
+      '{"image": "alpine:3.20", "features": {"ghcr.io/devcontainers/features/git:1": {}}, "remoteUser": "root"}',
+    );
+
+    await createDeclaredTemplate(
+      l.host,
+      { name: "dev", source: { kind: "devcontainer", url: "https://github.com/org/app.git" }, createdBy: "owner" },
+      progressOf(l),
+    );
+
+    const log = l.progress.join("");
+    expect(log).toContain("Warning: features is not supported, so it was not applied.\n");
+    expect(log).toContain(
+      'Warning: remoteUser "root" is not supported, because MiniBox runs commands as dev. It was not applied.\n',
+    );
+    expect(log.indexOf("Warning:")).toBeLessThan(log.indexOf("Successfully built"));
+    expect(l.runtime.builds).toHaveLength(1);
+  });
+
+  test("postCreateCommand and forwardPorts are kept with the recipe, and templateSetupOf reads them back", async () => {
+    const l = lab();
+    l.repo.set(
+      ".devcontainer/devcontainer.json",
+      '{"image": "alpine:3.20", "postCreateCommand": "npm install", "forwardPorts": [3000, "8080"]}',
+    );
+
+    await createDeclaredTemplate(
+      l.host,
+      { name: "dev", source: { kind: "devcontainer", url: "https://github.com/org/app.git" }, createdBy: "owner" },
+      progressOf(l),
+    );
+
+    const setup = { postCreate: ["/bin/sh", "-c", "npm install"], forwardPorts: [3000, 8080] };
+    expect(readRecipe(l.host, "dev")?.init).toEqual(setup);
+    expect(await templateSetupOf(l.host, "mbtest-template:dev")).toEqual(setup);
+    expect(JSON.stringify((await l.runtime.inspectImage("mbtest-template:dev")).labels)).not.toContain("npm install");
+  });
+
+  test("a devcontainer.json that asks for no command or port leaves the template with no setup", async () => {
+    const l = lab();
+    l.repo.set(".devcontainer/devcontainer.json", '{"image": "alpine:3.20", "containerEnv": {"A": "1"}}');
+
+    await createDeclaredTemplate(
+      l.host,
+      { name: "dev", source: { kind: "devcontainer", url: "https://github.com/org/app.git" }, createdBy: "owner" },
+      progressOf(l),
+    );
+
+    expect(readRecipe(l.host, "dev")?.init).toBeUndefined();
+    expect(await templateSetupOf(l.host, "mbtest-template:dev")).toBeNull();
+  });
+
+  test("a rebuild takes the setup of the newest devcontainer.json, and drops one the file no longer asks for", async () => {
     const l = lab();
     l.repo.set(".devcontainer/devcontainer.json", '{"image": "alpine:3.20", "postCreateCommand": "npm install"}');
+    await createDeclaredTemplate(
+      l.host,
+      { name: "dev", source: { kind: "devcontainer", url: "https://github.com/org/app.git" }, createdBy: "owner" },
+      progressOf(l),
+    );
+    expect(await templateSetupOf(l.host, "mbtest-template:dev")).not.toBeNull();
+
+    l.repo.set(".devcontainer/devcontainer.json", '{"image": "alpine:3.20"}');
+    await rebuildDeclaredTemplate(l.host, await declaredTemplate(l.host, "mbtest-template:dev"), progressOf(l));
+
+    expect(readRecipe(l.host, "dev")?.init).toBeUndefined();
+    expect(await templateSetupOf(l.host, "mbtest-template:dev")).toBeNull();
+  });
+
+  test("the setup belongs to the image the recipe built, so another image under the name has none", async () => {
+    const l = lab();
+    l.repo.set(".devcontainer/devcontainer.json", '{"image": "alpine:3.20", "postCreateCommand": "npm install"}');
+    await createDeclaredTemplate(
+      l.host,
+      { name: "dev", source: { kind: "devcontainer", url: "https://github.com/org/app.git" }, createdBy: "owner" },
+      progressOf(l),
+    );
+
+    l.runtime.moveTag("mbtest-template:dev", { [l.host.keys.template]: "true", [l.host.keys.templateName]: "dev" });
+
+    expect(await templateSetupOf(l.host, "mbtest-template:dev")).toBeNull();
+  });
+
+  test("a box saved from a template that has a setup gets none, so the setup is not inherited", async () => {
+    const l = lab();
+    l.repo.set(
+      ".devcontainer/devcontainer.json",
+      '{"image": "alpine:3.20", "postCreateCommand": "npm install", "forwardPorts": [3000]}',
+    );
+    await createDeclaredTemplate(
+      l.host,
+      { name: "dev", source: { kind: "devcontainer", url: "https://github.com/org/app.git" }, createdBy: "owner" },
+      progressOf(l),
+    );
+    const box = await boxes.createBox(l.host, { name: "alpha", image: "mbtest-template:dev", cpus: 1, memoryMb: 256 });
+    expect(await templateSetupOf(l.host, "mbtest-template:dev")).not.toBeNull();
+
+    await saveBoxAsTemplate(l.host, box.boxId, { name: "copy" }, "owner");
+
+    expect(readRecipe(l.host, "copy")).toBeNull();
+    expect(await templateSetupOf(l.host, "mbtest-template:copy")).toBeNull();
+  });
+
+  test("build.target builds that stage of the repository's Dockerfile, with no stage added", async () => {
+    const l = lab();
+    l.repo.set(".devcontainer/devcontainer.json", '{"build": {"dockerfile": "Dockerfile", "target": "dev"}}');
+    l.repo.set(".devcontainer/Dockerfile", "FROM alpine:3.20 AS base\nRUN true\nFROM base AS dev\nRUN echo dev\n");
+
+    await createDeclaredTemplate(
+      l.host,
+      { name: "dev", source: { kind: "devcontainer", url: "https://github.com/org/app.git" }, createdBy: "owner" },
+      progressOf(l),
+    );
+
+    const build = l.runtime.builds.at(-1);
+    expect(build).toMatchObject({ dockerfile: "Dockerfile", target: "dev" });
+    expect(build?.files.get("Dockerfile")).toBe("FROM alpine:3.20 AS base\nRUN true\nFROM base AS dev\nRUN echo dev\n");
+  });
+
+  test("with containerEnv as well, the target is extended by a last stage that adds the ENV lines", async () => {
+    const l = lab();
+    l.repo.set(
+      ".devcontainer/devcontainer.json",
+      '{"build": {"dockerfile": "Dockerfile", "target": "dev"}, "containerEnv": {"GREETING": "hi"}}',
+    );
+    l.repo.set(".devcontainer/Dockerfile", "FROM alpine:3.20 AS base\nRUN true\nFROM base AS dev\nRUN echo dev");
+
+    await createDeclaredTemplate(
+      l.host,
+      { name: "dev", source: { kind: "devcontainer", url: "https://github.com/org/app.git" }, createdBy: "owner" },
+      progressOf(l),
+    );
+
+    const build = l.runtime.builds.at(-1);
+    expect(build).toMatchObject({ target: "minibox-env" });
+    expect(build?.files.get(build?.dockerfile ?? "")).toBe(
+      'FROM alpine:3.20 AS base\nRUN true\nFROM base AS dev\nRUN echo dev\nFROM dev AS minibox-env\nENV GREETING="hi"\n',
+    );
+  });
+
+  test("a build.target that is not a stage of the Dockerfile is refused before the engine is asked to build", async () => {
+    const l = lab();
+    l.repo.set(".devcontainer/devcontainer.json", '{"build": {"dockerfile": "Dockerfile", "target": "tools"}}');
+    l.repo.set(".devcontainer/Dockerfile", "FROM alpine:3.20 AS base\nRUN true\n");
 
     const error = await rejectionOf(
       createDeclaredTemplate(
@@ -368,8 +514,7 @@ describe("a template built from a devcontainer.json", () => {
       ),
     );
 
-    expect(error).toMatchObject({ status: 400, key: "devcontainer_unsupported" });
-    expect((error as { hint?: string }).hint).toBeDefined();
+    expect(error).toMatchObject({ status: 400, key: "devcontainer_target_missing" });
     expect(l.runtime.builds).toEqual([]);
   });
 

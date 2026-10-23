@@ -146,7 +146,7 @@ export const templateCreate = defineOperation({
     toolset: "tools",
     name: "create_template",
     description:
-      "Build a template in the background from a source: kind dockerfile with text, git with url (and optional branch, subdir, dockerfile, secretRef), context with url of a .tar or .tar.gz (and optional dockerfile), or devcontainer with url of a repository (and optional branch, path, secretRef) whose devcontainer.json names an image or a build. containerEnv is kept, and any other devcontainer.json setting is refused. Optional host builds on that host, default local. Owner only. Returns a task id; the task log shows the build.",
+      "Build a template in the background from a source: kind dockerfile with text, git with url (and optional branch, subdir, dockerfile, secretRef), context with url of a .tar or .tar.gz (and optional dockerfile), or devcontainer with url of a repository (and optional branch, path, secretRef) whose devcontainer.json names an image or a build. containerEnv and remoteEnv are set in the image, and postCreateCommand and forwardPorts are stored with the template. Any other devcontainer.json setting is listed as a warning in the task log and not applied. Optional host builds on that host, default local. Owner only. Returns a task id; the task log shows the build.",
   },
   hostFor: (ctx, input) => hostNamed(ctx, input.host),
   precondition: async ({ host }) => refuseAgent(host, "templates"),
