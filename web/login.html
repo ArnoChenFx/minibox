@@ -30,10 +30,11 @@
     </section>
     <section class="login-panel">
       <div class="login-tools"><button class="icon-btn" id="langBtn"></button><button class="icon-btn" id="themeBtn" aria-label="Toggle theme" data-i18n-attr="aria-label:shell.toggleTheme"></button></div>
-      <form class="login-card" id="loginForm" novalidate>
+      <form class="login-card" id="loginForm" method="post" action="/api/auth/login" novalidate>
         <img class="logo" data-logo src="/assets/logo.svg" alt="MiniBox" />
         <h2 data-i18n="login.heading">Sign in to the console</h2>
         <p class="sub" data-i18n="login.sub">Enter your access key to continue.</p>
+        <input class="login-username" id="username" name="username" type="text" value="minibox" autocomplete="username" tabindex="-1" spellcheck="false" autocapitalize="off" data-i18n-attr="aria-label:login.usernameLabel" aria-label="Username" />
         <div class="field">
           <label class="label" for="key" data-i18n="login.keyLabel">Access key</label>
           <div class="input-group"><span data-icon="key"></span><input class="input" id="key" name="key" type="password" autocomplete="current-password" placeholder="Paste the 64-character access key" data-i18n-attr="placeholder:login.keyPlaceholder" autofocus required /></div>

@@ -67,6 +67,7 @@ export default {
   "login.feat4": "In-browser terminal, no SSH setup needed",
   "login.heading": "Sign in to the console",
   "login.sub": "Enter your access key to continue.",
+  "login.usernameLabel": "Username",
   "login.keyLabel": "Access key",
   "login.keyPlaceholder": "Paste the 64-character access key",
   "login.submit": "Sign in",

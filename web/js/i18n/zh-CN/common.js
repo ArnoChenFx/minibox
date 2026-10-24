@@ -66,6 +66,7 @@ export default {
   "login.feat4": "浏览器内终端，无需额外配置 SSH",
   "login.heading": "登录控制台",
   "login.sub": "请输入访问密钥以继续。",
+  "login.usernameLabel": "用户名",
   "login.keyLabel": "访问密钥",
   "login.keyPlaceholder": "粘贴 64 位访问密钥",
   "login.submit": "登录",
