@@ -5,6 +5,7 @@ import {
   needsSync,
   syncSizeMb,
   templateCards,
+  templateDetailRows,
   templateSearchFields,
   withOfficialCards,
 } from "../web/js/lib/template-list.js";
@@ -55,6 +56,37 @@ describe("template cards", () => {
 
   test("no rows make no cards", () => {
     expect(templateCards([])).toEqual([]);
+  });
+});
+
+describe("the detail rows a template card shows", () => {
+  test("a template with both a command and ports shows a row for each", () => {
+    expect(templateDetailRows({ postCreate: ["/bin/sh", "-c", "npm install"], forwardPorts: [3000, 8080] })).toEqual([
+      { key: "tp.postCreate", text: "npm install" },
+      { key: "tp.ports", text: "3000, 8080" },
+    ]);
+  });
+
+  test("a string command shows by itself, without the sh -c run it becomes", () => {
+    expect(templateDetailRows({ postCreate: ["/bin/sh", "-c", "npm install"] })).toEqual([
+      { key: "tp.postCreate", text: "npm install" },
+    ]);
+    expect(templateDetailRows({ postCreate: ["npm", "install"] })).toEqual([
+      { key: "tp.postCreate", text: "npm install" },
+    ]);
+  });
+
+  test("a template with only one of the two shows only its row", () => {
+    expect(templateDetailRows({ postCreate: ["/bin/sh", "-c", "npm install"] })).toEqual([
+      { key: "tp.postCreate", text: "npm install" },
+    ]);
+    expect(templateDetailRows({ forwardPorts: [5432] })).toEqual([{ key: "tp.ports", text: "5432" }]);
+  });
+
+  test("a template with neither shows no row at all, and no placeholder", () => {
+    expect(templateDetailRows({})).toEqual([]);
+    expect(templateDetailRows({ forwardPorts: [] })).toEqual([]);
+    expect(templateDetailRows({ postCreate: [], forwardPorts: [] })).toEqual([]);
   });
 });
 

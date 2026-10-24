@@ -8,6 +8,18 @@ export interface TemplateRow {
 /** One template reference with the hosts that hold it, in the order the server listed them. */
 export type TemplateCard = TemplateRow & { holders: string[] };
 
+/** One detail row a template card shows: which i18n key labels it, and the text to show. */
+export interface TemplateDetailRow {
+  key: "tp.postCreate" | "tp.ports";
+  text: string;
+}
+
+/** A template's setup as the template list reports it. */
+export interface TemplateSetup {
+  postCreate?: string[];
+  forwardPorts?: number[];
+}
+
 /** An official template from GET /api/templates/official. */
 export interface OfficialRow {
   name: string;
@@ -25,6 +37,7 @@ export interface UnbuiltCard extends OfficialRow {
 }
 
 export declare function templateSearchFields(template: TemplateRow | UnbuiltCard, badge: string | undefined): unknown[];
+export declare function templateDetailRows(template: TemplateSetup): TemplateDetailRow[];
 export declare function templateCards(rows: readonly TemplateRow[]): TemplateCard[];
 export declare function withOfficialCards(
   cards: readonly TemplateCard[],

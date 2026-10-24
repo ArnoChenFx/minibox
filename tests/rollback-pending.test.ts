@@ -20,7 +20,6 @@ import {
 import { rebuildBox } from "../src/services/rebuild";
 import { reconcileHost } from "../src/services/reconcile";
 import { confirmRollback, pendingRollbackView, undoRollback } from "../src/services/rollback";
-import { deleteVolume } from "../src/services/volumes";
 import { createTestApp, rejectionOf, silenceLogs } from "./support/app";
 import type { FakeRuntime } from "./support/fake-runtime";
 import type { FakeCheckpointEngine } from "./support/fake-snapshots";
@@ -173,7 +172,12 @@ describe("a rollback that waits for its confirm or undo", () => {
 
   test("a confirm skips a replaced volume that is already gone, and still clears the record", async () => {
     const { box, pending } = await rolledBack("alpha");
-    await deleteVolume(host, pending.replaced[0]?.volumeId ?? "");
+    // A volume a pending rollback keeps is refused now, so the engine data is dropped directly to model a loss instead.
+    const first = pending.replaced[0];
+    const record = first ? host.volumes.read(first.volumeId) : undefined;
+    if (!first || !record) throw new Error("the replaced volume is missing");
+    await runtime.removeVolume(record.engineName);
+    host.volumes.remove(record.id);
 
     const done = await confirmRollback(host, box.boxId);
 
@@ -230,7 +234,11 @@ describe("a rollback that waits for its confirm or undo", () => {
 
   test("undo is refused, and the restored volume is kept, when a replaced volume no longer exists", async () => {
     const { box, restored, pending } = await rolledBack("alpha");
-    await deleteVolume(host, pending.replaced[0]?.volumeId ?? "");
+    const first = pending.replaced[0];
+    const record = first ? host.volumes.read(first.volumeId) : undefined;
+    if (!first || !record) throw new Error("the replaced volume is missing");
+    await runtime.removeVolume(record.engineName);
+    host.volumes.remove(record.id);
     const revision = host.specs.read(box.boxId)?.revision ?? 0;
 
     const error = await rejectionOf(undoRollback(host, box.boxId, { revision }));

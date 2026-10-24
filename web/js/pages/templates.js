@@ -11,7 +11,13 @@ import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
 import { filterBySearch, searchTerms } from "../lib/search.js";
 import { invalidateTemplates } from "../lib/store.js";
-import { isUnbuilt, templateCards, templateSearchFields, withOfficialCards } from "../lib/template-list.js";
+import {
+  isUnbuilt,
+  templateCards,
+  templateDetailRows,
+  templateSearchFields,
+  withOfficialCards,
+} from "../lib/template-list.js";
 import { imageRefOk, KIND_LABEL_KEYS } from "../lib/template-source.js";
 import { confirmDialog, emptyState, nameError, promptDialog, toast, toastError, withBusy } from "../lib/ui.js";
 
@@ -63,6 +69,16 @@ function presenceHtml(card) {
       return `<div class="row between"><span>${name}</span><span class="row" style="gap:8px"><span class="badge">${esc(t("tp.absent"))}</span>
         <button class="btn btn-sm" ${action}${blocked ? ` disabled title="${esc(blocked)}"` : ""}>${icon(unbuilt ? "hammer" : "copy")}${esc(t(unbuilt ? "tp.buildHere" : "tp.copyHere"))}</button></span></div>`;
     })
+    .join("");
+}
+
+/**
+ * The setup lines of a card: one per detail the template's devcontainer.json asks for. The command cell truncates, so a
+ * long one cannot stretch the card.
+ */
+function detailsHtml(tp) {
+  return templateDetailRows(tp)
+    .map((row) => `<dt>${t(row.key)}</dt><dd class="mono truncate" title="${esc(row.text)}">${esc(row.text)}</dd>`)
     .join("");
 }
 
@@ -150,7 +166,7 @@ export function render(view, focusName = "") {
           ${tp.source ? `<div class="help" style="margin-top:-4px;margin-bottom:8px">${esc(t("tp.fromBox", { name: tp.source }))}</div>` : ""}
           ${tp.buildKind && !unbuilt ? `<div class="help" style="margin-top:-4px;margin-bottom:8px">${esc(t("tp.builtFrom", { kind: t(KIND_LABEL_KEYS[tp.buildKind]) }))}</div>` : ""}
           ${unbuilt ? `<div class="help" style="margin-top:-4px;margin-bottom:8px">${esc(t("tp.notBuiltHelp"))}</div>` : ""}
-          <dl class="kv" style="margin-top:14px;font-size:12.5px"><dt>${t("tp.image")}</dt><dd class="mono">${esc(tp.ref)}</dd><dt>${t("tp.size")}</dt><dd>${bytes(tp.size)}</dd><dt>${t("tp.created")}</dt><dd>${dateTime(tp.createdAt)}</dd></dl>
+          <dl class="kv" style="margin-top:14px;font-size:12.5px"><dt>${t("tp.image")}</dt><dd class="mono">${esc(tp.ref)}</dd><dt>${t("tp.size")}</dt><dd>${bytes(tp.size)}</dd><dt>${t("tp.created")}</dt><dd>${dateTime(tp.createdAt)}</dd>${detailsHtml(tp)}</dl>
           ${multiHost() ? `<div class="stack" style="margin-top:14px;gap:6px"><div class="help">${esc(t("tp.hosts"))}</div>${presenceHtml(tp)}</div>` : ""}
         </div>
         <div class="dialog-foot" style="justify-content:space-between;background:transparent">

@@ -1,11 +1,11 @@
-import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { questionsPath, selfTokensPath } from "../src/data-dir";
 import { AppError } from "../src/lib/errors";
-import { setLogLevel } from "../src/lib/logger";
+import { setLogSink } from "../src/lib/logger";
 import { RuntimeError } from "../src/runtime";
 import { SELF_TOKEN_PATH } from "../src/services/self-token";
 import { SELF_QUOTA } from "../src/tokens/self-policy";
@@ -290,19 +290,12 @@ describe("a self token stays out of events, the audit trail, the console and the
   let restoreConsole: () => void;
 
   beforeEach(() => {
-    setLogLevel("info");
     harness = startHarness({ logLevel: "debug" });
     lines = [];
-    const log = spyOn(console, "log").mockImplementation((line: unknown) => {
-      lines.push(String(line));
+    // The sink keeps the test's own lines out of the console mocks every concurrently running file holds.
+    restoreConsole = setLogSink((_level, line) => {
+      lines.push(line);
     });
-    const error = spyOn(console, "error").mockImplementation((line: unknown) => {
-      lines.push(String(line));
-    });
-    restoreConsole = () => {
-      log.mockRestore();
-      error.mockRestore();
-    };
   });
   afterEach(() => {
     restoreConsole();

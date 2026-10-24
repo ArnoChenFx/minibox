@@ -47,6 +47,8 @@ export default {
   "tp.image": "Image",
   "tp.size": "Size",
   "tp.created": "Created",
+  "tp.postCreate": "Setup command",
+  "tp.ports": "Ports",
   "tp.delete": "Delete template",
   "tp.use": "Create from this",
   "tp.fromBox": "From box {name}",
