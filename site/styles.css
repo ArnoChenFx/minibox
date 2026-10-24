@@ -601,7 +601,7 @@ h3 {
 .hosts-feature {
   display: grid;
   grid-column: span 6;
-  grid-template-rows: 1fr minmax(208px, auto);
+  grid-template-rows: 1fr auto;
   gap: 32px;
   padding: 31px 32px 32px;
 }
@@ -634,36 +634,39 @@ h3 {
   background: #fff;
 }
 .checkpoint-diagram {
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
+  display: grid;
+  align-content: start;
+  gap: 20px;
 }
 .checkpoint-track {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  justify-self: center;
+  width: max-content;
+  max-width: 100%;
+  gap: 12px;
   position: relative;
 }
 .checkpoint-track::before {
   content: "";
   position: absolute;
-  height: 1px;
-  background: linear-gradient(90deg, #c3bfd2, #9981db);
-  left: calc(100% / 6);
-  right: calc(100% / 6);
+  width: 1px;
+  background: linear-gradient(#c3bfd2, #9981db);
+  left: 13px;
   top: 13px;
+  bottom: 13px;
 }
 .checkpoint-node {
   position: relative;
   display: flex;
-  flex-direction: column;
   align-items: center;
   gap: 14px;
   font-size: 13px;
   line-height: 1.5;
-  text-align: center;
+  text-align: left;
   color: #6d6579;
 }
 .node-dot {
+  flex: none;
   width: 26px;
   height: 26px;
   border: 5px solid #f6f8fa;
@@ -732,21 +735,21 @@ h3 {
   border-radius: 12px;
   background: #fff;
   box-shadow: 0 4px 14px #6650a51a;
-  width: 64px;
-  height: 64px;
+  width: 48px;
+  height: 48px;
 }
 .host-lines {
   display: flex;
   flex-shrink: 0;
   justify-content: space-between;
-  height: 32px;
+  height: 16px;
   border-top: 1px solid #c1b5d5;
-  margin: 20px calc(100% / 6) 0;
+  margin: 12px calc(100% / 6) 0;
   position: relative;
 }
 .host-lines::before {
   content: "";
-  height: 21px;
+  height: 13px;
   border-left: 1px solid #c1b5d5;
   position: absolute;
   left: 50%;
@@ -758,15 +761,13 @@ h3 {
 }
 .host-nodes {
   display: grid;
-  flex: 1;
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 .host-nodes > div {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  gap: 20px;
   color: #655e74;
   font-size: 13px;
   line-height: 1.5;
@@ -1360,9 +1361,6 @@ html[lang="zh-CN"] .essentials h3 {
     grid-template-rows: auto auto;
     gap: 28px;
     padding: 25px;
-  }
-  .checkpoint-diagram {
-    gap: 24px;
   }
   .essentials {
     grid-template-columns: 1fr;
