@@ -12,6 +12,7 @@ import {
   canExec,
   compileToken,
   fileAccess,
+  presetPolicy,
   requiredScopes,
   resolveBoxRefs,
   scopeAllowed,
@@ -196,6 +197,76 @@ describe("token store", () => {
       try {
         expect(restored.list()).toHaveLength(1);
         expect(restored.list()[0]?.quotas.maxCheckpoints).toBeNull();
+      } finally {
+        restored.stop();
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("a stored operator or admin token loses the volume:delete its preset no longer grants", () => {
+    const dir = mkdtempSync(join(tmpdir(), "minibox-tokens-"));
+    const file = join(dir, "tokens.json");
+    const store = new TokenStore({ file });
+    try {
+      store.create(compileToken({ name: "op", preset: "operator" }), "owner");
+      store.create(compileToken({ name: "adm", preset: "admin" }), "owner");
+      store.create(compileToken({ name: "vol", preset: "operator", volumes: { type: "all" } }), "owner");
+      store.stop();
+      // The shape an older build wrote: the preset's scopes as they were, volume:delete included.
+      const stored = JSON.parse(readFileSync(file, "utf8")) as { tokens: { name: string; scopes: string[] }[] };
+      for (const entry of stored.tokens) entry.scopes.push("volume:delete");
+      writeFileSync(file, JSON.stringify(stored));
+
+      const restored = new TokenStore({ file });
+      try {
+        const scopes = (name: string) => restored.list().find((item) => item.name === name)?.scopes ?? [];
+        expect(scopes("op")).not.toContain("volume:delete");
+        expect(scopes("adm")).not.toContain("volume:delete");
+        expect(scopes("vol")).not.toContain("volume:delete");
+        // The trim keeps the rest of the preset, and the volume:attach the volume grant added.
+        expect(scopes("op").toSorted()).toEqual([...presetPolicy("operator").scopes].toSorted());
+        expect(scopes("adm").toSorted()).toEqual([...presetPolicy("admin").scopes].toSorted());
+        expect(scopes("vol")).toContain("volume:attach");
+        // The file is rewritten without it, so the next start reads a token that is already clean.
+        restored.stop();
+        const again = JSON.parse(readFileSync(file, "utf8")) as { tokens: { scopes: string[] }[] };
+        expect(again.tokens.some((entry) => entry.scopes.includes("volume:delete"))).toBe(false);
+      } finally {
+        restored.stop();
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("an owner's own token keeps volume:delete: no preset, or a preset the owner adjusted by hand", () => {
+    const dir = mkdtempSync(join(tmpdir(), "minibox-tokens-"));
+    const file = join(dir, "tokens.json");
+    const store = new TokenStore({ file });
+    try {
+      // Named by hand, with no preset: the one way an owner grants a scope no preset holds.
+      const own = store.create(compileToken({ name: "own", scopes: ["volume:read", "volume:delete"] }), "owner");
+      // A preset the owner then adjusted: not exactly the preset, so it is the owner's own list.
+      const edited = store.create(
+        compileToken({ name: "edited", preset: "operator", scopes: ["volume:write", "volume:delete"] }),
+        "owner",
+      );
+      store.stop();
+
+      const restored = new TokenStore({ file });
+      try {
+        const scopes = (name: string) => restored.list().find((item) => item.name === name)?.scopes ?? [];
+        expect(scopes("own")).toEqual(["volume:read", "volume:delete"]);
+        expect(scopes("edited")).toEqual(["volume:write", "volume:delete"]);
+        // It still works: the scope reaches the batch delete for both tokens.
+        const principal = restored.authenticate(own.secret, "127.0.0.1");
+        expect(principal?.grants?.scopes).toContain("volume:delete");
+        expect(scopeAllowed(principal?.grants as TokenGrants, "volume:delete")).toBe(true);
+        expect(
+          scopeAllowed(restored.authenticate(edited.secret, "127.0.0.1")?.grants as TokenGrants, "volume:delete"),
+        ).toBe(true);
       } finally {
         restored.stop();
       }
