@@ -101,9 +101,13 @@ a {
 }
 .nav-shell {
   height: 84px;
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
   gap: 40px;
+}
+.site-header .wordmark {
+  justify-self: start;
 }
 .wordmark {
   display: inline-flex;
@@ -122,8 +126,6 @@ a {
   display: flex;
   align-items: center;
   gap: 29px;
-  margin: auto;
-  padding-left: 120px;
 }
 .desktop-nav a {
   font-size: 13px;
@@ -136,6 +138,7 @@ a {
 }
 .nav-actions {
   display: flex;
+  justify-self: end;
   align-items: center;
   gap: 25px;
 }
@@ -277,24 +280,25 @@ h1 > span {
 }
 .hero-facts {
   display: flex;
+  align-items: baseline;
   justify-content: center;
-  gap: 23px;
   margin-top: 25px;
-  color: #8c8c97;
-  font-size: 10px;
+  color: #6f6b7a;
+  font-size: 12px;
+  line-height: 20px;
 }
-.hero-facts span + span {
-  position: relative;
+.hero-facts > span {
+  white-space: nowrap;
 }
-.hero-facts span + span::before {
+.hero-facts > span + span::before {
   content: "";
+  display: inline-block;
   width: 3px;
   height: 3px;
   border-radius: 50%;
-  position: absolute;
-  background: #b8b4c7;
-  top: 50%;
-  left: -13px;
+  background: #a39bac;
+  margin-inline: 12px;
+  vertical-align: middle;
 }
 .product-showcase {
   padding-top: 52px;
@@ -596,7 +600,20 @@ h3 {
 .checkpoint-feature,
 .hosts-feature {
   grid-column: span 6;
-  min-height: 407px;
+  min-height: 450px;
+}
+.checkpoint-feature .feature-copy h3,
+.hosts-feature .feature-copy h3 {
+  font-size: 22px;
+}
+.checkpoint-feature .feature-copy p,
+.hosts-feature .feature-copy p {
+  color: #686370;
+  font-size: 14px;
+}
+.checkpoint-feature .text-link,
+.hosts-feature .text-link {
+  font-size: 13px;
 }
 .checkpoint-feature {
   background: #f6f8fa;
@@ -609,7 +626,7 @@ h3 {
 }
 .checkpoint-track {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   position: relative;
   padding-bottom: 22px;
 }
@@ -618,38 +635,36 @@ h3 {
   position: absolute;
   height: 1px;
   background: linear-gradient(90deg, #c3bfd2, #9981db);
-  left: 18px;
-  right: 18px;
-  top: 9px;
+  left: calc(100% / 6);
+  right: calc(100% / 6);
+  top: 13px;
 }
 .checkpoint-node {
   position: relative;
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: 15px;
-  font-size: 9px;
-  color: #9994a5;
+  align-items: center;
+  gap: 14px;
+  font-size: 13px;
+  line-height: 1.5;
+  text-align: center;
+  color: #6d6579;
 }
 .node-dot {
-  width: 18px;
-  height: 18px;
-  border: 4px solid #f6f8fa;
+  width: 26px;
+  height: 26px;
+  border: 5px solid #f6f8fa;
   outline: 1px solid #c8c1d7;
   border-radius: 50%;
   background: #a49bb8;
   z-index: 1;
-}
-.checkpoint-branch {
-  align-items: center;
 }
 .checkpoint-branch .node-dot {
   outline-color: #a894d6;
   background: #b5a0e4;
 }
 .checkpoint-current {
-  align-items: flex-end;
-  color: #7661aa;
+  color: #63488f;
 }
 .checkpoint-current .node-dot {
   background: #8870c9;
@@ -660,93 +675,99 @@ h3 {
   justify-content: center;
 }
 .node-dot .icon {
-  width: 12px;
-  height: 12px;
+  width: 17px;
+  height: 17px;
   color: white;
 }
 .checkpoint-file {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   background: white;
   border: 1px solid #e7e6ed;
-  padding: 10px 13px;
+  padding: 12px 14px;
   border-radius: 7px;
-  color: #a299b2;
+  color: #6d6579;
+}
+.checkpoint-file .icon {
+  width: 20px;
+  height: 20px;
 }
 .checkpoint-file code {
-  font-size: 10px;
-  color: #8a8197;
+  font-size: 13px;
+  color: #655e74;
 }
 .checkpoint-file > span {
-  font-size: 9px;
+  font-size: 12px;
+  line-height: 1.5;
   margin-left: auto;
 }
 .host-diagram {
-  max-width: 370px;
-  margin: 23px auto 25px;
+  width: calc(100% - 64px);
+  max-width: 420px;
+  margin: 28px auto 32px;
 }
 .host-center {
   display: flex;
   justify-content: center;
 }
 .host-center img {
-  padding: 3px;
+  padding: 4px;
   border: 1px solid #efecf6;
   border-radius: 12px;
   background: #fff;
   box-shadow: 0 4px 14px #6650a51a;
-  width: 46px;
-  height: 46px;
+  width: 64px;
+  height: 64px;
 }
 .host-lines {
   display: flex;
   justify-content: space-between;
-  height: 28px;
-  border-top: 1px solid #ded6ee;
-  margin: 16px 60px 0;
+  height: 32px;
+  border-top: 1px solid #c1b5d5;
+  margin: 20px calc(100% / 6) 0;
   position: relative;
 }
 .host-lines::before {
   content: "";
-  height: 17px;
-  border-left: 1px solid #ded6ee;
+  height: 21px;
+  border-left: 1px solid #c1b5d5;
   position: absolute;
   left: 50%;
   bottom: 100%;
 }
 .host-lines span {
   height: 100%;
-  border-left: 1px solid #ded6ee;
+  border-left: 1px solid #c1b5d5;
 }
 .host-nodes {
-  display: flex;
-  justify-content: space-between;
-  gap: 20px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 .host-nodes > div {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 9px;
-  color: #97909f;
-  font-size: 9px;
-  flex: 1;
+  gap: 12px;
+  color: #655e74;
+  font-size: 13px;
+  line-height: 1.5;
+  text-align: center;
 }
 .host-icon {
-  width: 42px;
-  height: 37px;
+  width: 58px;
+  height: 52px;
   border: 1px solid #e8e2f1;
   border-radius: 7px;
   display: flex;
   align-items: center;
   justify-content: center;
   background: #fbf9ff;
-  color: #9d8ab9;
+  color: #80669f;
 }
 .host-icon .icon {
-  width: 21px;
-  height: 21px;
+  width: 28px;
+  height: 28px;
 }
 .essentials {
   display: grid;
@@ -1058,7 +1079,6 @@ html[lang="zh-CN"] .essentials h3 {
     width: calc(100% - 64px);
   }
   .desktop-nav {
-    padding-left: 20px;
     gap: 22px;
   }
   h1 {
@@ -1108,6 +1128,7 @@ html[lang="zh-CN"] .essentials h3 {
     width: calc(100% - 40px);
   }
   .nav-shell {
+    display: flex;
     height: 70px;
     gap: 20px;
   }
@@ -1202,11 +1223,9 @@ html[lang="zh-CN"] .essentials h3 {
   }
   .hero-facts {
     margin-top: 24px;
-    gap: 20px;
-    font-size: 9px;
   }
-  .hero-facts span + span::before {
-    left: -11px;
+  .hero-facts > span + span::before {
+    margin-inline: 8px;
   }
   .product-showcase {
     padding-top: 37px;
@@ -1325,10 +1344,8 @@ html[lang="zh-CN"] .essentials h3 {
     margin: 35px 25px 27px;
   }
   .host-diagram {
-    margin: 29px 20px;
-  }
-  .host-lines {
-    margin-inline: 48px;
+    width: calc(100% - 50px);
+    margin: 29px auto;
   }
   .essentials {
     grid-template-columns: 1fr;
