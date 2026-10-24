@@ -303,6 +303,7 @@ export default {
   "err.token_expiry_invalid": "Expiry must be a positive number of seconds up to {max}, or null for no expiry.",
   "err.token_not_found": "Token not found.",
   "err.token_name_taken": "A token named “{name}” already exists.",
+  "err.token_delete_live": "Token “{name}” is still live. Revoke it first, then delete it.",
   "err.token_limit": "At most {max} live tokens can exist. Revoke one, then create another.",
   "err.token_rate_limited": "This token has used its rate limit. Try again in a moment.",
   "err.box_out_of_scope": "This credential cannot use that box.",

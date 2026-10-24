@@ -5,7 +5,8 @@ const DEFAULT_PRESET = "sandboxed-agent";
 
 /**
  * `token create` mints an agent token with the owner's key. The secret goes to stdout, once, so a script can capture it,
- * and the summary goes to stderr. Listing and revoking tokens are in the console and the REST API.
+ * and the summary goes to stderr. `token delete <id>` removes the record of a revoked or expired token, and `token
+ * prune` removes all of them. Listing and revoking tokens are in the console and the REST API.
  */
 export async function tokenCommand(
   argv: string[],
@@ -13,7 +14,9 @@ export async function tokenCommand(
   io: CliIo,
 ): Promise<number> {
   const [sub, ...rest] = argv;
-  if (sub !== "create") throw new Error("minibox token needs create");
+  if (sub === "delete") return tokenDeleteCommand(rest, env, io);
+  if (sub === "prune") return tokenPruneCommand(rest, env, io);
+  if (sub !== "create") throw new Error("minibox token needs create, delete or prune");
   const options = parseOptions(rest, ["--preset", "--scopes", "--expires-in"], ["--json"]);
   const [name, ...more] = options.positional;
   if (!name || more.length > 0) throw new Error("minibox token create needs exactly one name");
@@ -33,5 +36,31 @@ export async function tokenCommand(
   const { token, record } = res.json as { token: string; record: { id: string; name: string } };
   io.stderr(`Created token ${record.name} (${record.id}). MiniBox shows the secret once, so store it now.\n`);
   io.stdout(`${token}\n`);
+  return 0;
+}
+
+/** `token delete <id>`: deletes the record of a revoked or expired token. A live token is refused with 409. */
+async function tokenDeleteCommand(argv: string[], env: Record<string, string | undefined>, io: CliIo): Promise<number> {
+  const options = parseOptions(argv, [], ["--json"]);
+  const [id, ...more] = options.positional;
+  if (!id || more.length > 0) throw new Error("minibox token delete needs exactly one token id");
+  const res = await request(env, "DELETE", `/api/tokens/${encodeURIComponent(id)}/record`);
+  if (res.status >= 400) return fail(io, res.status, res.json, res.text);
+  if (options.switches.has("--json")) return printJson(io, res.json);
+  const { token } = res.json as { token: { id: string; name: string } };
+  io.stdout(`Deleted token ${token.name} (${token.id})\n`);
+  return 0;
+}
+
+/** `token prune`: deletes the record of every revoked or expired token. Live tokens are never touched. */
+async function tokenPruneCommand(argv: string[], env: Record<string, string | undefined>, io: CliIo): Promise<number> {
+  const options = parseOptions(argv, [], ["--json"]);
+  if (options.positional.length > 0) throw new Error("minibox token prune takes no arguments");
+  const res = await request(env, "POST", "/api/tokens/prune", {});
+  if (res.status >= 400) return fail(io, res.status, res.json, res.text);
+  if (options.switches.has("--json")) return printJson(io, res.json);
+  const { deleted } = res.json as { deleted: { id: string; name: string }[] };
+  for (const token of deleted) io.stdout(`Deleted token ${token.name} (${token.id})\n`);
+  io.stdout(deleted.length === 0 ? "No revoked or expired tokens to delete\n" : `${deleted.length} deleted\n`);
   return 0;
 }

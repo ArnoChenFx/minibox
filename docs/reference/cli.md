@@ -292,6 +292,8 @@ See [SSH access and the command-line tool](../user-guide/ssh-and-cli.md) for the
 | Command | Meaning |
 |---|---|
 | `minibox token create <name> [--preset P] [--scopes LIST] [--expires-in SEC] [--json]` | Creates an agent token and prints its secret on standard output, once. The summary goes to standard error. `--preset` names a preset, and `--scopes` takes a comma-separated list of scopes instead. With neither, the preset is `sandboxed-agent`. `--expires-in` is in seconds. `--json` prints the response. Only the owner can create a token, so set `MINIBOX_ACCESS_KEY` to the access key. |
+| `minibox token delete <id> [--json]` | Deletes the record of a revoked or expired token. A live token is refused with a conflict error: revoke it first. Only the owner can delete a token. |
+| `minibox token prune [--json]` | Deletes the records of every revoked and expired token, and prints each one. Live tokens are never touched. |
 
 See [Access, sessions and tokens](../user-guide/access-and-tokens.md) for the presets and scopes.
 

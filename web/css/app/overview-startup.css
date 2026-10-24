@@ -181,6 +181,10 @@
   gap: 12px;
   padding: 20px 22px 0;
 }
+/* A dialog with only a head and a foot (a plain confirm) keeps a gap between its text and the foot's border. */
+.dialog:not(:has(.dialog-body)) .dialog-head {
+  padding-bottom: 18px;
+}
 .dialog-head h2 {
   font-size: 16px;
 }

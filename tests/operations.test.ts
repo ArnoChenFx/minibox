@@ -245,6 +245,12 @@ const SAMPLES: Record<string, (boxId: string, app: App) => unknown> = {
   "token.revoke": (_boxId, app) => ({
     id: app.tokens.create(compileToken({ name: "gone", preset: "readonly" }), "owner").record.id,
   }),
+  "token.delete": (_boxId, app) => {
+    const { record } = app.tokens.create(compileToken({ name: "ended", preset: "readonly" }), "owner");
+    app.tokens.revoke(record.id);
+    return { id: record.id };
+  },
+  "token.prune": () => ({}),
   "host.list": () => ({}),
   "host.usage": () => ({}),
   "host.add": () => ({ id: "lab", endpoint: "unix:///var/run/lab.sock" }),

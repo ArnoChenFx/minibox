@@ -251,6 +251,7 @@ export default {
   "err.token_expiry_invalid": "有效期必须是不超过 {max} 的正整数秒，或用 null 表示不过期。",
   "err.token_not_found": "找不到该令牌。",
   "err.token_name_taken": "名为「{name}」的令牌已存在。",
+  "err.token_delete_live": "令牌「{name}」仍然有效。请先吊销，再删除。",
   "err.token_limit": "最多只能有 {max} 个有效令牌。请先吊销一个再创建。",
   "err.token_rate_limited": "该令牌已达到速率上限，请稍后再试。",
   "err.box_out_of_scope": "当前凭据不能使用该 Box。",

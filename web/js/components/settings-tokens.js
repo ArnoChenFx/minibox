@@ -15,6 +15,11 @@ function linesOf(value) {
     .filter(Boolean);
 }
 
+/** A token whose record can be deleted: revoked, or past its expiry. A live token has to be revoked first. */
+function isEnded(token) {
+  return tokenStatus(token).badge !== "badge-success";
+}
+
 function tokenStatus(token) {
   if (token.revokedAt) return { key: "st.tokenRevoked", badge: "badge-danger" };
   if (token.expiresAt && Date.parse(token.expiresAt) <= Date.now())
@@ -60,14 +65,18 @@ export async function loadTokens(view) {
       <div class="card-body"><div class="callout danger">${icon("alert")}<span>${esc(e.message)}</span></div></div>`;
     return;
   }
+  const endedCount = tokens.filter(isEnded).length;
   const { shown, toggle } = limitList(view, "tokens", tokens);
   const rows = tokens.length
     ? shown.map((token) => tokenRow(token, catalog)).join("")
     : `<tr><td colspan="6">${emptyState({ iconName: "key", title: t("st.tokenNone") })}</td></tr>`;
   card.innerHTML = `
-    <div class="card-head">
+    <div class="card-head with-actions">
       <div><h3>${t("st.tokens")}</h3><p class="help">${t("st.tokensHelp")}</p></div>
-      <button class="btn btn-sm btn-primary" id="stTokenCreate">${icon("plus")}${t("st.tokenCreate")}</button>
+      <div class="actions">
+        ${endedCount ? `<button class="btn btn-sm" id="stTokenPrune">${icon("trash")}${t("st.tokenPrune")}</button>` : ""}
+        <button class="btn btn-sm btn-primary" id="stTokenCreate">${icon("plus")}${t("st.tokenCreate")}</button>
+      </div>
     </div>
     <div class="table-wrap"><table class="table">
       <thead><tr>
@@ -78,16 +87,20 @@ export async function loadTokens(view) {
     </table></div>
     <div class="list-more">${toggle}</div>`;
   card.querySelector("#stTokenCreate").addEventListener("click", () => createToken(view));
+  card.querySelector("#stTokenPrune")?.addEventListener("click", () => pruneTokens(view, endedCount));
   card.querySelectorAll("[data-revoke-token]").forEach((btn) => {
     btn.addEventListener("click", () => revokeToken(view, btn.dataset.revokeToken, btn.dataset.tokenName));
+  });
+  card.querySelectorAll("[data-delete-token]").forEach((btn) => {
+    btn.addEventListener("click", () => deleteToken(view, btn.dataset.deleteToken, btn.dataset.tokenName));
   });
   bindToggles(view, card, () => loadTokens(view));
 }
 
 function tokenRow(token, catalog) {
   const status = tokenStatus(token);
-  const action = token.revokedAt
-    ? `<span class="badge ${status.badge}">${t(status.key)}</span>`
+  const action = isEnded(token)
+    ? `<button class="btn btn-sm btn-danger" data-delete-token="${esc(token.id)}" data-token-name="${esc(token.name)}">${icon("trash")}${t("st.tokenDelete")}</button>`
     : `<button class="btn btn-sm btn-danger" data-revoke-token="${esc(token.id)}" data-token-name="${esc(token.name)}">${icon("x")}${t("st.tokenRevoke")}</button>`;
   const used = token.lastUsedAt
     ? `${esc(relTime(token.lastUsedAt))}${token.lastUsedIp ? ` <span class="subtle">${esc(token.lastUsedIp)}</span>` : ""}`
@@ -282,5 +295,43 @@ async function revokeToken(view, id, name) {
     return;
   }
   toast(t("st.tokenRevokedToast"), { message: name ?? "" });
+  loadTokens(view);
+}
+
+async function deleteToken(view, id, name) {
+  const ok = await confirmDialog({
+    title: t("st.tokenDeleteTitle"),
+    message: t("st.tokenDeleteMessage", { name: esc(name ?? id) }),
+    confirmText: t("st.tokenDelete"),
+    danger: true,
+  });
+  if (!ok) return;
+  try {
+    await api(`/api/tokens/${enc(id)}/record`, { method: "DELETE" });
+  } catch (e) {
+    toastError(t("st.tokenDeleteFailed"), e);
+    loadTokens(view);
+    return;
+  }
+  toast(t("st.tokenDeletedToast"), { message: name ?? "" });
+  loadTokens(view);
+}
+
+async function pruneTokens(view, count) {
+  const ok = await confirmDialog({
+    title: t("st.tokenPruneTitle"),
+    message: t("st.tokenPruneMessage", { n: count }),
+    confirmText: t("st.tokenPrune"),
+    danger: true,
+  });
+  if (!ok) return;
+  let deleted;
+  try {
+    ({ deleted } = await api("/api/tokens/prune", { method: "POST", body: {} }));
+  } catch (e) {
+    toastError(t("st.tokenPruneFailed"), e);
+    return;
+  }
+  toast(t("st.tokenPrunedToast", { n: deleted.length }));
   loadTokens(view);
 }

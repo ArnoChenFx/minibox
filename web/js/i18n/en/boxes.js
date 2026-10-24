@@ -24,6 +24,8 @@ export default {
   "act.template.save": "Saved box as template",
   "act.token.create": "Created token",
   "act.token.revoke": "Revoked token",
+  "act.token.delete": "Deleted token",
+  "act.token.prune": "Deleted ended tokens",
   "act.task.cancel": "Cancelled task",
   "act.box.update": "Updated box settings",
   "act.box.clone": "Cloned repository",

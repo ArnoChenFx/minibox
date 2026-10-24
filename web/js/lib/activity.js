@@ -76,6 +76,8 @@ export const ACTION_ICON = {
   "trash.purge": "trash",
   "token.create": "key",
   "token.revoke": "trash",
+  "token.delete": "trash",
+  "token.prune": "trash",
   "task.cancel": "x",
   "host.add": "server",
   "host.pairing.create": "link",
