@@ -225,8 +225,6 @@ export const MESSAGES = {
     "build.target must be a stage name of the Dockerfile, with only letters, digits, dots, underscores and hyphens.",
   devcontainer_target_missing:
     "build.target {target} is not a stage of the Dockerfile, so the template cannot be built. Name a stage the Dockerfile declares with FROM … AS {target}, or remove build.target.",
-  devcontainer_variable:
-    "{name} uses {variable}, a devcontainer variable that MiniBox does not expand. Write the value it stands for, then try again.",
   devcontainer_path_invalid:
     "build.dockerfile and build.context must stay inside the repository, and the Dockerfile must be inside the build context.",
   devcontainer_value_invalid:

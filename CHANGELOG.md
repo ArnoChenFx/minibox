@@ -7,6 +7,9 @@
 ### 新增
 - 工具目录新增 GitHub CLI（命令 `gh`，归入「终端与开发工具」组）：从官方 release（`github.com/cli/cli`）下载对应架构的 tarball，先核对 release 自带 `gh_<版本>_checksums.txt` 里的 sha256 再解包，只把 `bin/gh` 原子替换到 tools 卷的 `bin` 目录，全程无需 root；升级重跑安装取最新版，卸载移除二进制。文档的工具清单同步更新。
 
+### 修复
+- 从 `devcontainer.json` 构建模板时，引用了 devcontainer 变量（如 `${containerEnv:PATH}`、`${containerWorkspaceFolder}`）的 `containerEnv`、`remoteEnv`、`build.args` 取值与 `postCreateCommand` 不再拒绝整个构建：现在与不支持的设置一样，在构建日志中以 `Warning:` 列出，该条目不应用（或命令不运行），其余设置照常应用。其他形式的 `${…}` 引用（如 `${dockerfile:VARIABLE}`）仍然拒绝构建。
+
 ## [0.6.4] - 2026-10-24
 
 ### 亮点

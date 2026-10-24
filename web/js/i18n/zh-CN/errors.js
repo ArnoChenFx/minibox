@@ -142,8 +142,6 @@ export default {
     "build.target 必须是 Dockerfile 中的阶段名，只能包含字母、数字、点、下划线和连字符。",
   "err.devcontainer_target_missing":
     "build.target {target} 不是 Dockerfile 中的阶段，因此无法构建模板。请使用 Dockerfile 中以 FROM … AS {target} 声明的阶段，或删除 build.target。",
-  "err.devcontainer_variable":
-    "{name} 使用了 {variable}，这是 MiniBox 不会展开的 devcontainer 变量。请写入它代表的实际值后重试。",
   "err.devcontainer_path_invalid":
     "build.dockerfile 和 build.context 必须位于代码仓库之内，且 Dockerfile 必须位于构建上下文之内。",
   "err.devcontainer_value_invalid":

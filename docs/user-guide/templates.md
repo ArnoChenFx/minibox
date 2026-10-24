@@ -204,12 +204,12 @@ These settings are also listed as warnings:
 - A `build` setting other than `dockerfile`, `context`, `args` and `target`, such as `cacheFrom`.
 - A `postCreateCommand` in object form, which runs several commands in parallel. MiniBox does not run it.
 - A `forwardPorts` entry that is not a TCP port in the box, such as `db:5432`.
+- A `containerEnv`, `remoteEnv` or `build.args` value that names a devcontainer variable, such as `${containerEnv:PATH}`, and a `postCreateCommand` that names one, such as `${localEnv:HOME}` or `${containerWorkspaceFolder}`. MiniBox does not expand variables, so the entry is left out, or the command is not run, and the build goes on.
 
 A setting that MiniBox applies but cannot apply as written is refused, and the build does not start:
 
-- A `containerEnv`, `remoteEnv` or `build.args` value that uses a `${…}` reference. MiniBox does not expand variables, so the value would differ from the file.
 - A name that is not a valid variable name, or a value with a control character in it, such as a line break or a tab.
-- A `postCreateCommand` that names a devcontainer variable, such as `${localEnv:HOME}` or `${containerWorkspaceFolder}`.
+- A `containerEnv`, `remoteEnv` or `build.args` value with any other `${…}` reference in it, such as `${dockerfile:VARIABLE}`. MiniBox does not expand variables, so the value would differ from the file.
 - A `postCreateCommand` that is longer than 64 KB, or a `forwardPorts` that is not a list.
 - A `build.target` that the Dockerfile does not declare with `FROM … AS <name>`.
 

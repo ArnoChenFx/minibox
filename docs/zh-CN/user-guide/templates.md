@@ -204,12 +204,12 @@ MiniBox 不应用的设置不会中止构建。构建日志中会有一行以 `W
 - `build` 中除 `dockerfile`、`context`、`args` 和 `target` 之外的设置，例如 `cacheFrom`。
 - 对象形式的 `postCreateCommand`，它会并行运行多条命令。MiniBox 不会运行它。
 - `forwardPorts` 中不是 Box 内 TCP 端口的条目，例如 `db:5432`。
+- 引用了 devcontainer 变量的 `containerEnv`、`remoteEnv` 或 `build.args` 取值，例如 `${containerEnv:PATH}`，以及引用了变量的 `postCreateCommand`，例如 `${localEnv:HOME}` 或 `${containerWorkspaceFolder}`。MiniBox 不展开变量，因此该条目不会应用，或该命令不会运行，构建则继续进行。
 
 MiniBox 应用但无法按原样应用的设置会被拒绝，构建不会开始：
 
-- `containerEnv`、`remoteEnv` 或 `build.args` 的值使用了 `${…}` 引用。MiniBox 不展开变量，因此值会与文件中的不同。
 - 名称不是合法的变量名，或取值含有控制字符，例如换行符或制表符。
-- `postCreateCommand` 使用了 devcontainer 变量，例如 `${localEnv:HOME}` 或 `${containerWorkspaceFolder}`。
+- `containerEnv`、`remoteEnv` 或 `build.args` 的取值含有其他 `${…}` 形式的引用，例如 `${dockerfile:VARIABLE}`。MiniBox 不展开变量，因此值会与文件中的不同。
 - `postCreateCommand` 超过 64 KB，或 `forwardPorts` 不是列表。
 - `build.target` 没有在 Dockerfile 中以 `FROM … AS <名称>` 声明。
 

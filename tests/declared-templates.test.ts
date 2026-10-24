@@ -380,6 +380,52 @@ describe("a template built from a devcontainer.json", () => {
     expect(l.runtime.builds).toHaveLength(1);
   });
 
+  test("a containerEnv, a remoteEnv or build.args value that names a devcontainer variable is a warning, and the build goes on", async () => {
+    const l = lab();
+    l.repo.set(
+      ".devcontainer/devcontainer.json",
+      '{"image": "alpine:3.20", "containerEnv": {"PATH": "${containerEnv:PATH}:/opt/tools/bin", "KEEP": "kept"}, "remoteEnv": {"SKIP": "${containerWorkspaceFolder}"}}',
+    );
+
+    await createDeclaredTemplate(
+      l.host,
+      { name: "dev", source: { kind: "devcontainer", url: "https://github.com/org/app.git" }, createdBy: "owner" },
+      progressOf(l),
+    );
+
+    const log = l.progress.join("");
+    expect(log).toContain(
+      "Warning: containerEnv.PATH uses ${containerEnv:PATH}, a devcontainer variable that MiniBox does not expand, so it was not applied.\n",
+    );
+    expect(log).toContain(
+      "Warning: remoteEnv.SKIP uses ${containerWorkspaceFolder}, a devcontainer variable that MiniBox does not expand, so it was not applied.\n",
+    );
+    expect(log.indexOf("Warning:")).toBeLessThan(log.indexOf("Successfully built"));
+    const build = l.runtime.builds.at(-1);
+    expect(build?.files.get("Dockerfile")).toBe('FROM alpine:3.20\nENV KEEP="kept"\n');
+  });
+
+  test("a postCreateCommand that names a devcontainer variable is a warning, and the box setup keeps the rest", async () => {
+    const l = lab();
+    l.repo.set(
+      ".devcontainer/devcontainer.json",
+      '{"image": "alpine:3.20", "postCreateCommand": "cd ${containerWorkspaceFolder} && make", "forwardPorts": [3000]}',
+    );
+
+    await createDeclaredTemplate(
+      l.host,
+      { name: "dev", source: { kind: "devcontainer", url: "https://github.com/org/app.git" }, createdBy: "owner" },
+      progressOf(l),
+    );
+
+    const log = l.progress.join("");
+    expect(log).toContain(
+      "Warning: postCreateCommand uses ${containerWorkspaceFolder}, a devcontainer variable that MiniBox does not expand, so it was not run.\n",
+    );
+    expect(l.runtime.builds).toHaveLength(1);
+    expect(await templateSetupOf(l.host, "mbtest-template:dev")).toEqual({ forwardPorts: [3000] });
+  });
+
   test("postCreateCommand and forwardPorts are kept with the recipe, and templateSetupOf reads them back", async () => {
     const l = lab();
     l.repo.set(
