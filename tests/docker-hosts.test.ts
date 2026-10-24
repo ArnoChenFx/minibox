@@ -274,7 +274,8 @@ describe.skipIf(!enabled)("a second host over SSH, against a real engine", () =>
       expect(await errorOf(refused)).toMatchObject({
         code: "conflict",
         key: "host_in_use",
-        details: { boxes: 1, volumes: 1, checkpoints: 1 },
+        // The shared tools volume is the host's own infrastructure and never holds its removal back.
+        details: { boxes: 1, volumes: 0, checkpoints: 1 },
       });
 
       const { boxes } = (await (await api("/api/boxes")).json()) as { boxes: BoxJson[] };
@@ -286,7 +287,7 @@ describe.skipIf(!enabled)("a second host over SSH, against a real engine", () =>
       expect(stillHeld.status).toBe(409);
       expect(await errorOf(stillHeld)).toMatchObject({
         key: "host_in_use",
-        details: { boxes: 0, volumes: 1, checkpoints: 2 },
+        details: { boxes: 0, volumes: 0, checkpoints: 2 },
       });
 
       const { trash } = (await (await api("/api/trash")).json()) as { trash: { id: string; hostId: string }[] };
