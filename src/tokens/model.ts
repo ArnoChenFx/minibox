@@ -30,6 +30,25 @@ export const SCOPES = [
 
 export type Scope = (typeof SCOPES)[number];
 
+/**
+ * The scopes by the heading the console lists them under. Each scope is in exactly one group, in the order the
+ * console shows them. The `sensitive` group is the three scopes the console flags: `secret:use` hands host secrets to
+ * a box (admin only), and `trash:skip` and `volume:delete` remove data for good (in no preset).
+ */
+export const SCOPE_GROUPS = [
+  { id: "box", scopes: ["box:read", "box:write", "box:delete"] },
+  { id: "exec", scopes: ["exec", "box:ssh"] },
+  { id: "files", scopes: ["files:read", "files:write"] },
+  { id: "network", scopes: ["port:expose"] },
+  { id: "checkpoint", scopes: ["checkpoint:create", "checkpoint:restore"] },
+  { id: "volume", scopes: ["volume:read", "volume:write", "volume:attach"] },
+  { id: "tool", scopes: ["tool:install"] },
+  { id: "sensitive", scopes: ["secret:use", "trash:skip", "volume:delete"] },
+] as const satisfies readonly { readonly id: string; readonly scopes: readonly Scope[] }[];
+
+/** The group whose scopes the console flags with a warning. */
+export const DANGEROUS_GROUP = "sensitive";
+
 export const PRESET_NAMES = ["readonly", "operator", "sandboxed-agent", "admin"] as const;
 export type PresetName = (typeof PRESET_NAMES)[number];
 
@@ -206,6 +225,42 @@ export function presetPolicy(name: PresetName): Omit<TokenDraft, "name" | "prese
         quotas: NO_QUOTA,
       };
   }
+}
+
+/** What the console's new-token dialog needs: the scope groups, and what each preset starts from. */
+export interface TokenCatalog {
+  readonly groups: readonly { readonly id: string; readonly danger: boolean; readonly scopes: readonly Scope[] }[];
+  readonly presets: readonly {
+    readonly name: PresetName;
+    readonly scopes: readonly Scope[];
+    readonly boxes: BoxScope["type"];
+    readonly hosts: HostScope["type"] | "local";
+    readonly quotas: Quotas;
+  }[];
+}
+
+/**
+ * Served to the console so it never keeps its own copy of the scope lists. `hosts` is `local` when the preset names
+ * the local host only.
+ */
+export function tokenCatalog(): TokenCatalog {
+  return {
+    groups: SCOPE_GROUPS.map((group) => ({
+      id: group.id,
+      danger: group.id === DANGEROUS_GROUP,
+      scopes: [...group.scopes],
+    })),
+    presets: PRESET_NAMES.map((name) => {
+      const policy = presetPolicy(name);
+      return {
+        name,
+        scopes: [...policy.scopes],
+        boxes: policy.boxes.type,
+        hosts: policy.hosts.type === "all" ? "all" : "local",
+        quotas: policy.quotas,
+      };
+    }),
+  };
 }
 
 function mergeQuotas(base: Quotas, patch: Partial<Quotas> | undefined): Quotas {

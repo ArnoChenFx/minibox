@@ -56,6 +56,7 @@ const OWNER_ONLY_ROUTES = [
   "GET /api/targets/:id/objects",
   "GET /api/templates/official",
   "GET /api/tokens",
+  "GET /api/tokens/presets",
   "GET /api/tools/custom",
   "GET /api/trash",
   "POST /api/auth/sessions/revoke-others",
