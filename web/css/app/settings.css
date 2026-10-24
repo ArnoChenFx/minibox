@@ -153,3 +153,154 @@ pre.staged-changes {
 .staged-apply > .fold-section {
   margin-top: 0;
 }
+
+/* The new-token dialog: presets as a list that says what each grants, and the permissions under a fold. */
+.perm-label {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-height: 22px;
+}
+.preset-list {
+  display: grid;
+  gap: 8px;
+}
+.preset-seg {
+  display: grid;
+  grid-template-columns: 136px minmax(0, 1fr);
+  align-items: baseline;
+  gap: 12px;
+}
+.preset-seg span {
+  line-height: 1.5;
+}
+.perm-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 28px;
+  margin-bottom: 8px;
+}
+.perm-grid {
+  columns: 2;
+  column-gap: 24px;
+}
+.perm-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  break-inside: avoid;
+  margin-bottom: 16px;
+}
+.perm-group-title {
+  color: var(--text-3);
+  font-size: 12px;
+  font-weight: 600;
+}
+.perm-group.is-danger {
+  column-span: all;
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--warning) 45%, var(--border));
+  border-radius: var(--radius-sm);
+  background: var(--warning-soft);
+}
+.perm-group.is-danger .perm-group-title {
+  color: var(--warning);
+}
+.perm-text {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 8px;
+  min-width: 0;
+}
+.perm-name {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  line-height: 20px;
+}
+.perm-id {
+  color: var(--text-3);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  overflow-wrap: anywhere;
+}
+.perm-hint {
+  flex-basis: 100%;
+  color: var(--text-2);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.perm-name .badge {
+  height: 20px;
+  padding: 0 6px;
+  gap: 4px;
+  font-size: 11px;
+}
+.perm-name .badge .icon {
+  width: 12px;
+  height: 12px;
+}
+#stPermNote {
+  margin-top: 8px;
+}
+
+/* The scopes column of the token list: the preset, folded over the full scope list. */
+.scope-details > summary {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  color: var(--text-2);
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+.scope-details > summary::-webkit-details-marker {
+  display: none;
+}
+.scope-details > summary .icon {
+  color: var(--text-3);
+  transition: transform 0.12s;
+}
+.scope-details:not([open]) > summary .icon {
+  transform: rotate(-90deg);
+}
+.scope-details > summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+.scope-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  max-width: 320px;
+  margin-top: 8px;
+}
+.scope-list code {
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--bg-subtle);
+  color: var(--text-2);
+  font-size: 11.5px;
+}
+@media (max-width: 640px) {
+  .perm-grid {
+    columns: 1;
+  }
+  .preset-seg {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
+  }
+}
+.perm-label [hidden],
+.perm-bar [hidden] {
+  display: none;
+}

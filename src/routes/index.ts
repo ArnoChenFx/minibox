@@ -10,6 +10,7 @@ import type { Route } from "./router";
 import { sshRoutes } from "./ssh";
 import { systemRoutes } from "./system";
 import { taskRoutes } from "./tasks";
+import { tokenRoutes } from "./tokens";
 
 export const routes: Route[] = [
   ...authRoutes,
@@ -18,6 +19,7 @@ export const routes: Route[] = [
   ...eventRoutes,
   ...taskRoutes,
   ...sshRoutes,
+  ...tokenRoutes,
   ...boxLogRoutes,
   ...previewRoutes,
   ...checkpointPackageRoutes,
