@@ -59,6 +59,29 @@ function empty(harness: Harness, body: Record<string, unknown>, token?: string):
 
 const bodyOf = (reply: Reply) => reply.json as unknown as EmptyBody;
 
+interface ActivityRow {
+  action: string;
+  target: string;
+  ok: boolean;
+}
+
+async function activityOf(harness: Harness): Promise<ActivityRow[]> {
+  const reply = await call(harness.base, "/api/activity");
+  return (reply.json as unknown as { activity: ActivityRow[] }).activity;
+}
+
+async function eventsOf(harness: Harness): Promise<{ op: string; detail?: Record<string, unknown> }[]> {
+  const reply = await call(harness.base, "/api/events");
+  return (reply.json as unknown as { events: { op: string; detail?: Record<string, unknown> }[] }).events;
+}
+
+/** A task reader that reports one running task of the given op on the given entry. */
+const holding = (op: string, id: string): TaskReader =>
+  ({
+    list: ({ status }: { status?: string }) =>
+      status === "running" ? [{ op, target: { kind: "trash", id, name: "x" } }] : [],
+  }) as unknown as TaskReader;
+
 describe("emptying the recycle bin", () => {
   let harness: Harness;
   let restoreLogs: () => void;
@@ -82,7 +105,7 @@ describe("emptying the recycle bin", () => {
 
     expect(asked.status).toBe(409);
     expect(asked.json.error?.code).toBe("confirmation_required");
-    const preview = (asked.json.error?.details as { preview: Record<string, unknown> }).preview;
+    const preview = (asked.json.error as unknown as { details: { preview: Record<string, unknown> } }).details.preview;
     expect(preview).toMatchObject({ action: "empty_trash", count: 2 });
     expect(
       (preview.entries as { sourceName: string; blocked: string | null }[]).map((e) => e.sourceName).toSorted(),
@@ -105,11 +128,11 @@ describe("emptying the recycle bin", () => {
     expect(await trashNames(harness)).toEqual([]);
     expect(harness.app.hosts.get().checkpoints.list()).toEqual([]);
 
-    const events = (await call(harness.base, "/api/events")).json.events ?? [];
+    const events = await eventsOf(harness);
     expect(events.filter((event) => event.op === "trash.purged")).toHaveLength(2);
     const emptied = events.find((event) => event.op === "trash.empty");
     expect(emptied?.detail).toMatchObject({ named: null, removed: 2, refused: 0, failed: 0 });
-    const activity = (await call(harness.base, "/api/activity")).json.activity ?? [];
+    const activity = await activityOf(harness);
     expect(activity[0]).toMatchObject({ action: "trash.empty", target: "2/2", ok: true });
   });
 
@@ -120,7 +143,7 @@ describe("emptying the recycle bin", () => {
 
     const done = await empty(harness, { confirm: true });
     expect(bodyOf(done)).toMatchObject({ removed: 0, refused: 0, failed: 0, entries: [] });
-    const activity = (await call(harness.base, "/api/activity")).json.activity ?? [];
+    const activity = await activityOf(harness);
     expect(activity.filter((entry) => entry.action === "trash.empty")).toEqual([]);
   });
 
@@ -159,7 +182,7 @@ describe("emptying the recycle bin", () => {
       error: { key: "checkpoint_exporting" },
     });
     expect(await trashNames(harness)).toEqual(["alpha"]);
-    const activity = (await call(harness.base, "/api/activity")).json.activity ?? [];
+    const activity = await activityOf(harness);
     expect(activity[0]).toMatchObject({ action: "trash.empty", target: "1/2", ok: false });
   });
 
@@ -186,7 +209,7 @@ describe("emptying the recycle bin", () => {
       error: { message: expect.stringContaining("disk is on fire") },
     });
     expect(await trashNames(harness)).toEqual(["alpha"]);
-    const activity = (await call(harness.base, "/api/activity")).json.activity ?? [];
+    const activity = await activityOf(harness);
     expect(activity[0]).toMatchObject({ action: "trash.empty", target: "2/3", ok: false });
   });
 
@@ -220,13 +243,6 @@ describe("what an empty leaves", () => {
     harness.stop();
     restoreLogs();
   });
-
-  /** A task reader that reports one running task of the given op on the given entry. */
-  const holding = (op: string, id: string): TaskReader =>
-    ({
-      list: ({ status }: { status?: string }) =>
-        status === "running" ? [{ op, target: { kind: "trash", id, name: "x" } }] : [],
-    }) as unknown as TaskReader;
 
   test.each(["trash.restore", "trash.purge"])("an entry with a running %s task is left alone", async (op) => {
     const held = await binned(harness, "alpha");

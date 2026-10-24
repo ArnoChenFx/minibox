@@ -33,7 +33,6 @@ export default {
   "trash.emptyTitle": "清空回收站？",
   "trash.emptyMessageOne": "将立即彻底删除 1 条记录（{size}），不必等到保留期结束。",
   "trash.emptyMessage": "将立即彻底删除 {n} 条记录（{size}），不必等到保留期结束。",
-  "trash.emptyIrreversible": "此操作无法撤销，删除后的数据无法恢复。",
   "trash.emptyConfirm": "彻底删除 {n} 条",
   "trash.emptyLeft": "以下 {n} 条暂时保留：",
   "trash.blocked.exporting": "正在导出或复制。",
