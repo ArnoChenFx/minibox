@@ -24,9 +24,9 @@ const IMAGE_RE = /^[a-zA-Z0-9][a-zA-Z0-9_.:/@-]*$/;
 const STAGE_RE = /^[A-Za-z0-9_][A-Za-z0-9_.-]*$/;
 const VALUE_MAX = 4096;
 const POST_CREATE_MAX_BYTES = 64 * 1024;
-/** Variables of the spec. MiniBox does not expand them, so a command that names one would run with the wrong text. */
+/** Variables of the spec. MiniBox does not expand them, so a value or command that names one is skipped with a warning. */
 const SPEC_VARIABLE_RE =
-  /\$\{(?:localEnv|containerEnv|localWorkspaceFolder|containerWorkspaceFolder|localWorkspaceFolderBasename|containerWorkspaceFolderBasename|devcontainerId)[:}]/;
+  /\$\{(?:localEnv|containerEnv|localWorkspaceFolder|containerWorkspaceFolder|localWorkspaceFolderBasename|containerWorkspaceFolderBasename|devcontainerId)(?::[^}]*)?\}/;
 
 export type DevcontainerBase =
   | { kind: "image"; image: string }
@@ -53,12 +53,13 @@ const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
 function valueProblem(name: string, value: string): boolean {
-  return !NAME_RE.test(name) || value.length > VALUE_MAX || /\p{Cc}/u.test(value) || value.includes("${");
+  return !NAME_RE.test(name) || value.length > VALUE_MAX || /\p{Cc}/u.test(value);
 }
 
 /**
- * A map of names to one-line strings. A `${…}` reference is refused, because minibox does not expand variables. A null in
- * remoteEnv would unset a variable, which minibox cannot do, so that entry is left out with a warning.
+ * A map of names to one-line strings. A value that names a devcontainer variable, such as `${containerEnv:PATH}`, is left
+ * out with a warning, because minibox does not expand variables; any other `${…}` reference is refused. A null in remoteEnv
+ * would unset a variable, which minibox cannot do, so that entry is left out with a warning.
  */
 function stringMap(value: unknown, field: string, warnings: string[]): Parsed<Record<string, string>> {
   if (value === undefined) return { value: {} };
@@ -72,6 +73,16 @@ function stringMap(value: unknown, field: string, warnings: string[]): Parsed<Re
       continue;
     }
     if (typeof entry !== "string" || valueProblem(name, entry)) {
+      return { problem: msg("devcontainer_value_invalid", { name: `${field}.${name}` }) };
+    }
+    const variable = specVariable(entry);
+    if (variable !== undefined) {
+      warnings.push(
+        `${field}.${name} uses ${variable}, a devcontainer variable that MiniBox does not expand, so it was not applied.`,
+      );
+      continue;
+    }
+    if (entry.includes("${")) {
       return { problem: msg("devcontainer_value_invalid", { name: `${field}.${name}` }) };
     }
     out[name] = entry;
@@ -108,7 +119,8 @@ function specVariable(text: string): string | undefined {
 
 /**
  * The command as argv. A string is a shell command and a list is a program with its arguments. The object form runs several
- * commands in parallel, which is not applied, so it gets a warning instead.
+ * commands in parallel, which is not applied, so it gets a warning instead. So does a command that names a devcontainer
+ * variable, which minibox does not expand: it is not run.
  */
 function postCreateOf(value: unknown, warnings: string[]): Parsed<string[] | undefined> {
   if (value === undefined || value === null) return { value: undefined };
@@ -127,7 +139,12 @@ function postCreateOf(value: unknown, warnings: string[]): Parsed<string[] | und
     };
   }
   const variable = argv.map(specVariable).find((found) => found !== undefined);
-  if (variable !== undefined) return { problem: msg("devcontainer_variable", { name: "postCreateCommand", variable }) };
+  if (variable !== undefined) {
+    warnings.push(
+      `postCreateCommand uses ${variable}, a devcontainer variable that MiniBox does not expand, so it was not run.`,
+    );
+    return { value: undefined };
+  }
   if (Buffer.byteLength(argv.join(" ")) > POST_CREATE_MAX_BYTES) {
     return { problem: msg("devcontainer_invalid", { detail: "postCreateCommand is longer than 64 KB" }) };
   }
@@ -162,9 +179,9 @@ function remoteUserWarning(value: unknown): string | null {
 
 /**
  * Reads a devcontainer.json as a template plan. The image or the build must be given, and never both. A setting MiniBox does
- * not apply is not refused: it is listed in the plan's warnings, which the build log shows. A setting it applies but cannot
- * honour as written, such as a variable it does not expand, is refused, so a template is never built with a different value.
- * Lifecycle commands other than postCreateCommand, and initializeCommand, are never run.
+ * not apply is not refused: it is listed in the plan's warnings, which the build log shows. So is a value or command that
+ * names a devcontainer variable, which MiniBox does not expand: it is skipped, so a template is never built with a different
+ * value. Any other `${…}` reference is refused. Lifecycle commands other than postCreateCommand are never run.
  */
 export function readDevcontainer(text: string): DevcontainerReading {
   let value: unknown;

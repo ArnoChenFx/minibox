@@ -154,6 +154,47 @@ describe("settings minibox does not apply are warnings", () => {
       "postCreateCommand as an object runs several commands in parallel, which is not supported, so it was not run.",
     ]);
   });
+
+  test("a containerEnv value that names a devcontainer variable is left out with a warning, and the other entries are kept", () => {
+    const plan = planOf(
+      '{"image": "alpine", "containerEnv": {"PATH": "${containerEnv:PATH}:/opt/tools/bin", "KEEP": "yes"}}',
+    );
+    expect(plan.env).toEqual({ KEEP: "yes" });
+    expect(plan.warnings).toEqual([
+      "containerEnv.PATH uses ${containerEnv:PATH}, a devcontainer variable that MiniBox does not expand, so it was not applied.",
+    ]);
+  });
+
+  test("a remoteEnv or build.args value that names a devcontainer variable is left out with a warning too", () => {
+    const plan = planOf(
+      '{"build": {"dockerfile": "Dockerfile", "args": {"WORK": "${containerWorkspaceFolder}"}}, "remoteEnv": {"A": "${localEnv:HOME}"}}',
+    );
+    expect(plan.env).toEqual({});
+    expect(plan.base).toEqual({ kind: "build", dockerfile: "Dockerfile", context: ".", args: {} });
+    expect(plan.warnings).toEqual([
+      "remoteEnv.A uses ${localEnv:HOME}, a devcontainer variable that MiniBox does not expand, so it was not applied.",
+      "build.args.WORK uses ${containerWorkspaceFolder}, a devcontainer variable that MiniBox does not expand, so it was not applied.",
+    ]);
+  });
+
+  test("a postCreateCommand that names a devcontainer variable is not run, and the rest of the plan is still made", () => {
+    const plan = planOf(
+      '{"image": "alpine", "postCreateCommand": "cd ${containerWorkspaceFolder} && make", "forwardPorts": [3000]}',
+    );
+    expect(plan.postCreate).toBeUndefined();
+    expect(plan.forwardPorts).toEqual([3000]);
+    expect(plan.warnings).toEqual([
+      "postCreateCommand uses ${containerWorkspaceFolder}, a devcontainer variable that MiniBox does not expand, so it was not run.",
+    ]);
+    const list = planOf('{"image": "alpine", "postCreateCommand": ["echo", "${localEnv:HOME}"]}');
+    expect(list.postCreate).toBeUndefined();
+    expect(list.warnings).toEqual([
+      "postCreateCommand uses ${localEnv:HOME}, a devcontainer variable that MiniBox does not expand, so it was not run.",
+    ]);
+    expect(planOf('{"image": "alpine", "postCreateCommand": "echo ${devcontainerId}"}').warnings).toEqual([
+      "postCreateCommand uses ${devcontainerId}, a devcontainer variable that MiniBox does not expand, so it was not run.",
+    ]);
+  });
 });
 
 describe("the setup a plan keeps", () => {
@@ -186,28 +227,16 @@ describe("the setup a plan keeps", () => {
 });
 
 describe("values minibox cannot apply as written are refused", () => {
-  test("a containerEnv or remoteEnv name that is not an identifier, or a value that uses ${…} or a line break, is refused", () => {
+  test("a containerEnv or remoteEnv name that is not an identifier, or a value with a line break or another ${…} reference, is refused", () => {
     expect(problemOf('{"image": "alpine", "containerEnv": {"1A": "x"}}').key).toBe("devcontainer_value_invalid");
-    expect(problemOf('{"image": "alpine", "containerEnv": {"PATH_X": "${localEnv:HOME}"}}').key).toBe(
-      "devcontainer_value_invalid",
-    );
     expect(problemOf('{"image": "alpine", "containerEnv": {"A": "line\\nbreak"}}').key).toBe(
       "devcontainer_value_invalid",
     );
-    expect(problemOf('{"image": "alpine", "remoteEnv": {"A": "${containerEnv:B}"}}').key).toBe(
+    expect(problemOf('{"image": "alpine", "containerEnv": {"A": "${notADevcontainerVariable}"}}').key).toBe(
       "devcontainer_value_invalid",
     );
-  });
-
-  test("a postCreateCommand that names a devcontainer variable is refused, because minibox does not expand it", () => {
-    expect(problemOf('{"image": "alpine", "postCreateCommand": "cd ${containerWorkspaceFolder} && make"}')).toEqual(
-      expect.objectContaining({
-        key: "devcontainer_variable",
-        params: { name: "postCreateCommand", variable: "${containerWorkspaceFolder}" },
-      }),
-    );
-    expect(problemOf('{"image": "alpine", "postCreateCommand": ["echo", "${localEnv:HOME}"]}').key).toBe(
-      "devcontainer_variable",
+    expect(problemOf('{"image": "alpine", "remoteEnv": {"A": "${dockerfile:VARIABLE}"}}').key).toBe(
+      "devcontainer_value_invalid",
     );
   });
 
