@@ -107,6 +107,7 @@ export function readableAction(action) {
   const words = String(action)
     .split(/[._-]+/)
     .filter(Boolean)
+    .map((word) => (word.toLowerCase() === "ssh" ? "SSH" : word))
     .join(" ");
   return words ? words[0].toUpperCase() + words.slice(1) : String(action);
 }

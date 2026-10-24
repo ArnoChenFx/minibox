@@ -301,11 +301,13 @@ describe.skipIf(!enabled)("a second host over SSH, against a real engine", () =>
       expect(onLab).toMatchObject([{ role: "tools", ownership: "independent" }]);
       const [tools] = onLab;
       if (!tools) throw new Error("the host should still hold its shared tools volume");
-      // The guard keeps the shared tools volume from a plain delete, whatever the credential: removing the host is
-      // the only way it goes, and the host removal lifts it itself.
-      expect((await api(`/api/volumes/${tools.id}?confirm=true`, { method: "DELETE" })).status).toBe(409);
+      const protectedTools = await api(`/api/volumes/${tools.id}?confirm=true`, { method: "DELETE" });
+      expect(protectedTools.status).toBe(409);
+      expect(await errorOf(protectedTools)).toMatchObject({ code: "conflict", key: "volume_shared_tools" });
       expect((await runtime.inspectVolume(tools.engineName)).name).toBe(tools.engineName);
 
+      // The guard keeps the shared tools volume from every delete but the one that owns it: the host going away
+      // lifts the volume itself, so a host that still holds it is removable and nothing is left behind.
       expect((await api("/api/hosts/lab", { method: "DELETE" })).status).toBe(200);
       expect(await rejectionOf(runtime.inspectVolume(tools.engineName))).toMatchObject({ kind: "not_found" });
       const after = (await (await api("/api/hosts")).json()) as { hosts: HostJson[] };
