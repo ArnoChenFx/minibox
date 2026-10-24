@@ -5,6 +5,7 @@ import { join } from "node:path";
 
 import { questionsPath, selfTokensPath } from "../src/data-dir";
 import { AppError } from "../src/lib/errors";
+import { setLogLevel } from "../src/lib/logger";
 import { RuntimeError } from "../src/runtime";
 import { SELF_TOKEN_PATH } from "../src/services/self-token";
 import { SELF_QUOTA } from "../src/tokens/self-policy";
@@ -289,6 +290,7 @@ describe("a self token stays out of events, the audit trail, the console and the
   let restoreConsole: () => void;
 
   beforeEach(() => {
+    setLogLevel("info");
     harness = startHarness({ logLevel: "debug" });
     lines = [];
     const log = spyOn(console, "log").mockImplementation((line: unknown) => {
