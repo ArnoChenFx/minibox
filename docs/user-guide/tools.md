@@ -13,7 +13,7 @@ The tools are grouped into:
 - **Terminal & dev utilities**
 - **Networking**
 
-The catalog includes Claude Code, OpenAI Codex CLI, OpenCode, Pi coding agent, fx agent, Antigravity CLI, Grok Build CLI, Qoder CLI, oh-my-pi, herdr, luvus, Bun, uv, Rust toolchain, Zig and Tailscale.
+The catalog includes Claude Code, OpenAI Codex CLI, OpenCode, Pi coding agent, fx agent, Antigravity CLI, Grok Build CLI, Qoder CLI, oh-my-pi, herdr, luvus, Bun, uv, Rust toolchain, Zig, GitHub CLI and Tailscale.
 
 If you tick tools, MiniBox installs them after the box starts. Follow the progress in the **Tasks** panel.
 

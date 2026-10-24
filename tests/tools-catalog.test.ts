@@ -123,6 +123,7 @@ describe("bundled catalog", () => {
       "claude-code",
       "codex",
       "fx",
+      "gh",
       "grok",
       "herdr",
       "luvus",
@@ -212,6 +213,39 @@ describe("tailscale catalog entry", () => {
 
   test("the rendered install and uninstall parse as sh", () => {
     const dir = mkdtempSync(join(tmpdir(), "mb-tailscale-sh-"));
+    try {
+      for (const [name, template] of [
+        ["install", entry.install],
+        ["uninstall", entry.uninstall],
+      ] as const) {
+        const file = join(dir, `${name}.sh`);
+        writeFileSync(file, renderCommand(template, entry, { version: "latest", prefix: dir }));
+        expect({ name, exitCode: Bun.spawnSync(["sh", "-n", file]).exitCode }).toEqual({ name, exitCode: 0 });
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("gh catalog entry", () => {
+  const entry = requireCatalogEntry(loadCatalog(emptyDataDir()), "gh");
+
+  test("installs without root from the official release tarball, checked against its published sha256 before extraction", () => {
+    expect(entry).toMatchObject({ source: "script", needsRoot: false, bin: "gh", category: "terminal" });
+    expect(entry.install).toContain("base=https://github.com/cli/cli/releases\n");
+    expect(entry.install).toContain("curl -fsSIL -o /dev/null -w '%{url_effective}' \"$base/latest\")");
+    expect(entry.install).toContain("checksums.txt");
+    const checked = entry.install.indexOf("sha256sum -c");
+    expect(checked).toBeGreaterThan(-1);
+    expect(checked).toBeLessThan(entry.install.indexOf("tar -xzf"));
+    expect(entry.install).toContain("x86_64 | amd64) arch=amd64");
+    expect(entry.install).toContain("aarch64 | arm64) arch=arm64");
+    expect(entry.install).not.toMatch(/\b(api\.github\.com|apt|apt-get|dpkg|sudo|systemctl)\b/);
+  });
+
+  test("the rendered install and uninstall parse as sh", () => {
+    const dir = mkdtempSync(join(tmpdir(), "mb-gh-sh-"));
     try {
       for (const [name, template] of [
         ["install", entry.install],
