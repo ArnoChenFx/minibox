@@ -10,12 +10,15 @@ import { errorOutcome, messageOutcome, type OutcomeError, volumesInUse } from ".
 
 /**
  * Why MiniBox never deletes a volume in a batch or a prune, whatever the request says: the shared tools volume (by role
- * or by its `<prefix>-tools-<host>` name), or null. A system volume is caught by its engine label, under the spec lock.
+ * or by its `<prefix>-tools-<host>` name), or null — unless `teardown` clears a host's tools volume as part of removing
+ * that host. A system volume is caught by its engine label, under the spec lock, whatever the flags say.
  */
 export function protectedReason(
   host: HostCtx,
-  volume: Pick<VolumeRecord, "name" | "role" | "engineName">,
+  volume: Pick<VolumeRecord, "name" | "role" | "engineName" | "ownership">,
+  teardown = false,
 ): OutcomeError | null {
+  if (teardown && volume.role === "tools" && volume.ownership === "independent") return null;
   if (volume.role === "tools" || volume.engineName.startsWith(`${host.prefix}-tools-`)) {
     return messageOutcome(msg("volume_shared_tools", { volume: volume.name }));
   }
@@ -32,6 +35,8 @@ export interface GuardedRemoval {
   readonly record?: RecordNote;
   /** A further reason to keep the volume, checked under the spec lock with what the engine uses now. */
   readonly keep?: (current: VolumeRecord, inUse: Set<string>) => OutcomeError | null;
+  /** A host teardown: the tools volume may go, so removing the host is not blocked by the volume it cannot lose. */
+  readonly teardown?: boolean;
 }
 
 /**
@@ -45,7 +50,7 @@ export async function removeGuarded(
   volume: VolumeRecord,
   opts: GuardedRemoval,
 ): Promise<GuardedOutcome> {
-  const early = protectedReason(host, volume);
+  const early = protectedReason(host, volume, opts.teardown === true);
   if (early) return { status: "refused", trash: null, error: early };
   let trash: TrashRef | null = null;
   let settled: GuardedOutcome;
@@ -65,7 +70,7 @@ async function removeIfAllowed(host: HostCtx, volume: VolumeRecord, opts: Guarde
   if (!current || !sameVolume(current, volume)) {
     return refuse(messageOutcome(msg("volume_prune_changed", { volume: volume.name })));
   }
-  const shielded = protectedReason(host, current);
+  const shielded = protectedReason(host, current, opts.teardown === true);
   if (shielded) return refuse(shielded);
   const info = await inspectVolumeOrNull(host, current.engineName);
   if (info && info.labels[host.keys.internal] === "true") {
