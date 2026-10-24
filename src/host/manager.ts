@@ -127,6 +127,8 @@ export interface HostManagerOptions {
   readonly attach: (host: HostCtx) => void;
   /** Stops what `attach` started. */
   readonly detach: (host: HostCtx) => void;
+  /** Lifts the shared tools volume a host is going away with, through the same guards as any delete. */
+  readonly liftToolsVolume?: (host: HostCtx) => Promise<void>;
   /** Called when a remote host's engine becomes reachable, so its boxes are reconciled. */
   readonly onLive?: (host: HostCtx) => void;
   /** The agents that dial in. An agent host's engine is reached through its connection here. */
@@ -333,6 +335,7 @@ export class HostManager {
       if (usage.total > 0) {
         throw new AppError(409, "conflict", msg("host_in_use", { host: id, count: usage.total }), usage);
       }
+      if (this.options.liftToolsVolume) await this.options.liftToolsVolume(ctx);
       const view = this.view(ctx);
       const stored = this.stored.get(id);
       const agentId = stored ? agentIdOf(stored) : null;
@@ -668,7 +671,8 @@ export class HostManager {
     const { registry, shared } = this.options;
     const host = registry.get(id);
     const boxes = host.specs.list().filter((spec) => spec.hostId === id).length;
-    const volumes = host.volumes.list().filter((volume) => volume.hostId === id).length;
+    // The host's shared tools volumes are its own infrastructure and go with it, so they hold nothing back.
+    const volumes = host.volumes.list().filter((volume) => volume.hostId === id && volume.role !== "tools").length;
     const checkpoints = shared.checkpoints.list().filter((checkpoint) => checkpoint.hostId === id).length;
     return { boxes, volumes, checkpoints, total: boxes + volumes + checkpoints };
   }

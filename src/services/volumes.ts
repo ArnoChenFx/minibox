@@ -307,13 +307,14 @@ function raiseOutcome(error: OutcomeError): never {
 export async function deleteVolume(
   host: HostCtx,
   ref: string,
-  opts: { skipTrash?: boolean; createdBy?: string | null; record?: RecordNote } = {},
+  opts: { skipTrash?: boolean; createdBy?: string | null; record?: RecordNote; teardown?: boolean } = {},
 ): Promise<{ name: string; trash: TrashRef | null }> {
   const volume = requireVolume(host, ref);
   const outcome = await removeGuarded(host, volume, {
     skipTrash: opts.skipTrash ?? false,
     principal: opts.createdBy ?? null,
     record: opts.record,
+    teardown: opts.teardown,
   });
   if (outcome.status !== "removed") raiseOutcome(outcome.error);
   log.info("volume.deleted", { id: volume.id, name: volume.name, trash: outcome.trash !== null });

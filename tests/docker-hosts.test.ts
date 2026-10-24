@@ -274,7 +274,8 @@ describe.skipIf(!enabled)("a second host over SSH, against a real engine", () =>
       expect(await errorOf(refused)).toMatchObject({
         code: "conflict",
         key: "host_in_use",
-        details: { boxes: 1, volumes: 1, checkpoints: 1 },
+        // The shared tools volume is the host's own infrastructure and never holds its removal back.
+        details: { boxes: 1, volumes: 0, checkpoints: 1 },
       });
 
       const { boxes } = (await (await api("/api/boxes")).json()) as { boxes: BoxJson[] };
@@ -286,7 +287,7 @@ describe.skipIf(!enabled)("a second host over SSH, against a real engine", () =>
       expect(stillHeld.status).toBe(409);
       expect(await errorOf(stillHeld)).toMatchObject({
         key: "host_in_use",
-        details: { boxes: 0, volumes: 1, checkpoints: 2 },
+        details: { boxes: 0, volumes: 0, checkpoints: 2 },
       });
 
       const { trash } = (await (await api("/api/trash")).json()) as { trash: { id: string; hostId: string }[] };
@@ -305,20 +306,11 @@ describe.skipIf(!enabled)("a second host over SSH, against a real engine", () =>
       expect(protectedTools.status).toBe(409);
       expect(await errorOf(protectedTools)).toMatchObject({ code: "conflict", key: "volume_shared_tools" });
       expect((await runtime.inspectVolume(tools.engineName)).name).toBe(tools.engineName);
-      const toolsStillHoldHost = await api("/api/hosts/lab", { method: "DELETE" });
-      expect(toolsStillHoldHost.status).toBe(409);
-      expect(await errorOf(toolsStillHoldHost)).toMatchObject({
-        key: "host_in_use",
-        details: { boxes: 0, volumes: 1, checkpoints: 0 },
-      });
 
-      // The API protects the shared tools volume. Explicit fixture teardown empties the host for the removal check.
-      const lab = app.hosts.get("lab");
-      await lab.runtime.removeVolume(tools.engineName);
-      lab.volumes.remove(tools.id);
-      expect(await rejectionOf(runtime.inspectVolume(tools.engineName))).toMatchObject({ kind: "not_found" });
-
+      // The guard keeps the shared tools volume from every delete but the one that owns it: the host going away
+      // lifts the volume itself, so a host that still holds it is removable and nothing is left behind.
       expect((await api("/api/hosts/lab", { method: "DELETE" })).status).toBe(200);
+      expect(await rejectionOf(runtime.inspectVolume(tools.engineName))).toMatchObject({ kind: "not_found" });
       const after = (await (await api("/api/hosts")).json()) as { hosts: HostJson[] };
       expect(after.hosts.map((host) => host.id)).toEqual(["local"]);
       expect(sshHost.forwards.every((path) => path === SOCKET)).toBe(true);

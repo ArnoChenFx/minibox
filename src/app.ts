@@ -52,6 +52,7 @@ import { StartupWatch } from "./services/startup-watch";
 import { TargetService } from "./services/targets";
 import { type RecordNote, TerminalService } from "./services/terminals";
 import { VolumeUsageWatcher } from "./services/volume-usage";
+import { deleteVolume } from "./services/volumes";
 import { SessionStore } from "./sessions";
 import { SpecStore } from "./specs/store";
 import { DirectSshServer } from "./ssh/direct";
@@ -368,6 +369,14 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
       containers.unwatch(host.host.id);
       startups.unwatch(host.host.id);
       host.sampler.stop();
+    },
+    liftToolsVolume: async (host) => {
+      // A host that is going away cannot keep its shared tools volumes: they are the one kind of volume no other
+      // delete may remove, and the host cannot be forgotten while it holds one. Each pool's volume is lifted here,
+      // before the host is detached, through the same guards every other delete answers to.
+      for (const tools of host.volumes.list().filter((v) => v.hostId === host.host.id && v.role === "tools")) {
+        await deleteVolume(host, tools.id, { skipTrash: true, teardown: true });
+      }
     },
     onLive: reconcileOnLive,
     agents,
