@@ -53,5 +53,8 @@ describe("overview recent activity", () => {
     expect(readableAction("notify.channel.test")).toBe("Notify channel test");
     expect(readableAction("tool.custom_put")).toBe("Tool custom put");
     expect(readableAction("")).toBe("");
+    expect(readableAction("ssh.connect")).toBe("SSH connect");
+    expect(readableAction("ssh.disconnect")).toBe("SSH disconnect");
+    expect(readableAction("ssh.channel")).toBe("SSH channel");
   });
 });

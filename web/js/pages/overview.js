@@ -1,3 +1,4 @@
+import { activityRow } from "../components/activity-row.js";
 import { openCreateBox } from "../components/create-box.js";
 import { bindToggles, limitList } from "../components/list-toggle.js";
 import { followOverview } from "../components/overview-feed.js";
@@ -5,8 +6,8 @@ import { drawWatch } from "../components/overview-watch.js";
 import { api } from "../lib/api.js";
 import { applyBoxFrame, boxesOfSync } from "../lib/box-state.js";
 import { delegate, esc } from "../lib/dom.js";
-import { iconOf, isFailed, isRoutine, opLabel, statusBadge } from "../lib/event-view.js";
-import { bytes, cpus, duration, gbOrMb, mem, pct, relTime } from "../lib/format.js";
+import { isRoutine } from "../lib/event-view.js";
+import { bytes, cpus, duration, gbOrMb, mem, pct } from "../lib/format.js";
 import { boxesOnHost, HOST_BADGE, isUnreachable } from "../lib/host-list.js";
 import { hostFilter, hostName, hostsNow, onHosts } from "../lib/hosts.js";
 import { t } from "../lib/i18n.js";
@@ -300,13 +301,5 @@ function renderActivity(view, events) {
     });
     return;
   }
-  root.innerHTML = `<ul class="activity">${events
-    .map((event) => {
-      const target = event.target?.name ?? event.target?.id ?? "";
-      const failed = isFailed(event);
-      return `<li><span class="ico ${failed ? "fail" : ""}">${icon(failed ? "alert" : iconOf(event.op))}</span>
-        <span class="truncate">${esc(opLabel(event.op))}${target ? ` <strong>${esc(target)}</strong>` : ""}</span>${statusBadge(event)}
-        <span class="time">${relTime(new Date(event.ts).toISOString())}</span></li>`;
-    })
-    .join("")}</ul>`;
+  root.innerHTML = `<ul class="activity">${events.map((event) => activityRow(event)).join("")}</ul>`;
 }
