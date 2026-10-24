@@ -145,8 +145,9 @@ function setLanguage(value) {
         ? "Agent 正在操作的共享终端，可通过接管控件继续工作"
         : "A shared terminal with the agent driving and a Take over control";
   }
+  const docsRoot = "https://github.com/ArnoChenFx/minibox/blob/main/docs/";
   for (const link of document.querySelectorAll("[data-doc]")) {
-    link.href = `https://github.com/ArnoChenFx/minibox/blob/main/docs/${language === "zh" ? "zh-CN/" : ""}${link.dataset.doc}`;
+    link.href = new URL(`${language === "zh" ? "zh-CN/" : ""}${link.dataset.doc}`, docsRoot).href;
   }
   const button = document.querySelector("[data-language]");
   button.textContent = language === "zh" ? "EN" : "中文";
