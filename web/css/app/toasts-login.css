@@ -142,6 +142,20 @@
   height: 34px;
   margin-bottom: 28px;
 }
+/* The console has one key and no user name, but password managers only save a login that has both. This field carries a
+   fixed name so they offer to save the key and fill it back. It is off-screen and transparent, not display:none or hidden,
+   because managers skip fields they cannot see. */
+.login-username {
+  position: absolute;
+  left: -10000px;
+  top: auto;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  pointer-events: none;
+}
 .login-card h2 {
   font-size: 22px;
 }
