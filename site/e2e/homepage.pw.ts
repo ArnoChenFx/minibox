@@ -7,12 +7,12 @@ test("loads from the Pages subpath without broken assets or runtime errors", asy
     if (response.status() >= 400) errors.push(`${response.status()} ${response.url()}`);
   });
   await page.goto("./");
-  await expect(page).toHaveTitle("MiniBox — Your agents. Your machine. Your rules.");
-  await expect(page.locator("h1")).toHaveText("Your agentsYour machineYour rules");
+  await expect(page).toHaveTitle("MiniBox — Let your agents work. Stay in control.");
+  await expect(page.locator("h1")).toHaveText("Let your agents work Stay in control");
   await page.locator("#product").scrollIntoViewIfNeeded();
   await expect(page.locator("#product-screenshot")).toHaveJSProperty("naturalWidth", 2880);
-  await expect(page.locator(".volume-labels")).toContainText("/opt/minibox/tools");
-  await expect(page.locator(".agent-strip")).toContainText("Pi coding agent");
+  await expect(page.locator(".checkpoint-file")).toContainText("/workspace");
+  await expect(page.locator(".agent-strip")).toContainText("Pi");
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   const brokenAnchors = await page
     .locator('a[href^="#"]')
@@ -29,17 +29,17 @@ test("switches languages, persists the choice, and accepts shareable language UR
   await page.goto("./");
   await page.getByRole("button", { name: "切换为中文" }).click();
   await expect(page.locator("html")).toHaveAttribute("lang", "zh-CN");
-  await expect(page.locator("h1")).toContainText("你说了算");
+  await expect(page.locator("h1")).toContainText("让一切始终可控");
   await expect(page).toHaveURL(/\?lang=zh/);
   await expect(page.locator("#install-command")).toContainText("ghcr.io/arnochenfx/minibox:latest");
   await expect(page.locator("#product-screenshot")).toHaveAttribute("src", /screenshots\/zh-CN\/overview-light\.png$/);
   await expect(page.locator("#product-screenshot")).toHaveJSProperty("naturalWidth", 2880);
   await page.reload();
-  await expect(page.locator("h1")).toContainText("你的机器");
+  await expect(page.locator("h1")).toContainText("让 Agent 放手做");
   await page.goto("./?lang=en");
   await expect(page.locator("html")).toHaveAttribute("lang", "en");
-  await expect(page.locator("h1")).toContainText("Your machine");
-  await expect(page.locator("#start-title")).toContainText("A small setup");
+  await expect(page.locator("h1")).toContainText("Stay in control");
+  await expect(page.locator("#start-title")).toContainText("Your next workspace");
   await expect(page.locator("#product-screenshot")).toHaveAttribute("src", /screenshots\/en\/overview-light\.png$/);
 });
 
@@ -81,10 +81,10 @@ test("keeps content and navigation usable without JavaScript", async ({ browser 
   const context = await browser.newContext({ javaScriptEnabled: false, viewport: { width: 390, height: 844 } });
   const page = await context.newPage();
   await page.goto("http://127.0.0.1:4173/minibox/");
-  await expect(page.locator("h1")).toContainText("Your agents");
+  await expect(page.locator("h1")).toContainText("Let your agents work");
   await page.locator(".mobile-menu summary").click();
-  await page.locator('.mobile-menu a[href="#how-it-works"]').click();
-  await expect(page).toHaveURL(/#how-it-works$/);
+  await page.locator('.mobile-menu a[href="#capabilities"]').click();
+  await expect(page).toHaveURL(/#capabilities$/);
   const question = page.getByText("Can I run untrusted code in a box?", { exact: true });
   await question.click();
   await expect(page.getByText("Boxes use Docker container isolation", { exact: false })).toBeVisible();

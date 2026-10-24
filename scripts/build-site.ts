@@ -1,14 +1,16 @@
 /** Assemble the standalone project homepage, reusing the project's own brand and screenshots. */
-import { cpSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 const root = join(import.meta.dir, "..");
 const output = join(root, "dist", "site");
+const { version } = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as { version: string };
 
 rmSync(output, { recursive: true, force: true });
 mkdirSync(join(output, "assets", "screenshots"), { recursive: true });
 for (const file of ["index.html", "styles.css", "main.js"]) {
-  cpSync(join(root, "site", file), join(output, file));
+  const content = readFileSync(join(root, "site", file), "utf8").replaceAll("__MINIBOX_VERSION__", version);
+  writeFileSync(join(output, file), content);
 }
 for (const file of ["LICENSE", "NOTICE"]) {
   cpSync(join(root, file), join(output, file));
