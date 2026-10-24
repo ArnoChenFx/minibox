@@ -225,9 +225,13 @@ describe.skipIf(!executablePath)("the Box detail page (real browser)", () => {
       await page.keyboard.press("Enter");
       await webExpect(entry.locator(".event-expanded")).toBeHidden();
       await page.setViewportSize({ width: 390, height: 844 });
-      await webExpect(summary.locator(".time-full")).toBeHidden();
-      await webExpect(summary.locator(".time-compact")).toBeVisible();
-      expect(await summary.evaluate((row) => row.scrollWidth <= row.clientWidth)).toBe(true);
+      try {
+        await webExpect(summary.locator(".time-full")).toBeHidden();
+        await webExpect(summary.locator(".time-compact")).toBeVisible();
+        expect(await summary.evaluate((row) => row.scrollWidth <= row.clientWidth)).toBe(true);
+      } finally {
+        await page.setViewportSize(VIEWPORT);
+      }
     },
     TIMEOUT_MS,
   );
