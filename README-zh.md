@@ -13,10 +13,7 @@
 
 <p align="center"><a href="README.md">English</a> | <b>简体中文</b></p>
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/zh-CN/overview-dark.png" />
-  <img src="docs/screenshots/zh-CN/overview-light.png" alt="MiniBox 概览页" />
-</picture>
+<img src="docs/screenshots/zh-CN/overview-light.png" alt="MiniBox 概览页" />
 
 ## 什么是 MiniBox？
 
@@ -46,10 +43,7 @@ MiniBox 面向单一可信用户。它没有用户账户，因此任何持有访
 - **备份。** 在 MiniBox 运行时把数据目录备份为一个用口令封装的文件，并可在新宿主机上离线恢复。检查点包与备份的副本可保存到 S3 兼容存储桶或 SFTP 服务器。
 - **多宿主机。** 通过 SSH、双向 TLS、Unix 套接字，或由宿主机上的 Agent 主动连接 MiniBox（使用一次性配对码，宿主机无需开放端口），在其他 Docker Engine 上运行 Box。可由 MiniBox 把 Box 放到最空闲的宿主机，也可以把 Box 连同卷迁移到另一台宿主机。
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/zh-CN/boxes-dark.png" />
-  <img src="docs/screenshots/zh-CN/boxes-light.png" alt="MiniBox 控制台中的 Box 列表" />
-</picture>
+<img src="docs/screenshots/zh-CN/boxes-light.png" alt="MiniBox 控制台中的 Box 列表" />
 
 ## 安装
 

@@ -13,10 +13,7 @@
 
 <p align="center"><b>English</b> | <a href="README-zh.md">简体中文</a></p>
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/en/overview-dark.png" />
-  <img src="docs/screenshots/en/overview-light.png" alt="The MiniBox overview page" />
-</picture>
+<img src="docs/screenshots/en/overview-light.png" alt="The MiniBox overview page" />
 
 ## What is MiniBox?
 
@@ -46,10 +43,7 @@ MiniBox is built for one trusted user. It has no user accounts, so anyone with t
 - **Backups.** Back up MiniBox's data while it runs, into one file sealed with a passphrase, and restore it offline on a new host. Keep copies of checkpoint packages and backups on an S3-compatible bucket or an SFTP server.
 - **Multiple hosts.** Run boxes on other Docker engines, reached through SSH, mutual TLS, a Unix socket, or a host agent that connects out to MiniBox with a one-time pairing code, so the host opens no port. Let MiniBox place a box on the freest host, and move a box to another host with its volumes.
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/en/boxes-dark.png" />
-  <img src="docs/screenshots/en/boxes-light.png" alt="The boxes list in the MiniBox console" />
-</picture>
+<img src="docs/screenshots/en/boxes-light.png" alt="The boxes list in the MiniBox console" />
 
 ## Install
 
