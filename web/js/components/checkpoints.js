@@ -597,7 +597,12 @@ async function previewedTask({ path, body = {}, headers, title, confirmText, ren
   return guarded(failed, async () => {
     const preview = await previewOf(path, body, headers);
     if (!preview) return null;
-    const agreed = await confirmDialog({ title, body: render(preview), confirmText, danger: true });
+    const agreed = await confirmDialog({
+      title,
+      body: `<div class="ck-preview">${render(preview)}</div>`,
+      confirmText,
+      danger: true,
+    });
     if (!agreed) return null;
     const started = await api(path, { method: "POST", body: { ...body, confirm: true }, headers });
     const task = await waitTask(started.taskId);

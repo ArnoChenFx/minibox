@@ -121,6 +121,15 @@
   padding-left: 18px;
   font-size: 12.5px;
 }
+/* What a rollback or undo will do, in one column: every line, list and callout is one gap from the next. */
+.ck-preview {
+  display: grid;
+  gap: 8px;
+}
+.ck-preview > p,
+.ck-preview .ck-list {
+  margin: 0;
+}
 .ck-pending-actions {
   display: flex;
   flex-wrap: wrap;
