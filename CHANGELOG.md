@@ -4,6 +4,9 @@
 
 ## [Unreleased]
 
+### 新增
+- 基础模板和官方模板（node、python、go、minimal）预装 `bubblewrap`（命令 `bwrap`）。安装 OpenAI Codex CLI 需要它，Codex 的 Linux 沙箱依赖它。已有的 Box 不会自动获得：重新构建基础模板或官方模板后重新创建 Box，或在 Box 内执行 `sudo apt-get install -y bubblewrap`。Docker 容器内的 `bwrap` 可能还需要放宽用户命名空间或 seccomp 限制才能真正运行，这一点尚未验证；镜像检查（`scripts/check-box-image.sh`）只确认 `bwrap` 已安装。
+
 ## [0.6.3] - 2026-10-24
 
 ### 亮点

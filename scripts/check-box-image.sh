@@ -63,8 +63,8 @@ in_box 'sudo -n true' >/dev/null 2>&1 || fail "sudo -n does not work for dev"
 [[ "$(in_box 'sudo -n id -u' 2>/dev/null)" == "0" ]] || fail "sudo does not reach root"
 echo "ok: passwordless sudo"
 
-# An image without a language toolchain names its own tools, for example REQUIRED_TOOLS="git curl ps tmux jq rg ssh unzip less vim.tiny ping socat".
-required_tools="${REQUIRED_TOOLS:-git curl python3 gcc make ps tmux jq rg ssh unzip less vim.tiny ping socat}"
+# An image without a language toolchain names its own tools, for example REQUIRED_TOOLS="git curl ps tmux jq rg ssh unzip less vim.tiny ping socat bwrap".
+required_tools="${REQUIRED_TOOLS:-git curl python3 gcc make ps tmux jq rg ssh unzip less vim.tiny ping socat bwrap}"
 in_box "for t in $required_tools; do
   command -v \"\$t\" >/dev/null || { echo \"missing: \$t\" >&2; exit 1; }
 done" || fail "a required tool is missing"

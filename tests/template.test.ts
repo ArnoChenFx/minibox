@@ -54,6 +54,11 @@ describe("base template", () => {
     }
   });
 
+  test("bubblewrap is installed because the Codex CLI needs bwrap for its Linux sandbox, and the image check looks for it", () => {
+    expect(aptInstall).toContain("bubblewrap");
+    expect(read("scripts/check-box-image.sh")).toContain("bwrap");
+  });
+
   test("ping is installed so the box network can be checked from inside a box", () => {
     expect(aptInstall).toContain("iputils-ping");
   });

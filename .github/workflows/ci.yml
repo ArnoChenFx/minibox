@@ -98,7 +98,7 @@ jobs:
           - template: python
           - template: go
           - template: minimal
-            tools: git curl ps tmux jq rg ssh unzip less vim.tiny ping socat
+            tools: git curl ps tmux jq rg ssh unzip less vim.tiny ping socat bwrap
     steps:
       - uses: actions/checkout@v7
       - uses: docker/setup-buildx-action@v4
