@@ -1301,7 +1301,9 @@ html[lang="zh-CN"] .essentials h3 {
   }
   .terminal-crop img {
     height: auto;
-    top: -72%;
+    width: 210%;
+    left: -39%;
+    top: -76%;
   }
   .permission-card {
     margin: 23px 25px 25px;
