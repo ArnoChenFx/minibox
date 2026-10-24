@@ -29,6 +29,10 @@ const translationsZh = {
     terminalTitle: "随时接手，无需从头开始",
     terminalDescription: "在持久终端里跟进 Agent 的工作。需要时接管，完成后交还，工作不中断。",
     terminalLink: "了解终端与会话",
+    terminalPreview: "终端示意：Agent 在持久会话中完成测试，你可以随时接管",
+    sessionConnected: "已连接",
+    sessionAgent: "Agent 操作中",
+    sessionTakeover: "接管",
     accessTitle: "放开能力，划好边界",
     accessDescription: "为每个令牌指定可访问的 Box、主机与操作。按需设置配额，随时撤销权限。",
     scopedToken: "受限令牌",
@@ -136,14 +140,6 @@ function setLanguage(value) {
   }
   for (const element of document.querySelectorAll("[data-i18n-aria]")) {
     element.setAttribute("aria-label", translations[element.dataset.i18nAria]);
-  }
-  const folder = language === "zh" ? "zh-CN" : "en";
-  for (const image of document.querySelectorAll("[data-terminal-image]")) {
-    image.src = `./assets/screenshots/${folder}/box-terminal-light.png`;
-    image.alt =
-      language === "zh"
-        ? "Agent 正在操作的共享终端，可通过接管控件继续工作"
-        : "A shared terminal with the agent driving and a Take over control";
   }
   const docsRoot = "https://github.com/ArnoChenFx/minibox/blob/main/docs/";
   for (const link of document.querySelectorAll("[data-doc]")) {
