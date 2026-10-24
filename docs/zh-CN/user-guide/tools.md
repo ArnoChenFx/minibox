@@ -13,7 +13,7 @@
 - **终端与开发工具**
 - **网络**
 
-目录包括 Claude Code、OpenAI Codex CLI、OpenCode、Pi coding agent、fx agent、Antigravity CLI、Grok Build CLI、Qoder CLI、oh-my-pi、herdr、luvus、Bun、uv、Rust toolchain、Zig 和 Tailscale。
+目录包括 Claude Code、OpenAI Codex CLI、OpenCode、Pi coding agent、fx agent、Antigravity CLI、Grok Build CLI、Qoder CLI、oh-my-pi、herdr、luvus、Bun、uv、Rust toolchain、Zig、GitHub CLI 和 Tailscale。
 
 若勾选了工具，MiniBox 会在 Box 启动后安装它们。在 **任务** 面板中查看进度。
 
