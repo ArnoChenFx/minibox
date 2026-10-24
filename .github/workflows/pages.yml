@@ -85,7 +85,7 @@ jobs:
           node --input-type=module <<'JS'
           const base = new URL(process.env.PAGE_URL);
           const paths = [
-            ["", "text/html", "Your agents."],
+            ["", "text/html", "Let your agents work"],
             ["styles.css", "text/css"],
             ["main.js", "javascript"],
             ["assets/logo-mark.svg", "image/svg+xml"],

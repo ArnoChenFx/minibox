@@ -5,84 +5,82 @@ const translationsZh = {
     mobileNav: "移动导航",
     footerNav: "页脚导航",
     navProduct: "产品",
-    navWorkflow: "使用流程",
+    navCapabilities: "功能",
     navDocs: "文档",
     menu: "菜单",
-    heroLine1: "你的 Agent",
-    heroLine2: "你的机器",
-    heroLine3: "你说了算",
-    heroDescription: "在自己的机器上，为 AI Agent 提供独立的 Docker 工作空间。",
+    release: "认识 MiniBox v__MINIBOX_VERSION__",
+    heroLine1: "让 Agent 放手做",
+    heroLine2: "让一切始终可控",
+    heroDescription: "独立工作空间、实时终端与随时可恢复的成果\n都在你自己的机器上",
     getStarted: "开始使用",
-    exploreProject: "了解开源项目",
-    illustrationLabel: "个人 Docker 工作空间与终端的示意图",
-    running: "运行中",
-    compute: "计算资源",
-    memory: "内存",
-    persistent: "持久保存",
-    workspace: "工作空间",
-    yourFiles: "给文件一个家",
-    terminalComment: "# 给下一个想法，一个干净的开始。",
-    anyMcp: "任意 MCP 客户端",
-    productTitle: "让 Agent 忙碌，让自己心里有数",
+    readDocs: "阅读文档",
+    selfHosted: "自主部署",
+    noAccount: "无需平台账号",
     screenshotsLabel: "控制台截图",
     tabOverview: "概览",
     tabBoxes: "Box 列表",
     tabTerminal: "终端",
     enlarge: "放大截图",
-    featuresTitle: "给 Agent 一个能安心干活的家",
-    storageTitle: "留下成果，告别杂乱。",
-    storageDescription:
-      "工作区与 home 独立保存在持久卷里，重建后代码和配置依然在。多个 Box 可以共享存储，也可以接入你的 NAS。",
-    storageLink: "了解存储方式",
-    controlTitle: "让 Agent 开车，随时接过方向盘。",
-    controlDescription: "观察持久化的 tmux 会话，需要时接管，完成后交还。刷新页面，也不会打断正在进行的工作。",
-    controlLink: "了解会话与接管",
-    you: "你",
-    interfacesTitle: "说 Agent 听得懂的语言。",
-    interfacesDescription:
-      "MCP、CLI 与 REST API 共用同一组操作。CLI 直接从你的服务器下载，支持 macOS、Linux 和 Windows，用 minibox ssh-config 即可直接 ssh 进 Box。",
-    tokensTitle: "主密钥归你，权限按需分配。",
-    tokensDescription:
-      "给每个 Agent 独立的令牌，只开放需要的 Box 和操作。设置配额，在任务完成后撤销权限。密钥按名称注入 Box，未经你允许，Agent 令牌无法使用。",
-    tokensLink: "连接你的 Agent",
-    lifecycleTitle: "少一些日常打理。",
-    lifecycleDescription:
-      "空闲 Box 自动休眠、按需唤醒。设置 CPU 与内存配额和 TTL，用检查点保存数据，把配好的环境存为模板。",
-    lifecycleLink: "了解生命周期",
-    workflowTitle: "一个 Box，一个 Agent，开工",
-    workflowLink: "阅读 Agent 接入指南",
-    step1Title: "先腾出一点空间。",
-    step1Description: "选择模板、给 Box 起名、选好工具，再设好环境变量。",
-    ready: "已就绪",
-    step2Title: "带上你的 Agent。",
-    step2Description: "创建受限令牌，通过 MCP、CLI 或 REST API 接入。",
-    step3Title: "随时看看进展。",
-    step3Description: "跟进终端、预览应用，需要时接管。在尝试新想法之前，用检查点保存当前成果。",
-    step3Code: "观察 · 接管 · 交还",
-    startTitle: `简单的开始
-自己的空间`,
-    installationGuide: "完整安装指南",
-    installHeading: "启动 MiniBox",
+    agentsLabel: "兼容的 AI Agent",
+    anyMcp: "任意 MCP 客户端",
+    capabilitiesLine1: "从第一条命令",
+    capabilitiesLine2: "到下一台机器",
+
+    terminalTitle: "随时接手，无需从头开始",
+    terminalDescription: "在持久终端里跟进 Agent 的工作。需要时接管，完成后交还，工作不中断。",
+    terminalLink: "了解终端与会话",
+    accessTitle: "放开能力，划好边界",
+    accessDescription: "为每个令牌指定可访问的 Box、主机与操作。按需设置配额，随时撤销权限。",
+    scopedToken: "受限令牌",
+    runCommands: "运行命令",
+    readWrite: "读写文件",
+    otherBoxes: "其他 Box 与密钥",
+    tokenTtl: "4 小时 TTL",
+    checkpointTitle: "大胆尝试，也能回到从前",
+    checkpointDescription: "用检查点保存工作，分叉出新 Box，或回滚到之前的状态。导出加密包，在别处留一份。",
+    checkpointLink: "了解检查点",
+    checkpointBase: "保存当前成果",
+    checkpointIdea: "尝试新想法",
+    checkpointBack: "回到好状态",
+    workKept: "成果始终在",
+    hostsTitle: "一个面板，管好你的机器",
+    hostsDescription: "连接工作站、家用服务器与远程主机。按可用容量分配 Box，也能连同数据一起迁移。",
+    hostsLink: "连接更多主机",
+    workstation: "工作站",
+    homeServer: "家用服务器",
+    remoteHost: "远程主机",
+    templatesTitle: "从熟悉的环境出发",
+    templatesDescription: "模板、代码仓库与 devcontainer",
+    filesTitle: "文件始终触手可及",
+    filesDescription: "持久卷、NAS 与文件浏览器",
+    notificationsTitle: "需要你时，及时知晓",
+    notificationsDescription: "Webhook、ntfy 与 Telegram 通知",
+    startLine1: "下一个工作空间",
+    startLine2: "就从这里开始",
+    startDescription: "一台 Linux 机器、Docker 和几条命令\n然后打开 MiniBox，创建你的第一个 Box",
+    installationGuide: "查看快速开始",
+    installHeading: "安装 MiniBox",
     copy: "复制",
     copied: "已复制安装命令",
     copyFailed: "浏览器未允许复制，请手动选中并复制命令。",
-    installFooter: "然后在自己的机器上打开 127.0.0.1:3920。",
-    setupNote: "使用自动生成的访问密钥登录。远程访问请使用 HTTPS 或私有网络。",
-    faqTitle: "开始之前，聊几句",
-    faq1Question: "MiniBox 是托管云服务吗？",
+    installFooter: "打开 127.0.0.1:3920，使用访问密钥登录",
+    faqTitle: "你可能想知道",
+    faq1Question: "MiniBox 运行在哪里？",
     faq1Answer:
-      "MiniBox 运行在你自己的机器上，也可以把 Box 放到你通过 TLS 或 SSH 接入的其他 Docker 主机上。项目以 Apache-2.0 协议开源。无需 MiniBox 账号，也没有平台订阅费。你需要提供自己的硬件，以及 Agent 使用付费 AI 服务时所需的凭据。",
+      "在你自己的 Linux 机器上，需要安装 Docker。需要更多容量时，可以接入远程主机。MiniBox 以 Apache-2.0 协议开源，无需平台账号，也没有平台订阅费。",
     faq2Question: "可以在 Box 里运行不可信代码吗？",
     faq2Answer:
-      "Box 使用 Docker 容器隔离，与宿主机共享内核。它适合运行你自己的 Agent，不能当作不可信第三方代码的安全边界。如果工作负载需要，请使用更强的隔离方案。",
-    faq3Question: "删除 Box 后，文件会怎样？",
+      "Box 使用 Docker 容器隔离，与宿主机共享内核。MiniBox 面向可信的所有者及其 Agent，不可信的第三方工作负载需要更强的隔离方案。",
+    faq3Question: "Box 变化后，我的工作还在吗？",
     faq3Answer:
-      "工作区与 home 的数据保存在独立于容器可写层的卷里。删除 Box 时，可以选择保留哪些归属卷。检查点保存工作区和 home 的数据；模板只保存 Box 的系统环境，从不包含卷。",
-    faq4Question: "能连接我正在使用的 AI Agent 吗？",
+      "工作区与 home 数据独立保存在持久卷中，重建后仍然保留。检查点可以用于分叉或回滚。请把导出的检查点与服务端备份保存在主机以外，以便恢复。",
+    faq4Question: "我的 Agent 如何接入？",
     faq4Answer:
-      "支持 Streamable HTTP MCP 的客户端都可以连接 MiniBox，也可以通过 CLI 和 REST API 接入。工具目录支持在 Box 里安装已适配的 Agent CLI。请给 Agent 分配受限令牌，而不是所有者主密钥。",
-    closingTitle: "给下一个大想法，腾一点空间",
-    issues: "问题与想法",
+      "通过 MCP、CLI、SSH 或 REST API 接入。为每个 Agent 分配受限令牌，不要交出所有者主密钥。你也可以打开浏览器终端，与 Agent 协作。",
+    closingTitle: "为下一个想法，留出空间",
+
+    issues: "问题反馈",
+    notices: "第三方声明",
     dialogTitle: "走进 MiniBox",
     closePreview: "关闭截图",
   },
@@ -131,13 +129,24 @@ function setLanguage(value) {
   document.documentElement.lang = language === "zh" ? "zh-CN" : "en";
   document.title =
     language === "zh"
-      ? "MiniBox — 你的 Agent。你的机器。你说了算。"
-      : "MiniBox — Your agents. Your machine. Your rules.";
+      ? "MiniBox — 让 Agent 放手做，让一切始终可控"
+      : "MiniBox — Let your agents work. Stay in control.";
   for (const element of document.querySelectorAll("[data-i18n]")) {
     element.textContent = translations[element.dataset.i18n];
   }
   for (const element of document.querySelectorAll("[data-i18n-aria]")) {
     element.setAttribute("aria-label", translations[element.dataset.i18nAria]);
+  }
+  const folder = language === "zh" ? "zh-CN" : "en";
+  for (const image of document.querySelectorAll("[data-terminal-image]")) {
+    image.src = `./assets/screenshots/${folder}/box-terminal-light.png`;
+    image.alt =
+      language === "zh"
+        ? "Agent 正在操作的共享终端，可通过接管控件继续工作"
+        : "A shared terminal with the agent driving and a Take over control";
+  }
+  for (const link of document.querySelectorAll("[data-doc]")) {
+    link.href = `https://github.com/ArnoChenFx/minibox/blob/main/docs/${language === "zh" ? "zh-CN/" : ""}${link.dataset.doc}`;
   }
   const button = document.querySelector("[data-language]");
   button.textContent = language === "zh" ? "EN" : "中文";
