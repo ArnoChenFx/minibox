@@ -3,10 +3,10 @@ import { esc, copyText } from "../lib/dom.js";
 import { relTime, dateTime } from "../lib/format.js";
 import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
+import { scopeRequest, summarizeScopes } from "../lib/token-scopes.js";
 import { emptyState, openDialog, nameError, toast, toastError, confirmDialog } from "../lib/ui.js";
 import { bindToggles, limitList } from "./list-toggle.js";
-
-const PRESETS = ["readonly", "operator", "sandboxed-agent", "admin"];
+import { bindPermissions, permissionsHtml, presetFieldHtml } from "./token-permissions.js";
 
 function linesOf(value) {
   return value
@@ -22,17 +22,35 @@ function tokenStatus(token) {
   return { key: "st.tokenLive", badge: "badge-success" };
 }
 
-function scopeSummary(token) {
-  const scopes = token.scopes.join(", ");
-  return `<span class="subtle" title="${esc(scopes)}">${esc(token.preset ? t(`st.preset.${token.preset}`) : scopes)}</span>`;
+/** The preset's name, or 自定义 with the count and its base, and the full scope list folded under it. */
+function scopeSummary(token, catalog) {
+  const summary = summarizeScopes(token, catalog);
+  const label =
+    summary.kind === "preset"
+      ? esc(t(`st.preset.${summary.name}`))
+      : esc(t("st.tokenCustomCount", { n: summary.count }));
+  const base =
+    summary.kind === "custom" && summary.base
+      ? ` <span class="subtle">${esc(t("st.tokenCustomBased", { preset: t(`st.preset.${summary.base}`) }))}</span>`
+      : "";
+  const list = token.scopes.map((scope) => `<code>${esc(scope)}</code>`).join("");
+  return `<details class="scope-details">
+    <summary title="${esc(token.scopes.join(", "))}">${icon("chevron")}<span>${label}</span>${base}</summary>
+    <div class="scope-list" aria-label="${esc(t("st.tokenScopesList"))}">${list}</div>
+  </details>`;
 }
 
 export async function loadTokens(view) {
   const card = view.querySelector("#stTokens");
   if (!card) return;
   let tokens;
+  let catalog;
   try {
-    ({ tokens } = await api("/api/tokens"));
+    [{ tokens }, catalog] = await Promise.all([
+      api("/api/tokens"),
+      // Without the preset list a token still shows its preset name.
+      api("/api/tokens/presets").catch(() => undefined),
+    ]);
   } catch (e) {
     if (e.status === 401) {
       location.href = "/login";
@@ -44,7 +62,7 @@ export async function loadTokens(view) {
   }
   const { shown, toggle } = limitList(view, "tokens", tokens);
   const rows = tokens.length
-    ? shown.map(tokenRow).join("")
+    ? shown.map((token) => tokenRow(token, catalog)).join("")
     : `<tr><td colspan="6">${emptyState({ iconName: "key", title: t("st.tokenNone") })}</td></tr>`;
   card.innerHTML = `
     <div class="card-head">
@@ -66,7 +84,7 @@ export async function loadTokens(view) {
   bindToggles(view, card, () => loadTokens(view));
 }
 
-function tokenRow(token) {
+function tokenRow(token, catalog) {
   const status = tokenStatus(token);
   const action = token.revokedAt
     ? `<span class="badge ${status.badge}">${t(status.key)}</span>`
@@ -77,17 +95,21 @@ function tokenRow(token) {
   return `<tr>
     <td><strong>${esc(token.name)}</strong> <span class="badge ${status.badge}">${t(status.key)}</span></td>
     <td class="mono">${esc(token.prefix)}</td>
-    <td class="hide-sm">${scopeSummary(token)}</td>
+    <td class="hide-sm">${scopeSummary(token, catalog)}</td>
     <td class="hide-sm subtle nowrap">${token.expiresAt ? esc(dateTime(token.expiresAt)) : t("st.tokenNever")}</td>
     <td class="subtle nowrap">${used}</td>
     <td class="nowrap"><div class="actions">${action}</div></td>
   </tr>`;
 }
 
-function createToken(view) {
-  const presetOptions = PRESETS.map((name) => `<option value="${name}">${esc(t(`st.preset.${name}`))}</option>`).join(
-    "",
-  );
+async function createToken(view) {
+  let catalog;
+  try {
+    catalog = await api("/api/tokens/presets");
+  } catch (e) {
+    toastError(t("st.tokenCreateFailed"), e);
+    return;
+  }
   const { root, close } = openDialog({
     title: t("st.tokenCreate"),
     description: t("st.tokenPresetHelp"),
@@ -96,7 +118,8 @@ function createToken(view) {
     body: `
       <form id="stTokenForm" class="stack">
         <label class="field">${t("label.tokenName")}<input class="input" name="name" autocomplete="off" required /></label>
-        <label class="field">${t("st.tokenPreset")}<select class="select" name="preset">${presetOptions}</select></label>
+        ${presetFieldHtml(catalog, catalog.presets[0].name)}
+        ${permissionsHtml(catalog)}
         <label class="field">${t("st.tokenBoxes")}
           <select class="select" name="boxes">
             <option value="created-by-me">${esc(t("st.tokenBoxesCreated"))}</option>
@@ -135,7 +158,20 @@ function createToken(view) {
     root.querySelector("[data-box-tags]").hidden = boxes.value !== "tags";
   };
   boxes.addEventListener("change", syncBoxes);
-  root.querySelector("#stTokenSave").addEventListener("click", () => submitToken(view, form, close));
+  const hosts = form.elements.hosts;
+  // A preset starts the box and host scope from its own: admin takes every box and host. A choice made by hand stays.
+  const touched = new Set();
+  for (const select of [boxes, hosts]) select.addEventListener("change", () => touched.add(select.name));
+  const permissions = bindPermissions(root, catalog, {
+    onPreset: (preset) => {
+      if (!touched.has("boxes")) boxes.value = preset.boxes === "all" ? "*" : "created-by-me";
+      if (!touched.has("hosts")) hosts.value = preset.hosts === "all" ? "*" : "local";
+      syncBoxes();
+    },
+  });
+  root
+    .querySelector("#stTokenSave")
+    .addEventListener("click", () => submitToken(view, form, close, permissions, catalog));
 }
 
 function numberOrSkip(value) {
@@ -145,7 +181,7 @@ function numberOrSkip(value) {
   return Number.isFinite(n) ? n : Number.NaN;
 }
 
-async function submitToken(view, form, close) {
+async function submitToken(view, form, close, permissions, catalog) {
   const data = new FormData(form);
   const name = String(data.get("name") ?? "").trim();
   const invalid = nameError(name, "tokenName");
@@ -153,7 +189,12 @@ async function submitToken(view, form, close) {
     toast(t("st.tokenCreateFailed"), { type: "error", message: invalid });
     return;
   }
-  const body = { name, preset: String(data.get("preset")) };
+  const scopes = permissions.scopes();
+  if (scopes.length === 0) {
+    toast(t("st.tokenCreateFailed"), { type: "error", message: t("st.tokenScopesEmpty") });
+    return;
+  }
+  const body = { name, ...scopeRequest(permissions.preset(), scopes, catalog) };
   const boxes = String(data.get("boxes"));
   if (boxes === "*") body.boxes = "*";
   else if (boxes === "ids") body.boxes = { ids: linesOf(String(data.get("boxIds") ?? "")) };
