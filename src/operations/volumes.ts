@@ -38,7 +38,7 @@ import {
 } from "./authz";
 import { defineOperation } from "./define";
 import { fromEveryHost, hostOfVolume } from "./routing";
-import { BoxSchema, SafetyCheckpointSchema, TrashRefSchema } from "./schemas";
+import { BoxSchema, OutcomeSchema, SafetyCheckpointSchema, TrashRefSchema } from "./schemas";
 import type { OperationContext } from "./types";
 import {
   boxId,
@@ -305,12 +305,6 @@ const volumeDelete = defineOperation({
 const DELETE_BATCH_MAX = 100;
 /** A prune removes at most this many named volumes in one request. */
 const PRUNE_IDS_MAX = 500;
-
-const OutcomeSchema = z.object({
-  message: z.string(),
-  key: z.string().nullable().meta({ description: "The message key a translated client shows instead of the message." }),
-  params: z.record(z.string(), z.union([z.string(), z.number()])).nullable(),
-});
 
 const DeletedVolumeSchema = z.object({
   id: z.string(),

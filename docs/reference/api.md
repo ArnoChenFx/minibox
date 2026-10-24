@@ -308,6 +308,7 @@ The recycle bin holds the data of deleted boxes and volumes. Its entries are not
 | `GET` | `/api/trash` | List the recycle bin, newest deletion first. The `trash` array holds each entry's `id`, `hostId`, `kind` (`box` or `volume`), `sourceId`, `sourceName`, `deletedAt`, `expiresAt`, `bytes` and `createdBy` |
 | `POST` | `/api/trash/{id}/restore` | Restore an entry as a new box or volume, as a task. Takes `name`, and for a box `cpus` and `memoryMb`, all optional. The entry is removed once the restore has finished |
 | `DELETE` | `/api/trash/{id}` | Purge an entry now, as a task. Its data cannot be restored afterwards |
+| `POST` | `/api/trash/empty` | Purge every entry on every host now, and return one result per entry. Without `confirm: true` it changes nothing and answers `409` `confirmation_required` with `details.preview`, which lists the entries. `ids` limits the empty to the entries the preview listed. An entry that is being restored, purged or exported, or whose host is offline, is left and reported with its reason; the rest are still purged. The response holds `removed`, `refused`, `failed`, `bytes`, `entries` and `hosts`. Needs the owner: no token scope allows it, `trash:skip` included |
 
 An entry is kept for `TRASH_RETENTION_DAYS` days, see [Configuration](configuration.md#checkpoints). Each delete, restore and purge is recorded as an event: `box.trashed` or `volume.trashed`, `trash.restored` or `trash.purged`.
 

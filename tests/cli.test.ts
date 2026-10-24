@@ -1733,6 +1733,44 @@ describe("CLI recycle bin", () => {
     }
   });
 
+  test("trash empty lists what it would purge, and with --yes purges exactly those entries", async () => {
+    const env = serve();
+    try {
+      for (const name of ["alpha", "beta"]) {
+        expect(await runCli(["box", "create", name, "--cpus", "1", "--memory", "256"], env.env, io(), lines([]))).toBe(
+          0,
+        );
+        const boxId = await boxIdNamed(env.env.MINIBOX_URL, name);
+        expect((await api(env.env.MINIBOX_URL, "DELETE", `/api/boxes/${boxId}`)).status).toBe(200);
+      }
+      const trashLeft = async () =>
+        ((await api(env.env.MINIBOX_URL, "GET", "/api/trash")).json as { trash: unknown[] }).trash;
+
+      const preview = io();
+      expect(await runCli(["trash", "empty"], env.env, preview, lines([]))).toBe(0);
+      expect(preview.out.split("\n")[0]).toBe("ID  NAME  KIND  HOST  BYTES  ACTION");
+      expect(preview.out).toContain("alpha  box  local  ");
+      expect(preview.out).toContain("Nothing was purged. Add --yes");
+      expect(await trashLeft()).toHaveLength(2);
+
+      const asJson = io();
+      expect(await runCli(["trash", "empty", "--json"], env.env, asJson, lines([]))).toBe(0);
+      expect(JSON.parse(asJson.out).error.details.preview).toMatchObject({ action: "empty_trash", count: 2 });
+      expect(await trashLeft()).toHaveLength(2);
+
+      const done = io();
+      expect(await runCli(["trash", "empty", "--yes"], env.env, done, lines([]))).toBe(0);
+      expect(done.out).toContain("2 purged, 0 left in use, 0 failed");
+      expect(await trashLeft()).toEqual([]);
+
+      const again = io();
+      expect(await runCli(["trash", "empty", "--yes"], env.env, again, lines([]))).toBe(0);
+      expect(again.out).toBe("The recycle bin is empty.\n");
+    } finally {
+      env.stop();
+    }
+  });
+
   test("trash usage errors exit 2 without calling the server", async () => {
     const env = { MINIBOX_URL: "http://127.0.0.1:9", MINIBOX_ACCESS_KEY: TEST_KEY };
     const cases: string[][] = [
@@ -1744,6 +1782,8 @@ describe("CLI recycle bin", () => {
       ["trash", "restore", "ck_1", "--cpus", "lots"],
       ["trash", "purge"],
       ["trash", "purge", "ck_1", "--color", "red"],
+      ["trash", "empty", "extra"],
+      ["trash", "empty", "--force"],
     ];
     for (const argv of cases) {
       const sink = io();

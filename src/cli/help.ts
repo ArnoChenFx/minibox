@@ -44,6 +44,7 @@ Commands:
                                        Restore an entry as a new box or volume, and remove the entry
   minibox trash purge <id> [--no-wait] [--json]
                                        Remove an entry and the data it keeps, before it expires
+  minibox trash empty [--yes] [--json]  List every entry the recycle bin would purge; with --yes purge them for good (owner only)
   minibox volume delete <id|name>... [--skip-trash] [--yes] [--json]
                                        Delete volumes on any host. Without --yes, only the preview prints
   minibox volume prune [id|name...] [--older-than 30d] [--yes] [--json]

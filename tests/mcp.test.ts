@@ -231,6 +231,7 @@ describe("MCP", () => {
         "delete_volume",
         "delete_volumes",
         "detach_volume",
+        "empty_trash",
         "export_checkpoint",
         "get_checkpoint_schedule",
         "get_volume",

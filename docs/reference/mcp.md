@@ -140,6 +140,7 @@ The tables below list each tool and the operation it calls, taken from the `x-mc
 | `list_trash` | `GET /api/trash`. Owner only. The recycle bin's entries |
 | `restore_trash` | `POST /api/trash/{id}/restore`. Owner only. Returns a task |
 | `purge_trash` | `DELETE /api/trash/{id}`. Owner only. Returns a task |
+| `empty_trash` | `POST /api/trash/empty`. Owner only. Needs `confirm: true`. Returns one result per entry |
 
 ### tools
 

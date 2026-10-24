@@ -267,6 +267,9 @@ export const MESSAGES = {
   checkpoint_export_no_box: "Checkpoint {id} names no box, so a package cannot describe it.",
   checkpoint_no_spec: "Checkpoint {id} records no box settings, so a box cannot be made from it.",
   trash_not_found: "Recycle bin entry {id} was not found.",
+  trash_busy:
+    "Recycle bin entry {name} is being restored or purged. Empty the recycle bin again when that has finished.",
+  trash_host_offline: "Host {host} is offline, so its recycle bin entries were not purged.",
   trash_capacity_exceeded:
     "Keeping this data in the recycle bin needs {need} MB, but the checkpoint repository holds {used} MB of its {limit} MB limit, and purging the recycle bin did not free enough. Delete checkpoints, or delete without keeping a copy.",
   trash_skip_forbidden:

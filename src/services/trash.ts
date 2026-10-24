@@ -304,7 +304,7 @@ async function makeRoom(host: HostCtx, layers: PlannedLayer[], record?: RecordNo
 export async function purgeEntry(
   host: HostCtx,
   id: string,
-  reason: "requested" | "expired" | "capacity" | "failed",
+  reason: "requested" | "expired" | "capacity" | "failed" | "emptied",
   record?: RecordNote,
 ): Promise<void> {
   const found = await host.checkpoints.exclusive(async () => {

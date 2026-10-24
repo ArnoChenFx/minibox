@@ -74,6 +74,7 @@ export const ACTION_ICON = {
   "sshkey.delete": "trash",
   "trash.restore": "refresh",
   "trash.purge": "trash",
+  "trash.empty": "trash",
   "token.create": "key",
   "token.revoke": "trash",
   "token.delete": "trash",

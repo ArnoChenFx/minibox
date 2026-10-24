@@ -1,4 +1,4 @@
-import type { TrashRef } from "../checkpoints/types";
+import type { TrashKind, TrashRef } from "../checkpoints/types";
 import type { HostCtx } from "../host/registry";
 import { AppError, badRequest, conflict, notFound } from "../lib/errors";
 import { log } from "../lib/logger";
@@ -214,6 +214,22 @@ export type StoragePreview =
         trash: boolean;
         /** Why the volume is not deleted, or null when it will be. */
         blocked: DeleteBlock | null;
+      }[];
+    }
+  | {
+      action: "empty_trash";
+      /** How many entries the empty would purge. */
+      count: number;
+      /** The size of the data those entries keep. */
+      bytes: number;
+      entries: {
+        id: string;
+        hostId: string;
+        kind: TrashKind;
+        sourceName: string;
+        bytes: number;
+        /** Why the entry stays, or null when it will be purged. */
+        blocked: "exporting" | "busy" | "offline" | null;
       }[];
     }
   | {

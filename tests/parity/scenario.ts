@@ -1223,6 +1223,21 @@ async function recordScenario(): Promise<Exchange[]> {
     await send("revoke the token to prune", "DELETE", `/api/tokens/${oldId}`);
     await post("prune the ended tokens", "/api/tokens/prune", {});
     await post("prune with none left to delete", "/api/tokens/prune", {});
+
+    const emptied = await post("create a box to empty from the recycle bin", "/api/boxes", {
+      name: "emptied-box",
+      cpus: 1,
+      memoryMb: 256,
+    });
+    await send("delete the box to empty", "DELETE", `/api/boxes/${boxId(emptied.json)}`);
+    const emptiedEntry = entryNamed(
+      (await send("list the recycle bin before emptying", "GET", "/api/trash")).json,
+      "emptied-box",
+    );
+    await post("empty the recycle bin without confirming", "/api/trash/empty", { ids: [emptiedEntry] });
+    await post("empty with an empty id list", "/api/trash/empty", { ids: [], confirm: true });
+    await post("empty the recycle bin", "/api/trash/empty", { ids: [emptiedEntry], confirm: true });
+    await post("empty an entry that is already gone", "/api/trash/empty", { ids: [emptiedEntry], confirm: true });
   } finally {
     server.stop(true);
     app.throttle.stop();
