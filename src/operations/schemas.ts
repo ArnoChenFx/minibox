@@ -172,6 +172,13 @@ export const TrashEntrySchema = z.object({
   createdBy: z.string().nullable(),
 });
 
+/** Why one step of a batch failed or was refused: its text, and the key and params a translated client shows instead. */
+export const OutcomeSchema = z.object({
+  message: z.string(),
+  key: z.string().nullable().meta({ description: "The message key a translated client shows instead of the message." }),
+  params: z.record(z.string(), z.union([z.string(), z.number()])).nullable(),
+});
+
 /** The recycle bin entry a delete kept. A delete that kept none has null here. */
 export const TrashRefSchema = z.object({ id: z.string(), expiresAt: z.string() });
 

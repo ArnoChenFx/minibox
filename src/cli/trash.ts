@@ -47,7 +47,82 @@ async function trashPurgeCommand(argv: string[], env: Record<string, string | un
   return awaitStarted(env, io, started.json, options, () => id);
 }
 
-/** `trash ls`, `trash restore` and `trash purge`: the recycle bin of deleted boxes and volumes. */
+interface EmptyRow {
+  id: string;
+  sourceName: string;
+  kind: string;
+  hostId?: string;
+  bytes: number;
+  blocked?: string | null;
+  status?: string;
+  error?: { message?: string } | null;
+}
+
+/** The preview an unconfirmed empty is answered with, under `error.details`. */
+function emptyPreview(json: unknown): { count: number; bytes: number; entries: EmptyRow[] } | null {
+  const error = (json as { error?: { details?: { preview?: { action?: string } } } } | null)?.error;
+  const preview = error?.details?.preview;
+  return preview?.action === "empty_trash" ? (preview as { count: number; bytes: number; entries: EmptyRow[] }) : null;
+}
+
+function emptyLine(cells: (string | number | null | undefined)[]): string {
+  return `${cells.map((cell) => cell ?? "-").join("  ")}\n`.replace(/\s+\n$/, "\n");
+}
+
+/**
+ * `trash empty`: lists what emptying the recycle bin would purge. With `--yes` it purges exactly the entries it listed,
+ * by id, so an entry deleted in between is kept. An entry that is in use is reported and left, and the exit code is 1.
+ */
+async function trashEmptyCommand(argv: string[], env: Record<string, string | undefined>, io: CliIo): Promise<number> {
+  const options = parseOptions(argv, [], ["--json", "--yes"]);
+  if (options.positional.length > 0) throw new Error("minibox trash empty takes no arguments");
+  const json = options.switches.has("--json");
+  const asked = await request(env, "POST", "/api/trash/empty", { confirm: false });
+  const preview = emptyPreview(asked.json);
+  if (asked.status !== 409 || !preview) return fail(io, asked.status, asked.json, asked.text);
+  if (!options.switches.has("--yes")) {
+    if (json) return printJson(io, asked.json);
+    io.stdout(emptyLine(["ID", "NAME", "KIND", "HOST", "BYTES", "ACTION"]));
+    for (const row of preview.entries) {
+      io.stdout(
+        emptyLine([
+          row.id,
+          row.sourceName,
+          row.kind,
+          row.hostId,
+          row.bytes,
+          row.blocked ? `skip (${row.blocked})` : "purge",
+        ]),
+      );
+    }
+    io.stdout(
+      preview.entries.length === 0
+        ? "The recycle bin is empty.\n"
+        : "Nothing was purged. Add --yes to purge these entries for good; they cannot be restored.\n",
+    );
+    return 0;
+  }
+  const ids = preview.entries.map((row) => row.id);
+  if (ids.length === 0) {
+    if (json) return printJson(io, { removed: 0, refused: 0, failed: 0, bytes: 0, entries: [], hosts: [] });
+    io.stdout("The recycle bin is empty.\n");
+    return 0;
+  }
+  const res = await request(env, "POST", "/api/trash/empty", { confirm: true, ids });
+  if (res.status >= 400) return fail(io, res.status, res.json, res.text);
+  const result = res.json as { removed: number; refused: number; failed: number; entries: EmptyRow[] };
+  if (json) printJson(io, res.json);
+  else {
+    io.stdout(emptyLine(["ID", "NAME", "KIND", "HOST", "STATUS", "DETAIL"]));
+    for (const row of result.entries) {
+      io.stdout(emptyLine([row.id, row.sourceName, row.kind, row.hostId, row.status, row.error?.message]));
+    }
+    io.stdout(`${result.removed} purged, ${result.refused} left in use, ${result.failed} failed\n`);
+  }
+  return result.refused + result.failed > 0 ? 1 : 0;
+}
+
+/** `trash ls`, `trash restore`, `trash purge` and `trash empty`: the recycle bin of deleted boxes and volumes. */
 export async function trashCommand(
   argv: string[],
   env: Record<string, string | undefined>,
@@ -57,5 +132,6 @@ export async function trashCommand(
   if (sub === "ls" || sub === "list") return trashLs(rest, env, io);
   if (sub === "restore") return trashRestoreCommand(rest, env, io);
   if (sub === "purge") return trashPurgeCommand(rest, env, io);
-  throw new Error("minibox trash needs ls, restore or purge");
+  if (sub === "empty") return trashEmptyCommand(rest, env, io);
+  throw new Error("minibox trash needs ls, restore, purge or empty");
 }

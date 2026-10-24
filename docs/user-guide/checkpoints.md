@@ -100,7 +100,9 @@ Entries are kept in the checkpoint repository, so they count against the size li
 
 Entries do not appear in the checkpoint list. Each host keeps its own recycle bin. The page lists the entries of every host, and a restore or purge runs on the host the entry is on. Each delete, restore and purge is recorded in the event log, as `box.trashed` or `volume.trashed`, `trash.restored` and `trash.purged`. The recycle bin is for the owner only.
 
-On the command line, `minibox trash ls` lists the entries, `minibox trash restore <id>` restores one, with `--name`, `--cpus` and `--memory`, and `minibox trash purge <id>` purges one. The MCP tools are `list_trash`, `restore_trash` and `purge_trash`.
+The **Empty recycle bin** button on the page purges every entry at once. The dialog states how many entries and how much data that is, and that it cannot be undone. The button is disabled while the recycle bin is empty. An entry that is being restored, purged or exported, or that sits on an offline host, is not purged: the result lists it with the reason and the other entries are still purged. Only the owner can empty the recycle bin. A token cannot, whatever its scopes, including `trash:skip`. The event log records one `trash.purged` event for each entry, and the activity feed one `trash.empty` entry with the counts.
+
+On the command line, `minibox trash ls` lists the entries, `minibox trash restore <id>` restores one, with `--name`, `--cpus` and `--memory`, `minibox trash purge <id>` purges one, and `minibox trash empty` lists every entry and `minibox trash empty --yes` purges them all for good. The MCP tools are `list_trash`, `restore_trash`, `purge_trash` and `empty_trash`.
 
 ## Copy to another host
 

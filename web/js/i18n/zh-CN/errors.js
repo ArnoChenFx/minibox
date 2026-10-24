@@ -188,6 +188,8 @@ export default {
   "err.checkpoint_copy_same_host": "检查点 {id} 已在宿主机 {host} 上。请复制到另一台宿主机。",
   "err.checkpoint_copy_exists":
     "检查点 {id} 在宿主机 {host} 上已有副本，因此没有再次复制。请先删除该副本，再重新复制。",
+  "err.trash_busy": "回收站条目“{name}”正在恢复或彻底删除。等它完成后再清空回收站。",
+  "err.trash_host_offline": "宿主机 {host} 离线，因此未彻底删除它的回收站条目。",
   "err.trash_not_found": "找不到回收站条目 {id}。",
   "err.trash_capacity_exceeded":
     "保留这份数据到回收站需要 {need} MB，但检查点仓库已用 {used} MB，上限为 {limit} MB，清空回收站也没能腾出足够空间。请删除部分检查点，或不保留副本直接删除。",

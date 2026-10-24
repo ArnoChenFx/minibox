@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { TRASH_KINDS } from "../checkpoints/types";
 import type { EventTarget } from "../events/types";
 import {
   assertRestorable,
@@ -10,13 +11,14 @@ import {
   type TrashRecord,
   trashRecord,
 } from "../services/trash";
-import { getVolume } from "../services/volumes";
+import { type PurgedEntry, previewEmptyTrash, purgeScanned, scanTrash } from "../services/trash-empty";
+import { confirmationRequired, getVolume } from "../services/volumes";
 import { assertWithinQuota, underQuota } from "../tokens/quota";
 import { assertCanCreateDefaultMounts } from "./authz";
 import { defineOperation } from "./define";
 import { fromEveryHost, hostOfCheckpoint } from "./routing";
-import { BoxSchema, OkSchema, TrashEntrySchema } from "./schemas";
-import { optionalCpus, optionalMemoryMb, restoredName } from "./validation";
+import { BoxSchema, OkSchema, OutcomeSchema, TrashEntrySchema } from "./schemas";
+import { optionalCpus, optionalMemoryMb, restoredName, storageConfirmFlag } from "./validation";
 import { VolumeSchema } from "./volumes";
 
 export const trashId = () => z.string().meta({ description: "Recycle bin entry id (ck_…), as trash.list shows it." });
@@ -123,4 +125,107 @@ export const trashPurge = defineOperation({
   },
 });
 
-export const trashOperations = [trashList, trashRestore, trashPurge];
+/** An empty names at most this many entries, so one request stays bounded. */
+const EMPTY_IDS_MAX = 1000;
+
+const EmptiedEntrySchema = z.object({
+  id: z.string(),
+  hostId: z.string(),
+  kind: z.enum(TRASH_KINDS),
+  sourceId: z.string(),
+  sourceName: z.string(),
+  bytes: z.number(),
+  status: z.enum(["removed", "refused", "failed"]),
+  blocked: z.enum(["exporting", "busy", "offline"]).nullable().meta({ description: "Why a refused entry was left." }),
+  error: OutcomeSchema.nullable(),
+});
+
+const EmptiedHostSchema = z.object({
+  hostId: z.string(),
+  name: z.string(),
+  status: z.enum(["checked", "offline", "failed"]),
+  error: OutcomeSchema.nullable(),
+});
+
+const tally = (entries: readonly PurgedEntry[]) => {
+  const count = (status: PurgedEntry["status"]) => entries.filter((row) => row.status === status).length;
+  return {
+    removed: count("removed"),
+    refused: count("refused"),
+    failed: count("failed"),
+    bytes: entries.reduce((sum, row) => sum + (row.status === "removed" ? row.bytes : 0), 0),
+  };
+};
+
+export const trashEmpty = defineOperation({
+  name: "trash.empty",
+  tag: "trash",
+  summary: "Empty the recycle bin",
+  kind: "destructive",
+  scope: "trash:purge",
+  async: false,
+  conflicts: true,
+  longSync: true,
+  input: z.object({
+    confirm: storageConfirmFlag(),
+    ids: z
+      .array(z.string().min(1))
+      .min(1)
+      .max(EMPTY_IDS_MAX)
+      .optional()
+      .meta({
+        description: `Purge only these entries (ck_…), the ids trash.list showed. Without it every entry on every host is purged. An id that is no longer in the recycle bin is skipped. At most ${EMPTY_IDS_MAX}.`,
+      }),
+  }),
+  output: z.object({
+    removed: z.number().meta({ description: "How many entries were purged." }),
+    refused: z.number().meta({ description: "How many entries were left, because something is using them." }),
+    failed: z.number().meta({ description: "How many entries could not be purged." }),
+    bytes: z.number().meta({ description: "The size of the data the purged entries kept." }),
+    entries: z
+      .array(EmptiedEntrySchema)
+      .meta({ description: "One result per entry, newest deletion first on each host." }),
+    hosts: z.array(EmptiedHostSchema).meta({
+      description: "One entry per host. An offline or failing host is reported, and its entries are left.",
+    }),
+  }),
+  rest: [{ method: "POST", path: "/api/trash/empty", body: true }],
+  cli: "trash empty",
+  mcp: {
+    toolset: "storage",
+    name: "empty_trash",
+    description:
+      "Permanently remove every entry in the recycle bin, on every host, now. The data cannot be restored afterwards. Each entry gets its own result, and one that cannot be purged, because it is being restored, purged or exported, or its host is offline, is reported and the rest are still purged. Without confirm true the call changes nothing and returns confirmation_required with details.preview, which lists the entries. ids limits the empty to the entries list_trash showed. Owner only.",
+  },
+  // The handler records the entry itself, once it knows the counts.
+  activity: { action: () => "trash.empty", target: () => "recycle bin", when: () => false },
+  audit: {
+    detail: (input, _resolved, result) => ({
+      named: input.ids?.length ?? null,
+      removed: result?.removed ?? 0,
+      refused: result?.refused ?? 0,
+      failed: result?.failed ?? 0,
+      bytes: result?.bytes ?? 0,
+    }),
+  },
+  run: async (ctx, input) => {
+    const hosts = ctx.allHosts?.() ?? [ctx.host];
+    const opts = { ids: input.ids ?? null, tasks: ctx.tasks, record: ctx.record };
+    const scan = await scanTrash(hosts, opts);
+    if (!input.confirm) throw confirmationRequired(previewEmptyTrash(scan));
+    const entries = await purgeScanned(hosts, scan, opts);
+    const counts = tally(entries);
+    if (entries.length > 0) {
+      const problems = counts.refused + counts.failed;
+      ctx.recordActivity?.({
+        action: "trash.empty",
+        target: `${counts.removed}/${entries.length}`,
+        ok: problems === 0,
+        ...(problems > 0 ? { message: entries.find((row) => row.error)?.error?.message ?? "" } : {}),
+      });
+    }
+    return { ...counts, entries, hosts: scan.hosts };
+  },
+});
+
+export const trashOperations = [trashList, trashRestore, trashPurge, trashEmpty];

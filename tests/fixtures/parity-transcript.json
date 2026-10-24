@@ -3646,5 +3646,61 @@
     "status": 200,
     "contentType": "application/json; charset=utf-8",
     "body": "{\"deleted\":[]}"
+  },
+  {
+    "step": "create a box to empty from the recycle bin",
+    "method": "POST",
+    "path": "/api/boxes",
+    "status": 201,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"box\":{\"id\":\"<id>\",\"boxId\":\"<boxId>\",\"name\":\"emptied-box\",\"state\":\"running\",\"status\":\"running\",\"running\":true,\"image\":\"mbtest-template:base\",\"template\":\"mbtest-template:base\",\"profile\":\"standard\",\"network\":\"mbtest-boxes\",\"cpus\":1,\"memory\":268435456,\"pids\":1024,\"createdAt\":\"<time>\",\"startedAt\":\"<time>\",\"volume\":\"<volumeId>\",\"revision\":1,\"desired\":\"running\",\"idleTimeoutSec\":null,\"ttlSec\":null,\"stopReason\":null,\"sleeping\":false,\"lastActivityAt\":\"<time>\",\"labels\":{},\"createdBy\":\"owner\",\"containerName\":\"mbtest-emptied-box\",\"drift\":[],\"recovery\":null,\"mounts\":[{\"volume\":\"<volumeId>\",\"path\":\"/workspace\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"emptied-box-workspace\",\"role\":\"workspace\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"emptied-box-home\",\"role\":\"home\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/opt/minibox/tools\",\"mode\":\"ro\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"mbtest-tools-local\",\"role\":\"tools\",\"pool\":\"local\"},{\"volume\":\"<volumeId>\",\"path\":\"/home/dev/.cache\",\"mode\":\"rw\",\"volumeId\":\"<volumeId>\",\"volumeName\":\"emptied-box-cache\",\"role\":\"cache\",\"pool\":\"local\"}],\"env\":[],\"tools\":[],\"storage\":{\"status\":\"ok\",\"pools\":[{\"name\":\"local\",\"status\":\"reachable\"}]}}}"
+  },
+  {
+    "step": "delete the box to empty",
+    "method": "DELETE",
+    "path": "/api/boxes/<id>",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"name\":\"emptied-box\",\"volumeDeleted\":false,\"trash\":{\"id\":\"ck_<checkpoint>\",\"expiresAt\":\"<time>\"}}"
+  },
+  {
+    "step": "list the recycle bin before emptying",
+    "method": "GET",
+    "path": "/api/trash",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"trash\":[{\"id\":\"ck_<checkpoint>\",\"hostId\":\"local\",\"kind\":\"box\",\"sourceId\":\"<boxId>\",\"sourceName\":\"emptied-box\",\"deletedAt\":\"<time>\",\"expiresAt\":\"<time>\",\"bytes\":0,\"createdBy\":\"owner\"},{\"id\":\"ck_<checkpoint>\",\"hostId\":\"local\",\"kind\":\"volume\",\"sourceId\":\"<volumeId>\",\"sourceName\":\"batch\",\"deletedAt\":\"<time>\",\"expiresAt\":\"<time>\",\"bytes\":0,\"createdBy\":\"owner\"},{\"id\":\"ck_<checkpoint>\",\"hostId\":\"local\",\"kind\":\"box\",\"sourceId\":\"<boxId>\",\"sourceName\":\"selfbox\",\"deletedAt\":\"<time>\",\"expiresAt\":\"<time>\",\"bytes\":0,\"createdBy\":\"owner\"},{\"id\":\"ck_<checkpoint>\",\"hostId\":\"local\",\"kind\":\"box\",\"sourceId\":\"<boxId>\",\"sourceName\":\"startbox\",\"deletedAt\":\"<time>\",\"expiresAt\":\"<time>\",\"bytes\":0,\"createdBy\":\"owner\"},{\"id\":\"ck_<checkpoint>\",\"hostId\":\"local\",\"kind\":\"box\",\"sourceId\":\"<boxId>\",\"sourceName\":\"secretbox\",\"deletedAt\":\"<time>\",\"expiresAt\":\"<time>\",\"bytes\":0,\"createdBy\":\"owner\"},{\"id\":\"ck_<checkpoint>\",\"hostId\":\"local\",\"kind\":\"box\",\"sourceId\":\"<boxId>\",\"sourceName\":\"term\",\"deletedAt\":\"<time>\",\"expiresAt\":\"<time>\",\"bytes\":0,\"createdBy\":\"owner\"},{\"id\":\"ck_<checkpoint>\",\"hostId\":\"local\",\"kind\":\"box\",\"sourceId\":\"<boxId>\",\"sourceName\":\"toolsbox\",\"deletedAt\":\"<time>\",\"expiresAt\":\"<time>\",\"bytes\":0,\"createdBy\":\"owner\"},{\"id\":\"ck_<checkpoint>\",\"hostId\":\"local\",\"kind\":\"box\",\"sourceId\":\"<boxId>\",\"sourceName\":\"alpha\",\"deletedAt\":\"<time>\",\"expiresAt\":\"<time>\",\"bytes\":0,\"createdBy\":\"owner\"},{\"id\":\"ck_<checkpoint>\",\"hostId\":\"local\",\"kind\":\"box\",\"sourceId\":\"<boxId>\",\"sourceName\":\"restored-2\",\"deletedAt\":\"<time>\",\"expiresAt\":\"<time>\",\"bytes\":0,\"createdBy\":\"owner\"},{\"id\":\"ck_<checkpoint>\",\"hostId\":\"local\",\"kind\":\"box\",\"sourceId\":\"<boxId>\",\"sourceName\":\"restored\",\"deletedAt\":\"<time>\",\"expiresAt\":\"<time>\",\"bytes\":0,\"createdBy\":\"owner\"},{\"id\":\"ck_<checkpoint>\",\"hostId\":\"local\",\"kind\":\"box\",\"sourceId\":\"<boxId>\",\"sourceName\":\"beta\",\"deletedAt\":\"<time>\",\"expiresAt\":\"<time>\",\"bytes\":0,\"createdBy\":\"owner\"}]}"
+  },
+  {
+    "step": "empty the recycle bin without confirming",
+    "method": "POST",
+    "path": "/api/trash/empty",
+    "status": 409,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"confirmation_required\",\"message\":\"This change was not applied. Send the same request with confirm set to true to apply the preview. Nothing has changed.\",\"retryable\":false,\"key\":\"storage_confirm_required\",\"details\":{\"preview\":{\"action\":\"empty_trash\",\"count\":1,\"bytes\":0,\"entries\":[{\"id\":\"ck_<checkpoint>\",\"hostId\":\"local\",\"kind\":\"box\",\"sourceName\":\"emptied-box\",\"bytes\":0,\"blocked\":null}]}}}}"
+  },
+  {
+    "step": "empty with an empty id list",
+    "method": "POST",
+    "path": "/api/trash/empty",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Too small: expected array to have >=1 items\",\"retryable\":false}}"
+  },
+  {
+    "step": "empty the recycle bin",
+    "method": "POST",
+    "path": "/api/trash/empty",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"removed\":1,\"refused\":0,\"failed\":0,\"bytes\":0,\"entries\":[{\"id\":\"ck_<checkpoint>\",\"hostId\":\"local\",\"kind\":\"box\",\"sourceId\":\"<boxId>\",\"sourceName\":\"emptied-box\",\"bytes\":0,\"status\":\"removed\",\"blocked\":null,\"error\":null}],\"hosts\":[{\"hostId\":\"local\",\"name\":\"Local\",\"status\":\"checked\",\"error\":null}]}"
+  },
+  {
+    "step": "empty an entry that is already gone",
+    "method": "POST",
+    "path": "/api/trash/empty",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"removed\":0,\"refused\":0,\"failed\":0,\"bytes\":0,\"entries\":[],\"hosts\":[{\"hostId\":\"local\",\"name\":\"Local\",\"status\":\"checked\",\"error\":null}]}"
   }
 ]
