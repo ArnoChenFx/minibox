@@ -84,6 +84,7 @@ describe("the official templates ship with a pinned base and the box convention"
         "tmux",
         "jq",
         "ripgrep",
+        "bubblewrap",
         "sudo",
         "openssh-sftp-server",
         "socat",
