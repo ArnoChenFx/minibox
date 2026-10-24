@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 
-import { type Browser, type BrowserContext, chromium } from "@playwright/test";
+import { type Browser, type BrowserContext, chromium, type Page } from "@playwright/test";
 
 import type { App } from "../src/app";
 import { startServer } from "../src/server";
@@ -23,6 +23,9 @@ if (!executablePath && process.env.CI) {
 
 const restoreLogs = silenceLogs();
 afterAll(restoreLogs);
+
+const names = async (page: Page) =>
+  (await page.locator("#fbBody .fb-name").allInnerTexts()).map((text) => text.trim()).toSorted();
 
 const file = (text: string) => ({
   type: "file" as const,
@@ -85,9 +88,6 @@ describe.skipIf(!executablePath)("the file browser's hidden files (real browser)
     app?.tokens.stop();
     app?.events.close();
   });
-
-  const names = async (page: import("@playwright/test").Page) =>
-    (await page.locator("#fbBody .fb-name").allInnerTexts()).map((text) => text.trim()).toSorted();
 
   test("dotfiles are listed and the checkbox is on when the tab opens, and turning it off hides them again", async () => {
     const page = await context!.newPage();
