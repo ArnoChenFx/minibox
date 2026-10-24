@@ -88,7 +88,11 @@
       <div class="feature-grid">
         <article class="feature-card terminal-feature">
           <div class="feature-copy"><svg class="icon feature-icon"><use href="#terminal" /></svg><h3 data-i18n="terminalTitle">Step in without starting over</h3><p data-i18n="terminalDescription">Watch your agent work in a persistent terminal. Take over when you need to, then hand it back.</p><a class="text-link" href="https://github.com/ArnoChenFx/minibox/blob/main/docs/user-guide/terminal-and-sessions.md" data-doc="user-guide/terminal-and-sessions.md"><span data-i18n="terminalLink">Explore sessions</span><svg class="icon small"><use href="#arrow" /></svg></a></div>
-          <div class="terminal-crop"><img data-terminal-image src="./assets/screenshots/en/box-terminal-light.png" alt="A shared terminal with the agent driving and a Take over control" width="2880" height="1800" loading="lazy" /></div>
+          <div class="terminal-preview" role="img" aria-label="Terminal illustration: an agent's tests pass in a persistent session, ready for you to take over" data-i18n-aria="terminalPreview">
+            <div class="session-heading"><span class="session-name"><svg class="icon small"><use href="#terminal" /></svg><span>api-service <span class="session-branch">/ main</span></span></span><span class="session-connection"><i></i><span data-i18n="sessionConnected">Connected</span></span></div>
+            <div class="session-controls"><span class="session-agent"><i></i><span data-i18n="sessionAgent">Agent working</span></span><span class="session-takeover"><svg class="icon small"><use href="#terminal" /></svg><span data-i18n="sessionTakeover">Take over</span></span></div>
+            <div class="session-output" aria-hidden="true"><div><span class="session-prompt">$</span> npm test</div><div class="session-result"><span>✓</span> health answers ok</div><div class="session-summary">1 passed <span>·</span> 0 failed</div><div class="session-ready"><span class="session-prompt">$</span><span class="session-cursor"></span></div></div>
+          </div>
         </article>
         <article class="feature-card access-feature">
           <div class="feature-copy"><svg class="icon feature-icon"><use href="#shield" /></svg><h3 data-i18n="accessTitle">Give access, keep boundaries</h3><p data-i18n="accessDescription">Choose the boxes, hosts and actions each token can reach. Set quotas and revoke access at any time.</p></div>
