@@ -10,13 +10,14 @@ import { getBox } from "./boxes";
 import { type Progress, underBox } from "./checkpoints";
 import { type ImageItem, listImagesByLabel, removeLabeledImage } from "./images";
 import { createSnapshot, deleteSnapshot } from "./snapshots";
-import { type BuildKind, buildKindOf, removeRecipe } from "./template-builds";
+import { type BuildKind, buildKindOf, removeRecipe, templateInitOf } from "./template-builds";
 
-export type TemplateItem = ImageItem & { buildKind?: BuildKind };
+export type TemplateItem = ImageItem & { buildKind?: BuildKind; postCreate?: string[]; forwardPorts?: number[] };
 
 /**
  * The templates on this host. `buildKind` is set on a template built from a declared source, so a client can offer a
- * rebuild, and is left out for one saved from a box or made by other tools.
+ * rebuild, and is left out for one saved from a box or made by other tools. `postCreate` and `forwardPorts` name the
+ * setup a box created from the template gets, when its devcontainer.json asked for one.
  */
 export async function listTemplates(host: HostCtx): Promise<TemplateItem[]> {
   const images = await listImagesByLabel(host, host.keys.template);
@@ -24,7 +25,13 @@ export async function listTemplates(host: HostCtx): Promise<TemplateItem[]> {
   return images.map((image) => {
     const tag = image.tags.find((t) => t.startsWith(prefix));
     const buildKind = tag === undefined ? null : buildKindOf(host, tag.slice(prefix.length), image.id);
-    return buildKind === null ? image : { ...image, buildKind };
+    const init = tag === undefined ? null : templateInitOf(host, tag.slice(prefix.length), image.id);
+    return {
+      ...image,
+      ...(buildKind === null ? {} : { buildKind }),
+      ...(init?.postCreate === undefined ? {} : { postCreate: init.postCreate }),
+      ...(init?.forwardPorts === undefined ? {} : { forwardPorts: init.forwardPorts }),
+    };
   });
 }
 

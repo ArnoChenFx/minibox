@@ -180,7 +180,7 @@ The file sets either `image` or `build`, never both, and a `build` needs `build.
 
 ### The setup of a box
 
-`postCreateCommand` and `forwardPorts` are not part of the image. The template keeps them on every host that holds a copy of it, and a box created from the template runs them in its setup task, in this order:
+The template's card in the **Templates** list shows the command and the ports. `postCreateCommand` and `forwardPorts` are not part of the image. The template keeps them on every host that holds a copy of it, and a box created from the template runs them in its setup task, in this order:
 
 1. The repository is cloned, when you gave one.
 2. Each port in `forwardPorts` becomes a manual preview port of the box.

@@ -33535,6 +33535,20 @@
                               "devcontainer",
                               "official"
                             ]
+                          },
+                          "postCreate": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "forwardPorts": {
+                            "type": "array",
+                            "items": {
+                              "type": "integer",
+                              "minimum": 1,
+                              "maximum": 65535
+                            }
                           }
                         },
                         "required": [

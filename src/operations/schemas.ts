@@ -284,9 +284,12 @@ export const PromotedTemplateSchema = z.object({
   name: z.string(),
 });
 
-/** A template as the list reports it. `buildKind` is present only on a template built from a declared source. */
+/** A template as the list reports it. `buildKind` is present only on a template built from a declared source, and
+ * `postCreate` and `forwardPorts` only on one whose devcontainer.json asks for the setup. */
 export const TemplateSchema = ImageSchema.extend({
   buildKind: z.enum(BUILD_KINDS).optional(),
+  postCreate: z.array(z.string()).optional(),
+  forwardPorts: z.array(z.number().int().min(1).max(65535)).optional(),
 });
 
 /** An official template as the catalog lists it. `base` is the pinned image its Dockerfile starts from. */

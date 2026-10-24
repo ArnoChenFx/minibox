@@ -162,16 +162,24 @@ export async function declaredTemplate(host: HostCtx, ref: string): Promise<Decl
 }
 
 /**
+ * The setup the template name's recipe recorded for the image `imageId`, when the image is the one the recipe built.
+ * The template list calls it for images the template label already marks; a caller that reads an arbitrary ref checks
+ * the label first, as `templateSetupOf` does.
+ */
+export function templateInitOf(host: HostCtx, name: string, imageId: string): TemplateInit | null {
+  if (!NAME_RE.test(name)) return null;
+  const recipe = readRecipe(host, name);
+  return recipe && recipe.imageId === imageId ? (recipe.init ?? null) : null;
+}
+
+/**
  * The setup a box created from `ref` gets: the postCreateCommand and forwarded ports its declared template was built
  * with. A template that was not declared, or whose image its recipe did not build, has none.
  */
 export async function templateSetupOf(host: HostCtx, ref: string): Promise<TemplateInit | null> {
   const prefix = `${host.prefix}-template:`;
-  if (!ref.startsWith(prefix)) return null;
-  const name = ref.slice(prefix.length);
-  if (!NAME_RE.test(name)) return null;
-  const recipe = readRecipe(host, name);
-  if (!recipe?.init) return null;
+  const name = ref.startsWith(prefix) ? ref.slice(prefix.length) : null;
+  if (name === null || !NAME_RE.test(name)) return null;
   let image: ImageDetails;
   try {
     image = await host.runtime.inspectImage(ref);
@@ -179,8 +187,8 @@ export async function templateSetupOf(host: HostCtx, ref: string): Promise<Templ
     if (isRuntimeError(e, "not_found")) return null;
     throw e;
   }
-  if (image.labels[host.keys.template] !== "true" || recipe.imageId !== image.id) return null;
-  return recipe.init;
+  if (image.labels[host.keys.template] !== "true") return null;
+  return templateInitOf(host, name, image.id);
 }
 
 /** The description a template gets when none is given, so the label is never empty. */
