@@ -61,7 +61,7 @@ function shellHtml() {
     <div class="fb-toolbar">
       <div id="fbRoot"></div>
       <nav class="fb-crumbs" id="fbCrumbs" aria-label="${esc(t("fl.location"))}"></nav>
-      <label class="checkbox fb-hidden"><input type="checkbox" id="fbHidden" /> <span>${esc(t("fl.showHidden"))}</span></label>
+      <label class="checkbox fb-hidden"><input type="checkbox" id="fbHidden" checked /> <span>${esc(t("fl.showHidden"))}</span></label>
     </div>
     <div id="fbUploads"></div>
     <div class="table-wrap" id="fbBody"></div>
@@ -207,7 +207,7 @@ export function mountFiles(root, { box, onChange }) {
     error: null,
     loading: false,
     sort: { key: "name", descending: false },
-    showHidden: false,
+    showHidden: true,
     query: "",
     seq: 0,
     upload: null,

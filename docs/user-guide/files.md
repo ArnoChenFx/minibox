@@ -11,7 +11,7 @@ The tab shows volumes only. Files that a box writes outside a volume, such as th
 - Click a folder to open it. The breadcrumbs above the list show where you are. Click any part of the path to go back to it.
 - Click a column heading to sort by **Name**, **Size** or **Modified**. Folders stay first. Click the same heading again to reverse the order.
 - Type in **Filter files** to show only the names that contain the text. The filter ignores case.
-- Names that start with a dot are hidden. Turn on **Show hidden files** to show them. The setting is not saved, so it is off the next time you open the page.
+- Names that start with a dot (hidden files) are shown by default. Turn off **Show hidden files** to hide them. The setting is not saved, so it is back on the next time you open the page.
 - A folder lists up to 2,000 entries. When a folder has more, the list says that some entries are missing. Open a subfolder to see the rest.
 
 ## Preview and download
