@@ -338,6 +338,7 @@ export default {
   "cb.cloningText": "Watch progress in the Tasks panel.",
   "act.trash.restore": "Restored from the recycle bin",
   "act.trash.purge": "Purged from the recycle bin",
+  "act.trash.empty": "Emptied the recycle bin (purged/listed)",
   "ba.skipTrash": "Delete without keeping a copy",
   "ba.skipTrashHelp":
     "The data is not kept in the recycle bin, so it cannot be restored. Only the owner, or a token with the trash:skip scope, may do this.",

@@ -227,6 +227,9 @@ export default {
   "err.checkpoint_copy_same_host": "Checkpoint {id} is already on host {host}. Copy it to another host.",
   "err.checkpoint_copy_exists":
     "Checkpoint {id} already has a copy on host {host}, so it was not copied again. Delete that copy first to copy it again.",
+  "err.trash_busy":
+    "Recycle bin entry {name} is being restored or purged. Empty the recycle bin again when that has finished.",
+  "err.trash_host_offline": "Host {host} is offline, so its recycle bin entries were not purged.",
   "err.trash_not_found": "Recycle bin entry {id} was not found.",
   "err.trash_capacity_exceeded":
     "Keeping this data in the recycle bin needs {need} MB, but the checkpoint repository holds {used} MB of its {limit} MB limit, and purging the recycle bin did not free enough. Delete checkpoints, or delete without keeping a copy.",

@@ -100,7 +100,9 @@ MiniBox 重建 Box 之前，会先拍摄该 Box 数据的安全检查点，这�
 
 记录不会出现在检查点列表中。每台宿主机各有自己的回收站，页面列出所有宿主机的记录，恢复与彻底删除都在记录所在的宿主机上执行。每次删除、恢复与彻底删除都会记入事件日志，分别为 `box.trashed` 或 `volume.trashed`、`trash.restored` 与 `trash.purged`。回收站仅限所有者使用。
 
-命令行中，`minibox trash ls` 列出记录，`minibox trash restore <id>` 恢复一条（可加 `--name`、`--cpus` 与 `--memory`），`minibox trash purge <id>` 彻底删除一条。MCP 工具为 `list_trash`、`restore_trash` 与 `purge_trash`。
+页面上的「清空回收站」按钮一次彻底删除全部记录。确认对话框会写明记录条数与数据大小，并说明删除后无法恢复；回收站为空时按钮不可用。正在恢复、彻底删除或导出的记录，以及位于离线宿主机上的记录不会被删除：结果中会列出它们及原因，其余记录照常删除。只有所有者能清空回收站，令牌无论持有哪些权限（包括 `trash:skip`）都不行。事件日志为每条记录写入一条 `trash.purged` 事件，动态中写入一条带计数的 `trash.empty`。
+
+命令行中，`minibox trash ls` 列出记录，`minibox trash restore <id>` 恢复一条（可加 `--name`、`--cpus` 与 `--memory`），`minibox trash purge <id>` 彻底删除一条，`minibox trash empty` 列出全部记录，`minibox trash empty --yes` 将它们全部彻底删除。MCP 工具为 `list_trash`、`restore_trash`、`purge_trash` 与 `empty_trash`。
 
 ## 复制到其他宿主机
 

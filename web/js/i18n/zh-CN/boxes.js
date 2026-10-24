@@ -326,6 +326,7 @@ export default {
   "cb.cloningText": "可在任务面板查看进度。",
   "act.trash.restore": "已从回收站恢复",
   "act.trash.purge": "已从回收站彻底删除",
+  "act.trash.empty": "清空回收站（已删除/总数）",
   "ba.skipTrash": "删除时不保留副本",
   "ba.skipTrashHelp": "数据不会保留在回收站中，因此无法恢复。只有所有者，或持有 trash:skip 权限的令牌可以这样做。",
   "ba.keptInBin": "数据保留在回收站中，直到 {date}。",

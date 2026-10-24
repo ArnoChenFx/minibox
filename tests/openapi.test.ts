@@ -207,6 +207,7 @@ describe("OpenAPI document", () => {
       "tool.reconcile",
       "tool.uninstall",
       "tool.upgrade",
+      "trash.empty",
       "trash.list",
       "trash.purge",
       "trash.restore",

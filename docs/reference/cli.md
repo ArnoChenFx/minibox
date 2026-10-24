@@ -271,6 +271,7 @@ The recycle bin keeps the data of deleted boxes and volumes until it expires. On
 | `minibox trash ls [--json]` | Lists the entries, newest deletion first, with each one's ID, name, kind, deletion time, expiry time and size |
 | `minibox trash restore <id> [--name NAME] [--cpus N] [--memory MB] [--no-wait] [--json]` | Restores an entry as a new box or volume, and removes the entry once the restore has finished. `--cpus` and `--memory` apply to a box. |
 | `minibox trash purge <id> [--no-wait] [--json]` | Removes an entry and the data it keeps, before it expires |
+| `minibox trash empty [--yes] [--json]` | Lists every entry in the recycle bin, on every host. With `--yes` it purges exactly the entries it listed, for good. An entry that is in use is left and reported. Exits `1` when an entry is not purged. Owner only |
 
 A restore and a purge run as tasks. The command waits for the task and prints its log to standard error, unless `--no-wait` is given.
 
