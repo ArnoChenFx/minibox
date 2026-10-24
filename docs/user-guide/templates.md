@@ -11,7 +11,7 @@ MiniBox ships a bundled base template that you build on the **Templates** tab of
 The base template contains:
 
 - Debian 12 and Node.js 26.
-- Python 3, `git`, `curl`, `build-essential`, `tmux`, `jq`, `ripgrep`, `openssh-client`, `sudo` and other common tools.
+- Python 3, `git`, `curl`, `build-essential`, `tmux`, `jq`, `ripgrep`, `bubblewrap`, `openssh-client`, `sudo` and other common tools.
 - The user `dev`, user ID 1000, with passwordless `sudo`.
 
 The MiniBox image does not include the base template. MiniBox builds it the first time a host needs it, for a box or for the helpers that install tools and prepare volumes. To build it ahead, use the console:
@@ -33,7 +33,9 @@ MiniBox ships four official templates. Each comes from a Dockerfile in the MiniB
 | `go` | `golang:1.26-bookworm` | Go 1.26 and gopls, with `build-essential` |
 | `minimal` | `debian:bookworm-slim` | No language toolchain |
 
-The common tools are `git`, `curl`, `tmux`, `jq`, `ripgrep`, `openssh-client`, `sudo` and `vim`. Each template has the user `dev`, user ID 1000.
+The common tools are `git`, `curl`, `tmux`, `jq`, `ripgrep`, `bubblewrap`, `openssh-client`, `sudo` and `vim`. Each template has the user `dev`, user ID 1000.
+
+`bubblewrap` (the `bwrap` command) is there because the OpenAI Codex CLI needs it for its Linux sandbox. Boxes made before it was added do not have it: rebuild the template and create the box again, or run `sudo apt-get install -y bubblewrap` in the box. Inside a Docker container, `bwrap` may also need looser user-namespace or seccomp settings before it can run. This is not verified.
 
 Official templates are not built when MiniBox starts. A template is built on a host the first time a box needs it there:
 

@@ -11,7 +11,7 @@ MiniBox 附带可捆绑的基础模板，你在 **库** 的 **模板** 标签页
 基础模板包含：
 
 - Debian 12 与 Node.js 26。
-- Python 3、`git`、`curl`、`build-essential`、`tmux`、`jq`、`ripgrep`、`openssh-client`、`sudo` 及其他常用工具。
+- Python 3、`git`、`curl`、`build-essential`、`tmux`、`jq`、`ripgrep`、`bubblewrap`、`openssh-client`、`sudo` 及其他常用工具。
 - 用户 `dev`，用户 ID 1000，可无密码使用 `sudo`。
 
 MiniBox 镜像不包含基础模板。在控制台中构建一次：
@@ -33,7 +33,9 @@ MiniBox 提供四个官方模板。每个模板都来自 MiniBox 源码中的一
 | `go` | `golang:1.26-bookworm` | Go 1.26 与 gopls，并含 `build-essential` |
 | `minimal` | `debian:bookworm-slim` | 不含语言工具链 |
 
-常用工具包括 `git`、`curl`、`tmux`、`jq`、`ripgrep`、`openssh-client`、`sudo` 与 `vim`。每个模板都有用户 `dev`，用户 ID 1000。
+常用工具包括 `git`、`curl`、`tmux`、`jq`、`ripgrep`、`bubblewrap`、`openssh-client`、`sudo` 与 `vim`。每个模板都有用户 `dev`，用户 ID 1000。
+
+预装 `bubblewrap`（命令 `bwrap`），是因为 OpenAI Codex CLI 的 Linux 沙箱依赖它。此前创建的 Box 没有它：重新构建模板后重新创建 Box，或在 Box 内执行 `sudo apt-get install -y bubblewrap`。在 Docker 容器里，`bwrap` 可能还需要放宽用户命名空间或 seccomp 限制才能运行，这一点尚未验证。
 
 MiniBox 启动时不构建官方模板。模板在某台宿主机上首次被 Box 需要时，才在该宿主机上构建：
 

@@ -14,7 +14,7 @@ LABEL minibox.template=true \
 RUN apt-get update \
  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
       git curl ca-certificates procps vim-tiny less sudo \
-      tmux jq ripgrep openssh-client openssh-sftp-server socat unzip iputils-ping \
+      tmux jq ripgrep bubblewrap openssh-client openssh-sftp-server socat unzip iputils-ping \
  && rm -rf /var/lib/apt/lists/*
 
 RUN groupadd --gid "${DEV_GID}" dev \
