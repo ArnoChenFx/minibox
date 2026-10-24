@@ -333,6 +333,21 @@
   cursor: not-allowed;
   opacity: 0.5;
 }
+/* The description under a checkbox's label sits a touch below it, inside the label's own column. */
+.checkbox > span > .help {
+  margin-top: 2px;
+}
+/* A checkbox row in a dialog is its own block: one stack gap below the field or text above it, and a tighter gap
+   between two checkbox rows. The first child needs no gap. */
+.dialog-body > .checkbox {
+  margin-top: 16px;
+}
+.dialog-body > .checkbox + .checkbox {
+  margin-top: 12px;
+}
+.dialog-body > .checkbox:first-child {
+  margin-top: 0;
+}
 input[type="range"] {
   width: 100%;
   accent-color: var(--accent);
@@ -383,6 +398,10 @@ input[type="range"] {
 .seg:disabled {
   opacity: 0.45;
   cursor: not-allowed;
+}
+/* The hint under a row of choices is one step further from them than a field's own hint is from its input. */
+.segmented + .help {
+  margin-top: 4px;
 }
 .segmented.segmented-3 {
   grid-template-columns: repeat(3, 1fr);
