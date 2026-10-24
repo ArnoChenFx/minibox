@@ -46,6 +46,8 @@ export default {
   "tp.image": "镜像",
   "tp.size": "大小",
   "tp.created": "创建时间",
+  "tp.postCreate": "设置命令",
+  "tp.ports": "端口",
   "tp.delete": "删除模板",
   "tp.use": "用此模板创建",
   "tp.fromBox": "来自 Box {name}",

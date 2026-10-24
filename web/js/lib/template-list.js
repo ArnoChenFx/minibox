@@ -7,6 +7,28 @@ export function templateSearchFields(template, badge) {
 }
 
 /**
+ * The detail rows a template card shows below its image, size and creation time: the command its devcontainer.json runs
+ * once in a created box, and the ports it forwards. A row the template has none of is left out, so the card shows no
+ * placeholder for it. A string command is stored as the `sh -c` run it becomes, and the card shows the command itself.
+ * Pure, so the page and the tests share it.
+ */
+export function templateDetailRows(template) {
+  const command = template.postCreate;
+  const shown =
+    command === undefined || command.length === 0
+      ? undefined
+      : command.length === 3 && command[0] === "/bin/sh" && command[1] === "-c"
+        ? command[2]
+        : command.join(" ");
+  return [
+    ...(shown === undefined ? [] : [{ key: "tp.postCreate", text: shown }]),
+    ...(template.forwardPorts === undefined || template.forwardPorts.length === 0
+      ? []
+      : [{ key: "tp.ports", text: template.forwardPorts.join(", ") }]),
+  ];
+}
+
+/**
  * One card per template reference. The server lists a copy for each host that holds the template, so copies that share
  * a reference fold into one card that keeps the hosts holding it, in the order the server gave. The details come from the
  * first copy: a copy keeps its image id, so they match on every host.

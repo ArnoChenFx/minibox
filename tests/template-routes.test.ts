@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
 import { RuntimeError } from "../src/runtime";
 import { silenceLogs } from "./support/app";
+import { serveRepository } from "./support/repository";
 import { call, finishedTask, type Harness, mint, refused, startHarness } from "./support/tokens";
 
 let harness: Harness;
@@ -100,6 +101,31 @@ describe("creating a template from a Dockerfile over REST", () => {
       body: { name: "tool", source: { kind: "dockerfile", text: FROM } },
     });
     expect(reply.status).toBe(403);
+  });
+});
+
+describe("the setup a devcontainer template lists over REST", () => {
+  test("the list carries the postCreateCommand and forwardPorts the devcontainer.json asks for", async () => {
+    serveRepository(
+      harness.runtime,
+      new Map([
+        [
+          ".devcontainer/devcontainer.json",
+          '{"image": "alpine:3.20", "postCreateCommand": "npm install", "forwardPorts": [3000]}',
+        ],
+      ]),
+    );
+    const started = await call(harness.base, "/api/templates", {
+      body: { name: "dev", source: { kind: "devcontainer", url: "https://github.com/org/app.git" } },
+    });
+    expect(started.status).toBe(202);
+    expect((await finishedTask(harness.base, started.json.taskId ?? "")).status).toBe("succeeded");
+
+    const listed = await call(harness.base, "/api/templates");
+    expect(listed.json.templates?.find((t) => t.name === "dev")).toMatchObject({
+      postCreate: ["/bin/sh", "-c", "npm install"],
+      forwardPorts: [3000],
+    });
   });
 });
 
