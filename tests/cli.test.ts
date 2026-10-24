@@ -25,6 +25,7 @@ import { startServer } from "../src/server";
 import { getBox } from "../src/services/boxes";
 import { parseTar } from "../src/services/files-tar";
 import { createVolume } from "../src/services/volumes";
+import { compileToken } from "../src/tokens/model";
 import { createTestApp, silenceLogs, TEST_KEY, testConfig } from "./support/app";
 import { FakeRuntime } from "./support/fake-runtime";
 import { FakeCheckpointEngine } from "./support/fake-snapshots";
@@ -394,6 +395,44 @@ describe("CLI", () => {
         const record = env.app.tokens.list().find((item) => item.name === "scoped");
         expect(record?.preset).toBeNull();
         expect([...(record?.scopes ?? [])].toSorted()).toEqual(["box:read", "exec"]);
+      } finally {
+        env.stop();
+      }
+    });
+
+    test("token delete removes an ended token's record and refuses a live one; token prune removes them all", async () => {
+      const env = serve();
+      try {
+        const live = env.app.tokens.create(compileToken({ name: "live", preset: "readonly" }), "owner").record;
+        const ended = env.app.tokens.create(compileToken({ name: "ended", preset: "readonly" }), "owner").record;
+        const also = env.app.tokens.create(compileToken({ name: "also", preset: "readonly" }), "owner").record;
+        env.app.tokens.revoke(ended.id);
+        env.app.tokens.revoke(also.id);
+
+        const refused = io();
+        expect(await runCli(["token", "delete", live.id], env.env, refused, lines([]))).toBe(1);
+        expect(refused.err).toContain("still live");
+        expect(env.app.tokens.list()).toHaveLength(3);
+
+        const removed = io();
+        expect(await runCli(["token", "delete", ended.id], env.env, removed, lines([]))).toBe(0);
+        expect(removed.out).toContain(`Deleted token ended (${ended.id})`);
+
+        const missing = io();
+        expect(await runCli(["token", "delete", ended.id], env.env, missing, lines([]))).toBe(1);
+        const noId = io();
+        expect(await runCli(["token", "delete"], env.env, noId, lines([]))).toBe(2);
+        expect(noId.err).toContain("needs exactly one token id");
+
+        const pruned = io();
+        expect(await runCli(["token", "prune"], env.env, pruned, lines([]))).toBe(0);
+        expect(pruned.out).toContain(`Deleted token also (${also.id})`);
+        expect(pruned.out).toContain("1 deleted");
+        expect(env.app.tokens.list().map((token) => token.name)).toEqual(["live"]);
+
+        const none = io();
+        expect(await runCli(["token", "prune", "--json"], env.env, none, lines([]))).toBe(0);
+        expect(JSON.parse(none.out)).toEqual({ deleted: [] });
       } finally {
         env.stop();
       }

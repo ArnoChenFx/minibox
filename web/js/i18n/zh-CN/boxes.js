@@ -24,6 +24,8 @@ export default {
   "act.template.save": "已将 Box 存为模板",
   "act.token.create": "创建令牌",
   "act.token.revoke": "吊销令牌",
+  "act.token.delete": "删除令牌",
+  "act.token.prune": "清理已失效令牌",
   "act.task.cancel": "取消任务",
   "act.box.update": "修改 Box 设置",
   "act.box.clone": "克隆代码仓库",

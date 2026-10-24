@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { notFound, toAppError } from "../lib/errors";
+import { AppError, notFound, toAppError } from "../lib/errors";
 import { log } from "../lib/logger";
 import { msg } from "../lib/messages";
 import { accept, type Checked, NAME_RE, reject } from "../lib/validation";
@@ -480,6 +480,60 @@ export const tokenRevoke = defineOperation({
   },
 });
 
-export const tokenOperations = [tokenList, tokenCreate, tokenRevoke];
+export const tokenDelete = defineOperation({
+  name: "token.delete",
+  tag: "tokens",
+  summary: "Delete a revoked or expired agent API token",
+  kind: "destructive",
+  scope: "token:manage",
+  async: false,
+  conflicts: true,
+  input: z.object({
+    id: z.string().meta({ description: "Token id (tok_…), not the secret. The token must be revoked or expired." }),
+  }),
+  output: z.object({ token: TokenInfoSchema }),
+  rest: [{ method: "DELETE", path: "/api/tokens/:id/record" }],
+  cli: "token delete",
+  activity: { action: () => "token.delete", target: (input) => input.id },
+  audit: {
+    target: ({ id }, _resolved, result) => ({ kind: "token", id, name: result?.token.name ?? id }),
+    detail: (input, _resolved, result) => ({ id: input.id, name: result?.token.name ?? null }),
+  },
+  run: async ({ tokens }, input) => {
+    const result = tokens.remove(input.id);
+    if (result.status === "missing") throw notFound(msg("token_not_found"));
+    if (result.status === "live") {
+      throw new AppError(409, "conflict", msg("token_delete_live", { name: result.token.name }));
+    }
+    return { token: result.token };
+  },
+});
+
+export const tokenPrune = defineOperation({
+  name: "token.prune",
+  tag: "tokens",
+  summary: "Delete every revoked or expired agent API token",
+  kind: "destructive",
+  scope: "token:manage",
+  async: false,
+  input: z.object({}),
+  output: z.object({
+    deleted: z.array(z.object({ id: z.string(), name: z.string() })).meta({
+      description: "The tokens whose records were deleted. Live tokens are never included.",
+    }),
+  }),
+  rest: [{ method: "POST", path: "/api/tokens/prune" }],
+  cli: "token prune",
+  activity: { action: () => "token.prune", target: () => "tokens" },
+  audit: {
+    detail: (_input, _resolved, result) => ({
+      count: result?.deleted.length ?? 0,
+      deleted: result?.deleted ?? [],
+    }),
+  },
+  run: async ({ tokens }) => ({ deleted: tokens.prune().map(({ id, name }) => ({ id, name })) }),
+});
+
+export const tokenOperations = [tokenList, tokenCreate, tokenRevoke, tokenDelete, tokenPrune];
 
 export type { TokenInfo };

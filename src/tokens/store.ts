@@ -177,6 +177,43 @@ export class TokenStore {
   }
 
   /**
+   * Deletes the record of a token that is already over, revoked or expired. A live token is refused, so revoking stays
+   * the one way to end a token. The activity log keeps the name and id the events recorded.
+   */
+  remove(
+    id: string,
+    now = this.now(),
+  ): { status: "removed"; token: TokenInfo } | { status: "live"; token: TokenInfo } | { status: "missing" } {
+    this.expireRecords(now);
+    const index = this.records.findIndex((item) => item.id === id);
+    const record = this.records[index];
+    if (!record) return { status: "missing" };
+    if (this.isLive(record, now)) return { status: "live", token: toInfo(record) };
+    this.records.splice(index, 1);
+    log.info("token.deleted", { tokenId: id, name: record.name });
+    this.save();
+    return { status: "removed", token: toInfo(record) };
+  }
+
+  /** Deletes every token that is over, revoked or expired. Live tokens are never touched. Returns the records removed. */
+  prune(now = this.now()): TokenInfo[] {
+    this.expireRecords(now);
+    const removed: TokenInfo[] = [];
+    for (let i = this.records.length - 1; i >= 0; i -= 1) {
+      const record = this.records[i];
+      if (record && !this.isLive(record, now)) {
+        this.records.splice(i, 1);
+        removed.unshift(toInfo(record));
+      }
+    }
+    if (removed.length > 0) {
+      log.info("token.pruned", { count: removed.length });
+      this.save();
+    }
+    return removed;
+  }
+
+  /**
    * Calls `listener` once, when the token is revoked or expires. A token that is already over calls it straight away.
    * Returns a function that stops watching.
    */

@@ -17,6 +17,19 @@
   padding: 14px 18px;
   border-bottom: 1px solid var(--border);
 }
+/* A head with a button toolbar: the title block shrinks first, the buttons stay in one row, and on a narrow screen the
+   toolbar drops below the title at the right edge. */
+.card-head.with-actions {
+  flex-wrap: wrap;
+}
+.card-head.with-actions > :first-child {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+.card-head.with-actions > .actions {
+  flex: 0 0 auto;
+  flex-wrap: nowrap;
+}
 .card-head h2,
 .card-head h3 {
   font-size: 14px;

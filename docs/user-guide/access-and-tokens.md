@@ -89,3 +89,11 @@ A box or volume delete keeps a copy of its data in the [recycle bin](checkpoints
 Click **Revoke** on the token, and confirm. Scripts that use the token stop at once. Any open terminal or event stream that uses it closes too.
 
 To delete the boxes that the token created at the same time, tick **Also delete boxes this token created**. Their workspace volumes are deleted as well, and their data is kept in the recycle bin for the retention period, as with any box delete.
+
+### Delete a revoked or expired token
+
+A revoked or expired token stays in the list, with its name, until you delete it. Click **Delete** on the token, and confirm, to remove its record. To remove every revoked and expired token at once, click **Clean up ended tokens** above the list. The confirmation shows how many it will delete.
+
+A live token cannot be deleted. Revoke it first. Deleting a record changes nothing for scripts, because the token has already stopped working. The activity log keeps the `token.delete` event with the token's name and id, and the earlier events about it keep their names. It never records the secret.
+
+From the command line, `minibox token delete <id>` deletes one record, and `minibox token prune` deletes all of them. Over REST, they are `DELETE /api/tokens/{id}/record` and `POST /api/tokens/prune`. Only the owner can call them.

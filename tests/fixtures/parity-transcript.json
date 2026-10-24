@@ -3558,5 +3558,93 @@
     "status": 404,
     "contentType": "application/json; charset=utf-8",
     "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"SSH key not found.\",\"retryable\":false,\"key\":\"ssh_key_not_found\"}}"
+  },
+  {
+    "step": "create a token to delete",
+    "method": "POST",
+    "path": "/api/tokens",
+    "status": 201,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"token\":\"<token>\",\"record\":{\"id\":\"<tokenId>\",\"name\":\"stale\",\"prefix\":\"<prefix>\",\"preset\":\"readonly\",\"scopes\":[\"box:read\",\"files:read\"],\"boxes\":{\"type\":\"created-by-me\"},\"volumes\":{\"type\":\"list\",\"ids\":[]},\"hosts\":{\"type\":\"list\",\"ids\":[\"local\"]},\"quotas\":{\"maxBoxes\":null,\"maxCpus\":null,\"maxMemoryMb\":null,\"maxTtlSec\":null,\"rateLimit\":null,\"rateWindowSec\":null,\"maxCheckpoints\":null},\"audit\":\"scoped\",\"createdAt\":\"<time>\",\"expiresAt\":null,\"lastUsedAt\":null,\"lastUsedIp\":null,\"createdBy\":\"owner\",\"revokedAt\":null}}"
+  },
+  {
+    "step": "delete a live token",
+    "method": "DELETE",
+    "path": "/api/tokens/<tokenId>/record",
+    "status": 409,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"conflict\",\"message\":\"Token “stale” is still live. Revoke it first, then delete it.\",\"retryable\":false,\"key\":\"token_delete_live\",\"params\":{\"name\":\"stale\"}}}"
+  },
+  {
+    "step": "revoke the token to delete",
+    "method": "DELETE",
+    "path": "/api/tokens/<tokenId>",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"token\":{\"id\":\"<tokenId>\",\"name\":\"stale\",\"prefix\":\"<prefix>\",\"preset\":\"readonly\",\"scopes\":[\"box:read\",\"files:read\"],\"boxes\":{\"type\":\"created-by-me\"},\"volumes\":{\"type\":\"list\",\"ids\":[]},\"hosts\":{\"type\":\"list\",\"ids\":[\"local\"]},\"quotas\":{\"maxBoxes\":null,\"maxCpus\":null,\"maxMemoryMb\":null,\"maxTtlSec\":null,\"rateLimit\":null,\"rateWindowSec\":null,\"maxCheckpoints\":null},\"audit\":\"scoped\",\"createdAt\":\"<time>\",\"expiresAt\":null,\"lastUsedAt\":null,\"lastUsedIp\":null,\"createdBy\":\"owner\",\"revokedAt\":\"<time>\"},\"deletedBoxes\":[],\"failedBoxes\":[]}"
+  },
+  {
+    "step": "delete the revoked token",
+    "method": "DELETE",
+    "path": "/api/tokens/<tokenId>/record",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"token\":{\"id\":\"<tokenId>\",\"name\":\"stale\",\"prefix\":\"<prefix>\",\"preset\":\"readonly\",\"scopes\":[\"box:read\",\"files:read\"],\"boxes\":{\"type\":\"created-by-me\"},\"volumes\":{\"type\":\"list\",\"ids\":[]},\"hosts\":{\"type\":\"list\",\"ids\":[\"local\"]},\"quotas\":{\"maxBoxes\":null,\"maxCpus\":null,\"maxMemoryMb\":null,\"maxTtlSec\":null,\"rateLimit\":null,\"rateWindowSec\":null,\"maxCheckpoints\":null},\"audit\":\"scoped\",\"createdAt\":\"<time>\",\"expiresAt\":null,\"lastUsedAt\":null,\"lastUsedIp\":null,\"createdBy\":\"owner\",\"revokedAt\":\"<time>\"}}"
+  },
+  {
+    "step": "delete the token again",
+    "method": "DELETE",
+    "path": "/api/tokens/<tokenId>/record",
+    "status": 404,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Token not found.\",\"retryable\":false,\"key\":\"token_not_found\"}}"
+  },
+  {
+    "step": "list the tokens after the delete",
+    "method": "GET",
+    "path": "/api/tokens",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"tokens\":[{\"id\":\"<tokenId>\",\"name\":\"reader\",\"prefix\":\"<prefix>\",\"preset\":\"readonly\",\"scopes\":[\"box:read\",\"files:read\"],\"boxes\":{\"type\":\"created-by-me\"},\"volumes\":{\"type\":\"list\",\"ids\":[]},\"hosts\":{\"type\":\"list\",\"ids\":[\"local\"]},\"quotas\":{\"maxBoxes\":null,\"maxCpus\":null,\"maxMemoryMb\":null,\"maxTtlSec\":null,\"rateLimit\":null,\"rateWindowSec\":null,\"maxCheckpoints\":null},\"audit\":\"scoped\",\"createdAt\":\"<time>\",\"expiresAt\":null,\"lastUsedAt\":\"<time>\",\"lastUsedIp\":\"127.0.0.1\",\"createdBy\":\"owner\",\"revokedAt\":null},{\"id\":\"<tokenId>\",\"name\":\"ci\",\"prefix\":\"<prefix>\",\"preset\":\"readonly\",\"scopes\":[\"box:read\",\"files:read\"],\"boxes\":{\"type\":\"created-by-me\"},\"volumes\":{\"type\":\"list\",\"ids\":[]},\"hosts\":{\"type\":\"list\",\"ids\":[\"local\"]},\"quotas\":{\"maxBoxes\":null,\"maxCpus\":null,\"maxMemoryMb\":null,\"maxTtlSec\":null,\"rateLimit\":null,\"rateWindowSec\":null,\"maxCheckpoints\":null},\"audit\":\"scoped\",\"createdAt\":\"<time>\",\"expiresAt\":null,\"lastUsedAt\":null,\"lastUsedIp\":null,\"createdBy\":\"owner\",\"revokedAt\":\"<time>\"}]}"
+  },
+  {
+    "step": "create a token to prune",
+    "method": "POST",
+    "path": "/api/tokens",
+    "status": 201,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"token\":\"<token>\",\"record\":{\"id\":\"<tokenId>\",\"name\":\"old\",\"prefix\":\"<prefix>\",\"preset\":\"readonly\",\"scopes\":[\"box:read\",\"files:read\"],\"boxes\":{\"type\":\"created-by-me\"},\"volumes\":{\"type\":\"list\",\"ids\":[]},\"hosts\":{\"type\":\"list\",\"ids\":[\"local\"]},\"quotas\":{\"maxBoxes\":null,\"maxCpus\":null,\"maxMemoryMb\":null,\"maxTtlSec\":null,\"rateLimit\":null,\"rateWindowSec\":null,\"maxCheckpoints\":null},\"audit\":\"scoped\",\"createdAt\":\"<time>\",\"expiresAt\":null,\"lastUsedAt\":null,\"lastUsedIp\":null,\"createdBy\":\"owner\",\"revokedAt\":null}}"
+  },
+  {
+    "step": "find the token to prune",
+    "method": "GET",
+    "path": "/api/tokens",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"tokens\":[{\"id\":\"<tokenId>\",\"name\":\"old\",\"prefix\":\"<prefix>\",\"preset\":\"readonly\",\"scopes\":[\"box:read\",\"files:read\"],\"boxes\":{\"type\":\"created-by-me\"},\"volumes\":{\"type\":\"list\",\"ids\":[]},\"hosts\":{\"type\":\"list\",\"ids\":[\"local\"]},\"quotas\":{\"maxBoxes\":null,\"maxCpus\":null,\"maxMemoryMb\":null,\"maxTtlSec\":null,\"rateLimit\":null,\"rateWindowSec\":null,\"maxCheckpoints\":null},\"audit\":\"scoped\",\"createdAt\":\"<time>\",\"expiresAt\":null,\"lastUsedAt\":null,\"lastUsedIp\":null,\"createdBy\":\"owner\",\"revokedAt\":null},{\"id\":\"<tokenId>\",\"name\":\"reader\",\"prefix\":\"<prefix>\",\"preset\":\"readonly\",\"scopes\":[\"box:read\",\"files:read\"],\"boxes\":{\"type\":\"created-by-me\"},\"volumes\":{\"type\":\"list\",\"ids\":[]},\"hosts\":{\"type\":\"list\",\"ids\":[\"local\"]},\"quotas\":{\"maxBoxes\":null,\"maxCpus\":null,\"maxMemoryMb\":null,\"maxTtlSec\":null,\"rateLimit\":null,\"rateWindowSec\":null,\"maxCheckpoints\":null},\"audit\":\"scoped\",\"createdAt\":\"<time>\",\"expiresAt\":null,\"lastUsedAt\":\"<time>\",\"lastUsedIp\":\"127.0.0.1\",\"createdBy\":\"owner\",\"revokedAt\":null},{\"id\":\"<tokenId>\",\"name\":\"ci\",\"prefix\":\"<prefix>\",\"preset\":\"readonly\",\"scopes\":[\"box:read\",\"files:read\"],\"boxes\":{\"type\":\"created-by-me\"},\"volumes\":{\"type\":\"list\",\"ids\":[]},\"hosts\":{\"type\":\"list\",\"ids\":[\"local\"]},\"quotas\":{\"maxBoxes\":null,\"maxCpus\":null,\"maxMemoryMb\":null,\"maxTtlSec\":null,\"rateLimit\":null,\"rateWindowSec\":null,\"maxCheckpoints\":null},\"audit\":\"scoped\",\"createdAt\":\"<time>\",\"expiresAt\":null,\"lastUsedAt\":null,\"lastUsedIp\":null,\"createdBy\":\"owner\",\"revokedAt\":\"<time>\"}]}"
+  },
+  {
+    "step": "revoke the token to prune",
+    "method": "DELETE",
+    "path": "/api/tokens/<tokenId>",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"token\":{\"id\":\"<tokenId>\",\"name\":\"old\",\"prefix\":\"<prefix>\",\"preset\":\"readonly\",\"scopes\":[\"box:read\",\"files:read\"],\"boxes\":{\"type\":\"created-by-me\"},\"volumes\":{\"type\":\"list\",\"ids\":[]},\"hosts\":{\"type\":\"list\",\"ids\":[\"local\"]},\"quotas\":{\"maxBoxes\":null,\"maxCpus\":null,\"maxMemoryMb\":null,\"maxTtlSec\":null,\"rateLimit\":null,\"rateWindowSec\":null,\"maxCheckpoints\":null},\"audit\":\"scoped\",\"createdAt\":\"<time>\",\"expiresAt\":null,\"lastUsedAt\":null,\"lastUsedIp\":null,\"createdBy\":\"owner\",\"revokedAt\":\"<time>\"},\"deletedBoxes\":[],\"failedBoxes\":[]}"
+  },
+  {
+    "step": "prune the ended tokens",
+    "method": "POST",
+    "path": "/api/tokens/prune",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"deleted\":[{\"id\":\"<tokenId>\",\"name\":\"ci\"},{\"id\":\"<tokenId>\",\"name\":\"old\"}]}"
+  },
+  {
+    "step": "prune with none left to delete",
+    "method": "POST",
+    "path": "/api/tokens/prune",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"deleted\":[]}"
   }
 ]

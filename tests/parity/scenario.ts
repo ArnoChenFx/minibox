@@ -1204,6 +1204,25 @@ async function recordScenario(): Promise<Exchange[]> {
     const sshKeyId = String((sshKey.json?.key as { id?: string } | undefined)?.id ?? "");
     await send("delete an SSH key", "DELETE", `/api/ssh-keys/${sshKeyId}`);
     await send("delete a missing SSH key", "DELETE", `/api/ssh-keys/${sshKeyId}`);
+
+    const stale = await post("create a token to delete", "/api/tokens", { name: "stale", preset: "readonly" });
+    const staleId = String((stale.json?.record as { id?: string } | undefined)?.id ?? "");
+    await send("delete a live token", "DELETE", `/api/tokens/${staleId}/record`);
+    await send("revoke the token to delete", "DELETE", `/api/tokens/${staleId}`);
+    await send("delete the revoked token", "DELETE", `/api/tokens/${staleId}/record`);
+    await send("delete the token again", "DELETE", `/api/tokens/${staleId}/record`);
+    await send("list the tokens after the delete", "GET", "/api/tokens");
+    await post("create a token to prune", "/api/tokens", { name: "old", preset: "readonly" });
+    const oldId = String(
+      (
+        (await send("find the token to prune", "GET", "/api/tokens")).json?.tokens as
+          | { id: string; name: string }[]
+          | undefined
+      )?.find((token) => token.name === "old")?.id ?? "",
+    );
+    await send("revoke the token to prune", "DELETE", `/api/tokens/${oldId}`);
+    await post("prune the ended tokens", "/api/tokens/prune", {});
+    await post("prune with none left to delete", "/api/tokens/prune", {});
   } finally {
     server.stop(true);
     app.throttle.stop();

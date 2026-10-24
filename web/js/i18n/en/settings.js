@@ -393,6 +393,18 @@ export default {
   "st.tokenDeleteCreatedHelp": "Their workspace volumes are deleted as well.",
   "st.tokenRevokedToast": "Token revoked",
   "st.tokenRevokeFailed": "Could not revoke the token",
+  "st.tokenDelete": "Delete",
+  "st.tokenDeleteTitle": "Delete this token?",
+  "st.tokenDeleteMessage":
+    "The record of “{name}” is removed from this list. It has already stopped working, so no script is affected. The activity log keeps its name.",
+  "st.tokenDeletedToast": "Token deleted",
+  "st.tokenDeleteFailed": "Could not delete the token",
+  "st.tokenPrune": "Clean up ended",
+  "st.tokenPruneTitle": "Delete all ended tokens?",
+  "st.tokenPruneMessage":
+    "This deletes the records of all revoked and expired tokens ({n}). Live tokens are not touched, and the activity log keeps their names.",
+  "st.tokenPrunedToast": "Ended tokens deleted: {n}",
+  "st.tokenPruneFailed": "Could not delete the ended tokens",
   "st.tokenCreateFailed": "Could not create the token",
   "st.tokenNone": "No agent tokens yet.",
   "st.targets": "Off-site targets",

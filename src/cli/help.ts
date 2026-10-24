@@ -83,6 +83,8 @@ Commands:
                                        Remove an entry from tools.d; nothing is uninstalled
   minibox token create <name> [--preset P] [--scopes LIST] [--expires-in SEC] [--json]
                                        Print a new agent token's secret once. The preset defaults to sandboxed-agent.
+  minibox token delete <id> [--json]   Delete the record of a revoked or expired token (a live one is refused)
+  minibox token prune [--json]         Delete the records of all revoked and expired tokens
   minibox mcp [--toolsets LIST]        Proxy stdio JSON-RPC to /mcp
   minibox ssh-config [--append] [--url URL] [--token KEY]
                                        Print the ~/.ssh/config block and host key pin. --append writes both and saves
