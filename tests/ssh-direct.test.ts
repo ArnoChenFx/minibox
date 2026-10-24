@@ -172,6 +172,22 @@ describe("direct SSH login", () => {
     expect(reasons).toEqual(["bad_credential", "forbidden"]);
   });
 
+  test("a token created over REST for a box by name logs in, running or stopped, as the web form creates it", async () => {
+    const box = await makeBox("zcode-01");
+    const created = await call(base, "/api/tokens", {
+      token: STRONG_KEY,
+      body: { name: "zcode", preset: "operator", boxes: { ids: ["zcode-01"] }, volumes: "*" },
+    });
+    expect(created.status).toBe(201);
+    const secret = created.json.token ?? "";
+    const client = await connect({ username: "zcode-01", password: secret });
+    client.end();
+    await stopBox(app.hosts.get(), box.boxId, "idle");
+    await connect({ username: box.boxId, password: secret });
+    expect((await getBox(app.hosts.get(), box.boxId)).running).toBe(true);
+    expect(denied()).toEqual([]);
+  });
+
   test("a stopped box starts on connect", async () => {
     const box = await makeBox("hotel");
     await stopBox(app.hosts.get(), box.boxId, "idle");

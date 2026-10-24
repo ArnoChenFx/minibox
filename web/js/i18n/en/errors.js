@@ -295,6 +295,9 @@ export default {
   "err.token_boxes_invalid":
     "Box access must be created-by-me, * for every box, a list of ids, or a list of tags (key or key=value).",
   "err.token_volumes_invalid": "Volumes must be * or a list of volume ids.",
+  "err.token_box_unresolved":
+    "No box matches “{ref}”. Give a box name, a container id or a stable id (bx_…) of a box that exists.",
+  "err.token_box_ambiguous": "More than one box is named “{ref}”. Use its stable id (bx_…) instead.",
   "err.token_hosts_invalid": "Hosts must be * or a list of host ids.",
   "err.token_quota_invalid": "Quotas must be positive numbers, or null for no limit. A rate window needs a rate limit.",
   "err.token_expiry_invalid": "Expiry must be a positive number of seconds up to {max}, or null for no expiry.",

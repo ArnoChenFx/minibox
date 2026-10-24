@@ -244,6 +244,8 @@ export default {
   "err.token_scope_required": "请选择预设，或至少选择一项权限。",
   "err.token_boxes_invalid": "Box 范围必须是 created-by-me、表示全部的 *、id 列表，或标签列表（键或键=值）。",
   "err.token_volumes_invalid": "卷必须是 *，或卷 id 列表。",
+  "err.token_box_unresolved": "没有名为「{ref}」的 Box。请填写已存在 Box 的名称、容器 id 或稳定 id（bx_…）。",
+  "err.token_box_ambiguous": "有多个 Box 叫「{ref}」，请改用它的稳定 id（bx_…）。",
   "err.token_hosts_invalid": "宿主机必须是 *，或宿主机 id 列表。",
   "err.token_quota_invalid": "配额必须是正数，或用 null 表示不限制。设置速率窗口时必须同时设置速率上限。",
   "err.token_expiry_invalid": "有效期必须是不超过 {max} 的正整数秒，或用 null 表示不过期。",

@@ -439,6 +439,43 @@ export function boxVisible(principal: Subject, box: BoxView): boolean {
   }
 }
 
+/** A stable box id, `bx_…`. A grant by id may name one that does not exist yet or any more. */
+const STABLE_ID_RE = /^bx_[0-9a-z]{8,32}$/;
+
+/**
+ * Turns the references of a `boxes: {ids}` grant into stable box ids. `boxVisible` compares a grant to `box.boxId` only,
+ * so a name or container id stored as given would never match. A reference is a stable id, a container id or a box name,
+ * in that order. A stable id that no box holds is kept: an id cannot be guessed, and the grant may precede the box. Any
+ * other reference that names no box, or a name that two boxes share, is refused. Only the owner creates tokens, so
+ * `views` is every box.
+ */
+export function resolveBoxRefs(refs: readonly string[], views: readonly BoxView[]): string[] {
+  const ids: string[] = [];
+  for (const ref of refs) {
+    const byId = views.find((view) => view.boxId === ref);
+    const byContainer = byId ? undefined : views.find((view) => view.containerId === ref);
+    const found = byId ?? byContainer;
+    if (found) {
+      if (!ids.includes(found.boxId)) ids.push(found.boxId);
+      continue;
+    }
+    const named = views.filter((view) => view.name === ref);
+    if (named.length > 1) {
+      throw new AppError(400, "validation_failed", msg("token_box_ambiguous", { ref }), { field: "boxes" });
+    }
+    const only = named[0];
+    if (only) {
+      if (!ids.includes(only.boxId)) ids.push(only.boxId);
+      continue;
+    }
+    if (!STABLE_ID_RE.test(ref)) {
+      throw new AppError(400, "validation_failed", msg("token_box_unresolved", { ref }), { field: "boxes" });
+    }
+    if (!ids.includes(ref)) ids.push(ref);
+  }
+  return ids;
+}
+
 export function viewOfSpec(spec: BoxSpec): BoxView {
   return {
     boxId: spec.id,

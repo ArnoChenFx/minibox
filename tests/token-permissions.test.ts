@@ -187,6 +187,26 @@ describe("creating a token with the dialog's body", () => {
     expect((edited.json.record as unknown as { audit: string }).audit).toBe("scoped");
   });
 
+  test("a box typed by name in the dialog is stored as its stable id, with the edited scopes", async () => {
+    const created = await call(harness.base, "/api/boxes", { body: { name: "zcode-01", cpus: 1, memoryMb: 256 } });
+    const operator = catalog.presets.find((p) => p.name === "operator");
+    const body = {
+      name: "by-name",
+      ...scopeRequest(
+        "operator",
+        (operator?.scopes ?? []).filter((scope) => scope !== "port:expose"),
+        catalog as never,
+      ),
+      boxes: { ids: ["zcode-01"] },
+    };
+    const reply = await call(harness.base, "/api/tokens", { body });
+    expect(reply.status).toBe(201);
+    const record = reply.json.record as unknown as { scopes: string[]; boxes: { type: string; ids: string[] } };
+    expect(record.boxes).toEqual({ type: "ids", ids: [created.json.box?.boxId ?? ""] });
+    expect(record.scopes).not.toContain("port:expose");
+    expect((await call(harness.base, "/api/boxes/zcode-01", { token: reply.json.token })).status).toBe(200);
+  });
+
   test("an empty scope list is refused", async () => {
     const reply = await call(harness.base, "/api/tokens", { body: { name: "none", preset: "operator", scopes: [] } });
     expect(reply.status).toBe(400);
