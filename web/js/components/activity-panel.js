@@ -1,21 +1,12 @@
 import { api, enc } from "../lib/api.js";
 import { esc } from "../lib/dom.js";
-import {
-  countTag,
-  describe,
-  detailsJson,
-  iconOf,
-  isFailed,
-  isRoutine,
-  opLabel,
-  statusBadge,
-} from "../lib/event-view.js";
-import { dateTime } from "../lib/format.js";
+import { isRoutine } from "../lib/event-view.js";
 import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
 import { pollWhileDown, subscribe } from "../lib/live.js";
 import { lineWindow, openBoxLogs } from "../lib/logs-stream.js";
 import { emptyState, toastError } from "../lib/ui.js";
+import { activityRow } from "./activity-row.js";
 
 const PAGE = 100;
 /** How often the activity list is read again while the live stream is down. */
@@ -46,18 +37,6 @@ const FILTERS = [
   { key: "egress", label: "bd.filterEgress", match: (op) => op.startsWith("egress.") },
 ];
 
-function row(event) {
-  const detail = describe(event);
-  return `<li class="event-row">
-      <span class="ico ${isFailed(event) ? "fail" : ""}">${icon(iconOf(event.op))}</span>
-      <div class="event-main">
-        <div class="event-title"><strong>${esc(opLabel(event.op))}</strong>${detail ? `<span class="event-detail mono">${esc(detail)}</span>` : ""}${statusBadge(event)}${countTag(event)}</div>
-        <div class="subtle">${esc(t(`ev.source.${event.source}`))}</div>${detailsJson(event)}
-      </div>
-      <span class="time">${esc(dateTime(new Date(event.ts).toISOString()))}</span>
-    </li>`;
-}
-
 /**
  * The box's activity: exec history, container events, and terminal sessions, read from the event store. Keystrokes are
  * not in it. The `docker logs` output of the container's main process sits below as a secondary option.
@@ -71,6 +50,7 @@ export function mountActivity(root, { box }) {
   let loadingOlder = false;
   let refreshTimer = null;
   let disposed = false;
+  const expanded = new Set();
 
   root.innerHTML = `<div class="card">
       <div class="card-head"><h3>${t("bd.activity")}</h3>
@@ -102,11 +82,22 @@ export function mountActivity(root, { box }) {
   const foot = root.querySelector("#aFoot");
   const more = root.querySelector("#aMore");
 
+  body.addEventListener(
+    "toggle",
+    (event) => {
+      const entry = event.target;
+      if (!entry.matches?.(".event-entry") || !body.contains(entry)) return;
+      if (entry.open) expanded.add(entry.dataset.eventSeq);
+      else expanded.delete(entry.dataset.eventSeq);
+    },
+    true,
+  );
+
   const render = () => {
     const match = FILTERS.find((f) => f.key === filter).match;
     const shown = events.filter((event) => !isRoutine(event) && match(event.op));
     if (shown.length) {
-      body.innerHTML = `<ul class="activity">${shown.map(row).join("")}</ul>`;
+      body.innerHTML = `<ul class="activity">${shown.map((event) => activityRow(event, { expandable: true, open: expanded.has(String(event.seq)) })).join("")}</ul>`;
     } else if (filter === "all" && nextCursor === null) {
       body.innerHTML = `<div class="card-body">${emptyState({ iconName: "activity", title: t("bd.activityEmpty"), text: t("bd.activityEmptyText") })}</div>`;
     } else {

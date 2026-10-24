@@ -1,6 +1,7 @@
 import { lang, t } from "./i18n.js";
 
 const rtf = new Intl.RelativeTimeFormat(lang, { numeric: "always", style: "long" });
+const compactRtf = new Intl.RelativeTimeFormat(lang, { numeric: "always", style: "narrow" });
 
 export function bytes(n, digits = 1) {
   if (n == null || Number.isNaN(n)) return "—";
@@ -46,15 +47,16 @@ export function elapsed(fromIso, toMs = Date.now()) {
   return t("fmt.minutesSeconds", { m, s: String(sec % 60).padStart(2, "0") });
 }
 
-export function relTime(iso) {
+export function relTime(iso, { compact = false } = {}) {
+  const formatter = compact ? compactRtf : rtf;
   if (!iso) return "—";
   const ts = new Date(iso).getTime();
   const s = Math.round((Date.now() - ts) / 1000);
   if (s < 10) return t("fmt.justNow");
-  if (s < 60) return rtf.format(-s, "second");
-  if (s < 3600) return rtf.format(-Math.floor(s / 60), "minute");
-  if (s < 86400) return rtf.format(-Math.floor(s / 3600), "hour");
-  if (s < 86400 * 30) return rtf.format(-Math.floor(s / 86400), "day");
+  if (s < 60) return formatter.format(-s, "second");
+  if (s < 3600) return formatter.format(-Math.floor(s / 60), "minute");
+  if (s < 86400) return formatter.format(-Math.floor(s / 3600), "hour");
+  if (s < 86400 * 30) return formatter.format(-Math.floor(s / 86400), "day");
   return dateTime(iso);
 }
 
