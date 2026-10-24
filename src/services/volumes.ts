@@ -2,7 +2,7 @@ import type { TrashKind, TrashRef } from "../checkpoints/types";
 import type { HostCtx } from "../host/registry";
 import { AppError, badRequest, conflict, notFound } from "../lib/errors";
 import { log } from "../lib/logger";
-import { msg } from "../lib/messages";
+import { type MessageKey, msg } from "../lib/messages";
 import { revisionMismatch } from "../specs/revision";
 import type { BoxMount, MountMode } from "../specs/types";
 import { claimListed } from "../volumes/engine";
@@ -10,7 +10,7 @@ import { probePools } from "../volumes/health";
 import { type LimitPatch, mergeLimits, usageLevel } from "../volumes/limits";
 import { validMountPath } from "../volumes/mounts";
 import { normalizePools, type PoolDraft, type RoleDraft } from "../volumes/pools";
-import { createIndependentVolume, planIndependentVolume, removeEngine } from "../volumes/provision";
+import { createIndependentVolume, planIndependentVolume } from "../volumes/provision";
 import type {
   PoolBackend,
   PoolHealth,
@@ -26,7 +26,7 @@ import type {
 import { recordSample, sampleWithin } from "../volumes/usage";
 import { type Box, getBox, readSpec } from "./boxes";
 import { type RebuildResult, rebuildWithSafety, type SafetyHook } from "./rebuild";
-import { discardCopy, keepsVolume, trashVolume } from "./trash";
+import { keepsVolume } from "./trash";
 import type { RecordNote } from "./volume-owner";
 import { errorOutcome, hostOffline, messageOutcome, type OutcomeError, volumesInUse } from "./volume-refs";
 import { protectedReason, removeGuarded } from "./volume-remove";
@@ -287,9 +287,22 @@ export function previewPools(host: HostCtx, drafts: PoolDraft[], roles: RoleDraf
   };
 }
 
+/** Throws the refusal or failure a single delete received, with the key and params a translated client shows. */
+function raiseOutcome(error: OutcomeError): never {
+  throw new AppError(409, "conflict", {
+    key: (error.key ?? "unknown_error") as MessageKey,
+    params: error.params ?? {},
+    text: error.message,
+  });
+}
+
 /**
- * Deletes a volume and its engine data. Its data is first kept in the recycle bin, unless `skipTrash` is set or its role
- * keeps nothing. When the engine delete then fails, that copy is purged, so a refused delete leaves no entry behind.
+ * Deletes one volume the way a batch delete deletes each of its volumes: the same checks, the same recycle bin copy and
+ * the same second look under the spec lock. The shared tools volume is refused, and so is a volume a box spec mounts, a
+ * container in any state mounts, or a pending rollback keeps. Under the spec lock, where no create or rebuild can be
+ * part way through mounting it, the volume is checked again: it must still have the record it had, not be the tools
+ * volume or a system volume, and nothing may have begun to use it. Its data is first kept in the recycle bin, unless
+ * `skipTrash` is set or its role keeps nothing; a refusal purges that copy, so it leaves no entry behind.
  */
 export async function deleteVolume(
   host: HostCtx,
@@ -297,18 +310,14 @@ export async function deleteVolume(
   opts: { skipTrash?: boolean; createdBy?: string | null; record?: RecordNote } = {},
 ): Promise<{ name: string; trash: TrashRef | null }> {
   const volume = requireVolume(host, ref);
-  refuseIfMounted(volume.name, mountsOf(host, volume));
-  const trash = keepsVolume(volume, opts.skipTrash ?? false)
-    ? await trashVolume(host, volume, opts.createdBy ?? null, opts.record)
-    : null;
-  const result = await removeEngine(host, volume.engineName);
-  if (result.status === "failed") {
-    await discardCopy(host, trash, opts.record);
-    throw conflict(msg("volume_delete_failed", { name: volume.name, detail: result.detail }));
-  }
-  host.volumes.remove(volume.id);
-  log.info("volume.deleted", { id: volume.id, name: volume.name, trash: trash !== null });
-  return { name: volume.name, trash };
+  const outcome = await removeGuarded(host, volume, {
+    skipTrash: opts.skipTrash ?? false,
+    principal: opts.createdBy ?? null,
+    record: opts.record,
+  });
+  if (outcome.status !== "removed") raiseOutcome(outcome.error);
+  log.info("volume.deleted", { id: volume.id, name: volume.name, trash: outcome.trash !== null });
+  return { name: volume.name, trash: outcome.trash };
 }
 
 /** Why a batch delete does not remove a volume. `in_use`, `forbidden` and `tools` are refusals; the rest are failures. */

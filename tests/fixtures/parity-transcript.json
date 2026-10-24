@@ -1053,7 +1053,7 @@
     "path": "/api/volumes/<volumeId>?confirm=true",
     "status": 409,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"error\":{\"code\":\"conflict\",\"message\":\"Volume spare is mounted by gamma.\",\"retryable\":false,\"key\":\"volume_mounted\",\"params\":{\"name\":\"spare\",\"box\":\"gamma\"}}}"
+    "body": "{\"error\":{\"code\":\"conflict\",\"message\":\"Volume spare is in use by a box or a container.\",\"retryable\":false,\"key\":\"volume_in_use_by_box\",\"params\":{\"volume\":\"spare\"}}}"
   },
   {
     "step": "replace pools without confirm",
