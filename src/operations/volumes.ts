@@ -286,7 +286,7 @@ const volumeDelete = defineOperation({
     toolset: "storage",
     name: "delete_volume",
     description:
-      "Delete a volume and its engine data. The data is first kept in the recycle bin for the retention period, and restore_trash brings it back as a new volume. Cache and tools volumes keep nothing. A volume that a box mounts is refused. Pass skipTrash true to delete without keeping a copy; that needs the owner, or a token with the trash:skip scope. Send confirm true; without it the call changes nothing and returns confirmation_required with details.preview.",
+      "Delete a volume and its engine data. The data is first kept in the recycle bin for the retention period, and restore_trash brings it back as a new volume. Cache and tools volumes keep nothing. The shared tools volume, a system volume, and a volume that a box or a container uses are refused. Pass skipTrash true to delete without keeping a copy; that needs the owner, or a token with the trash:skip scope. Send confirm true; without it the call changes nothing and returns confirmation_required with details.preview.",
   },
   hostFor: (ctx, input) => hostOfVolume(ctx, input.id),
   resolve: ({ host }, input) => getVolume(host, input.id),

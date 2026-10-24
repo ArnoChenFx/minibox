@@ -13,6 +13,7 @@ import { type HelperResult, type HelperSpec, RuntimeError } from "../src/runtime
 import * as boxes from "../src/services/boxes";
 import { rebuildBox } from "../src/services/rebuild";
 import { reconcileHost } from "../src/services/reconcile";
+import { listTrash } from "../src/services/trash";
 import {
   attachVolume,
   createVolume,
@@ -57,6 +58,12 @@ const sharedToolsRecord = (): VolumeRecord => {
   const tools = host.volumes.list().find((volume) => volume.role === "tools" && volume.hostId === host.host.id);
   if (!tools) throw new Error("the shared tools record is missing");
   return tools;
+};
+
+const recordOf = (name: string): VolumeRecord => {
+  const record = host.volumes.list().find((volume) => volume.name === name);
+  if (!record) throw new Error(`no record for ${name}`);
+  return record;
 };
 
 describe("volumes and storage pools", () => {
@@ -738,6 +745,82 @@ describe("a lost shared tools volume is recreated", () => {
     ).toEqual(recordIds);
     expect(runtime.volumes.has("second-workspace")).toBe(false);
     expect(host.specs.findByName("second")).toBeNull();
+  });
+});
+
+describe("a single volume delete checks what a batch delete checks", () => {
+  test("a volume a box spec mounts is refused with the batch wording, and its copy is discarded", async () => {
+    const alpha = await newBox("alpha");
+    const notes = await createVolume(host, { name: "notes", role: null, createdBy: "owner" });
+    await attachVolume(
+      host,
+      notes.id,
+      { box: alpha.boxId, path: "/srv/notes", mode: "ro", revision: alpha.revision, confirm: true },
+      null,
+    );
+
+    const error = await rejectionOf(deleteVolume(host, notes.id));
+
+    expect(error).toMatchObject({ status: 409, key: "volume_in_use_by_box", params: { volume: "notes" } });
+    expect(runtime.volumes.has(notes.engineName)).toBe(true);
+    expect(host.volumes.read(notes.id)).not.toBeNull();
+  });
+
+  test("a volume a container mounts without a spec naming it is refused too", async () => {
+    const notes = await createVolume(host, { name: "notes", role: null, createdBy: "owner" });
+    runtime.seedContainer({
+      image: host.baseTemplateTag,
+      name: "stray",
+      mounts: [{ source: notes.engineName, target: "/data" }],
+    });
+
+    const error = await rejectionOf(deleteVolume(host, notes.id));
+
+    expect(error).toMatchObject({ status: 409, key: "volume_in_use_by_box" });
+    expect(runtime.volumes.has(notes.engineName)).toBe(true);
+    expect(host.volumes.read(notes.id)).not.toBeNull();
+  });
+
+  test("the shared tools volume is refused, and so is one named like it whose record lost the role", async () => {
+    await newBox("alpha");
+    const tools = sharedToolsRecord();
+    const odd = await createVolume(host, { name: "odd", role: null, createdBy: "owner" });
+    const engineName = `${host.prefix}-tools-elsewhere`;
+    runtime.volumes.set(engineName, { name: engineName, labels: { [host.keys.volume]: "true" } });
+    host.volumes.write({ ...recordOf("odd"), engineName });
+
+    const error = await rejectionOf(deleteVolume(host, tools.id));
+    expect(error).toMatchObject({ status: 409, key: "volume_shared_tools" });
+    expect(runtime.volumes.has(tools.engineName)).toBe(true);
+
+    const same = await rejectionOf(deleteVolume(host, odd.id));
+    expect(same).toMatchObject({ status: 409, key: "volume_shared_tools" });
+    expect(runtime.volumes.has(engineName)).toBe(true);
+  });
+
+  test("a system volume, by its engine label, is refused as it is in a batch", async () => {
+    const system = await createVolume(host, { name: "system", role: null, createdBy: "owner" });
+    const info = runtime.volumes.get(system.engineName);
+    if (!info) throw new Error("no engine volume");
+    runtime.volumes.set(system.engineName, { ...info, labels: { ...info.labels, [host.keys.internal]: "true" } });
+
+    const error = await rejectionOf(deleteVolume(host, system.id));
+
+    expect(error).toMatchObject({ status: 409, key: "volume_system" });
+    expect(runtime.volumes.has(system.engineName)).toBe(true);
+    expect(host.volumes.read(system.id)).not.toBeNull();
+  });
+
+  test("an unused independent volume is deleted the batch way: a copy kept, then the engine data removed", async () => {
+    const notes = await createVolume(host, { name: "notes", role: null, createdBy: "owner" });
+
+    const deleted = await deleteVolume(host, notes.id);
+
+    expect(deleted.name).toBe("notes");
+    expect(deleted.trash).toMatchObject({ id: expect.stringMatching(/^ck_/) });
+    expect(runtime.volumes.has(notes.engineName)).toBe(false);
+    expect(host.volumes.read(notes.id)).toBeNull();
+    expect((await listTrash(host)).map((entry) => entry.sourceName)).toEqual(["notes"]);
   });
 });
 

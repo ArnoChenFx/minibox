@@ -126,7 +126,16 @@ export async function confirmRollback(
         log.warn("checkpoint.rollback_confirm_kept", { box: box.name, volume: volume.name });
       } else if (host.volumes.read(volume.volumeId)) {
         progress?.log?.(`Deleting ${volume.name}…\n`);
-        await deleteVolume(host, volume.volumeId, { skipTrash: true });
+        // The single delete refuses a volume a pending rollback keeps, and this record keeps these, so it is lifted
+        // for the removal. A failure puts it back as it was, so a retry finishes the rest; success drops the volume.
+        host.checkpoints.removePendingRollback(box.boxId);
+        try {
+          await deleteVolume(host, volume.volumeId, { skipTrash: true });
+        } catch (e) {
+          // `left` still names this volume, so the record comes back listing it and every volume after it.
+          host.checkpoints.writePendingRollback({ ...pending, replaced: left });
+          throw e;
+        }
         removed.push({ id: volume.volumeId, name: volume.name });
       }
       left = left.filter((item) => item.volumeId !== volume.volumeId);
