@@ -301,7 +301,21 @@ describe.skipIf(!enabled)("a second host over SSH, against a real engine", () =>
       expect(onLab).toMatchObject([{ role: "tools", ownership: "independent" }]);
       const [tools] = onLab;
       if (!tools) throw new Error("the host should still hold its shared tools volume");
-      expect((await api(`/api/volumes/${tools.id}?confirm=true`, { method: "DELETE" })).status).toBe(200);
+      const protectedTools = await api(`/api/volumes/${tools.id}?confirm=true`, { method: "DELETE" });
+      expect(protectedTools.status).toBe(409);
+      expect(await errorOf(protectedTools)).toMatchObject({ code: "conflict", key: "volume_shared_tools" });
+      expect((await runtime.inspectVolume(tools.engineName)).name).toBe(tools.engineName);
+      const toolsStillHoldHost = await api("/api/hosts/lab", { method: "DELETE" });
+      expect(toolsStillHoldHost.status).toBe(409);
+      expect(await errorOf(toolsStillHoldHost)).toMatchObject({
+        key: "host_in_use",
+        details: { boxes: 0, volumes: 1, checkpoints: 0 },
+      });
+
+      // The API protects the shared tools volume. Explicit fixture teardown empties the host for the removal check.
+      const lab = app.hosts.get("lab");
+      await lab.runtime.removeVolume(tools.engineName);
+      lab.volumes.remove(tools.id);
       expect(await rejectionOf(runtime.inspectVolume(tools.engineName))).toMatchObject({ kind: "not_found" });
 
       expect((await api("/api/hosts/lab", { method: "DELETE" })).status).toBe(200);

@@ -12,6 +12,7 @@ import {
 } from "@playwright/test";
 
 import type { App } from "../src/app";
+import { ulid } from "../src/events/ulid";
 import { startServer } from "../src/server";
 import { sleepBox } from "../src/services/box-lifecycle";
 import en from "../web/js/i18n/en.js";
@@ -168,6 +169,72 @@ describe.skipIf(!executablePath)("the Box detail page (real browser)", () => {
     app?.tokens.stop();
     app?.events.close();
   });
+
+  test(
+    "box activity matches the overview's compact rows and keeps audit details available by keyboard and after refresh",
+    async () => {
+      if (!app) throw new Error("the console did not start");
+      app.events.append({
+        id: ulid(Date.now()),
+        ts: Date.now(),
+        durationMs: 0,
+        status: "ok",
+        op: "ssh.connect",
+        kind: "write",
+        principal: { type: "owner", id: "owner", name: "owner" },
+        source: "ssh",
+        hostId: "local",
+        summary: "SSH connect",
+        target: { kind: "box", id: running.id, name: running.name },
+        detail: { user: "dev", method: "publickey" },
+      });
+      await page.goto(`${consoleUrl}/#/overview`);
+      const homeRow = page.locator("#ovActivity li").filter({ hasText: "SSH connect" }).first();
+      await webExpect(homeRow).toBeVisible();
+      const homeSize = await homeRow.evaluate((row) => ({
+        height: row.getBoundingClientRect().height,
+        font: row.ownerDocument.defaultView?.getComputedStyle(row).fontSize,
+        icon: row.querySelector(".ico")?.getBoundingClientRect().width,
+      }));
+
+      await page.goto(boxUrl(running, "/activity"));
+      const entry = page.locator(".event-entry").filter({ hasText: "SSH connect" }).first();
+      const summary = entry.locator("summary.activity-summary");
+      await webExpect(summary).toBeVisible();
+      const boxSize = await summary.evaluate((row) => ({
+        height: row.getBoundingClientRect().height,
+        font: row.ownerDocument.defaultView?.getComputedStyle(row).fontSize,
+        icon: row.querySelector(".ico")?.getBoundingClientRect().width,
+      }));
+      expect(Math.abs(homeSize.height - boxSize.height)).toBeLessThanOrEqual(1);
+      expect(boxSize.font).toBe(homeSize.font);
+      expect(boxSize.icon).toBe(homeSize.icon);
+      await webExpect(entry.locator(".event-expanded")).toBeHidden();
+      await webExpect(summary.locator("time")).toHaveAttribute("title", /\d{4}/);
+      await summary.focus();
+      await page.keyboard.press("Enter");
+      await webExpect(entry.locator(".event-meta")).toContainText("SSH");
+      await entry.locator(".event-json summary").click();
+      await webExpect(entry.locator("pre")).toContainText('"method": "publickey"');
+      await Promise.all([
+        page.waitForResponse((response) => response.url().includes("/api/events?box=") && response.ok()),
+        page.locator("#aRefresh").click(),
+      ]);
+      await webExpect(entry).toHaveAttribute("open", "");
+      await summary.focus();
+      await page.keyboard.press("Enter");
+      await webExpect(entry.locator(".event-expanded")).toBeHidden();
+      await page.setViewportSize({ width: 390, height: 844 });
+      try {
+        await webExpect(summary.locator(".time-full")).toBeHidden();
+        await webExpect(summary.locator(".time-compact")).toBeVisible();
+        expect(await summary.evaluate((row) => row.scrollWidth <= row.clientWidth)).toBe(true);
+      } finally {
+        await page.setViewportSize(VIEWPORT);
+      }
+    },
+    TIMEOUT_MS,
+  );
 
   describe("the tabs", () => {
     test(
