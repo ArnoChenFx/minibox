@@ -112,6 +112,33 @@ describe("a template built from a pasted Dockerfile", () => {
     expect(listed.find((t) => t.name === "saved")).not.toHaveProperty("buildKind");
   });
 
+  test("the template lists the setup its devcontainer.json asks for, and one built from a Dockerfile does not", async () => {
+    const l = lab();
+    l.repo.set(
+      ".devcontainer/devcontainer.json",
+      '{"image": "alpine:3.20", "postCreateCommand": "npm install", "forwardPorts": [3000]}',
+    );
+    await createDeclaredTemplate(
+      l.host,
+      { name: "dev", source: { kind: "devcontainer", url: "https://github.com/org/app.git" }, createdBy: "owner" },
+      progressOf(l),
+    );
+    await createDeclaredTemplate(
+      l.host,
+      { name: "tool", source: { kind: "dockerfile", text: FROM_ALPINE }, createdBy: "owner" },
+      progressOf(l),
+    );
+
+    const listed = await listTemplates(l.host);
+
+    expect(listed.find((t) => t.name === "dev")).toMatchObject({
+      postCreate: ["/bin/sh", "-c", "npm install"],
+      forwardPorts: [3000],
+    });
+    expect(listed.find((t) => t.name === "tool")).not.toHaveProperty("postCreate");
+    expect(listed.find((t) => t.name === "tool")).not.toHaveProperty("forwardPorts");
+  });
+
   test("a Dockerfile without FROM is refused before the engine is asked to build", async () => {
     const l = lab();
     const error = await rejectionOf(

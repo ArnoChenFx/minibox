@@ -4,7 +4,11 @@
 
 ## [Unreleased]
 
+### 修复
+- 单个卷删除现在与批量删除、孤⼉卷清理⼀样先做安全检查：被某个 Box 的 spec 挂载的、被任意容器（含已停止的）挂载的、共享⼯具卷（含记录丢失角色但名字匹配 `<prefix>-tools-<host>` 的）以及引擎打有系统标签的卷，都会返回 409 并拒绝删除，不再只检查 spec 挂载；删除前在 spec 锁内做第⼆次检查，避免与创建、重建并发时误删仍在接⼊的卷。错误消息与批量路径⼀致（`volume_in_use_by_box`、`volume_shared_tools`、`volume_system`），拒绝时回收站副本会被清除，不会留下条⽬。确认回滚改为先摘下待删卷的记录再删除，失败时原样恢复记录。
+
 ### 新增
+- 模板卡片显示模板的设置项：由 `devcontainer.json` 构建的模板，其卡片在镜像、大小、创建时间下方列出「设置命令」（`postCreateCommand`，过长截断）与「端口」（`forwardPorts`）；模板没有的项不显示，也不留占位。`GET /api/templates` 的模板条目相应新增 `postCreate` 与 `forwardPorts` 字段，OpenAPI 与文档同步更新。
 - 工具目录新增 GitHub CLI（命令 `gh`，归入「终端与开发工具」组）：从官方 release（`github.com/cli/cli`）下载对应架构的 tarball，先核对 release 自带 `gh_<版本>_checksums.txt` 里的 sha256 再解包，只把 `bin/gh` 原子替换到 tools 卷的 `bin` 目录，全程无需 root；升级重跑安装取最新版，卸载移除二进制。文档的工具清单同步更新。
 
 ### 修复
