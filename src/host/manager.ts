@@ -671,7 +671,8 @@ export class HostManager {
     const { registry, shared } = this.options;
     const host = registry.get(id);
     const boxes = host.specs.list().filter((spec) => spec.hostId === id).length;
-    const volumes = host.volumes.list().filter((volume) => volume.hostId === id).length;
+    // The host's shared tools volumes are its own infrastructure and go with it, so they hold nothing back.
+    const volumes = host.volumes.list().filter((volume) => volume.hostId === id && volume.role !== "tools").length;
     const checkpoints = shared.checkpoints.list().filter((checkpoint) => checkpoint.hostId === id).length;
     return { boxes, volumes, checkpoints, total: boxes + volumes + checkpoints };
   }

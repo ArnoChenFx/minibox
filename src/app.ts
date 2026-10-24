@@ -371,10 +371,12 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
       host.sampler.stop();
     },
     liftToolsVolume: async (host) => {
-      // A host that is going away cannot keep its shared tools volume: it is the one volume no other delete may
-      // remove, and the host cannot be forgotten while it holds it. The removal runs before the host is detached.
-      const tools = host.volumes.list().find((v) => v.hostId === host.host.id && v.role === "tools");
-      if (tools) await deleteVolume(host, tools.id, { skipTrash: true, teardown: true });
+      // A host that is going away cannot keep its shared tools volumes: they are the one kind of volume no other
+      // delete may remove, and the host cannot be forgotten while it holds one. Each pool's volume is lifted here,
+      // before the host is detached, through the same guards every other delete answers to.
+      for (const tools of host.volumes.list().filter((v) => v.hostId === host.host.id && v.role === "tools")) {
+        await deleteVolume(host, tools.id, { skipTrash: true, teardown: true });
+      }
     },
     onLive: reconcileOnLive,
     agents,
