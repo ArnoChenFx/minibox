@@ -599,8 +599,18 @@ h3 {
 }
 .checkpoint-feature,
 .hosts-feature {
+  display: grid;
   grid-column: span 6;
-  min-height: 450px;
+  grid-template-rows: 1fr minmax(208px, auto);
+  gap: 32px;
+  padding: 31px 32px 32px;
+}
+.checkpoint-feature .feature-copy,
+.hosts-feature .feature-copy {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 0;
 }
 .checkpoint-feature .feature-copy h3,
 .hosts-feature .feature-copy h3 {
@@ -614,6 +624,8 @@ h3 {
 .checkpoint-feature .text-link,
 .hosts-feature .text-link {
   font-size: 13px;
+  margin-top: auto;
+  padding-top: 20px;
 }
 .checkpoint-feature {
   background: #f6f8fa;
@@ -622,13 +634,14 @@ h3 {
   background: #fff;
 }
 .checkpoint-diagram {
-  margin: 39px 32px 28px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
 }
 .checkpoint-track {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   position: relative;
-  padding-bottom: 22px;
 }
 .checkpoint-track::before {
   content: "";
@@ -703,9 +716,11 @@ h3 {
   margin-left: auto;
 }
 .host-diagram {
-  width: calc(100% - 64px);
+  display: flex;
+  flex-direction: column;
+  justify-self: center;
+  width: 100%;
   max-width: 420px;
-  margin: 28px auto 32px;
 }
 .host-center {
   display: flex;
@@ -722,6 +737,7 @@ h3 {
 }
 .host-lines {
   display: flex;
+  flex-shrink: 0;
   justify-content: space-between;
   height: 32px;
   border-top: 1px solid #c1b5d5;
@@ -742,12 +758,14 @@ h3 {
 }
 .host-nodes {
   display: grid;
+  flex: 1;
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 .host-nodes > div {
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: space-between;
   gap: 12px;
   color: #655e74;
   font-size: 13px;
@@ -1106,8 +1124,9 @@ html[lang="zh-CN"] .essentials h3 {
   .token-badge {
     display: none;
   }
-  .checkpoint-diagram {
-    margin-inline: 26px;
+  .checkpoint-feature,
+  .hosts-feature {
+    padding: 26px;
   }
   .start-grid {
     gap: 35px;
@@ -1338,14 +1357,12 @@ html[lang="zh-CN"] .essentials h3 {
   }
   .checkpoint-feature,
   .hosts-feature {
-    min-height: auto;
+    grid-template-rows: auto auto;
+    gap: 28px;
+    padding: 25px;
   }
   .checkpoint-diagram {
-    margin: 35px 25px 27px;
-  }
-  .host-diagram {
-    width: calc(100% - 50px);
-    margin: 29px auto;
+    gap: 24px;
   }
   .essentials {
     grid-template-columns: 1fr;
