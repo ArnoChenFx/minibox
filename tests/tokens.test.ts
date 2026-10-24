@@ -8,7 +8,15 @@ import type { HostMetrics } from "../src/host/metrics";
 import { AppError } from "../src/lib/errors";
 import { sha256 } from "../src/lib/hash";
 import { startServer } from "../src/server";
-import { canExec, compileToken, fileAccess, requiredScopes, scopeAllowed, type TokenGrants } from "../src/tokens/model";
+import {
+  canExec,
+  compileToken,
+  fileAccess,
+  requiredScopes,
+  resolveBoxRefs,
+  scopeAllowed,
+  type TokenGrants,
+} from "../src/tokens/model";
 import { TokenStore } from "../src/tokens/store";
 import { createTestApp, rejectionOf, silenceLogs, TEST_KEY } from "./support/app";
 import type { FakeRuntime } from "./support/fake-runtime";
@@ -501,6 +509,47 @@ describe("HTTP tokens", () => {
     expect(granted.json.box?.createdBy).toBe(named.json.record?.id);
   });
 
+  test("a box grant by name or container id is stored as the stable id, and an unknown reference is refused", async () => {
+    const { base, app } = start();
+    const alpha = await call(base, "/api/boxes", { body: { name: "alpha", cpus: 1, memoryMb: 256 } });
+    await call(base, "/api/boxes", { body: { name: "beta", cpus: 1, memoryMb: 256 } });
+    const boxId = alpha.json.box?.boxId ?? "";
+    const containerId = alpha.json.box?.id ?? "";
+
+    const byName = await call(base, "/api/tokens", {
+      body: { name: "by-name", preset: "operator", boxes: { ids: ["alpha"] } },
+    });
+    expect(byName.status).toBe(201);
+    expect(app.tokens.list().find((token) => token.name === "by-name")?.boxes).toEqual({ type: "ids", ids: [boxId] });
+    expect((await call(base, "/api/boxes", { token: byName.json.token })).json.boxes?.map((box) => box.name)).toEqual([
+      "alpha",
+    ]);
+    expect((await call(base, "/api/boxes/alpha", { token: byName.json.token })).status).toBe(200);
+    expect((await call(base, "/api/boxes/beta", { token: byName.json.token })).status).toBe(403);
+
+    const mixed = await call(base, "/api/tokens", {
+      body: { name: "mixed", preset: "operator", boxes: { ids: ["alpha", containerId, boxId] } },
+    });
+    expect(mixed.status).toBe(201);
+    expect(app.tokens.list().find((token) => token.name === "mixed")?.boxes).toEqual({ type: "ids", ids: [boxId] });
+
+    const missing = await call(base, "/api/tokens", {
+      body: { name: "missing", preset: "operator", boxes: { ids: ["no-such-box"] } },
+    });
+    expect(missing.status).toBe(400);
+    expect(missing.json.error?.key).toBe("token_box_unresolved");
+    expect(app.tokens.list().some((token) => token.name === "missing")).toBe(false);
+
+    const ahead = await call(base, "/api/tokens", {
+      body: { name: "ahead", preset: "operator", boxes: { ids: ["bx_zzzzzzzzzz"] } },
+    });
+    expect(ahead.status).toBe(201);
+    expect(app.tokens.list().find((token) => token.name === "ahead")?.boxes).toEqual({
+      type: "ids",
+      ids: ["bx_zzzzzzzzzz"],
+    });
+  });
+
   test("ids and tags select boxes, and a snapshot of an unseen box cannot be forked or deleted", async () => {
     const { base } = start();
     const created = await call(base, "/api/boxes", { body: { name: "alpha", cpus: 1, memoryMb: 256 } });
@@ -559,5 +608,33 @@ describe("HTTP tokens", () => {
     });
     expect(stream.status).toBe(403);
     await stream.body?.cancel();
+  });
+});
+
+const view = (boxId: string, name: string, containerId: string) => ({
+  boxId,
+  containerId,
+  name,
+  createdBy: "owner",
+  labels: {},
+  hostId: "local",
+  createdAt: undefined,
+});
+
+describe("resolveBoxRefs", () => {
+  const views = [
+    view("bx_aaaaaaaaaa", "alpha", "c1"),
+    view("bx_bbbbbbbbbb", "beta", "c2"),
+    view("bx_cccccccccc", "beta", "c3"),
+  ];
+
+  test("ids, container ids and unique names resolve to stable ids, once each", () => {
+    expect(resolveBoxRefs(["alpha", "c1", "bx_aaaaaaaaaa", "c2"], views)).toEqual(["bx_aaaaaaaaaa", "bx_bbbbbbbbbb"]);
+  });
+
+  test("a name two boxes share, or a reference that is neither a box nor a stable id, is refused", () => {
+    expect(() => resolveBoxRefs(["beta"], views)).toThrow(AppError);
+    expect(() => resolveBoxRefs(["nope"], views)).toThrow(AppError);
+    expect(resolveBoxRefs(["bx_zzzzzzzzzz"], views)).toEqual(["bx_zzzzzzzzzz"]);
   });
 });

@@ -14,8 +14,10 @@ import {
   type PresetName,
   PRESET_NAMES,
   type Quotas,
+  resolveBoxRefs,
   SCOPES,
   type Scope,
+  specViews,
   type TokenCreateInput,
   type VolumeScope,
 } from "../tokens/model";
@@ -380,8 +382,13 @@ export const tokenCreate = defineOperation({
       expiresInSec: input.expiresInSec ?? null,
     }),
   },
-  run: async ({ tokens, principal }, input) => {
-    const created = tokens.create(compileToken(draftOf(input)), principal.id);
+  run: async ({ tokens, principal, host, boxViews }, input) => {
+    // A grant by id is stored and compared as stable box ids, so names and container ids resolve here, once.
+    let boxes = input.boxes;
+    if (boxes?.type === "ids") {
+      boxes = { type: "ids", ids: resolveBoxRefs(boxes.ids, boxViews?.() ?? specViews(host.specs.list())) };
+    }
+    const created = tokens.create(compileToken({ ...draftOf(input), boxes }), principal.id);
     return { token: created.secret, record: created.record };
   },
 });
