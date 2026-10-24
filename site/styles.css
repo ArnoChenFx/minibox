@@ -599,8 +599,18 @@ h3 {
 }
 .checkpoint-feature,
 .hosts-feature {
+  display: grid;
   grid-column: span 6;
-  min-height: 450px;
+  grid-template-rows: 1fr auto;
+  gap: 32px;
+  padding: 31px 32px 32px;
+}
+.checkpoint-feature .feature-copy,
+.hosts-feature .feature-copy {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 0;
 }
 .checkpoint-feature .feature-copy h3,
 .hosts-feature .feature-copy h3 {
@@ -614,6 +624,8 @@ h3 {
 .checkpoint-feature .text-link,
 .hosts-feature .text-link {
   font-size: 13px;
+  margin-top: auto;
+  padding-top: 20px;
 }
 .checkpoint-feature {
   background: #f6f8fa;
@@ -622,35 +634,39 @@ h3 {
   background: #fff;
 }
 .checkpoint-diagram {
-  margin: 39px 32px 28px;
+  display: grid;
+  align-content: start;
+  gap: 20px;
 }
 .checkpoint-track {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  justify-self: center;
+  width: max-content;
+  max-width: 100%;
+  gap: 12px;
   position: relative;
-  padding-bottom: 22px;
 }
 .checkpoint-track::before {
   content: "";
   position: absolute;
-  height: 1px;
-  background: linear-gradient(90deg, #c3bfd2, #9981db);
-  left: calc(100% / 6);
-  right: calc(100% / 6);
+  width: 1px;
+  background: linear-gradient(#c3bfd2, #9981db);
+  left: 13px;
   top: 13px;
+  bottom: 13px;
 }
 .checkpoint-node {
   position: relative;
   display: flex;
-  flex-direction: column;
   align-items: center;
   gap: 14px;
   font-size: 13px;
   line-height: 1.5;
-  text-align: center;
+  text-align: left;
   color: #6d6579;
 }
 .node-dot {
+  flex: none;
   width: 26px;
   height: 26px;
   border: 5px solid #f6f8fa;
@@ -703,9 +719,11 @@ h3 {
   margin-left: auto;
 }
 .host-diagram {
-  width: calc(100% - 64px);
+  display: flex;
+  flex-direction: column;
+  justify-self: center;
+  width: 100%;
   max-width: 420px;
-  margin: 28px auto 32px;
 }
 .host-center {
   display: flex;
@@ -717,20 +735,21 @@ h3 {
   border-radius: 12px;
   background: #fff;
   box-shadow: 0 4px 14px #6650a51a;
-  width: 64px;
-  height: 64px;
+  width: 48px;
+  height: 48px;
 }
 .host-lines {
   display: flex;
+  flex-shrink: 0;
   justify-content: space-between;
-  height: 32px;
+  height: 16px;
   border-top: 1px solid #c1b5d5;
-  margin: 20px calc(100% / 6) 0;
+  margin: 12px calc(100% / 6) 0;
   position: relative;
 }
 .host-lines::before {
   content: "";
-  height: 21px;
+  height: 13px;
   border-left: 1px solid #c1b5d5;
   position: absolute;
   left: 50%;
@@ -748,7 +767,7 @@ h3 {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 12px;
+  gap: 20px;
   color: #655e74;
   font-size: 13px;
   line-height: 1.5;
@@ -1106,8 +1125,9 @@ html[lang="zh-CN"] .essentials h3 {
   .token-badge {
     display: none;
   }
-  .checkpoint-diagram {
-    margin-inline: 26px;
+  .checkpoint-feature,
+  .hosts-feature {
+    padding: 26px;
   }
   .start-grid {
     gap: 35px;
@@ -1338,14 +1358,9 @@ html[lang="zh-CN"] .essentials h3 {
   }
   .checkpoint-feature,
   .hosts-feature {
-    min-height: auto;
-  }
-  .checkpoint-diagram {
-    margin: 35px 25px 27px;
-  }
-  .host-diagram {
-    width: calc(100% - 50px);
-    margin: 29px auto;
+    grid-template-rows: auto auto;
+    gap: 28px;
+    padding: 25px;
   }
   .essentials {
     grid-template-columns: 1fr;
