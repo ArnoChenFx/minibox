@@ -698,6 +698,38 @@ describe.skipIf(!enabled)("Docker adapter against a real engine", () => {
   );
 
   test(
+    "a written file gets its exact mode, executable bits included",
+    async () => {
+      const { id } = await runtime.createContainer({
+        image: IMAGE,
+        name: `${prefix}-write-mode`,
+        cmd: ["sleep", "300"],
+        labels: owned,
+        init: true,
+      });
+      await runtime.startContainer(id);
+      try {
+        await runtime.writeContainerFile(id, "/tmp/written-run", Buffer.from("#!/bin/sh\necho ran\n"), {
+          user: "root",
+          mode: 0o755,
+        });
+        // A umask alone cannot add the execute bits, so this is the case a mode of 0755 has to pass.
+        expect(await shell(id, "stat -c '%a' /tmp/written-run")).toBe("755");
+        expect(await shell(id, "/tmp/written-run")).toBe("ran");
+
+        await runtime.writeContainerFile(id, "/tmp/written-secret", Buffer.from("secret\n"), {
+          user: "root",
+          mode: 0o600,
+        });
+        expect(await shell(id, "stat -c '%a' /tmp/written-secret")).toBe("600");
+      } finally {
+        await runtime.removeContainer(id, { force: true });
+      }
+    },
+    LONG,
+  );
+
+  test(
     "kill stops a terminal exec and its children from inside the box",
     async () => {
       const { id } = await runtime.createContainer({

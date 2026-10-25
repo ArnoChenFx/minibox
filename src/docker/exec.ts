@@ -354,9 +354,21 @@ export function execMethods(engine: Engine): ExecMethods {
       };
     },
     async writeContainerFile(containerId, path, data, { user, mode }) {
+      // The umask keeps the file from being wider than `mode` while it is written, and the chmod that
+      // follows sets the exact bits. A umask alone cannot: `cat >` creates at 0666, and a umask only
+      // clears bits, so an executable `mode` (0755) would come out 0644 and the file could not run.
       const umask = (~mode & 0o777).toString(8).padStart(3, "0");
+      const exact = (mode & 0o777).toString(8).padStart(3, "0");
       const session = await methods.startExec(containerId, {
-        cmd: ["/bin/sh", "-c", 'rm -f -- "$1" && umask "$2" && cat > "$1"', "sh", path, umask],
+        cmd: [
+          "/bin/sh",
+          "-c",
+          'rm -f -- "$1" && umask "$2" && cat > "$1" && chmod "$3" "$1"',
+          "sh",
+          path,
+          umask,
+          exact,
+        ],
         env: [],
         workingDir: "/",
         tty: false,
