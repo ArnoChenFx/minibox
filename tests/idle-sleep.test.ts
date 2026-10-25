@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { type ChildProcessByStdio, spawn } from "node:child_process";
+import type { Readable, Writable } from "node:stream";
 
 import type { App } from "../src/app";
 import type { AuditNote, Source } from "../src/events/types";
@@ -6,7 +8,8 @@ import type { HostCtx } from "../src/host/registry";
 import { createLocalHost } from "../src/host/registry";
 import { msg } from "../src/lib/messages";
 import { OWNER } from "../src/operations/types";
-import { type PreviewDeps, resolvePreview } from "../src/preview/proxy";
+import { type PreviewDeps, proxyHttp, resolvePreview } from "../src/preview/proxy";
+import type { ExecSession } from "../src/runtime";
 import { ActivityPulse } from "../src/services/activity-pulse";
 import * as boxes from "../src/services/boxes";
 import type { Box } from "../src/services/boxes";
@@ -39,6 +42,39 @@ let offsetMs: number;
 let primed: HostCtx[];
 let restoreLogs: () => void;
 
+/** Runs the preview relay's python3 on this machine, so a preview of a fake-engine box reaches a real loopback. */
+function relayOnLoopback(target: FakeRuntime): void {
+  const fake = target.startExec.bind(target);
+  target.startExec = async (containerId, spec) => {
+    if (spec.cmd[0] !== "python3") return fake(containerId, spec);
+    return localExec("python3", spec.cmd.slice(1));
+  };
+}
+
+/** Spawns a command on this machine, as the relay would run in the box. */
+function localExec(command: string, args: string[]): ExecSession {
+  const child = spawn(command, args, { stdio: ["pipe", "pipe", "pipe"] }) as ChildProcessByStdio<
+    Writable,
+    Readable,
+    Readable
+  >;
+  return {
+    id: `local-${child.pid ?? 0}`,
+    stream: child.stdin as unknown as ExecSession["stream"],
+    stdout: child.stdout,
+    stderr: child.stderr,
+    resize: async () => {},
+    inspect: async () => ({
+      running: child.exitCode === null && child.signalCode === null,
+      exitCode: child.exitCode,
+      pid: child.pid ?? null,
+    }),
+    kill: async () => {
+      child.kill("SIGKILL");
+    },
+  };
+}
+
 beforeEach(() => {
   restoreLogs = silenceLogs();
   ({ app, runtime } = createTestApp({
@@ -49,6 +85,7 @@ beforeEach(() => {
   }));
   host = app.hosts.get();
   runtime.seedImage(host.baseTemplateTag, { [host.keys.template]: "true", [host.keys.templateName]: "base" });
+  relayOnLoopback(runtime);
   notes = [];
   offsetMs = 0;
   primed = [];
@@ -776,6 +813,7 @@ describe("more than one Docker host", () => {
 
   test("a preview request wakes a box on the second host and audits the wake under that host", async () => {
     const { lab, labRuntime } = addSecondHost();
+    relayOnLoopback(labRuntime);
     const labBox = await boxes.createBox(lab, { name: "lab-preview", cpus: 1, memoryMb: 256 });
     await boxes.stopBox(lab, labBox.boxId, "idle");
     const audited: { hostId: string; op: string }[] = [];
@@ -788,7 +826,9 @@ describe("more than one Docker host", () => {
     try {
       expect(resolved.host.host.id).toBe("lab");
       expect(resolved.box.running).toBe(true);
-      expect(resolved.upstreamOrigin).toMatch(/^http:\/\/10\.255\.0\.\d+:3000$/);
+      // The preview reaches the box through the exec relay, so the upstream is the box's own loopback.
+      expect(resolved.upstreamOrigin).toBe("http://127.0.0.1:3000");
+      expect(resolved.bridge).toBeDefined();
       expect(labRuntime.callsTo("startContainer").length).toBeGreaterThan(0);
       expect(audited).toEqual([{ hostId: "lab", op: "box.wake" }]);
       expect(app.pulse.isHeld(labBox.boxId)).toBe(true);
@@ -830,13 +870,25 @@ describe("preview resolution", () => {
     expect(app.pulse.isHeld(box.boxId)).toBe(false);
   });
 
-  test("a preview whose container has no address is a 502, and nothing stays held", async () => {
-    const box = await newBox("preview-no-ip");
-    const inspect = runtime.inspectContainer.bind(runtime);
-    runtime.inspectContainer = async (id, opts) => ({ ...(await inspect(id, opts)), ipAddress: null });
+  test("a preview whose box cannot run the relay fails the request with a 502, and nothing stays held", async () => {
+    const box = await newBox("preview-no-relay");
+    // A box without python3 cannot run the preview relay. The resolve still hands out the socket; the relay starts
+    // only when a request arrives, so the refusal surfaces as the proxied call fails.
+    const fake = runtime.startExec.bind(runtime);
+    runtime.startExec = async (containerId, spec) => {
+      if (spec.cmd[0] !== "python3") return fake(containerId, spec);
+      return localExec("/bin/sh", ["-c", "echo 'sh: 1: python3: not found' >&2; exit 127"]);
+    };
 
-    const error = await rejectionOf(resolvePreview(app.hosts, previewUrl("preview-no-ip"), previewDeps()));
-    expect(error).toMatchObject({ status: 502, key: "preview_no_ip" });
+    const resolved = await resolvePreview(app.hosts, previewUrl("preview-no-relay"), previewDeps());
+    try {
+      // The refusal travels as the response the relay socket writes back, so the proxied call answers 502 itself.
+      const res = await proxyHttp(new Request("http://minibox.test/box/preview-no-relay/3000/"), resolved);
+      expect(res.status).toBe(502);
+      expect(await res.text()).toContain("python3: not found");
+    } finally {
+      resolved.release();
+    }
     expect(app.pulse.isHeld(box.boxId)).toBe(false);
   });
 });

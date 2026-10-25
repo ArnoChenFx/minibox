@@ -15,8 +15,8 @@ export interface PreviewResolve {
   readonly host: HostCtx;
   readonly target: PreviewTarget;
   readonly upstreamOrigin: string;
-  /** Set for a box on another host, which its engine's address cannot reach from here. */
-  readonly bridge?: PreviewBridge;
+  /** The exec relay this preview runs through, whether the box is local or on another host. */
+  readonly bridge: PreviewBridge;
   /** Ends the hold that keeps the box awake while this request is served. Safe to call more than once. */
   readonly release: () => void;
 }
@@ -38,9 +38,14 @@ export async function resolvePreview(hosts: HostRegistry, url: URL, deps: Previe
 }
 
 /**
- * Resolves a preview target to a box and its container IP. A box asleep for idle or TTL is woken; a box a person
- * stopped is refused with 409. The box is held awake until `release` is called, so an idle sweep cannot stop it while
- * the response is streaming (#12).
+ * Resolves a preview target to a box and the relay that reaches its port. A box asleep for idle or TTL is woken; a
+ * box a person stopped is refused with 409. The box is held awake until `release` is called, so an idle sweep cannot
+ * stop it while the response is streaming (#12).
+ *
+ * Every box is reached through the exec relay, local and remote alike: the relay runs in the box and connects to its
+ * own loopback, so the preview never depends on where the MiniBox server itself sits — a containerized install cannot
+ * reach a box's bridge address even when it shares the host's engine, and box isolation (ICC off) would drop it there
+ * anyway (#223). This also lets a box's service answer on 127.0.0.1 alone.
  */
 export async function resolveTarget(
   hosts: HostRegistry,
@@ -57,14 +62,8 @@ export async function resolveTarget(
     deps.pulse.touch(found.boxId, "preview");
     const box = await wakeIfSleeping(host, found.boxId, { record: (note) => deps.audit(host.host.id, note) });
     if (!box.running) throw new AppError(409, "conflict", msg("preview_box_stopped"));
-    if (host.host.transport !== "local") {
-      const bridge = await deps.relay.bridge(host, box, target.port);
-      return { box, host, target, upstreamOrigin: `http://${bridge.address}`, bridge, release };
-    }
-    const info = await host.runtime.inspectContainer(box.id);
-    const ip = info.ipAddress;
-    if (!ip) throw new AppError(502, "bad_gateway", msg("preview_no_ip"));
-    return { box, host, target, upstreamOrigin: `http://${ip}:${target.port}`, release };
+    const bridge = await deps.relay.bridge(host, box, target.port);
+    return { box, host, target, upstreamOrigin: `http://${bridge.address}`, bridge, release };
   } catch (e) {
     release();
     throw e;
@@ -79,12 +78,11 @@ export function upstreamSocketUrl(resolved: PreviewResolve): string {
 }
 
 /**
- * Where a preview socket connects. A box on another host is reached through the relay's proxy, with a grant for this
- * one connection, so the grant is made when the socket is.
+ * Where a preview socket connects: through the relay's proxy, with a grant for this one connection, so the grant is
+ * made when the socket is.
  */
 export function upstreamSocket(resolved: PreviewResolve): PreviewSocketUpstream {
   const url = upstreamSocketUrl(resolved);
-  if (!resolved.bridge) return { url };
   return { url, proxy: { url: resolved.bridge.proxyUrl, token: resolved.bridge.grant() } };
 }
 

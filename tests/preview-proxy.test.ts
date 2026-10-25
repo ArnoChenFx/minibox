@@ -9,6 +9,7 @@ import { startServer } from "../src/server";
 import { getBox, sleepBox } from "../src/services/boxes";
 import { createTestApp, silenceLogs, TEST_KEY } from "./support/app";
 import type { FakeRuntime } from "./support/fake-runtime";
+import { relayOnLoopback } from "./support/relay";
 
 const restoreLogs = silenceLogs();
 afterAll(restoreLogs);
@@ -64,6 +65,9 @@ describe("preview proxy", () => {
     const host = app.hosts.get();
     const keys = host.keys;
     runtime.seedImage(app.cfg.baseTemplateTag, { [keys.template]: "true", [keys.templateName]: "base" });
+    // The preview reaches the box through the exec relay, so route it to this machine's python3, where the
+    // test's upstream on 127.0.0.1 stands in for the box's own service.
+    relayOnLoopback(runtime);
 
     const server = startServer(app);
     const base = `http://127.0.0.1:${server.port}`;
@@ -85,12 +89,6 @@ describe("preview proxy", () => {
         headers: { authorization: `Bearer ${TEST_KEY}`, origin: base },
       });
       expect(start.status).toBe(200);
-
-      const originalInspect = runtime.inspectContainer.bind(runtime);
-      runtime.inspectContainer = async (id, opts) => {
-        const info = await originalInspect(id, opts);
-        return { ...info, ipAddress: "127.0.0.1" };
-      };
 
       const token = await signIn(base);
       const res = await fetch(`${base}/box/prevdemo/${upstreamPort}/hello`, {
@@ -171,15 +169,16 @@ interface Bed {
   stop(): void;
 }
 
-/** A server with a box-facing IP patched in, and a signed-in console cookie. */
+/** A server with the preview relay routed to this machine, and a signed-in console cookie. */
 async function bed(): Promise<Bed> {
   const { app, runtime } = createTestApp();
   const keys = app.hosts.get().keys;
   runtime.seedImage(app.cfg.baseTemplateTag, { [keys.template]: "true", [keys.templateName]: "base" });
   const server = startServer(app);
   const base = `http://127.0.0.1:${server.port}`;
-  const inspect = runtime.inspectContainer.bind(runtime);
-  runtime.inspectContainer = async (id, opts) => ({ ...(await inspect(id, opts)), ipAddress: "127.0.0.1" });
+  // The preview reaches the box through the exec relay, so route it to this machine's python3, where the test's
+  // upstream on 127.0.0.1 stands in for the box's own service.
+  relayOnLoopback(runtime);
   const cleanups: (() => void)[] = [];
   const cookie = `${COOKIE_NAME}=${encodeURIComponent(await signIn(base))}`;
   return {

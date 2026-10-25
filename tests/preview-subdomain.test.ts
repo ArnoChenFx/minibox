@@ -10,6 +10,7 @@ import type { PreviewProbe } from "../src/preview/selfcheck";
 import { startServer } from "../src/server";
 import { createTestApp, silenceLogs, TEST_KEY } from "./support/app";
 import type { FakeRuntime } from "./support/fake-runtime";
+import { relayOnLoopback } from "./support/relay";
 
 const restoreLogs = silenceLogs();
 afterAll(restoreLogs);
@@ -43,8 +44,9 @@ async function bed(previewBaseDomain: string | null = BASE, probe: PreviewProbe 
   const { app, runtime } = createTestApp({ previewBaseDomain }, undefined, {}, { previewProbe: probe });
   const keys = app.hosts.get().keys;
   runtime.seedImage(app.cfg.baseTemplateTag, { [keys.template]: "true", [keys.templateName]: "base" });
-  const inspect = runtime.inspectContainer.bind(runtime);
-  runtime.inspectContainer = async (id, opts) => ({ ...(await inspect(id, opts)), ipAddress: "127.0.0.1" });
+  // The preview reaches the box through the exec relay, so route it to this machine's python3, where the test's
+  // upstream on 127.0.0.1 stands in for the box's own service.
+  relayOnLoopback(runtime);
   const server = startServer(app);
   const base = `http://127.0.0.1:${server.port}`;
   const login = await fetch(`${base}/api/auth/login`, {

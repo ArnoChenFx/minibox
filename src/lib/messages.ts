@@ -119,7 +119,6 @@ export const MESSAGES = {
     "Blocked: the request's Origin is not this MiniBox address and is not listed in ALLOWED_ORIGINS. If you reach MiniBox through a tunnel or reverse proxy, add its public address (for example https://minibox.example.com) to ALLOWED_ORIGINS and restart MiniBox.",
   preview_path_invalid: "Preview URL must look like /box/<name-or-id>/<port>/….",
   preview_box_stopped: "Start the box before opening a port preview.",
-  preview_no_ip: "The box has no container IP yet. Wait until it is fully started, then try again.",
   preview_upstream_failed: "Could not reach the service inside the box: {detail}",
   preview_bridge_failed: "Could not open the preview through the box's engine: {detail}",
   preview_bridge_hint: "A box on another host needs python3 to serve a preview.",

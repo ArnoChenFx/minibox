@@ -117,7 +117,7 @@ Boxes are containers with the label prefix from `LABEL_PREFIX`, which defaults t
 
 ## Previews
 
-`src/preview/proxy.ts` forwards HTTP and WebSocket traffic to the box's container address and the port the caller asked for. Path-mode previews are served under `/box/`, and subdomain previews on their own hosts.
+`src/preview/proxy.ts` forwards HTTP and WebSocket traffic through a small relay it starts in the box with `python3` (`src/preview/relay.ts`); the relay connects to the port on the box's loopback address, so a containerized MiniBox needs no network path to its boxes. Path-mode previews are served under `/box/`, and subdomain previews on their own hosts.
 
 In subdomain mode, `src/preview/subdomain.ts` serves the preview host. It spends a one-time ticket, which `src/routes/preview.ts` issues when the console opens a port, and checks the grant cookie from `src/preview/grants.ts`. It also refuses a write or a WebSocket from another origin. `src/preview/headers.ts` sets the preview's Content-Security-Policy and filters cookies in both directions. `src/preview/ws.ts` closes a socket when its sign-in ends or its grant expires. `src/preview/selfcheck.ts` runs the checks on the Settings page.
 
