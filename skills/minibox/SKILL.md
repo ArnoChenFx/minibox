@@ -199,7 +199,7 @@ Owner-only, no token scope reaches them: tokens, hosts, notification channels, s
 - [rest-endpoints.md](rest-endpoints.md): the endpoints an agent actually uses, with scopes, bodies and query parameters.
 - [mcp-toolsets.md](mcp-toolsets.md): every toolset and tool, and what each tool needs.
 
-The repository documentation has the full detail: [MCP tools](../../docs/reference/mcp.md), [REST API](../../docs/reference/api.md), [OpenAPI document](../../docs/openapi.json), [connecting AI agents](../../docs/user-guide/agents.md), [CLI](../../docs/reference/cli.md).
+The repository documentation has the full detail (absolute links — this skill may be installed outside the repository): [MCP tools](https://github.com/ArnoChenFx/minibox/blob/main/docs/reference/mcp.md), [REST API](https://github.com/ArnoChenFx/minibox/blob/main/docs/reference/api.md), [OpenAPI document](https://github.com/ArnoChenFx/minibox/blob/main/docs/openapi.json), [connecting AI agents](https://github.com/ArnoChenFx/minibox/blob/main/docs/user-guide/agents.md), [CLI](https://github.com/ArnoChenFx/minibox/blob/main/docs/reference/cli.md).
 
 ## 5. Fallback: the CLI
 

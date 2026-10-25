@@ -2,7 +2,7 @@
 
 Base URL: `http://127.0.0.1:3920` (the server's `HOST` and `PORT`). Every request carries `Authorization: Bearer <agent token>`, and every write carries `Content-Type: application/json`.
 
-The complete machine-readable list is [`docs/openapi.json`](../../docs/openapi.json) (120 paths), and [`docs/reference/api.md`](../../docs/reference/api.md) describes them by group. Each operation has an `x-scope` (its own scope) and, for the ones MCP also exposes, an `x-mcp` entry.
+The complete machine-readable list is [`docs/openapi.json`](https://github.com/ArnoChenFx/minibox/blob/main/docs/openapi.json) (120 paths), and [`docs/reference/api.md`](https://github.com/ArnoChenFx/minibox/blob/main/docs/reference/api.md) describes them by group. Each operation has an `x-scope` (the operation's own scope) and, for the ones MCP also exposes, an `x-mcp` entry.
 
 Conventions in the tables below:
 
