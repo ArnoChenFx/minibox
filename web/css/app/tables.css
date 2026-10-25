@@ -291,6 +291,13 @@ table.table {
     max-width: none;
     white-space: normal;
   }
+  /* The card-table rule that pulls a table's first and last cell to the card's padding has a higher specificity than the
+     reset above, so it is beaten head-on here: without this, the 18px left padding pushes the select box out of its
+     18px grid cell and onto the volume's name. */
+  .card > .table-wrap > .table.vol-table tr:not(.group-row) > td:is(:first-child, :last-child) {
+    padding-left: 0;
+    padding-right: 0;
+  }
   /* A field with nothing in it takes no room. */
   .table.vol-table td.vol-empty {
     display: none;
@@ -438,6 +445,11 @@ table.table {
     min-width: 0;
     max-width: none;
     white-space: normal;
+  }
+  /* As with the volumes: beat the card-table padding rule head-on, so the first and last fields line up with the rest. */
+  .card > .table-wrap > .table.pool-table tr:not(.group-row) > td:is(:first-child, :last-child) {
+    padding-left: 0;
+    padding-right: 0;
   }
   .table.pool-table .pool-name {
     grid-area: name;
