@@ -14,7 +14,6 @@ import {
   isScope,
   NO_QUOTA,
   type PresetName,
-  presetPolicy,
   type Quotas,
   type Scope,
   type TokenDraft,
@@ -32,13 +31,6 @@ const PREFIX_CHARS = 12;
 const ADDRESS_MAX = 64;
 const SHA256_HEX = /^[0-9a-f]{64}$/;
 const TOKEN_ID = /^tok_[0-9a-f]{16}$/;
-/**
- * A scope that a preset no longer grants, which an older token file may still record on a token carrying that preset.
- * Loading drops it, so a token with a preset never holds more than the preset does now. A token with no preset
- * (`preset: null`) was made by naming every scope, and keeps what the owner gave it.
- */
-const DROPPED_FROM_PRESETS: readonly Scope[] = ["volume:delete"];
-
 interface TokenRecord {
   id: string;
   name: string;
@@ -321,18 +313,12 @@ export class TokenStore {
       return;
     }
     const now = this.now();
-    let trimmed = 0;
-    for (const record of stored) {
-      if (trimDroppedFromPresets(record)) trimmed += 1;
-    }
-    if (trimmed > 0) log.info("tokens.scopes_trimmed", { count: trimmed, scopes: DROPPED_FROM_PRESETS.join(",") });
+    // Stored scopes are the owner's grants. A preset plus an explicit scope is indistinguishable from an older preset.
     this.records.push(...stored);
     for (const record of this.records) {
       if (this.isLive(record, now)) this.live.set(record.tokenHash, record);
     }
-    this.dirty =
-      trimmed > 0 ||
-      this.live.size + this.records.filter((record) => !this.isLive(record, now)).length !== stored.length;
+    this.dirty = this.live.size + this.records.filter((record) => !this.isLive(record, now)).length !== stored.length;
   }
 
   private save(): void {
@@ -366,26 +352,6 @@ export class TokenStore {
       if (record && drop.has(record)) this.records.splice(i, 1);
     }
   }
-}
-
-/**
- * Drops `DROPPED_FROM_PRESETS` from a token that is otherwise exactly its preset, because no preset grants those any
- * more. The test is an exact match, so a token the owner adjusted by hand keeps every scope it was given: a preset plus
- * that one scope is the shape the older preset produced, and anything else is the owner's own choice. Returns whether
- * it changed the record.
- */
-function trimDroppedFromPresets(record: TokenRecord): boolean {
-  if (record.preset === null) return false;
-  const kept = record.scopes.filter((scope) => !DROPPED_FROM_PRESETS.includes(scope));
-  if (kept.length === record.scopes.length) return false;
-  const granted = presetPolicy(record.preset).scopes;
-  const volumes = record.volumes.type === "all" || record.volumes.ids.length > 0;
-  // A volume grant adds `volume:attach` to whatever the preset gave, so allow for it when the token names volumes.
-  const matches = (scopes: readonly Scope[]): boolean =>
-    scopes.length === granted.length && scopes.every((scope) => granted.includes(scope));
-  if (!matches(kept) && !(volumes && matches(kept.filter((scope) => scope !== "volume:attach")))) return false;
-  record.scopes = kept;
-  return true;
 }
 
 function toPrincipal(record: TokenRecord): TokenPrincipal {

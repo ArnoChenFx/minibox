@@ -18,14 +18,6 @@ globalThis.setTimeout = () => 0;
 globalThis.setInterval = () => 0;
 globalThis.clearInterval = () => {};
 
-const ALL = [];
-const seen = new Set();
-const register = (node) => {
-  if (seen.has(node)) return;
-  seen.add(node);
-  ALL.push(node);
-};
-
 function parse(html) {
   const nodes = [];
   const tag = /<(\\/?)([a-zA-Z][\\w-]*)((?:\\s+[^<>]*?)?)(\\/?)>/g;
@@ -105,12 +97,9 @@ function parse(html) {
       append(child) {
         this.children.push(child);
         child.parent = this;
-        register(child);
       },
       remove() {
         if (this.parent) this.parent.children = this.parent.children.filter((item) => item !== this);
-        ALL.splice(ALL.indexOf(this), 1);
-        seen.delete(this);
       },
       focus() {},
       closest(selector) {
@@ -154,13 +143,12 @@ function parse(html) {
     stack.at(-1)?.children.push(node);
     if (!stack.length) nodes.push(node);
     if (!selfClosed) stack.push(node);
-    register(node);
   }
   return nodes;
 }
 
-/** Every element the page holds, once each: a root and its descendants, and the nodes a dialog added under another. */
-const drawn = () => [...new Set(ALL.flatMap((root) => [root, ...root.descendants()]))];
+/** Queries only connected nodes, as a real document does after a redraw or a dialog closes. */
+const drawn = () => [document.body, ...document.body.descendants()];
 const documentListeners = [];
 const document = {
   documentElement: {},
@@ -260,7 +248,7 @@ const applyIn = (container) => container.querySelectorAll('[data-staged="apply"]
 /** Presses the banner's apply button and confirms the dialog; the rebuild then waits on the gate. */
 const confirmApply = async (container) => {
   hold();
-  press(document.querySelector('[data-staged="apply"]'), container);
+  press(applyIn(container), container);
   await settle();
   for (const [, fn] of document.querySelector("#cfm-ok").listeners) fn();
   await settle();
@@ -304,13 +292,116 @@ const IDLE: ButtonState = { disabled: false, busy: false, ariaBusy: null, spinne
 const BUSY: ButtonState = { disabled: true, busy: true, ariaBusy: "true", spinner: 1, icon: 0 };
 
 describe("applying staged changes", () => {
+  test("a double click during a slow preview opens one confirmation, and cancelling permits a retry", () => {
+    const run = inBrowser<{
+      loading: ButtonState;
+      previews: number;
+      dialogs: number;
+      cancelled: ButtonState;
+      requests: number;
+    }>(`
+      const container = mount();
+      await settle();
+      const normalFetch = globalThis.fetch;
+      let releasePreview;
+      const previewGate = new Promise(resolve => releasePreview = resolve);
+      let previews = 0;
+      globalThis.fetch = async (path, init) => {
+        if (path.endsWith("/staged/preview")) { previews += 1; await previewGate; }
+        return normalFetch(path, init);
+      };
+      const button = applyIn(container);
+      press(button, container);
+      press(button, container);
+      await settle();
+      const loading = state(button);
+      releasePreview();
+      await settle();
+      const dialogs = document.querySelectorAll(".overlay").length;
+      const close = document.querySelector(".overlay").querySelector("[data-close]");
+      press(close, close);
+      await settle();
+      const cancelled = state(applyIn(container));
+      const firstPreviews = previews;
+      await confirmApply(container);
+      await finish();
+      return { loading, previews: firstPreviews, dialogs, cancelled, requests: applyRequests().length };
+    `);
+    expect(run.loading).toEqual(BUSY);
+    expect(run.previews).toBe(1);
+    expect(run.dialogs).toBe(1);
+    expect(run.cancelled).toEqual(IDLE);
+    expect(run.requests).toBe(1);
+  });
+
+  test("a failed preview releases the box so it can be applied again", () => {
+    const run = inBrowser<{ failed: ButtonState; pending: boolean; requests: number }>(`
+      const container = mount();
+      await settle();
+      const normalFetch = globalThis.fetch;
+      globalThis.fetch = (path, init) => path.endsWith("/staged/preview")
+        ? Promise.resolve(json({ error: { code: "internal", message: "preview failed" } }, 500))
+        : normalFetch(path, init);
+      press(applyIn(container), container);
+      await settle();
+      const failed = state(applyIn(container));
+      const pending = module.isApplying("bx_1");
+      globalThis.fetch = normalFetch;
+      await confirmApply(container);
+      await finish();
+      return {failed, pending, requests: applyRequests().length};
+    `);
+    expect(run.failed).toEqual(IDLE);
+    expect(run.pending).toBe(false);
+    expect(run.requests).toBe(1);
+  });
+
+  for (const status of [200, 412]) {
+    test(`one box's apply finishing with ${status} leaves another box's apply busy`, () => {
+      const run = inBrowser<{ otherBefore: ButtonState; otherAfter: ButtonState; pending: boolean; requests: number }>(`
+        const normalFetch = globalThis.fetch;
+        const releases = {};
+        const gates = Object.fromEntries(["bx_1", "bx_2"].map(id => [id, new Promise(resolve => releases[id] = resolve)]));
+        globalThis.fetch = async (path, init = {}) => {
+          if (init.method === "POST" && path.endsWith(APPLY)) {
+            const id = boxIdOf(path);
+            requests.push({path, method: "POST"});
+            await gates[id];
+            if (id === "bx_1" && ${status} === 412) return json({error: {code: "precondition_failed", message: "changed"}}, 412);
+            return json({box: {id}, safety: null});
+          }
+          return normalFetch(path, init);
+        };
+        const first = mount("bx_1");
+        const second = mount("bx_2");
+        await settle();
+        await confirmApply(first);
+        const otherBefore = state(applyIn(second));
+        await confirmApply(second);
+        releases.bx_1();
+        await settle();
+        const otherAfter = state(applyIn(second));
+        const pending = module.isApplying("bx_2");
+        const requestsSent = applyRequests().length;
+        releases.bx_2();
+        await settle();
+        return {otherBefore, otherAfter, pending, requests: requestsSent};
+      `);
+      expect(run.otherBefore).toEqual(IDLE);
+      expect(run.otherAfter).toEqual(BUSY);
+      expect(run.pending).toBe(true);
+      expect(run.requests).toBe(2);
+    });
+  }
+
   test("the banner's apply button shows progress while the rebuild runs, and a second press sends nothing", () => {
     const run = inBrowser<{
       before: ButtonState;
       applying: ButtonState;
       requestsWhileApplying: number;
       dialogsWhileApplying: number;
-      after: ButtonState;
+      hidden: boolean;
+      pending: boolean;
       applyRequests: number;
       stagedReads: number;
     }>(`
@@ -333,7 +424,8 @@ describe("applying staged changes", () => {
         applying,
         requestsWhileApplying,
         dialogsWhileApplying,
-        after: state(applyButtons()[0]),
+        hidden: container.hidden,
+        pending: module.isApplying("bx_1"),
         applyRequests: applyRequests().length,
         stagedReads: requests.filter((request) => request.path.endsWith("/staged")).length,
       };
@@ -346,7 +438,8 @@ describe("applying staged changes", () => {
     // The second press opened no confirm dialog, so no second apply was prepared.
     expect(run.dialogsWhileApplying).toBe(0);
     expect(run.applyRequests).toBe(1);
-    expect(run.after).toEqual(IDLE);
+    expect(run.hidden).toBe(true);
+    expect(run.pending).toBe(false);
   });
 
   test("a failed apply brings the buttons back and reads the staged changes again", () => {
@@ -390,7 +483,7 @@ describe("applying staged changes", () => {
       const next = state(document.querySelector("[data-staged-next]"));
 
       // Pressing it starts nothing either.
-      press(document.querySelector("[data-staged-next]"), document.querySelector(".dialog"));
+      press(document.querySelector("[data-staged-next]"), document.querySelector("[data-staged-next]"));
       await settle();
       const sent = applyRequests().length;
       await finish();

@@ -205,38 +205,61 @@ describe("token store", () => {
     }
   });
 
-  test("a stored operator or admin token loses the volume:delete its preset no longer grants", () => {
+  test("explicit volume:delete added to a preset survives repeated restarts", () => {
+    const dir = mkdtempSync(join(tmpdir(), "minibox-tokens-"));
+    const file = join(dir, "tokens.json");
+    let store = new TokenStore({ file });
+    try {
+      const tokens = (["operator", "admin", "sandboxed-agent", "readonly"] as const).map((preset) => {
+        const created = store.create(
+          compileToken({
+            name: preset,
+            preset,
+            scopes: [...presetPolicy(preset).scopes, "volume:delete"],
+            volumes: { type: "all" },
+          }),
+          "owner",
+        );
+        return { ...created, scopes: created.record.scopes };
+      });
+      for (let restart = 0; restart < 2; restart += 1) {
+        store.stop();
+        const saved = readFileSync(file, "utf8");
+        store = new TokenStore({ file });
+        expect(readFileSync(file, "utf8")).toBe(saved);
+        for (const token of tokens) {
+          const principal = store.authenticate(token.secret, "127.0.0.1");
+          expect(principal?.grants.scopes).toEqual(token.scopes);
+          expect(principal && scopeAllowed(principal.grants, "volume:delete")).toBe(true);
+        }
+      }
+    } finally {
+      store.stop();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("legacy token scopes are preserved when their origin is unknown", () => {
     const dir = mkdtempSync(join(tmpdir(), "minibox-tokens-"));
     const file = join(dir, "tokens.json");
     const store = new TokenStore({ file });
     try {
-      store.create(compileToken({ name: "op", preset: "operator" }), "owner");
-      store.create(compileToken({ name: "adm", preset: "admin" }), "owner");
-      store.create(compileToken({ name: "vol", preset: "operator", volumes: { type: "all" } }), "owner");
+      store.create(compileToken({ name: "legacy", preset: "operator" }), "owner");
       store.stop();
-      // The shape an older build wrote: the preset's scopes as they were, volume:delete included.
-      const stored = JSON.parse(readFileSync(file, "utf8")) as { tokens: { name: string; scopes: string[] }[] };
-      for (const entry of stored.tokens) entry.scopes.push("volume:delete");
-      writeFileSync(file, JSON.stringify(stored));
-
+      const stored = JSON.parse(readFileSync(file, "utf8")) as { tokens: { scopes: string[] }[] };
+      // An old preset and an owner's explicit addition have the same on-disk shape.
+      for (const token of stored.tokens) token.scopes.push("volume:delete");
+      const saved = JSON.stringify(stored);
+      writeFileSync(file, saved);
       const restored = new TokenStore({ file });
       try {
-        const scopes = (name: string) => restored.list().find((item) => item.name === name)?.scopes ?? [];
-        expect(scopes("op")).not.toContain("volume:delete");
-        expect(scopes("adm")).not.toContain("volume:delete");
-        expect(scopes("vol")).not.toContain("volume:delete");
-        // The trim keeps the rest of the preset, and the volume:attach the volume grant added.
-        expect(scopes("op").toSorted()).toEqual([...presetPolicy("operator").scopes].toSorted());
-        expect(scopes("adm").toSorted()).toEqual([...presetPolicy("admin").scopes].toSorted());
-        expect(scopes("vol")).toContain("volume:attach");
-        // The file is rewritten without it, so the next start reads a token that is already clean.
-        restored.stop();
-        const again = JSON.parse(readFileSync(file, "utf8")) as { tokens: { scopes: string[] }[] };
-        expect(again.tokens.some((entry) => entry.scopes.includes("volume:delete"))).toBe(false);
+        expect(restored.list()[0]?.scopes).toContain("volume:delete");
+        expect(readFileSync(file, "utf8")).toBe(saved);
       } finally {
         restored.stop();
       }
     } finally {
+      store.stop();
       rmSync(dir, { recursive: true, force: true });
     }
   });
