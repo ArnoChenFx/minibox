@@ -10,6 +10,7 @@ import { type App, createApp } from "../src/app";
 import { COOKIE_NAME } from "../src/auth";
 import type { Config } from "../src/config";
 import { PreviewRelay } from "../src/preview/relay";
+import { RELAY_PATHS } from "../src/preview/relay-binary";
 import type { ExecSession, ExecSpec } from "../src/runtime";
 import { startServer } from "../src/server";
 import { getBox, sleepBox } from "../src/services/boxes";
@@ -17,6 +18,7 @@ import type { SocketData } from "../src/ws/socket";
 import { silenceLogs, TEST_KEY, testConfig } from "./support/app";
 import { FakeRuntime } from "./support/fake-runtime";
 import { FakeCheckpointEngine } from "./support/fake-snapshots";
+import { relayCommand } from "./support/relay";
 
 const GIB = 1024 ** 3;
 const EDGE_SOCKET = "/run/minibox-test/edge-docker.sock";
@@ -65,9 +67,9 @@ function localExec(command: string, args: string[]): ExecSession {
 function relayOnLoopback(runtime: FakeRuntime, relays: string[][]): void {
   const fake = runtime.startExec.bind(runtime);
   runtime.startExec = async (containerId: string, spec: ExecSpec) => {
-    if (spec.cmd[0] !== "python3") return fake(containerId, spec);
-    relays.push(spec.cmd);
-    return localExec("python3", spec.cmd.slice(1));
+    const head = spec.cmd[0] ?? "";
+    if (head !== "python3" && !RELAY_PATHS.includes(head)) return fake(containerId, spec);
+    return relayCommand(spec.cmd, relays);
   };
 }
 
@@ -376,6 +378,9 @@ describe("a preview of a box on another host", () => {
   test("a box whose engine has no python3 is a 502 that names the failure", async () => {
     const on = await bed();
     try {
+      on.edge.writeContainerFile = async (_id, path) => {
+        throw new Error(`cp: cannot create regular file '${path}': No such file or directory`);
+      };
       on.edge.startExec = async () => localExec("/bin/sh", ["-c", "echo 'sh: 1: python3: not found' >&2; exit 127"]);
       const port = serviceOn(on, () => new Response("unreachable"));
       await makeBox(on, "remote-nopy");

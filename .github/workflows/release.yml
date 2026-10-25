@@ -44,9 +44,27 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "prerelease=$PRE" >> "$GITHUB_OUTPUT"
 
+  relay:
+    name: Rebuild relay binaries
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.99.1"
+          targets: x86_64-unknown-linux-musl,aarch64-unknown-linux-musl
+      - name: Build and embed the relay
+        run: |
+          RELAY_FLAGS='-C target-feature=+crt-static -C linker=rust-lld'
+          RUSTFLAGS="$RELAY_FLAGS" cargo build --release --target x86_64-unknown-linux-musl --manifest-path relay/Cargo.toml
+          RUSTFLAGS="$RELAY_FLAGS" cargo build --release --target aarch64-unknown-linux-musl --manifest-path relay/Cargo.toml
+          bun scripts/build-relay.ts
+      - name: The committed embed matches the tagged source
+        run: git diff --exit-code src/preview/relay-binary.generated.ts
+
   image:
     name: Build & push image
-    needs: [checks, verify]
+    needs: [checks, verify, relay]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7

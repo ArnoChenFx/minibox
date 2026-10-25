@@ -129,6 +129,8 @@ export interface ImageDetails {
   id: string;
   /** The `repo:tag` references the engine holds for the image. A dangling image has none. */
   tags: string[];
+  /** The machine architecture the image was built for, as the engine reports it (`x86_64`, `aarch64`). */
+  arch: string;
   labels: Record<string, string>;
   /** The image's own `NAME=value` entries, as the engine reports them in the image configuration. */
   env: string[];

@@ -11,6 +11,7 @@ import { log } from "../lib/logger";
 import { msg } from "../lib/messages";
 import type { ExecSession } from "../runtime";
 import type { Box } from "../services/box-model";
+import { placeRelay, relayArgv } from "./relay-binary";
 
 /**
  * The relay that runs inside a box as `dev`. It connects to the port on the box's loopback, answers `ok` or `err <why>` on
@@ -317,20 +318,19 @@ export class PreviewRelay {
 }
 
 /**
- * Starts the relay in the box and waits for its first line. A relay that cannot reach the port says so with `err`, and
- * one that cannot start at all, such as a box with no python3, ends with whatever its shell wrote to standard error.
- * The container is looked up on each call, so a box rebuilt under the same id is reached at its new container.
+ * Starts the relay in the box and waits for its first line. The static Rust binary is placed in
+ * the box on the first use of a container and run from there; a box whose engine reports an
+ * architecture with no embedded build, or where the placement itself fails (a read-only `/tmp`,
+ * a full filesystem), falls back to the python3 script, whose behaviour is identical. A relay
+ * that cannot reach the port says so with `err`, and one that cannot start at all ends with
+ * whatever its shell wrote to standard error. The container is looked up on each call, so a box
+ * rebuilt under the same id is reached at its new container.
  */
 async function openBridge(host: HostCtx, boxId: string, port: number): Promise<Bridged> {
-  const containerId = host.specs.read(boxId)?.containerId;
+  const spec = host.specs.read(boxId);
+  const containerId = spec?.containerId;
   if (!containerId) throw new AppError(404, "not_found", msg("box_not_found"));
-  const session = await host.runtime.startExec(containerId, {
-    cmd: ["python3", "-c", RELAY_SCRIPT, String(port)],
-    env: [],
-    workingDir: "/",
-    user: "dev",
-    tty: false,
-  });
+  const session = await startRelay(host, containerId, spec.template.image, port);
   const stderr = stderrTail(session.stderr);
   try {
     return { session, rest: await handshake(session, stderr) };
@@ -338,6 +338,133 @@ async function openBridge(host: HostCtx, boxId: string, port: number): Promise<B
     closeBridge(session);
     throw error;
   }
+}
+
+/** The relay binary each container has already been handed, keyed by container id. */
+const placedRelays = new Map<string, string>();
+
+/** True once a container has refused the binary, so later bridges skip straight to python3. */
+const relayRejected = new Set<string>();
+
+/**
+ * The caches hold one small entry per container ever previewed, so they are bounded: dropping the
+ * oldest entries only costs a re-place on that container's next preview. A rebuilt container
+ * id never returns, so eviction is how its entries leave.
+ */
+const CACHE_LIMIT = 1024;
+
+/** Drops the oldest cache entries once the maps grow past the limit. */
+function trimRelayCaches(): void {
+  for (const cache of [placedRelays, relayRejected]) {
+    let excess = cache.size - CACHE_LIMIT;
+    while (excess-- > 0) {
+      const oldest = cache.keys().next().value;
+      if (oldest === undefined) break;
+      cache.delete(oldest);
+    }
+  }
+}
+
+/** The architecture of each box image, cached: an image reference never changes architecture. */
+const imageArchs = new Map<string, string | null>();
+
+/**
+ * The architecture the box's exec runs on, from the box image: a static binary only runs on the
+ * machine it was built for, and the image's architecture is the one its container execs. Null
+ * once the engine has answered for this image, so an unknown architecture falls back to the
+ * script instead of guessing.
+ */
+async function archOf(host: HostCtx, imageRef: string): Promise<string | undefined> {
+  if (imageArchs.has(imageRef)) return imageArchs.get(imageRef) ?? undefined;
+  try {
+    const arch = (await host.runtime.inspectImage(imageRef)).arch;
+    const known = arch === "" || arch === "unknown" ? null : arch;
+    imageArchs.set(imageRef, known);
+    return known ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Runs the placed relay binary, placing it first when the container does not have it yet, or the
+ * python3 script when there is no build for the box's architecture or the box rejected the
+ * binary once. A container that disappears loses its cached placement with it.
+ */
+async function startRelay(host: HostCtx, containerId: string, imageRef: string, port: number): Promise<ExecSession> {
+  if (relayRejected.has(containerId)) return runScript(host, containerId, port);
+  let placed: string | null | undefined = placedRelays.get(containerId);
+  if (placed === undefined) {
+    try {
+      placed = await place(host, containerId, await archOf(host, imageRef));
+    } catch {
+      placed = null;
+    }
+    if (placed === null) return runScript(host, containerId, port);
+    trimRelayCaches();
+  }
+  try {
+    return await host.runtime.startExec(containerId, {
+      cmd: relayArgv(placed, port),
+      env: [],
+      workingDir: "/",
+      user: "dev",
+      tty: false,
+    });
+  } catch {
+    // The binary is gone (the container was rebuilt, or its /tmp was cleared): place it again
+    // once. A second failure is a box that cannot run it at all, and python3 takes over.
+    placedRelays.delete(containerId);
+    let replaced: string | null = null;
+    try {
+      replaced = await place(host, containerId, await archOf(host, imageRef));
+    } catch {
+      replaced = null;
+    }
+    if (replaced === null) {
+      relayRejected.add(containerId);
+      trimRelayCaches();
+      return runScript(host, containerId, port);
+    }
+    try {
+      return await host.runtime.startExec(containerId, {
+        cmd: relayArgv(replaced, port),
+        env: [],
+        workingDir: "/",
+        user: "dev",
+        tty: false,
+      });
+    } catch {
+      relayRejected.add(containerId);
+      trimRelayCaches();
+      return runScript(host, containerId, port);
+    }
+  }
+}
+
+/**
+ * Places the relay binary in the container, and remembers the path it was written to. Throws when
+ * the write fails, so the caller can fall back to the script. The engine writes through a shell
+ * that removes the file before it writes it, so a link planted on the path in that window could
+ * redirect the write; every box user shares the box with `dev` alone, so this is accepted.
+ */
+async function place(host: HostCtx, containerId: string, arch: string | undefined): Promise<string | null> {
+  const relay = placeRelay(arch);
+  if (relay === null) return null;
+  await host.runtime.writeContainerFile(containerId, relay.path, relay.bytes, { user: "dev", mode: 0o755 });
+  placedRelays.set(containerId, relay.path);
+  return relay.path;
+}
+
+/** Runs the python3 relay script, the fallback for a box with no usable binary. */
+function runScript(host: HostCtx, containerId: string, port: number): Promise<ExecSession> {
+  return host.runtime.startExec(containerId, {
+    cmd: ["python3", "-c", RELAY_SCRIPT, String(port)],
+    env: [],
+    workingDir: "/",
+    user: "dev",
+    tty: false,
+  });
 }
 
 function handshake(session: ExecSession, stderr: ReturnType<typeof stderrTail>): Promise<Buffer> {

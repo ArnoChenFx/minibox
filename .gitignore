@@ -21,3 +21,4 @@ server.log
 dist/
 .bun/
 .DS_Store
+relay/target/
