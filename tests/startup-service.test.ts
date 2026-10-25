@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 
 import type { App } from "../src/app";
 import type { HostCtx } from "../src/host/registry";
@@ -526,6 +528,26 @@ describe("startup command: waiting for the box setup", () => {
     const box = await newClonedBox("clone-cut", "npm run dev");
     const restarted = restartedServer();
 
+    await reconcileHost(restarted);
+    await restarted.startup.settle();
+
+    expect(launchesOf(box.id)).toHaveLength(0);
+    expect(await readStartupCommand(restarted, box.boxId)).toMatchObject({
+      status: "failed",
+      error: { key: "startup_command_clone_unfinished" },
+    });
+    expect(restarted.specs.read(box.boxId)?.startupAwaitsSetup).toBeUndefined();
+  });
+
+  test("a spec on disk with the old startupAwaitsClone field still holds the command back", async () => {
+    const box = await newClonedBox("clone-old-field", "npm run dev");
+    const specPath = join(host.specs.dir(), `${box.boxId}.json`);
+    const onDisk = JSON.parse(readFileSync(specPath, "utf8")) as Record<string, unknown>;
+    delete onDisk.startupAwaitsSetup;
+    onDisk.startupAwaitsClone = true;
+    writeFileSync(specPath, `${JSON.stringify(onDisk, null, 2)}\n`);
+
+    const restarted = restartedServer();
     await reconcileHost(restarted);
     await restarted.startup.settle();
 
