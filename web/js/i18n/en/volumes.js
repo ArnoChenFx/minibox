@@ -143,6 +143,7 @@ export default {
   "vol.lastUsed": "Last used",
   "vol.formerBox": "Former box",
   "vol.selectAll": "Select every volume that matches the search",
+  "vol.selectAllShort": "Select all",
   "vol.selectOne": "Select {name}",
   "vol.selectedCount": "{n} selected",
   "vol.clearSelection": "Clear selection",

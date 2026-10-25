@@ -136,6 +136,7 @@ export default {
   "vol.lastUsed": "上次使用",
   "vol.formerBox": "原 Box",
   "vol.selectAll": "选择搜索结果中的所有卷",
+  "vol.selectAllShort": "全选",
   "vol.selectOne": "选择 {name}",
   "vol.selectedCount": "已选 {n} 个",
   "vol.clearSelection": "取消选择",

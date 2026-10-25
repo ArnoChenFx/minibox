@@ -198,16 +198,20 @@ function volumeRow(volume, { selected, pools, latest, staged }) {
   const role = volume.role ? `${roleLabel(volume.role)} · ` : "";
   const owner = volume.ownership === "owned" ? t("vol.ownedShort") : t("vol.independent");
   const ownerTip = volume.ownership === "owned" ? ` title="${esc(t("vol.owned"))}"` : "";
+  const checkpoint = latest.get(volume.id);
+  // A field with nothing in it is named too, so the phone layout can leave it out instead of drawing a lone dash.
+  const empty = (yes) => (yes ? " vol-empty" : "");
+  // `data-label` names each field for the phone layout, where the row is a card and the column header is gone.
   return `<tr class="${over.trim()}">
     <td class="select-cell">${pick}</td>
     <td class="vol-name"><strong class="truncate" title="${esc(volume.name)}">${esc(volume.name)}</strong><div class="subtle truncate" title="${esc(volume.id)}">${esc(role)}<span class="mono">${esc(volume.id)}</span></div></td>
-    <td class="vol-usage">${usageCellHtml(volume)}</td>
-    <td class="vol-mounts">${mountsHtml(volume)}</td>
-    <td class="nowrap"${ownerTip}>${esc(owner)}</td>
-    <td class="vol-pool">${poolHtml(volume, pools.get(volume.pool))}</td>
-    <td class="vol-latest-cell">${latestHtml(latest.get(volume.id))}</td>
-    <td class="nowrap">${statusHtml(volume, staged.get(volume.id))}</td>
-    <td class="nowrap"><div class="actions">
+    <td class="vol-usage" data-label="${esc(t("vol.colSize"))}">${usageCellHtml(volume)}</td>
+    <td class="vol-mounts${empty(!volume.mounts.length)}" data-label="${esc(t("vol.colMounts"))}">${mountsHtml(volume)}</td>
+    <td class="vol-owner nowrap"${ownerTip} data-label="${esc(t("vol.colOwnership"))}">${esc(owner)}</td>
+    <td class="vol-pool" data-label="${esc(t("vol.colPool"))}">${poolHtml(volume, pools.get(volume.pool))}</td>
+    <td class="vol-latest-cell${empty(!checkpoint)}" data-label="${esc(t("vol.colLatest"))}">${latestHtml(checkpoint)}</td>
+    <td class="vol-status-cell nowrap">${statusHtml(volume, staged.get(volume.id))}</td>
+    <td class="vol-actions nowrap"><div class="actions">
       ${rowButton("browse", volume, "folder", t("vol.browse"))}
       ${rowButton("snapshot", volume, "camera", t("vol.snapshot"), { block: snapshotPlan(volume).block })}
       ${rowButton("mount-to", volume, "link", t("vol.mountTo"))}
@@ -413,7 +417,7 @@ export function render(view) {
         </div>
       </div>
       <div class="table-wrap" id="volWrap"><table class="table vol-table">
-        <thead><tr><th class="select-cell"><label class="checkbox"><input type="checkbox" id="volSelectAll" aria-label="${esc(t("vol.selectAll"))}" disabled /></label></th><th>${t("vol.colName")}</th><th class="nowrap">${t("vol.colSize")}</th><th class="nowrap">${t("vol.colMounts")}</th><th class="nowrap">${t("vol.colOwnership")}</th><th class="nowrap">${t("vol.colPool")}</th><th class="nowrap">${t("vol.colLatest")}</th><th class="nowrap">${t("vol.colStatus")}</th><th class="nowrap actions-head">${t("vol.colAction")}</th></tr></thead>
+        <thead><tr><th class="select-cell" data-label="${esc(t("vol.selectAllShort"))}"><label class="checkbox"><input type="checkbox" id="volSelectAll" aria-label="${esc(t("vol.selectAll"))}" disabled /></label></th><th>${t("vol.colName")}</th><th class="nowrap">${t("vol.colSize")}</th><th class="nowrap">${t("vol.colMounts")}</th><th class="nowrap">${t("vol.colOwnership")}</th><th class="nowrap">${t("vol.colPool")}</th><th class="nowrap">${t("vol.colLatest")}</th><th class="nowrap">${t("vol.colStatus")}</th><th class="nowrap actions-head">${t("vol.colAction")}</th></tr></thead>
         <tbody id="volRows">${skeletonRows(3, VOLUME_COLUMNS)}</tbody>
       </table></div>
     </div>

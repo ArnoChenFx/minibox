@@ -216,6 +216,183 @@ table.table {
   padding-top: 4px;
   padding-bottom: 4px;
 }
+/* On a phone a volume is a card: the name with its status, then the size, the mounts, the ownership and pool, the latest
+   checkpoint, and the actions at the bottom right. The checkbox column stays, since picking rows and deleting them
+   together is the same job on a phone; the header keeps only its select-all box, so that job still starts from one box.
+   `data-label` names each field, because the column headers are gone, and a field with nothing in it is not drawn. */
+@media (max-width: 640px) {
+  .table.vol-table {
+    min-width: 0;
+  }
+  .table.vol-table thead {
+    display: block;
+  }
+  .table.vol-table thead tr {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 18px;
+    border-bottom: 1px solid var(--border);
+  }
+  .table.vol-table thead th {
+    display: none;
+    padding: 0;
+    border: 0;
+    background: none;
+  }
+  .table.vol-table thead th.select-cell {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: auto;
+    padding: 0;
+  }
+  .table.vol-table thead th.select-cell::after {
+    content: attr(data-label);
+    color: var(--text-3);
+    font-size: 12px;
+    white-space: nowrap;
+  }
+  .table.vol-table,
+  .table.vol-table tbody {
+    display: block;
+  }
+  .table.vol-table tr {
+    display: grid;
+    grid-template-columns: 18px minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-areas:
+      "select name   status"
+      "usage  usage  usage"
+      "mounts mounts mounts"
+      "owner  owner  pool"
+      "latest latest latest"
+      "actions actions actions";
+    /* No grid gap: a row whose field is left out would still leave a gap behind, so each field spaces itself. */
+    gap: 0 10px;
+    padding: 12px 18px;
+    border-bottom: 1px solid var(--border);
+    white-space: normal;
+  }
+  .table.vol-table tr > td {
+    margin-bottom: 8px;
+  }
+  .table.vol-table tr > td:last-child {
+    margin-bottom: 0;
+  }
+  .table.vol-table tr:last-child {
+    border-bottom: 0;
+  }
+  .table.vol-table td,
+  .card > .table-wrap > .table.vol-table tr > td:is(:first-child, :last-child) {
+    display: block;
+    padding: 0;
+    border: 0;
+    min-width: 0;
+    max-width: none;
+    white-space: normal;
+  }
+  /* A field with nothing in it takes no room, and neither does the accent a row over its limit shows in its first cell. */
+  .table.vol-table td.vol-empty {
+    display: none;
+  }
+  .table.vol-table tr.volume-over-soft,
+  .table.vol-table tr.volume-over-hard {
+    box-shadow: inset 3px 0 0 var(--warning);
+  }
+  .table.vol-table tr.volume-over-hard {
+    box-shadow: inset 3px 0 0 var(--danger);
+  }
+  .table.vol-table tr.volume-over-soft > td:first-child,
+  .table.vol-table tr.volume-over-hard > td:first-child {
+    box-shadow: none;
+  }
+  /* A group header, the show-all button and an empty state keep their own full-width row. */
+  .table.vol-table tr.group-row,
+  .table.vol-table tr.toggle-row {
+    display: block;
+    padding: 0;
+  }
+  .table.vol-table tr > td[colspan] {
+    grid-column: 1 / -1;
+  }
+  .table.vol-table tr.toggle-row > td {
+    padding: 6px 18px;
+  }
+  /* While the list loads, each skeleton row is one line rather than nine cells. */
+  .table.vol-table tr:not(:has(.vol-name)) > td:not([colspan]) {
+    display: none;
+  }
+  .table.vol-table tr:not(:has(.vol-name)) > td:first-child {
+    display: block;
+    grid-column: 1 / -1;
+  }
+  .table.vol-table .select-cell {
+    grid-area: select;
+    align-self: center;
+    width: auto;
+  }
+  .table.vol-table .vol-name {
+    grid-area: name;
+    align-self: center;
+  }
+  .table.vol-table .vol-name strong {
+    font-size: 14px;
+  }
+  .table.vol-table .vol-status-cell {
+    grid-area: status;
+    align-self: center;
+    justify-self: end;
+  }
+  .table.vol-table .vol-status {
+    align-items: flex-end;
+  }
+  /* The size line is short, so its name sits beside it rather than above: "Size — ⟳ / No limit" on two lines. */
+  .table.vol-table .vol-usage {
+    grid-area: usage;
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+  }
+  .table.vol-table .vol-usage::before {
+    display: inline;
+    margin: 0;
+    flex: none;
+  }
+  .table.vol-table .vol-size {
+    flex: 1;
+    width: auto;
+  }
+  .table.vol-table .vol-size .vol-limit {
+    align-self: flex-start;
+  }
+  .table.vol-table .vol-mounts {
+    grid-area: mounts;
+  }
+  .table.vol-table .vol-owner {
+    grid-area: owner;
+  }
+  .table.vol-table .vol-pool {
+    grid-area: pool;
+  }
+  .table.vol-table .vol-latest-cell {
+    grid-area: latest;
+  }
+  .table.vol-table .vol-actions {
+    grid-area: actions;
+  }
+  .table.vol-table .vol-actions .actions {
+    justify-content: flex-end;
+  }
+  /* The column's name sits above its value, in the same small grey type the column headers use. */
+  .table.vol-table td[data-label]::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 3px;
+    color: var(--text-3);
+    font-size: 12px;
+    font-weight: 400;
+  }
+}
 /* The pools card folds under the volumes table: it is set up once and rarely changed. */
 .vol-pools {
   margin-top: 16px;
