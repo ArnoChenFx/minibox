@@ -63,7 +63,7 @@ Click a box in the list to open it. The box page has these tabs:
 | **Activity** | Recent commands, container events and terminal sessions. Below them, **Container output (docker logs)** shows the box's log, with **Auto-refresh**. |
 | **Settings** | The box's settings, in seven sections: **Resources**, **Storage and mounts**, **Tools**, **Environment variables**, **Lifecycle**, **Security** and **Checkpoints** |
 
-The **Resources** section shows the CPU and memory limits, the current use, and the **Adjust quota** button. The **Lifecycle** section holds the startup command, the idle timeout and the TTL. The **Security** section shows the network egress and the security profile. The **Checkpoints** section lists the box's copies of its data. See [Checkpoints](checkpoints.md).
+The **Resources** section shows the CPU and memory limits, the current use, and the **Adjust quota** button. The **Lifecycle** section holds the startup command, and the idle timeout and the TTL, which **Edit** changes in place. The **Security** section shows the network egress and the security profile. The **Checkpoints** section lists the box's copies of its data. See [Checkpoints](checkpoints.md).
 
 The **Create checkpoint** button in the title bar takes a checkpoint from any tab, and the title bar also has the **Rebuild** button.
 

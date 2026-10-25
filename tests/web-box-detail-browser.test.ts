@@ -69,6 +69,10 @@ interface BoxRow {
   name: string;
   running: boolean;
   sleeping: boolean;
+  /** `null` inherits the global default, `0` never sleeps, a positive number is the box's own timeout. */
+  idleTimeoutSec: number | null;
+  /** `null` means no TTL, a positive number is a lifetime counted from creation. */
+  ttlSec: number | null;
 }
 
 interface CheckpointRow {
@@ -356,6 +360,60 @@ describe.skipIf(!executablePath)("the Box detail page (real browser)", () => {
         await webExpect(page).toHaveURL(at(`#/boxes/${encodeURIComponent(running.id)}/settings/lifecycle`));
         await webExpect(page.locator(".settings-nav [aria-current='page']")).toHaveText("Lifecycle");
         await webExpect(page.locator("#bsLifecycle h3")).toHaveText(english("bd.setLifecycle"));
+      },
+      TIMEOUT_MS,
+    );
+
+    test(
+      "the Lifecycle card changes the idle timeout and the TTL in place, and the rows show the saved values",
+      async () => {
+        await page.goto(boxUrl(running, "/settings/lifecycle"));
+        const card = page.locator("#bsLifecycle");
+        await webExpect(card.locator(".kv")).toContainText(english("bd.idleInherit"));
+        await card.locator("[data-lc-action='edit']").click();
+        await card.locator("[data-lc-idle-mode='custom']").click();
+        await card.locator("[data-lc-value='idle']").fill("30");
+        await card.locator("[data-lc-unit='idle']").selectOption("minutes");
+        await card.locator("[data-lc-ttl-mode='set']").click();
+        await card.locator("[data-lc-value='ttl']").fill("2");
+        await card.locator("[data-lc-unit='ttl']").selectOption("hours");
+        await card.locator("[data-lc-action='save']").click();
+        await webExpect.poll(async () => (await boxNow(running)).idleTimeoutSec).toBe(1800);
+        expect(await boxNow(running)).toMatchObject({ idleTimeoutSec: 1800, ttlSec: 7200 });
+        // The card returns to its rows and shows what the box now holds, without a reload.
+        await webExpect(card.locator(".kv")).toContainText("1800 s");
+        await webExpect(card.locator(".kv")).toContainText("7200 s");
+
+        // The two other choices clear a value: the global default for the idle timeout, no TTL for the lifetime.
+        await card.locator("[data-lc-action='edit']").click();
+        await card.locator("[data-lc-idle-mode='inherit']").click();
+        await card.locator("[data-lc-ttl-mode='none']").click();
+        await card.locator("[data-lc-action='save']").click();
+        await webExpect.poll(async () => (await boxNow(running)).ttlSec).toBeNull();
+        expect(await boxNow(running)).toMatchObject({ idleTimeoutSec: null, ttlSec: null });
+        await webExpect(card.locator(".kv")).toContainText(english("bd.idleInherit"));
+        await webExpect(card.locator(".kv")).toContainText(english("bd.ttlNone"));
+      },
+      TIMEOUT_MS,
+    );
+
+    test(
+      "the Lifecycle card refuses a lifetime the server would refuse, and keeps the editor open",
+      async () => {
+        await page.goto(boxUrl(running, "/settings/lifecycle"));
+        const card = page.locator("#bsLifecycle");
+        await card.locator("[data-lc-action='edit']").click();
+        await card.locator("[data-lc-idle-mode='custom']").click();
+        await card.locator("[data-lc-value='idle']").fill("0");
+        await card.locator("[data-lc-action='save']").click();
+        await webExpect(card.locator("[data-lc-error]")).toHaveText(
+          english("lc.idleInvalid").replace("{max}", "31536000"),
+        );
+        // The editor stays open, so the number can be corrected where it is.
+        await webExpect(card.locator("[data-lc-action='save']")).toBeVisible();
+        expect((await boxNow(running)).idleTimeoutSec).toBeNull();
+        await card.locator("[data-lc-action='cancel']").click();
+        await webExpect(card.locator("[data-lc-action='edit']")).toBeVisible();
       },
       TIMEOUT_MS,
     );

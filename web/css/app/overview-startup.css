@@ -30,6 +30,23 @@
   flex-wrap: wrap;
   gap: 8px;
 }
+/* Lifecycle card: a lifetime's number and its unit sit on one row, the number taking the room the unit does not need. */
+.lifetime-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 128px;
+  gap: 8px;
+  align-items: center;
+}
+.lifetime-row .input {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+/* Each choice in the card's mode rows holds a sentence, so on a phone the rows stack instead of squeezing into columns. */
+@media (max-width: 560px) {
+  .lifecycle-form .segmented {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
 /* Startup command card: the buttons of the head and of the editor share one row, and the status sits above the command. */
 .startup-actions {
   display: flex;
