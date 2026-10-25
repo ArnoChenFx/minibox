@@ -189,6 +189,7 @@ The template's card in the **Templates** list shows the command and the ports. `
 - A string runs as `/bin/sh -c "<command>"`, so shell syntax such as `npm ci && npm run build` works. A list runs as written, without a shell, and `$HOME` stays literal in it.
 - The command runs as `dev`, in `/workspace` when the box mounts it, and in `/` otherwise. Its output is in the task log, under **Set up box** in the **Tasks** panel.
 - A command that exits with a non-zero code fails the setup task, and the task names the code. The box is kept, so you can open it and fix the problem.
+- A box with a startup command runs it only after this whole setup has finished, so the command can use what `postCreateCommand` installed. See [Startup command](boxes.md#startup-command).
 - A command still running after 30 minutes is stopped, and the task fails. Cancelling the task also stops it. In both cases the box is kept.
 - The setup runs once, when the box is created. Starting, stopping, restarting and rebuilding the box do not run it again. A box saved from the template does not inherit it.
 - A token needs the `exec` scope to create a box from a template whose `postCreateCommand` is set, and the `port:expose` scope for `forwardPorts`. A token without the scope is refused before the box is made.

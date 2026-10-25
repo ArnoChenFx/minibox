@@ -292,3 +292,112 @@ describe("running the command of a box that is not running", () => {
     expect(harness.runtime.callsTo("startExec")).toEqual([]);
   });
 });
+
+/** How many times the box's init session was started, which is how many launches the startup command had. */
+function launchesOf(containerId: string): number {
+  return harness.runtime
+    .callsTo("startExec")
+    .map((entry) => entry.args as [string, ExecSpec])
+    .filter(([id, spec]) => id === containerId && spec.cmd.includes("new-session")).length;
+}
+
+async function startupOf(
+  boxId: string,
+): Promise<{ status: string; command: string | null; error: { key: string } | null }> {
+  const reply = await call(harness.base, `/api/boxes/${boxId}/startup-command`);
+  return reply.json as unknown as { status: string; command: string | null; error: { key: string } | null };
+}
+
+describe("the startup command waits for the whole setup, postCreateCommand included", () => {
+  test("with only a postCreateCommand, the command starts after it ends, not while it runs", async () => {
+    await declare("dev", POST_CREATE);
+    harness.runtime.execScript = null;
+    const created = await create({ name: "alpha", template: "mbtest-template:dev", startupCommand: "npm run dev" });
+    const id = created.json.box?.id ?? "";
+    const boxId = created.json.box?.boxId ?? "";
+    const taskId = created.json.setup?.taskId ?? "";
+
+    await until(() => execsRunning(["/bin/sh", "-c", "npm install"]).length === 1);
+    // The setup task is in flight: its postCreateCommand is running and the startup command has not been launched.
+    expect(launchesOf(id)).toBe(0);
+    expect(await startupOf(boxId)).toMatchObject({ status: "cloning", command: "npm run dev", error: null });
+    const refusedRun = await call(harness.base, `/api/boxes/${boxId}/startup-command/run`, { method: "POST" });
+    expect(refused(refusedRun)).toEqual({ status: 409, key: "startup_command_awaits_clone" });
+
+    // A finished exec prints nothing and exits, as the engine reports it; a null script would hang every later exec,
+    // including the launch's own sweep of the earlier run.
+    harness.runtime.execScript = { stdout: "", stderr: "", code: 0 };
+    const postCreate = harness.runtime.execs.find((session) => session.spec.cmd.join(" ") === "/bin/sh -c npm install");
+    postCreate?.exit(0);
+    expect((await finishedTask(harness.base, taskId)).status).toBe("succeeded");
+    await harness.app.hosts.get().startup.settle();
+
+    expect(launchesOf(id)).toBe(1);
+    expect(await startupOf(boxId)).toMatchObject({ status: "running", command: "npm run dev", error: null });
+  });
+
+  test("with a repository and a postCreateCommand, the clone, the ports and the command all end before the launch", async () => {
+    await declare("dev", '{"image": "alpine:3.20", "postCreateCommand": "npm install", "forwardPorts": [3000]}');
+    harness.runtime.execScript = null;
+    const created = await create({
+      name: "alpha",
+      template: "mbtest-template:dev",
+      repo: { url: REPO_URL },
+      startupCommand: "npm run dev",
+    });
+    const id = created.json.box?.id ?? "";
+    const taskId = created.json.setup?.taskId ?? "";
+
+    await until(() => execsRunning(["/bin/sh", "-c", "npm install"]).length === 1);
+    expect(launchesOf(id)).toBe(0);
+
+    // A finished exec prints nothing and exits, as the engine reports it; a null script would hang every later exec,
+    // including the launch's own sweep of the earlier run.
+    harness.runtime.execScript = { stdout: "", stderr: "", code: 0 };
+    const postCreate = harness.runtime.execs.find((session) => session.spec.cmd.join(" ") === "/bin/sh -c npm install");
+    postCreate?.exit(0);
+    expect((await finishedTask(harness.base, taskId)).status).toBe("succeeded");
+    await harness.app.hosts.get().startup.settle();
+
+    expect(launchesOf(id)).toBe(1);
+    const launched = harness.runtime
+      .callsTo("startExec")
+      .map((entry) => entry.args as [string, ExecSpec])
+      .find(([container, spec]) => container === id && spec.cmd.includes("new-session"));
+    // The runner is given the command encoded, right after the `minibox-startup` argv[0] it runs as.
+    const encoded = launched?.[1].cmd[(launched[1].cmd.indexOf("minibox-startup") ?? 0) + 1];
+    expect(encoded === undefined ? undefined : Buffer.from(encoded, "base64").toString("utf8")).toBe("npm run dev");
+  });
+
+  test("a postCreateCommand that fails keeps the command unstarted, and the status names the failed setup", async () => {
+    await declare("dev", POST_CREATE);
+    harness.runtime.execScript = { stdout: "", stderr: "npm ERR! code E404\n", code: 2 };
+    const created = await create({ name: "alpha", template: "mbtest-template:dev", startupCommand: "npm run dev" });
+    const id = created.json.box?.id ?? "";
+    const boxId = created.json.box?.boxId ?? "";
+
+    expect((await finishedTask(harness.base, created.json.setup?.taskId ?? "")).status).toBe("failed");
+    await harness.app.hosts.get().startup.settle();
+
+    expect(launchesOf(id)).toBe(0);
+    expect(await startupOf(boxId)).toMatchObject({
+      status: "failed",
+      command: "npm run dev",
+      error: { key: "startup_command_setup_failed" },
+    });
+    expect(await boxNames()).toContain("alpha");
+  });
+
+  test("a box created without a startup command is unaffected: its setup still runs and no launch happens", async () => {
+    await declare("dev", POST_CREATE);
+    const created = await create({ name: "alpha", template: "mbtest-template:dev" });
+    const id = created.json.box?.id ?? "";
+
+    expect((await finishedTask(harness.base, created.json.setup?.taskId ?? "")).status).toBe("succeeded");
+    await harness.app.hosts.get().startup.settle();
+
+    expect(execsRunning(["/bin/sh", "-c", "npm install"])).toHaveLength(1);
+    expect(launchesOf(id)).toBe(0);
+    expect(harness.app.hosts.get().specs.read(created.json.box?.boxId ?? "")?.startupAwaitsSetup).toBeUndefined();
+  });
+});

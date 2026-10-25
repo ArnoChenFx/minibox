@@ -66,7 +66,7 @@ Creates and starts a box. It starts from the base template unless you choose ano
 | `--no-wait` | Prints the setup task's ID and returns without waiting for it |
 | `--json` | Prints the server's JSON response |
 
-The command waits for the box's setup task: its clone with `--repo`, and the `postCreateCommand` of a template that sets one. If the setup fails, the box is kept, and the command reports the reason and exits with `1`. `--startup-command` and `--startup-command-stdin` cannot be used together.
+The command waits for the box's setup task: its clone with `--repo`, and the `postCreateCommand` of a template that sets one. A startup command set with `--startup-command` runs only after that setup has ended. If the setup fails, the box is kept, and the command reports the reason and exits with `1`. `--startup-command` and `--startup-command-stdin` cannot be used together.
 
 ```bash
 minibox box create my-app --template node-tools --repo https://github.com/example/app.git --branch main --secret GITHUB_TOKEN

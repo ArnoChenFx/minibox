@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+- Box 创建时的启动命令（`startupCommand`）现在要等**整个设置任务**跑完才启动：以前只等仓库克隆，克隆一结束就放行启动命令，此时模板的 `postCreateCommand` 可能还在装依赖，启动命令就会因为缺少依赖而失败。现在克隆、转发端口与 `postCreateCommand` 全部结束后才放行，因此启动命令可以直接使用 `postCreateCommand` 装好的东西。语义保持原样：克隆失败仍在 Box 上记 `startup_command_clone_failed`，`postCreateCommand` 失败（含超时、取消）记新的 `startup_command_setup_failed` 并在设置任务里说明原因，两者都让命令等到 Box 下次启动（或运行中的 **重新运行**）再跑；服务器重启打断设置时 `awaitClone` 仍会记 `startup_command_clone_unfinished` 并阻止自动启动；手动 `run` 在设置未完成时仍返回 409 `startup_command_awaits_clone`；没有启动命令的 Box 不受影响，`postCreateCommand` 照常运行。启动命令卡片的状态文案相应从「等待仓库克隆完成」改为「等待 Box 设置完成」，文档（《Box》《模板》的设置、API、CLI、MCP 参考）同步更新。
+
 ### 新增
 - 新增面向 AI Agent 的 **MiniBox skill**（`skills/minibox/SKILL.md`，附 `rest-endpoints.md` 与 `mcp-toolsets.md` 两个参考文件）：按 agent skills 规范编写，说明如何用 MCP（`/mcp`、Bearer 令牌、`toolsets` 选择）或 REST API（`/api`、Bearer 令牌）调用 MiniBox，包括连接与初始化、核心操作速查（列/建/启停/删 Box、exec 与 terminal session、卷文件接口、端口预览、检查点、令牌与最小权限）、常见坑（scope 不足报 `forbidden`、exec 输出要从 `/api/execs/{id}/output` 拉取、预览端口需要 `port:expose`、MCP 会话归令牌所有、`If-Match`/`confirm` 等），以及 CLI 作为备选。根 README、`README-zh.md` 与两个文档索引（`docs/README.md`、`docs/zh-CN/README.md`）的参考章节都已加入入口。
 

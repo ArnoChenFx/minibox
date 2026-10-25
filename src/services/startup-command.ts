@@ -88,7 +88,7 @@ export async function runStartupCommand(host: HostCtx, ref: string): Promise<Sta
       if (!box.running) {
         throw conflict(msg("startup_command_box_stopped"), { hint: msg("startup_command_box_stopped_hint") });
       }
-      if (spec.startupAwaitsClone) throw conflict(msg("startup_command_awaits_clone"));
+      if (spec.startupAwaitsSetup) throw conflict(msg("startup_command_awaits_clone"));
       host.pulse.touch(box.boxId, "exec");
       await runNow(host, box.boxId);
       return await stateOf(host, box);
@@ -152,8 +152,8 @@ async function stateOf(host: HostCtx, box: Box): Promise<StartupCommandState> {
 async function viewFor(host: HostCtx, box: Box, command: string | null): Promise<StartupView> {
   if (command === null) return viewOf(null, null);
   const spec = host.specs.read(box.boxId);
-  if (spec?.startupAwaitsClone) {
-    return host.startup.isCloning(box.boxId)
+  if (spec?.startupAwaitsSetup) {
+    return host.startup.isSettingUp(box.boxId)
       ? cloningView()
       : viewOf(command, null, msg("startup_command_clone_unfinished"));
   }

@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 
 import type { App } from "../src/app";
 import type { HostCtx } from "../src/host/registry";
@@ -17,7 +19,7 @@ import {
 } from "../src/services/boxes";
 import { rebuildBox } from "../src/services/rebuild";
 import { reconcileHost } from "../src/services/reconcile";
-import { finishClone, runNow, scheduleStartup } from "../src/services/startup";
+import { finishSetup, runNow, scheduleStartup } from "../src/services/startup";
 import {
   clearStartupCommand,
   readStartupCommand,
@@ -52,9 +54,9 @@ async function newBox(name: string, startupCommand?: string): Promise<Box> {
   return box;
 }
 
-/** A box made with a repository: its command waits for the clone that the setup task runs after the create. */
+/** A box whose command waits for the setup task that runs after the create: its clone and its postCreateCommand. */
 async function newClonedBox(name: string, startupCommand: string): Promise<Box> {
-  const box = await createBox(host, { name, cpus: 1, memoryMb: 256, startupCommand, awaitsClone: true });
+  const box = await createBox(host, { name, cpus: 1, memoryMb: 256, startupCommand, awaitsSetup: true });
   await host.startup.settle();
   return box;
 }
@@ -446,8 +448,8 @@ describe("startup command: create does not wait for the launch", () => {
   });
 });
 
-describe("startup command: waiting for a clone", () => {
-  test("a box whose clone is pending runs nothing until the clone ends, and then runs the command", async () => {
+describe("startup command: waiting for the box setup", () => {
+  test("a box whose setup is pending runs nothing until the setup ends, and then runs the command", async () => {
     const box = await newClonedBox("clone-ok", "npm run dev");
     expect(launchesOf(box.id)).toHaveLength(0);
     expect(await readStartupCommand(host, box.boxId)).toMatchObject({
@@ -456,15 +458,15 @@ describe("startup command: waiting for a clone", () => {
       error: null,
     });
 
-    await finishClone(host, box.boxId, null);
+    await finishSetup(host, box.boxId, null);
     await host.startup.settle();
     expect(runningText(box.id)).toBe("npm run dev");
-    expect(specOf(box.boxId).startupAwaitsClone).toBeUndefined();
+    expect(specOf(box.boxId).startupAwaitsSetup).toBeUndefined();
   });
 
-  test("a clone that fails keeps the command from starting, and the status says the clone failed", async () => {
+  test("a setup that fails keeps the command from starting, and the status says so", async () => {
     const box = await newClonedBox("clone-bad", "npm run dev");
-    await finishClone(host, box.boxId, msg("startup_command_clone_failed"));
+    await finishSetup(host, box.boxId, msg("startup_command_clone_failed"));
     await host.startup.settle();
 
     expect(launchesOf(box.id)).toHaveLength(0);
@@ -474,9 +476,36 @@ describe("startup command: waiting for a clone", () => {
     });
   });
 
-  test("a failed clone is kept on the spec, so a restarted server still reports it", async () => {
+  test("a postCreateCommand that failed keeps the command back, and the status names the failed setup", async () => {
+    const box = await newClonedBox("setup-bad", "npm run dev");
+    await finishSetup(host, box.boxId, msg("startup_command_setup_failed"));
+    await host.startup.settle();
+
+    expect(launchesOf(box.id)).toHaveLength(0);
+    expect(await readStartupCommand(host, box.boxId)).toMatchObject({
+      status: "failed",
+      error: { key: "startup_command_setup_failed" },
+    });
+    // The command still runs at the box's next start, as a failed clone's does.
+    await stopBox(host, box.boxId);
+    await startBox(host, box.boxId);
+    expect(runningText(box.id)).toBe("npm run dev");
+    expect(specOf(box.boxId).startupFailure).toBeUndefined();
+  });
+
+  test("the command runs again only after the setup ends: a start while the setup runs launches nothing", async () => {
+    const box = await newClonedBox("setup-late", "npm run dev");
+    await startBox(host, box.boxId);
+    expect(launchesOf(box.id)).toHaveLength(0);
+
+    await finishSetup(host, box.boxId, null);
+    await host.startup.settle();
+    expect(runningText(box.id)).toBe("npm run dev");
+  });
+
+  test("a failed setup is kept on the spec, so a restarted server still reports it", async () => {
     const box = await newClonedBox("clone-kept", "npm run dev");
-    await finishClone(host, box.boxId, msg("startup_command_clone_failed"));
+    await finishSetup(host, box.boxId, msg("startup_command_clone_failed"));
 
     expect(await readStartupCommand(restartedServer(), box.boxId)).toMatchObject({
       status: "failed",
@@ -484,10 +513,10 @@ describe("startup command: waiting for a clone", () => {
     });
   });
 
-  test("a clone that ends while the box is stopped runs the command at the box's next start", async () => {
+  test("a setup that ends while the box is stopped runs the command at the box's next start", async () => {
     const box = await newClonedBox("clone-stopped", "npm run dev");
     await stopBox(host, box.boxId);
-    await finishClone(host, box.boxId, null);
+    await finishSetup(host, box.boxId, null);
     await host.startup.settle();
     expect(launchesOf(box.id)).toHaveLength(0);
 
@@ -495,7 +524,7 @@ describe("startup command: waiting for a clone", () => {
     expect(runningText(box.id)).toBe("npm run dev");
   });
 
-  test("a clone cut short by a restart is reported when the server reconciles, and the command does not start", async () => {
+  test("a setup cut short by a restart is reported when the server reconciles, and the command does not start", async () => {
     const box = await newClonedBox("clone-cut", "npm run dev");
     const restarted = restartedServer();
 
@@ -507,10 +536,30 @@ describe("startup command: waiting for a clone", () => {
       status: "failed",
       error: { key: "startup_command_clone_unfinished" },
     });
-    expect(restarted.specs.read(box.boxId)?.startupAwaitsClone).toBeUndefined();
+    expect(restarted.specs.read(box.boxId)?.startupAwaitsSetup).toBeUndefined();
   });
 
-  test("a start after a restart that cut the clone short reports it, and does not launch the command", async () => {
+  test("a spec on disk with the old startupAwaitsClone field still holds the command back", async () => {
+    const box = await newClonedBox("clone-old-field", "npm run dev");
+    const specPath = join(host.specs.dir(), `${box.boxId}.json`);
+    const onDisk = JSON.parse(readFileSync(specPath, "utf8")) as Record<string, unknown>;
+    delete onDisk.startupAwaitsSetup;
+    onDisk.startupAwaitsClone = true;
+    writeFileSync(specPath, `${JSON.stringify(onDisk, null, 2)}\n`);
+
+    const restarted = restartedServer();
+    await reconcileHost(restarted);
+    await restarted.startup.settle();
+
+    expect(launchesOf(box.id)).toHaveLength(0);
+    expect(await readStartupCommand(restarted, box.boxId)).toMatchObject({
+      status: "failed",
+      error: { key: "startup_command_clone_unfinished" },
+    });
+    expect(restarted.specs.read(box.boxId)?.startupAwaitsSetup).toBeUndefined();
+  });
+
+  test("a start after a restart that cut the setup short reports it, and does not launch the command", async () => {
     const box = await newClonedBox("clone-start", "npm run dev");
     await stopBox(host, box.boxId);
 
@@ -524,7 +573,7 @@ describe("startup command: waiting for a clone", () => {
     });
   });
 
-  test("a stopped box whose clone a restart cut short reads as failed at once, not as cloning", async () => {
+  test("a stopped box whose setup a restart cut short reads as failed at once, not as setting up", async () => {
     const box = await newClonedBox("clone-stopped-cut", "npm run dev");
     await stopBox(host, box.boxId);
 

@@ -26,12 +26,12 @@ const PANE_STATE_RE = /^([01])(?: (\d+))?$/;
 /**
  * The launches of one host that have not ended. Each box's launches run one after another, so a launch never overlaps the
  * one before it, and a launch that outlives its request keeps the box's later launches waiting. `settle` waits for all of
- * them. A clone is tracked in memory only, since a clone cannot outlive the process that runs it.
+ * them. A setup task is tracked in memory only, since a clone or a postCreateCommand cannot outlive the process that runs it.
  */
 export class StartupLaunches {
   private readonly pending = new Set<Promise<unknown>>();
   private readonly chains = new Map<string, Promise<void>>();
-  private readonly cloning = new Set<string>();
+  private readonly settingUp = new Set<string>();
 
   track<T>(work: Promise<T>): Promise<T> {
     this.pending.add(work);
@@ -59,22 +59,22 @@ export class StartupLaunches {
     while (this.pending.size > 0) await Promise.allSettled(this.pending);
   }
 
-  beginClone(boxId: string): void {
-    this.cloning.add(boxId);
+  beginSetup(boxId: string): void {
+    this.settingUp.add(boxId);
   }
 
-  endClone(boxId: string): void {
-    this.cloning.delete(boxId);
+  endSetup(boxId: string): void {
+    this.settingUp.delete(boxId);
   }
 
-  isCloning(boxId: string): boolean {
-    return this.cloning.has(boxId);
+  isSettingUp(boxId: string): boolean {
+    return this.settingUp.has(boxId);
   }
 }
 
-/** Whether a box has a launch to make: a command, or a clone its command waits for. */
+/** Whether a box has a launch to make: a command, or a setup its command waits for. */
 export function hasStartup(spec: BoxSpec): boolean {
-  return spec.startupCommand !== undefined || spec.startupAwaitsClone === true;
+  return spec.startupCommand !== undefined || spec.startupAwaitsSetup === true;
 }
 
 /**
@@ -102,8 +102,8 @@ async function ensureStartup(host: HostCtx, boxId: string): Promise<void> {
   try {
     const spec = host.specs.read(boxId);
     if (!spec || spec.lifecycle.desired !== "running") return;
-    if (spec.startupAwaitsClone) {
-      await awaitClone(host, boxId);
+    if (spec.startupAwaitsSetup) {
+      await awaitSetup(host, boxId);
       return;
     }
     if (spec.startupCommand === undefined) return;
@@ -116,7 +116,7 @@ async function ensureStartup(host: HostCtx, boxId: string): Promise<void> {
 async function launchIfMissing(host: HostCtx, boxId: string): Promise<void> {
   const spec = host.specs.read(boxId);
   if (!spec || spec.lifecycle.desired !== "running" || spec.startupCommand === undefined) return;
-  if (spec.startupAwaitsClone) return;
+  if (spec.startupAwaitsSetup) return;
   if (!(await isRunning(host, spec.containerId))) return;
   try {
     if (await hasSession(host, spec.containerId)) return;
@@ -128,34 +128,35 @@ async function launchIfMissing(host: HostCtx, boxId: string): Promise<void> {
 }
 
 /**
- * A box whose clone has not ended waits for it. A clone that is still marked on the spec, with no clone running in this
+ * A box whose setup has not ended waits for it. A setup that is still marked on the spec, with no setup task running in this
  * process, was cut short by a restart, so the status says so and the command does not start by itself.
  */
-async function awaitClone(host: HostCtx, boxId: string): Promise<void> {
-  if (host.startup.isCloning(boxId)) return;
+async function awaitSetup(host: HostCtx, boxId: string): Promise<void> {
+  if (host.startup.isSettingUp(boxId)) return;
   await host.specs.exclusive(async () => {
     const spec = host.specs.read(boxId);
-    if (!spec?.startupAwaitsClone || host.startup.isCloning(boxId)) return;
+    if (!spec?.startupAwaitsSetup || host.startup.isSettingUp(boxId)) return;
     const next: BoxSpec = {
       ...spec,
       startupFailure: failureRecord(spec.containerId, msg("startup_command_clone_unfinished")),
     };
-    delete next.startupAwaitsClone;
+    delete next.startupAwaitsSetup;
     host.specs.write(next);
   });
 }
 
 /**
- * Ends a box's clone and releases its command. A clone that worked starts the command, now when the box runs. A clone that
- * failed keeps its reason for the status, and the command waits for the box's next start.
+ * Ends a box's setup and releases its command. A setup that worked starts the command, now when the box runs. A setup that
+ * failed keeps its reason for the status, and the command waits for the box's next start. `failure` null says the clone and
+ * the `postCreateCommand` both ended well, so the command may run.
  */
-export async function finishClone(host: HostCtx, boxId: string, failure: Msg | null): Promise<void> {
+export async function finishSetup(host: HostCtx, boxId: string, failure: Msg | null): Promise<void> {
   const awaited = await host.specs.exclusive(async () => {
-    host.startup.endClone(boxId);
+    host.startup.endSetup(boxId);
     const spec = host.specs.read(boxId);
-    if (!spec?.startupAwaitsClone) return false;
+    if (!spec?.startupAwaitsSetup) return false;
     const next: BoxSpec = { ...spec };
-    delete next.startupAwaitsClone;
+    delete next.startupAwaitsSetup;
     delete next.startupFailure;
     if (failure !== null) next.startupFailure = failureRecord(spec.containerId, failure);
     host.specs.write(next);
@@ -171,7 +172,7 @@ export async function finishClone(host: HostCtx, boxId: string, failure: Msg | n
  */
 export async function runNow(host: HostCtx, boxId: string, budgetMs = STARTUP_LAUNCH_BUDGET_MS): Promise<void> {
   const spec = host.specs.read(boxId);
-  if (spec?.startupCommand === undefined || spec.startupAwaitsClone) return;
+  if (spec?.startupCommand === undefined || spec.startupAwaitsSetup) return;
   await within(
     host.startup.launch(boxId, async () => {
       const current = host.specs.read(boxId);

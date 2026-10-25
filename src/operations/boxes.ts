@@ -4,7 +4,7 @@ import type { EventTarget } from "../events/types";
 import { type HostCtx, LOCAL_HOST_ID } from "../host/registry";
 import { AUTO_HOST } from "../host/store";
 import { AppError, badRequest, conflict } from "../lib/errors";
-import { msg } from "../lib/messages";
+import { msg, type Msg } from "../lib/messages";
 import { assertSecretsSet } from "../secrets/env";
 import { forwardBoxPorts, runPostCreate } from "../services/box-setup";
 import {
@@ -31,7 +31,7 @@ import { placeBox } from "../services/placement";
 import { rebuildBox, rebuildWithSafety } from "../services/rebuild";
 import { preRebuildSafety } from "../services/safety";
 import { assertSelfTokenHost } from "../services/self-token";
-import { finishClone } from "../services/startup";
+import { finishSetup } from "../services/startup";
 import { templateSetupOf } from "../services/template-builds";
 import { deleteBoxToTrash } from "../services/trash";
 import { hasRebuildFields } from "../specs/plan";
@@ -207,22 +207,33 @@ const setupOperation = defineOperation<typeof SETUP_INPUT, typeof OkSchema, Box>
   run: async ({ host, task, previewBaseDomain }, input) => {
     if (!task) throw new Error("box.setup runs as a task");
     const log = (text: string) => task.log(text);
-    if (input.repo) {
-      try {
-        await cloneIntoWorkspace(host, input.id, input.repo, log);
-      } catch (e) {
-        await finishClone(host, input.id, msg("startup_command_clone_failed"));
-        throw e;
+    // The startup command waits for the whole setup, not just the clone: a postCreateCommand that installs the box's
+    // dependencies must have ended before the command runs. A failure of either step records why and keeps the command
+    // back until the box's next start. A box with no command has no flag, so this releases nothing.
+    try {
+      if (input.repo) await cloneIntoWorkspace(host, input.id, input.repo, log);
+      if (input.init?.forwardPorts?.length) {
+        await forwardBoxPorts(host, input.id, input.init.forwardPorts, previewBaseDomain ?? null, log);
       }
-      await finishClone(host, input.id, null);
+      if (input.init?.postCreate) await runPostCreate(host, input.id, input.init.postCreate, log, task.signal);
+    } catch (e) {
+      await finishSetup(host, input.id, setupFailureOf(e));
+      throw e;
     }
-    if (input.init?.forwardPorts?.length) {
-      await forwardBoxPorts(host, input.id, input.init.forwardPorts, previewBaseDomain ?? null, log);
-    }
-    if (input.init?.postCreate) await runPostCreate(host, input.id, input.init.postCreate, log, task.signal);
+    await finishSetup(host, input.id, null);
     return { ok: true as const };
   },
 });
+
+/**
+ * Why the setup stopped short, as the startup command's status reports it. A failed clone says so; a `postCreateCommand`
+ * that exited non-zero or timed out says that it failed, and the task log holds its output and the reason.
+ */
+function setupFailureOf(e: unknown): Msg {
+  return e instanceof AppError && e.key === "clone_failed"
+    ? msg("startup_command_clone_failed")
+    : msg("startup_command_setup_failed");
+}
 
 /** A clone writes into the workspace, so the new box must mount one writable. The default mounts create an empty one. */
 function assertCloneWorkspace(input: { mounts?: { path: string; mode: "rw" | "ro" }[]; repo?: unknown }): void {
@@ -355,7 +366,7 @@ export const boxCreate = defineOperation({
           ttlSec: ttlFor(principal, input.ttlSec),
           tools: input.tools,
           startupCommand: input.startupCommand,
-          awaitsClone: input.repo !== undefined,
+          awaitsSetup: input.repo !== undefined || init !== null,
           egress: input.egress,
           selfToken: input.selfToken,
         },
@@ -373,7 +384,10 @@ export const boxCreate = defineOperation({
         created.box,
       ));
     } catch (e) {
-      if (input.repo !== undefined) await finishClone(host, created.box.boxId, msg("startup_command_clone_failed"));
+      // The setup never ran, so the command must not wait for it.
+      if (input.repo !== undefined || init !== null) {
+        await finishSetup(host, created.box.boxId, msg("startup_command_setup_failed"));
+      }
       throw e;
     }
     const setup = { taskId };

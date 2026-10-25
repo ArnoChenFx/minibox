@@ -108,18 +108,18 @@ The command runs:
 - In a tmux session named `minibox-init`. To watch it, open the box's terminal, or connect over SSH, and run `tmux attach -t minibox-init`. Detach with `Ctrl+B`, then `D`.
 - Without holding up creation or starts. Creating a box returns at once. A start or restart waits at most five seconds for the command to launch, and a launch that takes longer finishes in the background. A command that fails does not stop the box from starting.
 
-A box created with a repository runs the command only after the repository has been cloned. Until then the card reads **Waiting for the repository clone**. If the clone fails, or a server restart cuts it short, the card says why. The command then starts at the box's next start, or when you choose **Run again** on a running box.
+A box created with a repository or a template setup runs the command only after its setup has finished: the repository cloned, the ports forwarded and the template's `postCreateCommand` run. Until then the card reads **Waiting for the box setup**. If the clone or the `postCreateCommand` fails, or a server restart cuts the setup short, the card says why. The command then starts at the box's next start, or when you choose **Run again** on a running box.
 
 The card shows the command's status:
 
 | Status | Meaning |
 |---|---|
 | **Not set** | The box has no startup command. |
-| **Waiting for the repository clone** | The box was created with a repository, and the command starts when the clone ends. |
+| **Waiting for the box setup** | The box was created with a repository or a template setup, and the command starts when that setup ends. |
 | **Waiting for the next start** | A command is set, and it has not run since the box last started. |
 | **Running** | The command is running now. |
 | **Exited with code N** | The last run ended with exit code N. The card also shows when it ended, and the end of its output. |
-| **Could not start** | MiniBox could not start the command, or the repository clone failed. The card shows why, and the reason still shows after a MiniBox restart, until the command starts. |
+| **Could not start** | MiniBox could not start the command, or the box's setup failed. The card shows why, and the reason still shows after a MiniBox restart, until the command starts. |
 
 If the card says that the latest run used an earlier version of the command, run it again to use the current one.
 

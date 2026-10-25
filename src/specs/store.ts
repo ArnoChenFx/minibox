@@ -118,7 +118,14 @@ export class SpecStore {
       return null;
     }
     if (!Array.isArray(parsed.history)) parsed.history = [];
-    return parsed;
+    // v0.6.x wrote the setup wait as `startupAwaitsClone`. Rename it so a spec on disk from before the rename still holds
+    // back the box's startup command instead of reading as one that need not wait.
+    const spec = parsed as BoxSpec & { startupAwaitsClone?: boolean };
+    if (spec.startupAwaitsClone === true) {
+      spec.startupAwaitsSetup = true;
+      delete spec.startupAwaitsClone;
+    }
+    return spec;
   }
 
   findByName(name: string): BoxSpec | null {

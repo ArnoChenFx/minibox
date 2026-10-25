@@ -32,8 +32,8 @@ export interface CreateBoxInput {
   tools?: string[];
   /** Runs in the box's init session at every start. Absent means none. Templates and snapshots never pass one. */
   startupCommand?: string;
-  /** Set when a clone the setup task runs after this create must end before the startup command may start. */
-  awaitsClone?: boolean;
+  /** Set when a setup the box's create task runs (a clone, a `postCreateCommand`, or both) must end before the startup command may start. */
+  awaitsSetup?: boolean;
   /** The checked egress policy. Absent, like `open`, keeps the box on the default network. */
   egress?: EgressPolicy;
   /** Give the box's agent a `self` token, delivered as a file in the box. Absent or false means none. */

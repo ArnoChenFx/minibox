@@ -88,10 +88,11 @@ export interface BoxSpec {
    */
   startupCommand?: string;
   /**
-   * Set when the box is created with a repository and a startup command. The command waits for the clone, so no start
-   * launches it until the clone ends. Absent once the clone has ended, or when the box has no clone.
+   * Set when the box is created with a repository or a setup (a template's `postCreateCommand`) and a startup command.
+   * The command waits for the setup task, so no start launches it until the clone and the `postCreateCommand` have
+   * ended. Absent once the setup has ended, or when the box has neither a clone nor a setup.
    */
-  startupAwaitsClone?: boolean;
+  startupAwaitsSetup?: boolean;
   /** Why the startup command last failed to start. Cleared by a launch that works, or by a change of the command. */
   startupFailure?: StartupFailure;
   /**
