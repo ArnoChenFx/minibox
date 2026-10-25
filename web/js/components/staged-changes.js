@@ -152,7 +152,7 @@ function checkpointField(preview) {
 }
 
 /*
- * Applying rebuilds the box on the server, which can take tens of seconds. While a request is in flight every button that
+ * Applying rebuilds the box on the server, which can take tens of seconds. From preview through confirmation and apply, every button that
  * starts an apply is disabled and shows a spinner with the applying text, so the same apply cannot be started twice. The
  * state is kept per box, since the banner and the diff dialog draw their own buttons.
  */
@@ -164,7 +164,7 @@ const BUSY_CLASS = "is-busy";
 /** Marks an apply button that a staged problem keeps disabled, so ending an apply leaves it as it was. */
 const BLOCKED = "data-staged-blocked";
 
-/** Whether an apply of the box `boxId` is in flight. */
+/** Whether the box is preparing, confirming or applying its staged changes. */
 export const isApplying = (boxId) => applying.has(boxId);
 
 const applyLabel = (busy) =>
@@ -175,9 +175,11 @@ const applyLabel = (busy) =>
 /** The page's apply buttons, one per banner and dialog that is open. */
 const applyButtons = () => [...(document.querySelectorAll?.(APPLY_SELECTOR) ?? [])];
 
-/** Puts every apply button in the page into the applying state, or back out of it, and disables it while it works. */
-function markApplying(busy) {
+/** Updates only this box's buttons; another box may still be preparing or applying changes. */
+function markApplying(boxId) {
+  const busy = isApplying(boxId);
   for (const button of applyButtons()) {
+    if (button.getAttribute("data-staged-box") !== boxId) continue;
     button.disabled = busy || button.getAttribute(BLOCKED) !== null;
     button.classList.toggle(BUSY_CLASS, busy);
     if (busy) button.setAttribute("aria-busy", "true");
@@ -195,10 +197,11 @@ function openDiff(staged, boxId) {
       title: t("stg.diffDialogTitle"),
       description: esc(t("stg.diffDialogText")),
       body: changesHtml(staged.changes),
-      footer: `<button class="btn" data-close>${esc(t("common.close"))}</button><button class="btn btn-primary${busy ? ` ${BUSY_CLASS}` : ""}" data-staged-next ${staged.problem ? `${BLOCKED}="1"` : ""} ${staged.problem || busy ? "disabled" : ""}${busy ? ' aria-busy="true"' : ""}>${applyLabel(busy)}</button>`,
+      footer: `<button class="btn" data-close>${esc(t("common.close"))}</button><button class="btn btn-primary${busy ? ` ${BUSY_CLASS}` : ""}" data-staged-next data-staged-box="${esc(boxId)}" ${staged.problem ? `${BLOCKED}="1"` : ""} ${staged.problem || busy ? "disabled" : ""}${busy ? ' aria-busy="true"' : ""}>${applyLabel(busy)}</button>`,
       onClose: () => resolve(next),
     });
     root.querySelector("[data-staged-next]").addEventListener("click", () => {
+      if (isApplying(boxId) || staged.problem) return;
       next = true;
       close();
     });
@@ -210,8 +213,20 @@ function openDiff(staged, boxId) {
  * follows the box to its new container id. Resolves true when the box was rebuilt.
  */
 async function applyStaged(box) {
-  // A second click while the rebuild runs would send a second apply; the server refuses it, and nothing is drawn.
+  // Reserve the box before the first await, including while the preview loads and the user decides.
   if (isApplying(box.boxId)) return false;
+  applying.add(box.boxId);
+  markApplying(box.boxId);
+  try {
+    return await confirmAndApplyStaged(box);
+  } finally {
+    applying.delete(box.boxId);
+    markApplying(box.boxId);
+  }
+}
+
+/** Previews, confirms and applies the changes while applyStaged holds the box's reservation. */
+async function confirmAndApplyStaged(box) {
   let fresh;
   let preview;
   try {
@@ -231,9 +246,6 @@ async function applyStaged(box) {
     onOpen: (root) => bindFoldSections(root),
   });
   if (!ok) return false;
-  // From here the request can take tens of seconds: the apply buttons say so and cannot be pressed again.
-  applying.add(fresh.boxId);
-  markApplying(true);
   let result;
   try {
     result = await api(`/api/boxes/${enc(fresh.id)}/staged/apply`, {
@@ -242,8 +254,6 @@ async function applyStaged(box) {
       headers: { "if-match": String(fresh.revision) },
     });
   } catch (err) {
-    applying.delete(fresh.boxId);
-    markApplying(false);
     toastError(t("stg.applyFailed"), err);
     // The staged changes may have moved on (a 412) or gone; the banner shows them as they now stand.
     fetchStaged(fresh.id)
@@ -251,11 +261,8 @@ async function applyStaged(box) {
       .catch(() => undefined);
     return false;
   }
-  applying.delete(fresh.boxId);
   const next = result?.box?.id;
   const address = next && next !== box.id ? movedBoxHash(location.hash, box.id, next) : null;
-  // A box that moved is followed to its new container, so its page is drawn again and its buttons start idle.
-  if (!address) markApplying(false);
   const safety = result?.safety ? ` ${t("rb.safetyTaken")}` : "";
   toast(t("rb.done"), { message: t("rb.doneText", { name: fresh.name }) + safety });
   announceStaged(fresh.boxId, null);
@@ -296,7 +303,7 @@ export function stagedBannerHtml(staged, boxId = null) {
       <span class="staged-text"><strong>${esc(t("stg.banner", { n: pending.length }))}</strong><span class="staged-fields">${esc(fields)}</span></span>
       <span class="staged-actions">
         <button type="button" class="btn btn-sm" data-staged="diff">${esc(t("stg.viewDiff"))}</button>
-        <button type="button" class="btn btn-sm btn-primary${busy ? ` ${BUSY_CLASS}` : ""}" data-staged="apply" ${staged.problem ? `${BLOCKED}="1"` : ""} ${staged.problem || busy ? "disabled" : ""}${busy ? ' aria-busy="true"' : ""}>${applyLabel(busy)}</button>
+        <button type="button" class="btn btn-sm btn-primary${busy ? ` ${BUSY_CLASS}` : ""}" data-staged="apply" data-staged-box="${esc(boxId ?? "")}" ${staged.problem ? `${BLOCKED}="1"` : ""} ${staged.problem || busy ? "disabled" : ""}${busy ? ' aria-busy="true"' : ""}>${applyLabel(busy)}</button>
         <button type="button" class="btn btn-sm" data-staged="discard">${esc(t("stg.discard"))}</button>
       </span>
     </div>${problem}`;
