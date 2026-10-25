@@ -22,6 +22,14 @@ export async function loadSshKeys(view) {
       <div class="card-body"><div class="callout danger">${icon("alert")}<span>${esc(e.message)}</span></div></div>`;
     return;
   }
+  drawSshKeys(view, card, { keys });
+}
+
+/**
+ * Draws the SSH keys card from the data it already has. The list toggle redraws this, so expanding or collapsing the
+ * list asks the API for nothing.
+ */
+function drawSshKeys(view, card, { keys }) {
   const { shown, toggle } = limitList(view, "sshKeys", keys);
   const rows = keys.length
     ? shown.map(keyRow).join("")
@@ -41,7 +49,7 @@ export async function loadSshKeys(view) {
   card.querySelectorAll("[data-sshkey-delete]").forEach((btn) => {
     btn.addEventListener("click", () => deleteKey(view, btn.dataset.sshkeyDelete, btn.dataset.label));
   });
-  bindToggles(view, card, () => loadSshKeys(view));
+  bindToggles(view, card, () => drawSshKeys(view, card, { keys }));
 }
 
 function when(iso) {

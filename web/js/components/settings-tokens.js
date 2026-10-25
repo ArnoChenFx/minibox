@@ -65,6 +65,14 @@ export async function loadTokens(view) {
       <div class="card-body"><div class="callout danger">${icon("alert")}<span>${esc(e.message)}</span></div></div>`;
     return;
   }
+  drawTokens(view, card, { tokens, catalog });
+}
+
+/**
+ * Draws the tokens card from the data it already has. The list toggle redraws this, so expanding or collapsing the list
+ * asks the API for nothing.
+ */
+function drawTokens(view, card, { tokens, catalog }) {
   const endedCount = tokens.filter(isEnded).length;
   const { shown, toggle } = limitList(view, "tokens", tokens);
   const rows = tokens.length
@@ -94,7 +102,7 @@ export async function loadTokens(view) {
   card.querySelectorAll("[data-delete-token]").forEach((btn) => {
     btn.addEventListener("click", () => deleteToken(view, btn.dataset.deleteToken, btn.dataset.tokenName));
   });
-  bindToggles(view, card, () => loadTokens(view));
+  bindToggles(view, card, () => drawTokens(view, card, { tokens, catalog }));
 }
 
 function tokenRow(token, catalog) {

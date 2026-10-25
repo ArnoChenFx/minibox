@@ -21,6 +21,14 @@ export async function loadSessions(view) {
       <div class="card-body"><div class="callout danger">${icon("alert")}<span>${esc(e.message)}</span></div></div>`;
     return;
   }
+  drawSessions(view, card, { sessions });
+}
+
+/**
+ * Draws the sessions card from the data it already has. The list toggle redraws this, so expanding or collapsing the
+ * list asks the API for nothing.
+ */
+function drawSessions(view, card, { sessions }) {
   const others = sessions.filter((s) => !s.current).length;
   const { shown, toggle } = limitList(
     view,
@@ -44,7 +52,7 @@ export async function loadSessions(view) {
     .querySelectorAll("[data-revoke]")
     .forEach((btn) => btn.addEventListener("click", () => revokeSession(view, btn.dataset.revoke)));
   card.querySelector("#stSignOutOthers")?.addEventListener("click", () => signOutOthers(view));
-  bindToggles(view, card, () => loadSessions(view));
+  bindToggles(view, card, () => drawSessions(view, card, { sessions }));
 }
 
 function sessionRow(s) {

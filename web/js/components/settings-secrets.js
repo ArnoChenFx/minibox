@@ -23,6 +23,14 @@ export async function loadSecrets(view) {
       <div class="card-body"><div class="callout danger">${icon("alert")}<span>${esc(e.message)}</span></div></div>`;
     return;
   }
+  drawSecrets(view, card, { secrets });
+}
+
+/**
+ * Draws the secrets card from the data it already has. The list toggle redraws this, so expanding or collapsing the
+ * list asks the API for nothing.
+ */
+function drawSecrets(view, card, { secrets }) {
   const { shown, toggle } = limitList(view, "secrets", secrets);
   const rows = secrets.length
     ? shown.map(secretRow).join("")
@@ -45,7 +53,7 @@ export async function loadSecrets(view) {
   card.querySelectorAll("[data-secret-delete]").forEach((btn) => {
     btn.addEventListener("click", () => deleteSecret(view, btn.dataset.secretDelete));
   });
-  bindToggles(view, card, () => loadSecrets(view));
+  bindToggles(view, card, () => drawSecrets(view, card, { secrets }));
 }
 
 function secretRow(secret) {

@@ -38,6 +38,14 @@ export async function loadNotify(view) {
       <div class="card-body"><div class="callout danger">${icon("alert")}<span>${esc(e.message)}</span></div></div>`;
     return;
   }
+  drawNotify(view, card, { channels, deliveries });
+}
+
+/**
+ * Draws the notify card from the data it already has. Both list toggles redraw this, so expanding or collapsing a list
+ * asks the API for nothing.
+ */
+function drawNotify(view, card, { channels, deliveries }) {
   const channelList = limitList(view, "channels", channels);
   const deliveryList = limitList(view, "deliveries", deliveries);
   const channelRows = channels.length
@@ -83,7 +91,7 @@ export async function loadNotify(view) {
   card.querySelectorAll("[data-notify-delete]").forEach((btn) => {
     btn.addEventListener("click", () => deleteNotify(view, btn.dataset.notifyDelete, btn.dataset.notifyName));
   });
-  bindToggles(view, card, () => loadNotify(view));
+  bindToggles(view, card, () => drawNotify(view, card, { channels, deliveries }));
 }
 
 function channelDestination(channel) {

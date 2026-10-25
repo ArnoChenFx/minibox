@@ -32,6 +32,14 @@ export async function loadHosts(view) {
       <div class="card-body"><div class="callout danger">${icon("alert")}<span>${esc(e.message)}</span></div></div>`;
     return;
   }
+  drawHosts(view, card, { hosts });
+}
+
+/**
+ * Draws the hosts card from the data it already has. The list toggle redraws this, so expanding or collapsing the list
+ * asks the API for nothing.
+ */
+function drawHosts(view, card, { hosts }) {
   const { shown, toggle } = limitList(view, "hosts", hosts);
   card.innerHTML = `
     <div class="card-head">
@@ -54,7 +62,7 @@ export async function loadHosts(view) {
   card.querySelectorAll("[data-revoke-host]").forEach((btn) => {
     btn.addEventListener("click", () => revokeAgent(view, btn.dataset.revokeHost, btn.dataset.hostName));
   });
-  bindToggles(view, card, () => loadHosts(view));
+  bindToggles(view, card, () => drawHosts(view, card, { hosts }));
 }
 
 function hostRow(host) {
