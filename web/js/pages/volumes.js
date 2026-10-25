@@ -199,17 +199,18 @@ function volumeRow(volume, { selected, pools, latest, staged }) {
   const owner = volume.ownership === "owned" ? t("vol.ownedShort") : t("vol.independent");
   const ownerTip = volume.ownership === "owned" ? ` title="${esc(t("vol.owned"))}"` : "";
   const checkpoint = latest.get(volume.id);
-  // A field with nothing in it is named too, so the phone layout can leave it out instead of drawing a lone dash.
-  const empty = (yes) => (yes ? " vol-empty" : "");
-  // `data-label` names each field for the phone layout, where the row is a card and the column header is gone.
+  // `data-label` names each field for the phone layout, where the row is a card and the column header is gone. A field
+  // with nothing in it is marked too, so that layout can leave it out instead of drawing a lone dash.
+  const mountsClass = volume.mounts.length ? "vol-mounts" : "vol-mounts vol-empty";
+  const latestClass = checkpoint ? "vol-latest-cell" : "vol-latest-cell vol-empty";
   return `<tr class="${over.trim()}">
     <td class="select-cell">${pick}</td>
     <td class="vol-name"><strong class="truncate" title="${esc(volume.name)}">${esc(volume.name)}</strong><div class="subtle truncate" title="${esc(volume.id)}">${esc(role)}<span class="mono">${esc(volume.id)}</span></div></td>
     <td class="vol-usage" data-label="${esc(t("vol.colSize"))}">${usageCellHtml(volume)}</td>
-    <td class="vol-mounts${empty(!volume.mounts.length)}" data-label="${esc(t("vol.colMounts"))}">${mountsHtml(volume)}</td>
+    <td class="${mountsClass}" data-label="${esc(t("vol.colMounts"))}">${mountsHtml(volume)}</td>
     <td class="vol-owner nowrap"${ownerTip} data-label="${esc(t("vol.colOwnership"))}">${esc(owner)}</td>
     <td class="vol-pool" data-label="${esc(t("vol.colPool"))}">${poolHtml(volume, pools.get(volume.pool))}</td>
-    <td class="vol-latest-cell${empty(!checkpoint)}" data-label="${esc(t("vol.colLatest"))}">${latestHtml(checkpoint)}</td>
+    <td class="${latestClass}" data-label="${esc(t("vol.colLatest"))}">${latestHtml(checkpoint)}</td>
     <td class="vol-status-cell nowrap">${statusHtml(volume, staged.get(volume.id))}</td>
     <td class="vol-actions nowrap"><div class="actions">
       ${rowButton("browse", volume, "folder", t("vol.browse"))}

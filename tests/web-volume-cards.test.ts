@@ -87,29 +87,28 @@ describe("the volumes table on a phone", () => {
   test("a field names itself from data-label, because the header that named it is hidden", () => {
     expect(rule(phone, ".table.vol-table td[data-label]::before")).toContain("content: attr(data-label);");
     // Every field but the name, the status and the actions has a header of its own to carry over.
-    for (const [cls, key] of [
-      ["vol-usage", "vol.colSize"],
-      ["vol-mounts", "vol.colMounts"],
-      ["vol-owner", "vol.colOwnership"],
-      ["vol-pool", "vol.colPool"],
-      ["vol-latest-cell", "vol.colLatest"],
-    ] as const) {
-      expect([cls, volumes.includes(`class="${cls}`) && volumes.includes(`data-label="\${esc(t("${key}"))}"`)]).toEqual([
-        cls,
-        true,
-      ]);
+    for (const key of ["vol.colSize", "vol.colMounts", "vol.colOwnership", "vol.colPool", "vol.colLatest"] as const) {
+      expect([key, volumes.includes(`data-label="\${esc(t("${key}"))}"`)]).toEqual([key, true]);
+    }
+    // Each of those sits on its own cell, so the phone layout can place it.
+    for (const cls of ["vol-usage", "vol-mounts", "vol-owner", "vol-pool", "vol-latest-cell"] as const) {
+      expect([cls, rule(phone, `.table.vol-table .${cls}`).includes("grid-area:")]).toEqual([cls, true]);
     }
   });
 
   test("a field with nothing in it is left out, so a card is not a column of dashes", () => {
     expect(rule(phone, ".table.vol-table td.vol-empty")).toContain("display: none;");
     // A volume that mounts nowhere, and one with no checkpoint, carry the marker.
-    expect(volumes).toContain('class="vol-mounts${empty(!volume.mounts.length)}"');
-    expect(volumes).toContain('class="vol-latest-cell${empty(!checkpoint)}"');
+    expect(volumes).toContain('const mountsClass = volume.mounts.length ? "vol-mounts" : "vol-mounts vol-empty";');
+    expect(volumes).toContain('const latestClass = checkpoint ? "vol-latest-cell" : "vol-latest-cell vol-empty";');
+    expect(volumes).toContain('<td class="${mountsClass}"');
+    expect(volumes).toContain('<td class="${latestClass}"');
   });
 
   test("a group header, the show-all button and an empty state keep a row of their own", () => {
-    expect(rule(phone, ".table.vol-table tr.group-row,\n  .table.vol-table tr.toggle-row")).toContain("display: block;");
+    expect(rule(phone, ".table.vol-table tr.group-row,\n  .table.vol-table tr.toggle-row")).toContain(
+      "display: block;",
+    );
     expect(rule(phone, ".table.vol-table tr > td[colspan]")).toContain("grid-column: 1 / -1;");
   });
 

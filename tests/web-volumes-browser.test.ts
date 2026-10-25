@@ -347,35 +347,51 @@ describe.skipIf(!executablePath)("the volumes page on a phone (real browser)", (
     "each volume is a card, nothing scrolls sideways, and rows can still be picked and deleted together",
     async () => {
       await webExpect(page.locator("#volRows .vol-name").first()).toBeVisible();
-      // The table is no longer a table: the row is a grid of named areas, and the column headers are gone.
-      const shape = await page.locator("#volRows tr").first().evaluate((tr) => ({
-        row: getComputedStyle(tr).display,
-        areas: getComputedStyle(tr).gridTemplateAreas,
-        thead: getComputedStyle(tr.closest("table")!.querySelector("thead")!).display,
-        firstHeader: getComputedStyle(tr.closest("table")!.querySelector("thead th")!).display,
-      }));
+      // The table is no longer a table: the row is a grid of named areas, and the column headers are gone. The DOM types
+      // are not in this project's tsconfig, so the page's globals are read through one cast, as other browser tests do.
+      const shape = await page.evaluate(() => {
+        interface Node {
+          scrollWidth: number;
+          clientWidth: number;
+          querySelector(selector: string): Node | null;
+        }
+        const view = globalThis as unknown as {
+          document: Node & {
+            querySelectorAll(selector: string): Node[];
+            documentElement: { scrollWidth: number; clientWidth: number };
+          };
+          getComputedStyle(
+            element: Node,
+            pseudo?: string,
+          ): { display: string; gridTemplateAreas: string; content: string };
+        };
+        const row = view.document.querySelector("#volRows tr")!;
+        const header = row.querySelector("table")!.querySelector("thead")!;
+        return {
+          row: view.getComputedStyle(row).display,
+          areas: view.getComputedStyle(row).gridTemplateAreas,
+          thead: view.getComputedStyle(header).display,
+          firstHeader: view.getComputedStyle(header.querySelector("th")!).display,
+          selectAllLabel: view.getComputedStyle(header.querySelector("th.select-cell")!, "::after").content,
+          wrap: view.document.querySelector("#volWrap")!,
+          cards: view.document.querySelectorAll("#volRows > tr"),
+          root: view.document.documentElement,
+        };
+      });
       expect(shape.row).toBe("grid");
       expect(shape.areas).toContain("name");
       expect(shape.areas).toContain("actions");
       expect(shape.thead).toBe("block");
       expect(shape.firstHeader).toBe("flex");
-      // Every card fits inside the wrapper, and the page itself does not scroll sideways.
-      expect(
-        await page.evaluate(() => {
-          const wrap = document.querySelector("#volWrap")!;
-          const cards = [...document.querySelectorAll("#volRows > tr")];
-          return {
-            wrap: wrap.scrollWidth <= wrap.clientWidth,
-            cards: cards.every((card) => card.scrollWidth <= card.clientWidth),
-            page: document.documentElement.scrollWidth <= document.documentElement.clientWidth,
-          };
-        }),
-      ).toEqual({ wrap: true, cards: true, page: true });
       // The header keeps only its select-all box, which names itself now that the header row is gone.
       await webExpect(page.locator("#volSelectAll")).toBeVisible();
-      expect(
-        await page.locator(".vol-table thead th.select-cell").evaluate((th) => getComputedStyle(th, "::after").content),
-      ).toContain("Select all");
+      expect(shape.selectAllLabel).toContain("Select all");
+      // Every card fits inside the wrapper, and the page itself does not scroll sideways.
+      expect({
+        wrap: shape.wrap.scrollWidth <= shape.wrap.clientWidth,
+        cards: shape.cards.every((card) => card.scrollWidth <= card.clientWidth),
+        page: shape.root.scrollWidth <= shape.root.clientWidth,
+      }).toEqual({ wrap: true, cards: true, page: true });
       // Each field keeps the name of the column it used to sit in.
       await webExpect(page.locator("#volRows tr").first().locator(".vol-pool")).toHaveAttribute("data-label", "Pool");
       // Picking a row and deleting it together still works from the card.
