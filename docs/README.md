@@ -48,6 +48,7 @@ For the person who installs and runs MiniBox.
 - [MCP tools](reference/mcp.md): the MCP endpoint, toolsets and tools.
 - [Configuration](reference/configuration.md): every environment variable and its default.
 - [Agent](reference/agent.md): the host agent: its command, options, data volume, protocol and allowed operations.
+- [MiniBox skill](../skills/minibox/SKILL.md): the agent-facing guide to driving MiniBox over MCP or the REST API.
 
 ## For developers
 

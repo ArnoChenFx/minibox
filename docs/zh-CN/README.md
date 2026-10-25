@@ -48,6 +48,7 @@
 - [MCP 工具（英文）](../reference/mcp.md)：MCP 端点、工具集与工具。
 - [配置（英文）](../reference/configuration.md)：每个环境变量及其默认值。
 - [Agent（英文）](../reference/agent.md)：宿主机 Agent 的命令、参数、数据卷、协议与允许的操作。
+- [MiniBox skill（英文）](../../skills/minibox/SKILL.md)：面向 AI Agent 的指南，说明如何通过 MCP 或 REST API 操作 MiniBox。
 
 ## 面向开发者
 
