@@ -198,16 +198,21 @@ function volumeRow(volume, { selected, pools, latest, staged }) {
   const role = volume.role ? `${roleLabel(volume.role)} · ` : "";
   const owner = volume.ownership === "owned" ? t("vol.ownedShort") : t("vol.independent");
   const ownerTip = volume.ownership === "owned" ? ` title="${esc(t("vol.owned"))}"` : "";
+  const checkpoint = latest.get(volume.id);
+  // `data-label` names each field for the phone layout, where the row is a card and the column header is gone. A field
+  // with nothing in it is marked too, so that layout can leave it out instead of drawing a lone dash.
+  const mountsClass = volume.mounts.length ? "vol-mounts" : "vol-mounts vol-empty";
+  const latestClass = checkpoint ? "vol-latest-cell" : "vol-latest-cell vol-empty";
   return `<tr class="${over.trim()}">
     <td class="select-cell">${pick}</td>
     <td class="vol-name"><strong class="truncate" title="${esc(volume.name)}">${esc(volume.name)}</strong><div class="subtle truncate" title="${esc(volume.id)}">${esc(role)}<span class="mono">${esc(volume.id)}</span></div></td>
-    <td class="vol-usage">${usageCellHtml(volume)}</td>
-    <td class="vol-mounts">${mountsHtml(volume)}</td>
-    <td class="nowrap"${ownerTip}>${esc(owner)}</td>
-    <td class="vol-pool">${poolHtml(volume, pools.get(volume.pool))}</td>
-    <td class="vol-latest-cell">${latestHtml(latest.get(volume.id))}</td>
-    <td class="nowrap">${statusHtml(volume, staged.get(volume.id))}</td>
-    <td class="nowrap"><div class="actions">
+    <td class="vol-usage" data-label="${esc(t("vol.colSize"))}">${usageCellHtml(volume)}</td>
+    <td class="${mountsClass}" data-label="${esc(t("vol.colMounts"))}">${mountsHtml(volume)}</td>
+    <td class="vol-owner nowrap"${ownerTip} data-label="${esc(t("vol.colOwnership"))}">${esc(owner)}</td>
+    <td class="vol-pool" data-label="${esc(t("vol.colPool"))}">${poolHtml(volume, pools.get(volume.pool))}</td>
+    <td class="${latestClass}" data-label="${esc(t("vol.colLatest"))}">${latestHtml(checkpoint)}</td>
+    <td class="vol-status-cell nowrap">${statusHtml(volume, staged.get(volume.id))}</td>
+    <td class="vol-actions nowrap"><div class="actions">
       ${rowButton("browse", volume, "folder", t("vol.browse"))}
       ${rowButton("snapshot", volume, "camera", t("vol.snapshot"), { block: snapshotPlan(volume).block })}
       ${rowButton("mount-to", volume, "link", t("vol.mountTo"))}
@@ -413,7 +418,7 @@ export function render(view) {
         </div>
       </div>
       <div class="table-wrap" id="volWrap"><table class="table vol-table">
-        <thead><tr><th class="select-cell"><label class="checkbox"><input type="checkbox" id="volSelectAll" aria-label="${esc(t("vol.selectAll"))}" disabled /></label></th><th>${t("vol.colName")}</th><th class="nowrap">${t("vol.colSize")}</th><th class="nowrap">${t("vol.colMounts")}</th><th class="nowrap">${t("vol.colOwnership")}</th><th class="nowrap">${t("vol.colPool")}</th><th class="nowrap">${t("vol.colLatest")}</th><th class="nowrap">${t("vol.colStatus")}</th><th class="nowrap actions-head">${t("vol.colAction")}</th></tr></thead>
+        <thead><tr><th class="select-cell" data-label="${esc(t("vol.selectAllShort"))}"><label class="checkbox"><input type="checkbox" id="volSelectAll" aria-label="${esc(t("vol.selectAll"))}" disabled /></label></th><th>${t("vol.colName")}</th><th class="nowrap">${t("vol.colSize")}</th><th class="nowrap">${t("vol.colMounts")}</th><th class="nowrap">${t("vol.colOwnership")}</th><th class="nowrap">${t("vol.colPool")}</th><th class="nowrap">${t("vol.colLatest")}</th><th class="nowrap">${t("vol.colStatus")}</th><th class="nowrap actions-head">${t("vol.colAction")}</th></tr></thead>
         <tbody id="volRows">${skeletonRows(3, VOLUME_COLUMNS)}</tbody>
       </table></div>
     </div>
@@ -430,13 +435,16 @@ export function render(view) {
           pool.name === "local"
             ? ""
             : `<button class="btn btn-sm" data-action="remove-pool" data-name="${esc(pool.name)}">${t("vol.removePool")}</button>`;
+        // A pool with no note draws nothing there, so its card does not hold a line for a dash.
+        const noteClass = item?.message ? "pool-note" : "pool-note pool-empty";
+        // `pool-table` and the data-labels give the row its card layout on a phone, as the volumes table has.
         return `<tr>
-          <td><strong>${esc(pool.name)}</strong> ${pool.default ? `<span class="badge">${esc(t("vol.defaultYes"))}</span>` : ""}</td>
-          <td>${esc(pool.backend)}</td>
-          <td>${healthBadge(item?.status ?? "unknown", item?.lowSpace)}</td>
-          <td class="num">${esc(free)}</td>
-          <td>${item?.message ? `<span class="subtle">${esc(item.message)}</span>` : "—"}</td>
-          <td><div class="actions"><button class="btn btn-sm" data-action="make-default" data-name="${esc(pool.name)}">${t("vol.defaultYes")}</button>${remove}</div></td>
+          <td class="pool-name" data-label="${esc(t("vol.colName"))}"><strong>${esc(pool.name)}</strong> ${pool.default ? `<span class="badge">${esc(t("vol.defaultYes"))}</span>` : ""}</td>
+          <td class="pool-backend" data-label="${esc(t("vol.colBackend"))}">${esc(pool.backend)}</td>
+          <td class="pool-health" data-label="${esc(t("vol.colHealth"))}">${healthBadge(item?.status ?? "unknown", item?.lowSpace)}</td>
+          <td class="pool-free num" data-label="${esc(t("vol.colFree"))}">${esc(free)}</td>
+          <td class="${noteClass}" data-label="${esc(t("vol.colMessage"))}">${item?.message ? `<span class="subtle">${esc(item.message)}</span>` : "—"}</td>
+          <td class="pool-actions"><div class="actions"><button class="btn btn-sm" data-action="make-default" data-name="${esc(pool.name)}">${t("vol.defaultYes")}</button>${remove}</div></td>
         </tr>`;
       })
       .join("");
@@ -469,7 +477,7 @@ export function render(view) {
       body: `<div class="card">
         <div class="card-head"><p class="help">${t("vol.subtitle")}</p>
           <button class="btn btn-primary btn-sm" data-action="save">${t("vol.save")}</button></div>
-        <div class="table-wrap"><table class="table">
+        <div class="table-wrap"><table class="table pool-table">
           <thead><tr><th>${t("vol.colName")}</th><th>${t("vol.colBackend")}</th><th>${t("vol.colHealth")}</th><th>${t("vol.colFree")}</th><th></th><th></th></tr></thead>
           <tbody>${poolRows}</tbody>
         </table></div>

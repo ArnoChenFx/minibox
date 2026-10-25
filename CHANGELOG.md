@@ -4,6 +4,9 @@
 
 ## [Unreleased]
 
+### 变更
+- **存储页的卷表格与存储池表格在手机上改成卡片布局**（[#190](https://github.com/ArnoChenFx/minibox/issues/190) 后续，Refs [#192](https://github.com/ArnoChenFx/minibox/issues/192)）：卷表格有九列（选择、名称、大小、挂载、归属、存储池、最近检查点、状态、操作），在 640px 以下的屏幕上横向溢出、难以操作。现在照 Box 详情页检查点表格（#199）的做法，每个卷是一张卡片：名称与状态一行，大小、挂载、归属与存储池、最近检查点各占一行并带着原来的列名，操作按钮在卡片右下角。表头只保留「全选」复选框，勾选多个卷一起删除在手机上照旧可用。没有内容的字段（没有挂载、没有检查点）在卡片上不占位；超出配额的卷原来在首格显示的高亮，改为整张卡片左侧的一道颜色。存储池表格同样改成卡片：池名与健康一行，后端与剩余空间一行，说明单独一行，按钮在右下角。桌面端（大于 640px）的两张表格与现在完全一致。
+
 - Box 创建时的启动命令（`startupCommand`）现在要等**整个设置任务**跑完才启动：以前只等仓库克隆，克隆一结束就放行启动命令，此时模板的 `postCreateCommand` 可能还在装依赖，启动命令就会因为缺少依赖而失败。现在克隆、转发端口与 `postCreateCommand` 全部结束后才放行，因此启动命令可以直接使用 `postCreateCommand` 装好的东西。语义保持原样：克隆失败仍在 Box 上记 `startup_command_clone_failed`，`postCreateCommand` 失败（含超时、取消）记新的 `startup_command_setup_failed` 并在设置任务里说明原因，两者都让命令等到 Box 下次启动（或运行中的 **重新运行**）再跑；服务器重启打断设置时 `awaitClone` 仍会记 `startup_command_clone_unfinished` 并阻止自动启动；手动 `run` 在设置未完成时仍返回 409 `startup_command_awaits_clone`；没有启动命令的 Box 不受影响，`postCreateCommand` 照常运行。启动命令卡片的状态文案相应从「等待仓库克隆完成」改为「等待 Box 设置完成」，文档（《Box》《模板》的设置、API、CLI、MCP 参考）同步更新。
 
 ### 新增

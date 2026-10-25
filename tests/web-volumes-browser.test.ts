@@ -292,3 +292,159 @@ describe.skipIf(!executablePath)("the volumes page flags a volume that cannot be
     TIMEOUT_MS,
   );
 });
+
+describe.skipIf(!executablePath)("the volumes page on a phone (real browser)", () => {
+  let app: App | undefined;
+  let server: ReturnType<typeof startServer> | undefined;
+  let browser: Browser | undefined;
+  let context: BrowserContext | undefined;
+  let page: Page;
+  let consoleUrl = "";
+  const PHONE = { width: 390, height: 844 };
+
+  beforeAll(async () => {
+    const harness = createTestApp();
+    app = harness.app;
+    const host = app.hosts.get();
+    harness.runtime.seedImage(app.cfg.baseTemplateTag, {
+      [host.keys.template]: "true",
+      [host.keys.templateName]: "base",
+    });
+    server = startServer(app);
+    consoleUrl = `http://127.0.0.1:${server.port}`;
+    const headers = { "content-type": "application/json", authorization: `Bearer ${TEST_KEY}`, origin: consoleUrl };
+    const made = await fetch(`${consoleUrl}/api/boxes`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ name: "alpha", cpus: 1, memoryMb: 512 }),
+    });
+    expect(made.status).toBe(201);
+    await createVolume(host, { name: "notes", role: null, createdBy: "owner" });
+    await createVolume(host, { name: "cache-a", role: "cache", createdBy: "owner" });
+
+    browser = await chromium.launch({ executablePath: executablePath ?? undefined, args: ["--no-sandbox"] });
+    context = await browser.newContext({ viewport: PHONE });
+    const login = await context.request.post(`${consoleUrl}/api/auth/login`, {
+      data: { key: TEST_KEY },
+      headers: { origin: consoleUrl },
+    });
+    expect(login.status()).toBe(200);
+    page = await context.newPage();
+    await page.goto(`${consoleUrl}/#/storage/volumes`);
+  }, 60_000);
+
+  afterAll(async () => {
+    await context?.close();
+    await browser?.close();
+    server?.stop(true);
+    app?.throttle.stop();
+    app?.sessions.stop();
+    app?.tokens.stop();
+    app?.events.close();
+  });
+
+  test(
+    "each volume is a card, nothing scrolls sideways, and rows can still be picked and deleted together",
+    async () => {
+      await webExpect(page.locator("#volRows .vol-name").first()).toBeVisible();
+      // The table is no longer a table: the row is a grid of named areas, and the column headers are gone. The DOM types
+      // are not in this project's tsconfig, so the page's globals are read through one cast, as other browser tests do.
+      const shape = await page.evaluate(() => {
+        interface Node {
+          scrollWidth: number;
+          clientWidth: number;
+          querySelector(selector: string): Node | null;
+        }
+        const view = globalThis as unknown as {
+          document: Node & {
+            querySelectorAll(selector: string): Node[];
+            documentElement: { scrollWidth: number; clientWidth: number };
+          };
+          getComputedStyle(
+            element: Node,
+            pseudo?: string,
+          ): { display: string; gridTemplateAreas: string; content: string };
+        };
+        const row = view.document.querySelector("#volRows tr")!;
+        const header = view.document.querySelector(".vol-table thead")!;
+        return {
+          row: view.getComputedStyle(row).display,
+          areas: view.getComputedStyle(row).gridTemplateAreas,
+          thead: view.getComputedStyle(header).display,
+          firstHeader: view.getComputedStyle(header.querySelector("th")!).display,
+          selectAllLabel: view.getComputedStyle(header.querySelector("th.select-cell")!, "::after").content,
+          fits: {
+            wrap:
+              view.document.querySelector("#volWrap")!.scrollWidth <=
+              view.document.querySelector("#volWrap")!.clientWidth,
+            cards: [...view.document.querySelectorAll("#volRows > tr")].every(
+              (card) => card.scrollWidth <= card.clientWidth,
+            ),
+            page: view.document.documentElement.scrollWidth <= view.document.documentElement.clientWidth,
+          },
+        };
+      });
+      expect(shape.row).toBe("grid");
+      expect(shape.areas).toContain("name");
+      expect(shape.areas).toContain("actions");
+      expect(shape.thead).toBe("block");
+      expect(shape.firstHeader).toBe("flex");
+      // The header keeps only its select-all box, which names itself now that the header row is gone.
+      await webExpect(page.locator("#volSelectAll")).toBeVisible();
+      expect(shape.selectAllLabel).toContain("Select all");
+      // Every card fits inside the wrapper, and the page itself does not scroll sideways.
+      expect(shape.fits).toEqual({ wrap: true, cards: true, page: true });
+      // Each field keeps the name of the column it used to sit in.
+      await webExpect(page.locator("#volRows tr").first().locator(".vol-pool")).toHaveAttribute("data-label", "Pool");
+      // Picking a row and deleting it together still works from the card.
+      await pick(page, "notes").click();
+      await webExpect(page.locator("#volBulk")).toBeVisible();
+      await webExpect(page.locator("#volBulkCount")).toHaveText("1 selected");
+      await page.locator('#volBulk [data-action="clear-selection"]').click();
+      await webExpect(page.locator("#volBulk")).toBeHidden();
+    },
+    TIMEOUT_MS,
+  );
+
+  test(
+    "a group header and the show-all button still take a full-width row of their own",
+    async () => {
+      await page.locator("#volGroup").selectOption("pool");
+      const head = page.locator("#volRows tr.group-row").first();
+      await webExpect(head).toBeVisible();
+      const headBox = await head.boundingBox();
+      const wrapBox = await page.locator("#volWrap").boundingBox();
+      if (!headBox || !wrapBox) throw new Error("the group header has no layout box");
+      expect(Math.abs(headBox.width - wrapBox.width)).toBeLessThanOrEqual(1);
+      await page.locator("#volGroup").selectOption("none");
+    },
+    TIMEOUT_MS,
+  );
+
+  test(
+    "the storage pools table is cards too, so the pools card does not scroll sideways either",
+    async () => {
+      await page.locator(".fold-toggle").first().click();
+      await webExpect(page.locator("#volBody .pool-table tbody tr").first()).toBeVisible();
+      const pools = await page.evaluate(() => {
+        interface Node {
+          scrollWidth: number;
+          clientWidth: number;
+        }
+        const view = globalThis as unknown as {
+          document: {
+            querySelector(selector: string): Node | null;
+          };
+          getComputedStyle(element: Node): { display: string };
+        };
+        const wrap = view.document.querySelector("#volBody .table-wrap")!;
+        return {
+          row: view.getComputedStyle(view.document.querySelector("#volBody .pool-table tbody tr")!).display,
+          fits: wrap.scrollWidth <= wrap.clientWidth,
+        };
+      });
+      expect(pools).toEqual({ row: "grid", fits: true });
+    },
+    TIMEOUT_MS,
+  );
+});
