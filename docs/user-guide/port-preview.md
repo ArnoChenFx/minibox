@@ -57,11 +57,15 @@ Without this setting, pages load their scripts and styles from the wrong address
 
 WebSocket connections work through the preview. Hot module reload in Vite uses a WebSocket, so it works too.
 
+## How a preview reaches the box
+
+Every preview goes through a small relay that MiniBox starts in the box with `python3`. The relay connects to the port on the box's loopback address, so an app that listens on `127.0.0.1` is enough; no port is published on any host.
+
+The box needs `python3` on its path. The base template includes it. Without it, the preview fails with a `502` error that names the cause. HTTP and WebSocket work the same way. A request to a sleeping box wakes it, and the box stays awake while a response or a WebSocket is open.
+
 ## Boxes on another host
 
-A box on another host, reached through SSH, mutual TLS or a Unix socket, is previewed through that host's engine. The addresses are the same as for a local box. MiniBox starts a small relay in the box with `python3`, and the relay connects to the port on the box's loopback address. The remote host opens no port.
-
-The box needs `python3` on its path. The base template includes it. Without it, the preview fails with a `502` error that names the cause. HTTP and WebSocket work the same way as on the local host. A request to a sleeping box wakes it, and the box stays awake while a response or a WebSocket is open.
+A box on another host, reached through SSH, mutual TLS or a Unix socket, is previewed through that host's engine. The addresses are the same as for a local box, and the relay works the same way. The remote host opens no port.
 
 ## Limits
 

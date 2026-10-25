@@ -8,6 +8,7 @@ import type { App } from "../src/app";
 import { PREVIEW_COOKIE, TICKET_PARAM } from "../src/preview/grants";
 import { startServer } from "../src/server";
 import { createTestApp, silenceLogs, TEST_KEY } from "./support/app";
+import { relayOnLoopback } from "./support/relay";
 
 /**
  * Chromium comes from PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH or from Playwright's own install (`bunx playwright install
@@ -123,8 +124,9 @@ describe.skipIf(!executablePath)("a subdomain preview cannot reach the console (
     const runtime = created.runtime;
     const keys = app.hosts.get().keys;
     runtime.seedImage(app.cfg.baseTemplateTag, { [keys.template]: "true", [keys.templateName]: "base" });
-    const inspect = runtime.inspectContainer.bind(runtime);
-    runtime.inspectContainer = async (id, opts) => ({ ...(await inspect(id, opts)), ipAddress: "127.0.0.1" });
+    // The preview reaches the box through the exec relay, so route it to this machine's python3, where the test's
+    // upstream on 127.0.0.1 stands in for the box's own service.
+    relayOnLoopback(runtime);
     server = startServer(app);
     consoleUrl = `http://127.0.0.1:${server.port}`;
 

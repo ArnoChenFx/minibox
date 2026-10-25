@@ -95,8 +95,9 @@ describe("the official templates ship with a pinned base and the box convention"
     }
   });
 
-  test("the minimal one carries no compiler and no Python, and the others carry a compiler", () => {
-    expect(aptInstallOf(shipped("minimal"))).not.toMatch(/build-essential|python3/);
+  test("the minimal one carries no compiler, but every box ships python3 for the preview relay", () => {
+    expect(aptInstallOf(shipped("minimal"))).not.toMatch(/build-essential/);
+    expect(aptInstallOf(shipped("minimal"))).toContain("python3");
     for (const name of ["node", "python", "go"] as const) {
       expect(aptInstallOf(shipped(name))).toContain("build-essential");
     }

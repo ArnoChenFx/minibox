@@ -9,6 +9,8 @@ import type { ActivityPulse } from "../services/activity-pulse";
  */
 export interface PreviewSocketUpstream {
   readonly url: string;
+  /** The `host` header the box should see; the dial name in `url` is a proxy-routing name, not the service's. */
+  readonly host?: string;
   readonly proxy?: { readonly url: string; readonly token: string };
 }
 
@@ -44,6 +46,25 @@ const scheduleOnce = (fn: () => void, ms: number): (() => void) => {
   timer.unref?.();
   return () => clearTimeout(timer);
 };
+
+/**
+ * Opens the upstream WebSocket. Bun reads `NO_PROXY` when the socket is constructed, and an entry that matches the
+ * dial name (even `*`) bypasses the explicit proxy and connects straight to some other port of this server. The env
+ * is held off only around the constructor call, on this single thread, so the socket still dials through the proxy.
+ */
+function dialWebSocket(url: string, options: object): WebSocket {
+  const names = ["NO_PROXY", "no_proxy"] as const;
+  const saved = names.map((name) => [name, process.env[name]] as const);
+  for (const name of names) delete process.env[name];
+  try {
+    return new WebSocket(url, options as unknown as ConstructorParameters<typeof WebSocket>[1]);
+  } finally {
+    for (const [name, value] of saved) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+  }
+}
 
 /**
  * Closes a preview socket when its console sign-in ends, or when its grant runs out. A socket outlives the request that
@@ -93,6 +114,7 @@ export async function attachPreviewUpstream(
     const options = {
       protocols: protocols ? protocols.split(",").map((part) => part.trim()) : undefined,
       headers: {
+        host: target.host ?? new URL(target.url).host,
         origin: requestHeaders.get("origin") ?? "",
         "user-agent": requestHeaders.get("user-agent") ?? "MiniBox-preview",
         ...(ws.data.cookie ? { cookie: ws.data.cookie } : {}),
@@ -101,7 +123,7 @@ export async function attachPreviewUpstream(
         ? { proxy: { url: target.proxy.url, headers: { "proxy-authorization": target.proxy.token } } }
         : {}),
     };
-    upstream = new WebSocket(target.url, options as unknown as ConstructorParameters<typeof WebSocket>[1]);
+    upstream = dialWebSocket(target.url, options);
   } catch (e) {
     log.warn("preview.ws_open_failed", { boxId: ws.data.boxId, error: String(e) });
     ws.close(1011, "upstream open failed");

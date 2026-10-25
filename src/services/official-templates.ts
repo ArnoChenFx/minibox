@@ -27,7 +27,7 @@ export const OFFICIAL_TEMPLATES = [
   {
     name: "minimal",
     base: "debian:bookworm-slim",
-    description: "Debian 12 · git · tmux · jq · ripgrep · non-root dev user",
+    description: "Debian 12 · git · tmux · jq · ripgrep · python3 · non-root dev user",
   },
 ] as const;
 

@@ -6,14 +6,14 @@ ARG DEV_GID=1000
 
 LABEL minibox.template=true \
       minibox.template.name=minimal \
-      minibox.template.description="Debian 12 · git · tmux · jq · ripgrep · non-root dev user" \
+      minibox.template.description="Debian 12 · git · tmux · jq · ripgrep · python3 · non-root dev user" \
       minibox.template.user=dev \
       minibox.template.uid="${DEV_UID}" \
       minibox.template.gid="${DEV_GID}"
 
 RUN apt-get update \
  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-      git curl ca-certificates procps vim-tiny less sudo \
+      git curl ca-certificates python3 procps vim-tiny less sudo \
       tmux jq ripgrep bubblewrap openssh-client openssh-sftp-server socat unzip iputils-ping \
  && rm -rf /var/lib/apt/lists/*
 

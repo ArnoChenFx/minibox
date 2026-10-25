@@ -261,6 +261,39 @@ describe("a preview of a box on another host", () => {
     }
   });
 
+  test("a WebSocket preview still goes through the relay's proxy when NO_PROXY lists the loopback", async () => {
+    const on = await bed();
+    const savedNoProxy = process.env.NO_PROXY;
+    const savedNoProxyLower = process.env.no_proxy;
+    try {
+      process.env.NO_PROXY = "127.0.0.1,localhost";
+      delete process.env.no_proxy;
+      const port = serviceOn(on, () => new Response("not a websocket", { status: 400 }));
+      await makeBox(on, "noproxy-socket");
+
+      const socket = new WebSocket(`ws://127.0.0.1:${on.server.port}/box/noproxy-socket/${port}/chat`, {
+        headers: { cookie: on.cookie },
+      });
+      const echoed = new Promise<unknown>((resolve) => socket.addEventListener("message", (e) => resolve(e.data)));
+      const poke = setInterval(() => socket.send("ping"), 20);
+      try {
+        await opened(socket);
+        expect(await echoed).toBe("echo:ping");
+      } finally {
+        clearInterval(poke);
+        socket.close();
+      }
+      // The frames came back, so the socket went through the relay's proxy instead of dialling the loopback directly.
+      expect(on.relays).toHaveLength(1);
+    } finally {
+      if (savedNoProxy === undefined) delete process.env.NO_PROXY;
+      else process.env.NO_PROXY = savedNoProxy;
+      if (savedNoProxyLower === undefined) delete process.env.no_proxy;
+      else process.env.no_proxy = savedNoProxyLower;
+      on.stop();
+    }
+  });
+
   test("a streaming response holds a remote box until the body has been read to the end", async () => {
     const on = await bed();
     try {
@@ -401,13 +434,13 @@ describe("the relay's proxy", () => {
       const port = serviceOn(on, () => new Response("from the box"));
       const box = await makeBox(on, "grant-box");
       const bridge = await relay.bridge(on.app.hosts.get("edge"), box, port);
-      const target = `127.0.0.1:${port}`;
+      const target = `minibox-preview.invalid:${port}`;
 
       const unsigned = await connectThrough(bridge.proxyUrl, target);
       expect(unsigned.status).toBe("HTTP/1.1 407 Proxy Authentication Required");
       unsigned.socket.destroy();
 
-      const wrong = await connectThrough(bridge.proxyUrl, `127.0.0.1:${port + 1}`, bridge.grant());
+      const wrong = await connectThrough(bridge.proxyUrl, `minibox-preview.invalid:${port + 1}`, bridge.grant());
       expect(wrong.status).toBe("HTTP/1.1 403 Forbidden");
       wrong.socket.destroy();
 
@@ -418,7 +451,7 @@ describe("the relay's proxy", () => {
       granted.socket.on("data", (chunk: Buffer) => {
         body += chunk.toString("latin1");
       });
-      granted.socket.write(`GET / HTTP/1.1\r\nhost: ${target}\r\nconnection: close\r\n\r\n`);
+      granted.socket.write(`GET / HTTP/1.1\r\nhost: 127.0.0.1:${port}\r\nconnection: close\r\n\r\n`);
       await waitFor(() => body.includes("from the box"), "the service's answer through the tunnel");
       granted.socket.destroy();
 
@@ -445,7 +478,9 @@ describe("the relay's proxy", () => {
       relay.stop();
 
       expect(existsSync(bridge.httpSocket)).toBe(false);
-      await expect(connectThrough(bridge.proxyUrl, `127.0.0.1:${port}`, bridge.grant())).rejects.toThrow();
+      await expect(
+        connectThrough(bridge.proxyUrl, `minibox-preview.invalid:${port}`, bridge.grant()),
+      ).rejects.toThrow();
     } finally {
       relay.stop();
       on.stop();
