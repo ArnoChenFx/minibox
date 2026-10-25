@@ -53,6 +53,13 @@ up.close()
 
 /** The address a box's service answers on, as seen from inside the box. */
 const BOX_LOOPBACK = "127.0.0.1";
+/**
+ * The host a WebSocket dials when it goes through the relay's proxy. The proxy tunnels to the box's loopback, so the
+ * dial name never resolves; it only keeps the dial off any `NO_PROXY` list, which would bypass the explicit proxy and
+ * connect straight to the server's own port. The `host` header the box sees stays `127.0.0.1:<port>` (see
+ * `dialHeaders`).
+ */
+const DIAL_HOST = "minibox-preview.invalid";
 /** Longest the relay may take to connect to the port and answer. */
 const HANDSHAKE_MS = 10_000;
 /** A WebSocket grant is single use, and must be spent before it expires. */
@@ -78,6 +85,8 @@ export interface PreviewBridge {
   readonly httpSocket: string;
   /** The loopback proxy a WebSocket connects through. */
   readonly proxyUrl: string;
+  /** The host a WebSocket dials to reach the proxy without an env exemption; the `host` header stays `address`. */
+  readonly dialHost: string;
   /** A fresh single-use token for one WebSocket connection. */
   grant(): string;
 }
@@ -120,6 +129,7 @@ export class PreviewRelay {
 
   async bridge(host: HostCtx, box: Pick<Box, "boxId">, port: number): Promise<PreviewBridge> {
     const address = `${BOX_LOOPBACK}:${port}`;
+    const dialTarget = `${DIAL_HOST}:${port}`;
     const [httpSocket, proxyUrl] = await Promise.all([
       this.httpSocket(host, box.boxId, port).catch((error: unknown) => {
         throw bridgeFailed(error instanceof Error ? error.message : String(error));
@@ -130,7 +140,8 @@ export class PreviewRelay {
       address,
       httpSocket,
       proxyUrl,
-      grant: () => this.grant({ host, boxId: box.boxId, port, target: address }),
+      dialHost: DIAL_HOST,
+      grant: () => this.grant({ host, boxId: box.boxId, port, target: dialTarget }),
     };
   }
 

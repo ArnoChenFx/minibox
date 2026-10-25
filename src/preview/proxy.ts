@@ -74,16 +74,21 @@ export async function resolveTarget(
 export function upstreamSocketUrl(resolved: PreviewResolve): string {
   const { forwardPath } = resolved.target;
   const path = forwardPath.startsWith("/") ? forwardPath : `/${forwardPath}`;
-  return resolved.upstreamOrigin.replace(/^http/, "ws") + path;
+  return `ws://${resolved.bridge.dialHost}:${resolved.target.port}${path}`;
 }
 
 /**
  * Where a preview socket connects: through the relay's proxy, with a grant for this one connection, so the grant is
- * made when the socket is.
+ * made when the socket is. The dial name keeps env `NO_PROXY` from bypassing the proxy, and the `host` header keeps
+ * the box seeing its own loopback address.
  */
 export function upstreamSocket(resolved: PreviewResolve): PreviewSocketUpstream {
   const url = upstreamSocketUrl(resolved);
-  return { url, proxy: { url: resolved.bridge.proxyUrl, token: resolved.bridge.grant() } };
+  return {
+    url,
+    host: resolved.bridge.address,
+    proxy: { url: resolved.bridge.proxyUrl, token: resolved.bridge.grant() },
+  };
 }
 
 /** Forwards an HTTP (non-upgrade) preview request to the box and returns the filtered response. */
