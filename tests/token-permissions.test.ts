@@ -211,4 +211,25 @@ describe("creating a token with the dialog's body", () => {
     const reply = await call(harness.base, "/api/tokens", { body: { name: "none", preset: "operator", scopes: [] } });
     expect(reply.status).toBe(400);
   });
+
+  test("only the owner creates tokens, so the sensitive scopes are the owner's own grants", async () => {
+    // volume:delete stays in the console's flagged group for the owner's own tokens, and no preset carries it.
+    const owner = await call(harness.base, "/api/tokens", { body: { name: "by-owner", scopes: ["volume:delete"] } });
+    expect(owner.status).toBe(201);
+    expect((owner.json.record as unknown as { scopes: string[] }).scopes).toEqual(["volume:delete"]);
+
+    // A token cannot create one, not even the admin preset that holds every other scope.
+    for (const input of [
+      { name: "admin", preset: "admin" as const },
+      { name: "operator", preset: "operator" as const },
+      { name: "deleter", scopes: ["volume:delete"] as const },
+    ]) {
+      const token = mint(harness.app, input);
+      const reply = await call(harness.base, "/api/tokens", {
+        body: { name: "by-token", scopes: ["volume:delete"] },
+        token: token.secret,
+      });
+      expect(reply.status).toBe(403);
+    }
+  });
 });
