@@ -420,4 +420,31 @@ describe.skipIf(!executablePath)("the volumes page on a phone (real browser)", (
     },
     TIMEOUT_MS,
   );
+
+  test(
+    "the storage pools table is cards too, so the pools card does not scroll sideways either",
+    async () => {
+      await page.locator(".fold-toggle").first().click();
+      await webExpect(page.locator("#volBody .pool-table tbody tr").first()).toBeVisible();
+      const pools = await page.evaluate(() => {
+        interface Node {
+          scrollWidth: number;
+          clientWidth: number;
+        }
+        const view = globalThis as unknown as {
+          document: {
+            querySelector(selector: string): Node | null;
+          };
+          getComputedStyle(element: Node): { display: string };
+        };
+        const wrap = view.document.querySelector("#volBody .table-wrap")!;
+        return {
+          row: view.getComputedStyle(view.document.querySelector("#volBody .pool-table tbody tr")!).display,
+          fits: wrap.scrollWidth <= wrap.clientWidth,
+        };
+      });
+      expect(pools).toEqual({ row: "grid", fits: true });
+    },
+    TIMEOUT_MS,
+  );
 });

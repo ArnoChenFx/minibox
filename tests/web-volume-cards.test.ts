@@ -39,6 +39,7 @@ function rule(css: string, selector: string): string {
 }
 
 const phone = phoneBlock(".table.vol-table");
+const poolPhone = phoneBlock(".table.pool-table");
 
 describe("the volumes table on a phone", () => {
   test("the card rules live in the 640px block of tables.css, beside the checkpoint cards", () => {
@@ -124,6 +125,41 @@ describe("the volumes table on a phone", () => {
       "  .table.vol-table tr.volume-over-hard {\n    box-shadow: inset 3px 0 0 var(--danger);\n  }",
     );
     expect(rule(phone, ".table.vol-table tr.volume-over-hard > td:first-child")).toContain("box-shadow: none;");
+  });
+});
+
+describe("the storage pools table on a phone", () => {
+  test("each pool is a card too, so the pools card does not scroll sideways either", () => {
+    expect(rule(poolPhone, ".table.pool-table")).toContain("min-width: 0;");
+    expect(rule(poolPhone, ".table.pool-table colgroup,\n  .table.pool-table thead")).toContain("display: none;");
+    expect(rule(poolPhone, ".table.pool-table tr")).toContain("display: grid;");
+    const row = rule(poolPhone, ".table.pool-table tr");
+    const areas = row.match(/grid-template-areas:\s*([^;]+);/)?.[1] ?? "";
+    for (const [cls, area] of [
+      ["pool-name", "name"],
+      ["pool-health", "health"],
+      ["pool-backend", "backend"],
+      ["pool-free", "free"],
+      ["pool-note", "note"],
+      ["pool-actions", "actions"],
+    ] as const) {
+      expect([cls, areas.includes(area)]).toEqual([cls, true]);
+      expect([cls, rule(poolPhone, `.table.pool-table .${cls}`).includes(`grid-area: ${area};`)]).toEqual([cls, true]);
+    }
+  });
+
+  test("a pool with no note leaves that line out, as the volumes card does", () => {
+    expect(rule(poolPhone, ".table.pool-table td.pool-empty")).toContain("display: none;");
+    expect(volumes).toContain('const noteClass = item?.message ? "pool-note" : "pool-note pool-empty";');
+  });
+
+  test("the pool rows name their fields, and the columns are still the six the table had", () => {
+    for (const key of ["vol.colName", "vol.colBackend", "vol.colHealth", "vol.colFree", "vol.colMessage"] as const) {
+      expect([key, volumes.includes(`data-label="\${esc(t("${key}"))}"`)]).toEqual([key, true]);
+    }
+    const table = volumes.slice(volumes.indexOf('class="table pool-table"'));
+    const head = table.slice(0, table.indexOf("</thead>"));
+    expect([...head.matchAll(/<th[\s>]/g)].length).toBe(6);
   });
 });
 

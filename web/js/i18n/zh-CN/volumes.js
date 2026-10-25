@@ -19,6 +19,7 @@ export default {
   "vol.colBackend": "后端",
   "vol.colHealth": "健康",
   "vol.colFree": "剩余",
+  "vol.colMessage": "说明",
   "vol.colDefault": "默认",
   "vol.colRole": "角色",
   "vol.colPool": "存储池",

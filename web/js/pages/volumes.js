@@ -435,13 +435,16 @@ export function render(view) {
           pool.name === "local"
             ? ""
             : `<button class="btn btn-sm" data-action="remove-pool" data-name="${esc(pool.name)}">${t("vol.removePool")}</button>`;
+        // A pool with no note draws nothing there, so its card does not hold a line for a dash.
+        const noteClass = item?.message ? "pool-note" : "pool-note pool-empty";
+        // `pool-table` and the data-labels give the row its card layout on a phone, as the volumes table has.
         return `<tr>
-          <td><strong>${esc(pool.name)}</strong> ${pool.default ? `<span class="badge">${esc(t("vol.defaultYes"))}</span>` : ""}</td>
-          <td>${esc(pool.backend)}</td>
-          <td>${healthBadge(item?.status ?? "unknown", item?.lowSpace)}</td>
-          <td class="num">${esc(free)}</td>
-          <td>${item?.message ? `<span class="subtle">${esc(item.message)}</span>` : "—"}</td>
-          <td><div class="actions"><button class="btn btn-sm" data-action="make-default" data-name="${esc(pool.name)}">${t("vol.defaultYes")}</button>${remove}</div></td>
+          <td class="pool-name" data-label="${esc(t("vol.colName"))}"><strong>${esc(pool.name)}</strong> ${pool.default ? `<span class="badge">${esc(t("vol.defaultYes"))}</span>` : ""}</td>
+          <td class="pool-backend" data-label="${esc(t("vol.colBackend"))}">${esc(pool.backend)}</td>
+          <td class="pool-health" data-label="${esc(t("vol.colHealth"))}">${healthBadge(item?.status ?? "unknown", item?.lowSpace)}</td>
+          <td class="pool-free num" data-label="${esc(t("vol.colFree"))}">${esc(free)}</td>
+          <td class="${noteClass}" data-label="${esc(t("vol.colMessage"))}">${item?.message ? `<span class="subtle">${esc(item.message)}</span>` : "—"}</td>
+          <td class="pool-actions"><div class="actions"><button class="btn btn-sm" data-action="make-default" data-name="${esc(pool.name)}">${t("vol.defaultYes")}</button>${remove}</div></td>
         </tr>`;
       })
       .join("");
@@ -474,7 +477,7 @@ export function render(view) {
       body: `<div class="card">
         <div class="card-head"><p class="help">${t("vol.subtitle")}</p>
           <button class="btn btn-primary btn-sm" data-action="save">${t("vol.save")}</button></div>
-        <div class="table-wrap"><table class="table">
+        <div class="table-wrap"><table class="table pool-table">
           <thead><tr><th>${t("vol.colName")}</th><th>${t("vol.colBackend")}</th><th>${t("vol.colHealth")}</th><th>${t("vol.colFree")}</th><th></th><th></th></tr></thead>
           <tbody>${poolRows}</tbody>
         </table></div>

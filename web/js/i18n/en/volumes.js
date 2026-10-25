@@ -19,6 +19,7 @@ export default {
   "vol.colBackend": "Backend",
   "vol.colHealth": "Health",
   "vol.colFree": "Free",
+  "vol.colMessage": "Note",
   "vol.colDefault": "Default",
   "vol.colRole": "Role",
   "vol.colPool": "Pool",
