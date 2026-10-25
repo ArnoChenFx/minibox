@@ -216,7 +216,7 @@ export interface PaneState {
 }
 
 /**
- * `none`: no command is set. `cloning`: the box's repository clone has not ended, and the command starts when it has.
+ * `none`: no command is set. `cloning`: the box's setup has not ended, and the command starts when it has.
  * `waiting`: a command is set and has not run in this box's current start. `running`: its pane is alive. `exited`: the
  * run ended, with its code. `failed`: MiniBox could not start the command.
  */
@@ -244,7 +244,7 @@ const EMPTY_VIEW: StartupView = {
   error: null,
 };
 
-/** The view of a command whose box is still cloning its repository. Nothing runs until the clone ends. */
+/** The view of a command whose box is still setting up: its clone and its postCreateCommand. Nothing runs until that ends. */
 export function cloningView(): StartupView {
   return { ...EMPTY_VIEW, status: "cloning" };
 }

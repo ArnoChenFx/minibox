@@ -132,7 +132,7 @@ The tables below list every operation in [`openapi.json`](../openapi.json), grou
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/api/boxes` | List boxes |
-| `POST` | `/api/boxes` | Create and start a box. A `repo` object clones a Git repository into `/workspace` on the first create. A template built from a `devcontainer.json` may forward ports and run its `postCreateCommand`. The response's `setup.taskId` names the setup task, which runs those steps, and `clone.taskId` names the same task when `repo` is given. `selfToken: true` gives the box's agent its self token |
+| `POST` | `/api/boxes` | Create and start a box. A `repo` object clones a Git repository into `/workspace` on the first create. A template built from a `devcontainer.json` may forward ports and run its `postCreateCommand`. The response's `setup.taskId` names the setup task, which runs those steps, and `clone.taskId` names the same task when `repo` is given. A box created with a `startupCommand` runs it only after that whole setup has ended. `selfToken: true` gives the box's agent its self token |
 | `GET` | `/api/boxes/{id}` | Get one box |
 | `PATCH` | `/api/boxes/{id}` | Update a box in place |
 | `DELETE` | `/api/boxes/{id}` | Delete a box. Its data is kept in the recycle bin unless `skipTrash=true`, and `deleteVolume=true` also deletes the volumes it owns. The response's `trash` names the entry, or is `null` |

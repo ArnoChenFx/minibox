@@ -226,7 +226,7 @@ Pass other secrets, such as API keys, in `env`, not in `argv` or `cmd`. The audi
 
 ## Repository and template sources
 
-`create_box` takes `repo` to clone a Git repository into `/workspace` on the first create. It has `url`, and optional `branch` and `secretRef`. The setup runs as a task, returned as `setup.taskId` (and `clone.taskId` too when `repo` is given). A box created from a template whose `devcontainer.json` sets `postCreateCommand` or `forwardPorts` runs that setup once, and the token needs `exec` for the command and `port:expose` for the ports. A `secretRef` names a secret that holds a token for HTTPS, or a base64 deploy key for SSH.
+`create_box` takes `repo` to clone a Git repository into `/workspace` on the first create. It has `url`, and optional `branch` and `secretRef`. The setup runs as a task, returned as `setup.taskId` (and `clone.taskId` too when `repo` is given). A box created from a template whose `devcontainer.json` sets `postCreateCommand` or `forwardPorts` runs that setup once, and the token needs `exec` for the command and `port:expose` for the ports. A `startupCommand` on such a box, or on one created with `repo`, waits for that setup to end. A `secretRef` names a secret that holds a token for HTTPS, or a base64 deploy key for SSH.
 
 `create_template` takes `name`, an optional `description`, and a `source` whose `kind` is one of these:
 

@@ -34,7 +34,7 @@ const StartupSchema = z.object({
   status: z
     .enum(["none", "cloning", "waiting", "running", "exited", "failed"])
     .describe(
-      "none: no command. cloning: the repository clone has not ended, and the command starts when it has. waiting: set, and not run since the box last started. running: its run is going. exited: the run ended, with exitCode. failed: MiniBox could not start it, with error.",
+      "none: no command. cloning: the box's setup (its repository clone and the template's postCreateCommand) has not ended, and the command starts when it has. waiting: set, and not run since the box last started. running: its run is going. exited: the run ended, with exitCode. failed: MiniBox could not start it, with error.",
     ),
   exitCode: z.number().int().nullable().describe("The exit code of the latest run, once it has ended."),
   startedAt: z.string().nullable().describe("When the latest run started, as an ISO 8601 time."),
