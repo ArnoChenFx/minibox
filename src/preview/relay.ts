@@ -11,6 +11,7 @@ import { log } from "../lib/logger";
 import { msg } from "../lib/messages";
 import type { ExecSession } from "../runtime";
 import type { Box } from "../services/box-model";
+import { placeRelay, relayArgv } from "./relay-binary";
 
 /**
  * The relay that runs inside a box as `dev`. It connects to the port on the box's loopback, answers `ok` or `err <why>` on
@@ -317,20 +318,59 @@ export class PreviewRelay {
 }
 
 /**
- * Starts the relay in the box and waits for its first line. A relay that cannot reach the port says so with `err`, and
- * one that cannot start at all, such as a box with no python3, ends with whatever its shell wrote to standard error.
- * The container is looked up on each call, so a box rebuilt under the same id is reached at its new container.
+ * Starts the relay in the box and waits for its first line. The static Rust binary is placed in
+ * the box on the first use of a container and run from there; a box whose engine reports an
+ * architecture with no embedded build, or where the placement itself fails (a read-only `/tmp`,
+ * a full filesystem), falls back to the python3 script, whose behaviour is identical. A relay
+ * that cannot reach the port says so with `err`, and one that cannot start at all ends with
+ * whatever its shell wrote to standard error. The container is looked up on each call, so a box
+ * rebuilt under the same id is reached at its new container.
  */
 async function openBridge(host: HostCtx, boxId: string, port: number): Promise<Bridged> {
-  const containerId = host.specs.read(boxId)?.containerId;
+  const spec = host.specs.read(boxId);
+  const containerId = spec?.containerId;
   if (!containerId) throw new AppError(404, "not_found", msg("box_not_found"));
-  const session = await host.runtime.startExec(containerId, {
-    cmd: ["python3", "-c", RELAY_SCRIPT, String(port)],
-    env: [],
-    workingDir: "/",
-    user: "dev",
-    tty: false,
-  });
+  return startRelay(host, containerId, spec.template.digest, port);
+}
+
+/** Completed placements and rejected binaries, scoped to their engine and container. */
+const placedRelays = new Map<string, string>();
+const relayRejected = new Set<string>();
+/** Active placements are shared by all first connections and removed when the write settles. */
+const placingRelays = new Map<string, Promise<string | null>>();
+/** Image IDs are immutable; tags can point at different architectures on different engines or after a pull. */
+const imageArchs = new Map<string, string | null>();
+const CACHE_LIMIT = 1024;
+
+function trimRelayCaches(): void {
+  for (const cache of [placedRelays, relayRejected, imageArchs]) {
+    while (cache.size > CACHE_LIMIT) {
+      const oldest = cache.keys().next().value;
+      if (oldest === undefined) break;
+      cache.delete(oldest);
+    }
+  }
+}
+
+/** Reads the container's actual image ID for legacy specs without a digest, never its mutable template tag. */
+async function archOf(host: HostCtx, containerId: string, imageId: string | null): Promise<string | undefined> {
+  try {
+    const image = imageId ?? (await host.runtime.inspectContainer(containerId)).imageId;
+    const key = `${host.host.id}:${image}`;
+    if (imageArchs.has(key)) return imageArchs.get(key) ?? undefined;
+    const arch = (await host.runtime.inspectImage(image)).arch;
+    const known = arch === "" || arch === "unknown" ? null : arch;
+    imageArchs.set(key, known);
+    trimRelayCaches();
+    return known ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** A wrapper shell can start successfully while its child cannot execute, so success includes the relay handshake. */
+async function connectRelay(started: Promise<ExecSession>): Promise<Bridged> {
+  const session = await started;
   const stderr = stderrTail(session.stderr);
   try {
     return { session, rest: await handshake(session, stderr) };
@@ -338,6 +378,72 @@ async function openBridge(host: HostCtx, boxId: string, port: number): Promise<B
     closeBridge(session);
     throw error;
   }
+}
+
+/** Retries a missing or unusable binary once, then remembers the rejection and uses python3. */
+async function startRelay(host: HostCtx, containerId: string, imageId: string | null, port: number): Promise<Bridged> {
+  const key = `${host.host.id}:${containerId}`;
+  if (!relayRejected.has(key)) {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const placed = await place(host, containerId, imageId, key);
+      if (placed === null) break;
+      try {
+        return await connectRelay(
+          host.runtime.startExec(containerId, {
+            cmd: relayArgv(placed, port),
+            env: [],
+            workingDir: "/",
+            user: "dev",
+            tty: false,
+          }),
+        );
+      } catch (error) {
+        // A valid err line means the relay works, but the app's port is unavailable. Retrying cannot fix that.
+        if (error instanceof AppError && error.key === "preview_upstream_failed") throw error;
+        placedRelays.delete(key);
+      }
+    }
+    relayRejected.add(key);
+    trimRelayCaches();
+  }
+  return connectRelay(runScript(host, containerId, port));
+}
+
+/** Shares the entire architecture lookup and atomic file write among concurrent connections to one container. */
+async function place(host: HostCtx, containerId: string, imageId: string | null, key: string): Promise<string | null> {
+  const pending = placingRelays.get(key);
+  if (pending) return pending;
+  const placed = placedRelays.get(key);
+  if (placed !== undefined) return placed;
+  const work = (async () => {
+    try {
+      const relay = placeRelay(await archOf(host, containerId, imageId));
+      if (relay === null) return null;
+      await host.runtime.writeContainerFile(containerId, relay.path, relay.bytes, { user: "dev", mode: 0o755 });
+      placedRelays.set(key, relay.path);
+      trimRelayCaches();
+      return relay.path;
+    } catch {
+      return null;
+    }
+  })();
+  placingRelays.set(key, work);
+  try {
+    return await work;
+  } finally {
+    placingRelays.delete(key);
+  }
+}
+
+/** Runs the python3 relay script, the fallback for a box with no usable binary. */
+function runScript(host: HostCtx, containerId: string, port: number): Promise<ExecSession> {
+  return host.runtime.startExec(containerId, {
+    cmd: ["python3", "-c", RELAY_SCRIPT, String(port)],
+    env: [],
+    workingDir: "/",
+    user: "dev",
+    tty: false,
+  });
 }
 
 function handshake(session: ExecSession, stderr: ReturnType<typeof stderrTail>): Promise<Buffer> {

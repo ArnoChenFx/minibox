@@ -10,6 +10,7 @@ import { type App, createApp } from "../src/app";
 import { COOKIE_NAME } from "../src/auth";
 import type { Config } from "../src/config";
 import { PreviewRelay } from "../src/preview/relay";
+import { RELAY_PATHS } from "../src/preview/relay-binary";
 import type { ExecSession, ExecSpec } from "../src/runtime";
 import { startServer } from "../src/server";
 import { getBox, sleepBox } from "../src/services/boxes";
@@ -17,6 +18,7 @@ import type { SocketData } from "../src/ws/socket";
 import { silenceLogs, TEST_KEY, testConfig } from "./support/app";
 import { FakeRuntime } from "./support/fake-runtime";
 import { FakeCheckpointEngine } from "./support/fake-snapshots";
+import { relayCommand } from "./support/relay";
 
 const GIB = 1024 ** 3;
 const EDGE_SOCKET = "/run/minibox-test/edge-docker.sock";
@@ -65,9 +67,9 @@ function localExec(command: string, args: string[]): ExecSession {
 function relayOnLoopback(runtime: FakeRuntime, relays: string[][]): void {
   const fake = runtime.startExec.bind(runtime);
   runtime.startExec = async (containerId: string, spec: ExecSpec) => {
-    if (spec.cmd[0] !== "python3") return fake(containerId, spec);
-    relays.push(spec.cmd);
-    return localExec("python3", spec.cmd.slice(1));
+    const head = spec.cmd[0] ?? "";
+    if (head !== "python3" && !RELAY_PATHS.includes(head)) return fake(containerId, spec);
+    return relayCommand(spec.cmd, relays);
   };
 }
 
@@ -208,6 +210,149 @@ function connectThrough(proxyUrl: string, target: string, token?: string): Promi
     socket.write(`CONNECT ${target} HTTP/1.1\r\nhost: ${target}\r\n${auth}\r\n`);
   });
 }
+
+describe("static relay placement and fallback", () => {
+  test("two engines using the same template tag receive their own image architecture", async () => {
+    for (const [arch, machine] of [
+      ["x86_64", 62],
+      ["aarch64", 183],
+    ] as const) {
+      const on = await bed({ baseTemplateTag: "review-shared-architecture:base" });
+      try {
+        for (const image of on.edge.images.values()) image.arch = arch;
+        const port = serviceOn(on, () => new Response("ok"));
+        const box = await makeBox(on, "architecture");
+        const res = await fetch(`${on.base}/box/architecture/${port}/`, { headers: { cookie: on.cookie } });
+        expect(res.status).toBe(200);
+        await res.text();
+        expect(on.edge.containerFile(box.id, RELAY_PATHS[0] ?? "")?.data.readUInt16LE(18)).toBe(machine);
+      } finally {
+        on.stop();
+      }
+    }
+  });
+
+  test("a running box uses its image ID even after the template tag changes", async () => {
+    const on = await bed({ baseTemplateTag: "review-mutable-tag:base" });
+    try {
+      const port = serviceOn(on, () => new Response("ok"));
+      const box = await makeBox(on, "tag-changed");
+      const inspect = on.edge.inspectImage.bind(on.edge);
+      on.edge.inspectImage = async (ref) => {
+        const details = await inspect(ref);
+        return ref === on.app.cfg.baseTemplateTag ? { ...details, arch: "aarch64" } : details;
+      };
+      // Legacy specs must also inspect the running container's image ID, not the mutable tag.
+      const spec = on.app.hosts.get("edge").specs.read(box.boxId);
+      if (!spec) throw new Error("box spec missing");
+      on.app.hosts.get("edge").specs.write({ ...spec, template: { ...spec.template, digest: null } });
+      const res = await fetch(`${on.base}/box/tag-changed/${port}/`, { headers: { cookie: on.cookie } });
+      expect(res.status).toBe(200);
+      await res.text();
+      expect(on.edge.containerFile(box.id, RELAY_PATHS[0] ?? "")?.data.readUInt16LE(18)).toBe(62);
+      expect(on.edge.callsTo("inspectImage").at(-1)?.args[0]).toBe(spec.template.digest);
+    } finally {
+      on.stop();
+    }
+  });
+
+  test("a binary child that cannot execute falls back and later connections skip it", async () => {
+    const on = await bed();
+    try {
+      const normal = on.edge.startExec.bind(on.edge);
+      let scripts = 0;
+      let binaries = 0;
+      on.edge.startExec = async (id, spec) => {
+        if (RELAY_PATHS.includes(spec.cmd[0] ?? "")) {
+          binaries += 1;
+          return localExec("/bin/sh", ["-c", "echo 'relay: Permission denied' >&2; exit 126"]);
+        }
+        if (spec.cmd[0] === "python3") scripts += 1;
+        return normal(id, spec);
+      };
+      const port = serviceOn(on, () => new Response("ok", { headers: { connection: "close" } }));
+      await makeBox(on, "fallback");
+      for (let call = 0; call < 2; call += 1) {
+        const res = await fetch(`${on.base}/box/fallback/${port}/`, { headers: { cookie: on.cookie } });
+        expect(res.status).toBe(200);
+        expect(await res.text()).toBe("ok");
+      }
+      expect(binaries).toBe(2);
+      expect(scripts).toBe(2);
+    } finally {
+      on.stop();
+    }
+  });
+
+  test("a missing cached binary is placed again before falling back", async () => {
+    const on = await bed();
+    try {
+      const normal = on.edge.startExec.bind(on.edge);
+      let binaries = 0;
+      let scripts = 0;
+      on.edge.startExec = async (id, spec) => {
+        if (RELAY_PATHS.includes(spec.cmd[0] ?? "")) {
+          binaries += 1;
+          if (binaries === 2) return localExec("/bin/sh", ["-c", "echo 'relay: not found' >&2; exit 127"]);
+        }
+        if (spec.cmd[0] === "python3") scripts += 1;
+        return normal(id, spec);
+      };
+      const port = serviceOn(on, () => new Response("ok", { headers: { connection: "close" } }));
+      await makeBox(on, "replace-missing");
+      for (let call = 0; call < 2; call += 1) {
+        const res = await fetch(`${on.base}/box/replace-missing/${port}/`, { headers: { cookie: on.cookie } });
+        expect(res.status).toBe(200);
+        await res.text();
+      }
+      expect(binaries).toBe(3);
+      expect(scripts).toBe(0);
+      expect(on.edge.callsTo("writeContainerFile")).toHaveLength(2);
+    } finally {
+      on.stop();
+    }
+  });
+
+  test("a valid upstream refusal does not reinstall the binary or try python3", async () => {
+    const on = await bed();
+    try {
+      await makeBox(on, "upstream-refused");
+      const port = closedPort();
+      const res = await fetch(`${on.base}/box/upstream-refused/${port}/`, { headers: { cookie: on.cookie } });
+      expect(res.status).toBe(502);
+      expect(await res.text()).toContain("refused");
+      expect(on.relays).toHaveLength(1);
+      expect(RELAY_PATHS.includes(on.relays[0]?.[0] ?? "")).toBe(true);
+      expect(on.edge.callsTo("writeContainerFile")).toHaveLength(1);
+    } finally {
+      on.stop();
+    }
+  });
+
+  test("parallel first connections share one placement", async () => {
+    const on = await bed();
+    try {
+      const normal = on.edge.writeContainerFile.bind(on.edge);
+      on.edge.writeContainerFile = async (...args) => {
+        await Bun.sleep(50);
+        return normal(...args);
+      };
+      const port = serviceOn(on, () => new Response("ok"));
+      await makeBox(on, "parallel");
+      await Promise.all(
+        [1, 2, 3].map(async (n) => {
+          const res = await fetch(`${on.base}/box/parallel/${port}/${n}`, { headers: { cookie: on.cookie } });
+          expect(res.status).toBe(200);
+          expect(await res.text()).toBe("ok");
+        }),
+      );
+      expect(on.edge.callsTo("writeContainerFile")).toHaveLength(1);
+      expect(on.relays).toHaveLength(3);
+    } finally {
+      on.stop();
+    }
+  });
+});
 
 describe("a preview of a box on another host", () => {
   test("an HTTP preview reaches the service through a relay in the box, with no address for the box", async () => {
@@ -376,6 +521,9 @@ describe("a preview of a box on another host", () => {
   test("a box whose engine has no python3 is a 502 that names the failure", async () => {
     const on = await bed();
     try {
+      on.edge.writeContainerFile = async (_id, path) => {
+        throw new Error(`cp: cannot create regular file '${path}': No such file or directory`);
+      };
       on.edge.startExec = async () => localExec("/bin/sh", ["-c", "echo 'sh: 1: python3: not found' >&2; exit 127"]);
       const port = serviceOn(on, () => new Response("unreachable"));
       await makeBox(on, "remote-nopy");

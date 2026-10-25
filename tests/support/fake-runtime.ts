@@ -96,6 +96,8 @@ export interface FakeContainer {
 export interface FakeImage {
   id: string;
   tags: string[];
+  /** The machine architecture the image was built for, as the engine would report it. */
+  arch: string;
   labels: Record<string, string>;
   /** `NAME=value` entries of the image configuration, as `docker commit` copies them from the container. */
   env: string[];
@@ -474,9 +476,23 @@ export class FakeRuntime implements Runtime {
     return this.calls.map((call) => call.op);
   }
 
-  seedImage(ref: string, labels: Record<string, string> = {}, createdAt = now(), env: string[] = []): string {
+  seedImage(
+    ref: string,
+    labels: Record<string, string> = {},
+    createdAt = now(),
+    env: string[] = [],
+    arch = "x86_64",
+  ): string {
     const id = newImageId();
-    this.images.set(id, { id, tags: [normalizeRef(ref)], labels: { ...labels }, env: [...env], createdAt, size: 1024 });
+    this.images.set(id, {
+      id,
+      tags: [normalizeRef(ref)],
+      arch,
+      labels: { ...labels },
+      env: [...env],
+      createdAt,
+      size: 1024,
+    });
     return id;
   }
 
@@ -488,6 +504,7 @@ export class FakeRuntime implements Runtime {
     const image: FakeImage = {
       id: newImageId(),
       tags: [],
+      arch: "x86_64",
       labels: { ...labels },
       env: [],
       createdAt: now(),
@@ -981,6 +998,7 @@ export class FakeRuntime implements Runtime {
     const image: FakeImage = {
       id: newImageId(),
       tags: [],
+      arch: this.images.get(c.imageId)?.arch ?? "x86_64",
       labels: { ...c.labels, ...labelsFromChanges(spec.changes) },
       env: mergeEnv(mergeEnv(imageEnv, c.spec.env ?? []), envFromChanges(spec.changes)),
       createdAt: now(),
@@ -1332,7 +1350,7 @@ export class FakeRuntime implements Runtime {
   async inspectImage(ref: string): Promise<ImageDetails> {
     this.enter("inspectImage", [ref]);
     const img = this.getImage(ref);
-    return { id: img.id, tags: [...img.tags], labels: { ...img.labels }, env: [...img.env] };
+    return { id: img.id, tags: [...img.tags], arch: img.arch, labels: { ...img.labels }, env: [...img.env] };
   }
 
   /**
@@ -1387,6 +1405,7 @@ export class FakeRuntime implements Runtime {
     const image = this.images.get(loaded.id) ?? {
       id: loaded.id,
       tags: [],
+      arch: "x86_64",
       labels: { ...loaded.labels },
       env: [...loaded.env],
       createdAt: loaded.createdAt,
@@ -1415,6 +1434,7 @@ export class FakeRuntime implements Runtime {
     const image: FakeImage = {
       id: newImageId(),
       tags: [],
+      arch: "x86_64",
       labels: { ...spec.labels },
       env: [],
       createdAt: now(),

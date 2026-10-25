@@ -9,6 +9,7 @@ import { createLocalHost } from "../src/host/registry";
 import { msg } from "../src/lib/messages";
 import { OWNER } from "../src/operations/types";
 import { type PreviewDeps, proxyHttp, resolvePreview } from "../src/preview/proxy";
+import { RELAY_PATHS } from "../src/preview/relay-binary";
 import type { ExecSession } from "../src/runtime";
 import { ActivityPulse } from "../src/services/activity-pulse";
 import * as boxes from "../src/services/boxes";
@@ -25,6 +26,7 @@ import { createVolume, type VolumeView } from "../src/services/volumes";
 import { ttlEndsAt, ttlExpired } from "../src/specs/lifetime";
 import { createTestApp, rejectionOf, silenceLogs } from "./support/app";
 import { FakeRuntime } from "./support/fake-runtime";
+import { relayCommand } from "./support/relay";
 
 interface Noted {
   readonly hostId: string;
@@ -46,8 +48,9 @@ let restoreLogs: () => void;
 function relayOnLoopback(target: FakeRuntime): void {
   const fake = target.startExec.bind(target);
   target.startExec = async (containerId, spec) => {
-    if (spec.cmd[0] !== "python3") return fake(containerId, spec);
-    return localExec("python3", spec.cmd.slice(1));
+    const head = spec.cmd[0] ?? "";
+    if (head !== "python3" && !RELAY_PATHS.includes(head)) return fake(containerId, spec);
+    return relayCommand(spec.cmd);
   };
 }
 
@@ -876,7 +879,8 @@ describe("preview resolution", () => {
     // only when a request arrives, so the refusal surfaces as the proxied call fails.
     const fake = runtime.startExec.bind(runtime);
     runtime.startExec = async (containerId, spec) => {
-      if (spec.cmd[0] !== "python3") return fake(containerId, spec);
+      const head = spec.cmd[0] ?? "";
+      if (head !== "python3" && !RELAY_PATHS.includes(head)) return fake(containerId, spec);
       return localExec("/bin/sh", ["-c", "echo 'sh: 1: python3: not found' >&2; exit 127"]);
     };
 

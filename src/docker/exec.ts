@@ -298,6 +298,15 @@ async function untilExited(session: ExecSession): Promise<ExecStatus> {
   }
 }
 
+/** Writes a sibling temporary file, sets its final mode, then replaces the destination without following symlinks. */
+export const WRITE_FILE_SCRIPT = `
+umask "$2" || exit
+(set -C; cat > "$4") && chmod "$3" "$4" && mv -fT -- "$4" "$1"
+status=$?
+rm -f -- "$4"
+exit "$status"
+`.trim();
+
 type ExecMethods = Pick<Runtime, "startExec" | "writeContainerFile">;
 
 export function execMethods(engine: Engine): ExecMethods {
@@ -354,9 +363,20 @@ export function execMethods(engine: Engine): ExecMethods {
       };
     },
     async writeContainerFile(containerId, path, data, { user, mode }) {
+      // Publish only complete files. A concurrent exec keeps the old inode instead of seeing a partial write or ETXTBSY.
       const umask = (~mode & 0o777).toString(8).padStart(3, "0");
+      const exact = (mode & 0o777).toString(8).padStart(3, "0");
       const session = await methods.startExec(containerId, {
-        cmd: ["/bin/sh", "-c", 'rm -f -- "$1" && umask "$2" && cat > "$1"', "sh", path, umask],
+        cmd: [
+          "/bin/sh",
+          "-c",
+          WRITE_FILE_SCRIPT,
+          "sh",
+          path,
+          umask,
+          exact,
+          `${path}.minibox-${randomBytes(16).toString("hex")}`,
+        ],
         env: [],
         workingDir: "/",
         tty: false,

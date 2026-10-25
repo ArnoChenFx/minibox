@@ -129,6 +129,8 @@ export interface ImageDetails {
   id: string;
   /** The `repo:tag` references the engine holds for the image. A dangling image has none. */
   tags: string[];
+  /** The machine architecture the image was built for, as the engine reports it (`x86_64`, `aarch64`). */
+  arch: string;
   labels: Record<string, string>;
   /** The image's own `NAME=value` entries, as the engine reports them in the image configuration. */
   env: string[];
@@ -432,7 +434,8 @@ export interface Runtime {
   /**
    * Writes one file into a running container through a process in it. putArchive cannot place a file under a tmpfs
    * mount: it writes beneath the mount, and the mount hides the file. The file gets `mode` and belongs to `user`, the
-   * user the write runs as. `data` goes in on stdin, so it is never in a command line or an environment.
+   * user the write runs as. A sibling temporary file is completed before it atomically replaces the destination.
+   * `data` goes in on stdin, so it is never in a command line or an environment.
    */
   writeContainerFile(id: string, path: string, data: Buffer, opts: { user: string; mode: number }): Promise<void>;
   /** Tar archive of `path`. Works on created containers that are not running. */

@@ -329,6 +329,15 @@ async function engine(req: Request): Promise<Response> {
     const entry = inspectable[inspect[1] ?? ""] ?? { status: 404, body: { message: "No such container" } };
     return json(entry.body, entry.status);
   }
+  const imageInspect = /^\/images\/([^/]+)\/json$/.exec(path);
+  if (req.method === "GET" && imageInspect) {
+    return json({
+      Id: "sha256:9f1c0a",
+      RepoTags: [`${imageInspect[1]}`],
+      Architecture: "aarch64",
+      Config: { Labels: {}, Env: null },
+    });
+  }
   const diff = /^\/containers\/([^/]+)\/changes$/.exec(path);
   if (req.method === "GET" && diff) {
     const id = diff[1] ?? "";
@@ -470,6 +479,10 @@ describe("Docker adapter against a fake engine socket", () => {
       network: "bridge",
       ipAddress: null,
     });
+  });
+
+  test("an image inspect reports the architecture the image was built for", async () => {
+    expect(await runtime().inspectImage("minibox-template:base")).toMatchObject({ arch: "aarch64" });
   });
 
   test("a stats sample is read once from the engine, and a call whose signal aborts is cancelled", async () => {

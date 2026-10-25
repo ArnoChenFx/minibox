@@ -36,6 +36,7 @@ export function imageMethods(engine: Engine): ImageMethods {
       return {
         id: info.Id,
         tags: (info.RepoTags ?? []).filter((tag) => tag !== "<none>:<none>"),
+        arch: info.Architecture || "unknown",
         labels: info.Config?.Labels ?? {},
         env: info.Config?.Env ?? [],
       };
