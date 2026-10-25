@@ -4,6 +4,9 @@
 
 ## [Unreleased]
 
+### 新增
+- 新增面向 AI Agent 的 **MiniBox skill**（`skills/minibox/SKILL.md`，附 `rest-endpoints.md` 与 `mcp-toolsets.md` 两个参考文件）：按 agent skills 规范编写，说明如何用 MCP（`/mcp`、Bearer 令牌、`toolsets` 选择）或 REST API（`/api`、Bearer 令牌）调用 MiniBox，包括连接与初始化、核心操作速查（列/建/启停/删 Box、exec 与 terminal session、卷文件接口、端口预览、检查点、令牌与最小权限）、常见坑（scope 不足报 `forbidden`、exec 输出要从 `/api/execs/{id}/output` 拉取、预览端口需要 `port:expose`、MCP 会话归令牌所有、`If-Match`/`confirm` 等），以及 CLI 作为备选。根 README、`README-zh.md` 与两个文档索引（`docs/README.md`、`docs/zh-CN/README.md`）的参考章节都已加入入口。
+
 ### 修复
 - 设置页的长列表（令牌、宿主机、密钥、会话、SSH 公钥、通知渠道与投递记录）展开或收起时不再重新请求接口：以前「展开全部（N）」会把整个加载函数当作重绘回调，每次都重新拉一遍数据；现在请求与绘制分开，切换只用手上已有的数据重画当前卡片。创建、删除、吊销、发送测试等操作之后仍然是整卡重新拉取，401 跳登录与出错显示错误卡片的处理不变。
 - 已有令牌若带着预设已经不再授予的 `volume:delete`（#183 之后该权限已从「操作者」与「管理员」预设中去掉），启动加载令牌时会被去掉，并立即写回令牌文件，因此带预设的令牌不会再持有预设没有的权限。判定按「恰好等于该预设当前的权限」进行（令牌指定了卷时容忍服务端自动补上的 `volume:attach`）：所有者手工挑选权限创建的令牌（不带预设，或带预设但改过权限）不受影响，仍保留 `volume:delete`。去掉时记一条 `tokens.scopes_trimmed` 日志。创建令牌仍只有所有者可以做（`token:manage` 不映射到任何令牌权限），所以 `volume:delete` 继续留给所有者自建令牌使用。

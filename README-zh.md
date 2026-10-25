@@ -73,10 +73,11 @@ docker exec minibox cat /data/access_key
 | [用户指南](docs/zh-CN/user-guide/boxes.md) | Box、模板、检查点、工具、存储、终端、Agent 与宿主机 |
 | [管理指南（英文）](docs/admin/install.md) | 安装、配置、远程访问、备份、升级与安全 |
 | [参考（英文）](docs/reference/api.md) | REST API、CLI、MCP 工具与配置项 |
+| [Agent skill（英文）](skills/minibox/SKILL.md) | 教 AI Agent 通过 MCP 或 REST API 使用 MiniBox 的现成 skill |
 | [架构（英文）](docs/architecture.md) | 服务器、控制台、Agent 与 Docker 如何协同 |
 | [开发（英文）](docs/development.md) | 构建、测试与贡献 |
 
-[文档索引](docs/zh-CN/README.md) 列出全部页面。英文文档见 [docs/README.md](docs/README.md)。
+[文档索引](docs/zh-CN/README.md) 列出全部页面。英文文档见 [docs/README.md](docs/README.md)。面向 AI Agent 的 [MiniBox skill](skills/minibox/SKILL.md) 说明如何用 MCP 与 REST API 操作 MiniBox。
 
 ## 系统要求
 

@@ -73,10 +73,11 @@ The [quick start](docs/quick-start.md) walks you through the first box.
 | [User guide](docs/user-guide/boxes.md) | Boxes, templates, checkpoints, tools, storage, terminals, agents and hosts |
 | [Administration](docs/admin/install.md) | Installing, configuring, remote access, backups, upgrades and security |
 | [Reference](docs/reference/api.md) | The REST API, the CLI, MCP tools and configuration keys |
+| [Agent skill](skills/minibox/SKILL.md) | A ready-made skill that teaches an AI agent to drive MiniBox over MCP or the REST API |
 | [Architecture](docs/architecture.md) | How the server, the console, the agents and Docker fit together |
 | [Development](docs/development.md) | Building, testing and contributing |
 
-The [documentation index](docs/README.md) lists every page. Chinese documents are in [`docs/zh-CN`](docs/zh-CN/README.md).
+The [documentation index](docs/README.md) lists every page. Chinese documents are in [`docs/zh-CN`](docs/zh-CN/README.md). The [MiniBox skill](skills/minibox/SKILL.md) is the agent-facing guide to MCP and the REST API.
 
 ## Requirements
 
