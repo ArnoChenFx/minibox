@@ -366,16 +366,22 @@ describe.skipIf(!executablePath)("the volumes page on a phone (real browser)", (
           ): { display: string; gridTemplateAreas: string; content: string };
         };
         const row = view.document.querySelector("#volRows tr")!;
-        const header = row.querySelector("table")!.querySelector("thead")!;
+        const header = view.document.querySelector(".vol-table thead")!;
         return {
           row: view.getComputedStyle(row).display,
           areas: view.getComputedStyle(row).gridTemplateAreas,
           thead: view.getComputedStyle(header).display,
           firstHeader: view.getComputedStyle(header.querySelector("th")!).display,
           selectAllLabel: view.getComputedStyle(header.querySelector("th.select-cell")!, "::after").content,
-          wrap: view.document.querySelector("#volWrap")!,
-          cards: view.document.querySelectorAll("#volRows > tr"),
-          root: view.document.documentElement,
+          fits: {
+            wrap:
+              view.document.querySelector("#volWrap")!.scrollWidth <=
+              view.document.querySelector("#volWrap")!.clientWidth,
+            cards: [...view.document.querySelectorAll("#volRows > tr")].every(
+              (card) => card.scrollWidth <= card.clientWidth,
+            ),
+            page: view.document.documentElement.scrollWidth <= view.document.documentElement.clientWidth,
+          },
         };
       });
       expect(shape.row).toBe("grid");
@@ -387,11 +393,7 @@ describe.skipIf(!executablePath)("the volumes page on a phone (real browser)", (
       await webExpect(page.locator("#volSelectAll")).toBeVisible();
       expect(shape.selectAllLabel).toContain("Select all");
       // Every card fits inside the wrapper, and the page itself does not scroll sideways.
-      expect({
-        wrap: shape.wrap.scrollWidth <= shape.wrap.clientWidth,
-        cards: shape.cards.every((card) => card.scrollWidth <= card.clientWidth),
-        page: shape.root.scrollWidth <= shape.root.clientWidth,
-      }).toEqual({ wrap: true, cards: true, page: true });
+      expect(shape.fits).toEqual({ wrap: true, cards: true, page: true });
       // Each field keeps the name of the column it used to sit in.
       await webExpect(page.locator("#volRows tr").first().locator(".vol-pool")).toHaveAttribute("data-label", "Pool");
       // Picking a row and deleting it together still works from the card.
