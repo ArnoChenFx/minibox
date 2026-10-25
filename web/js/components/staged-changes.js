@@ -160,7 +160,9 @@ const applying = new Set();
 const APPLY_SELECTOR = '[data-staged="apply"],[data-staged-next]';
 
 /** The class the buttons that are working take, so a page can style the state beyond the disabled opacity. */
-export const BUSY_CLASS = "is-busy";
+const BUSY_CLASS = "is-busy";
+/** Marks an apply button that a staged problem keeps disabled, so ending an apply leaves it as it was. */
+const BLOCKED = "data-staged-blocked";
 
 /** Whether an apply of the box `boxId` is in flight. */
 export const isApplying = (boxId) => applying.has(boxId);
@@ -176,7 +178,7 @@ const applyButtons = () => [...(document.querySelectorAll?.(APPLY_SELECTOR) ?? [
 /** Puts every apply button in the page into the applying state, or back out of it, and disables it while it works. */
 function markApplying(busy) {
   for (const button of applyButtons()) {
-    button.disabled = busy;
+    button.disabled = busy || button.getAttribute(BLOCKED) !== null;
     button.classList.toggle(BUSY_CLASS, busy);
     if (busy) button.setAttribute("aria-busy", "true");
     else button.removeAttribute("aria-busy");
@@ -188,11 +190,12 @@ function markApplying(busy) {
 function openDiff(staged, boxId) {
   return new Promise((resolve) => {
     let next = false;
+    const busy = isApplying(boxId);
     const { root, close } = openDialog({
       title: t("stg.diffDialogTitle"),
       description: esc(t("stg.diffDialogText")),
       body: changesHtml(staged.changes),
-      footer: `<button class="btn" data-close>${esc(t("common.close"))}</button><button class="btn btn-primary" data-staged-next ${staged.problem ? "disabled" : ""}>${applyLabel(isApplying(boxId))}</button>`,
+      footer: `<button class="btn" data-close>${esc(t("common.close"))}</button><button class="btn btn-primary${busy ? ` ${BUSY_CLASS}` : ""}" data-staged-next ${staged.problem ? `${BLOCKED}="1"` : ""} ${staged.problem || busy ? "disabled" : ""}${busy ? ' aria-busy="true"' : ""}>${applyLabel(busy)}</button>`,
       onClose: () => resolve(next),
     });
     root.querySelector("[data-staged-next]").addEventListener("click", () => {
@@ -293,7 +296,7 @@ export function stagedBannerHtml(staged, boxId = null) {
       <span class="staged-text"><strong>${esc(t("stg.banner", { n: pending.length }))}</strong><span class="staged-fields">${esc(fields)}</span></span>
       <span class="staged-actions">
         <button type="button" class="btn btn-sm" data-staged="diff">${esc(t("stg.viewDiff"))}</button>
-        <button type="button" class="btn btn-sm btn-primary${busy ? ` ${BUSY_CLASS}` : ""}" data-staged="apply" ${staged.problem || busy ? "disabled" : ""}${busy ? ' aria-busy="true"' : ""}>${applyLabel(busy)}</button>
+        <button type="button" class="btn btn-sm btn-primary${busy ? ` ${BUSY_CLASS}` : ""}" data-staged="apply" ${staged.problem ? `${BLOCKED}="1"` : ""} ${staged.problem || busy ? "disabled" : ""}${busy ? ' aria-busy="true"' : ""}>${applyLabel(busy)}</button>
         <button type="button" class="btn btn-sm" data-staged="discard">${esc(t("stg.discard"))}</button>
       </span>
     </div>${problem}`;
