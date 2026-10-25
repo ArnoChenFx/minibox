@@ -475,6 +475,7 @@ export default {
   "stg.listSep": ", ",
   "stg.viewDiff": "View diff",
   "stg.apply": "Apply and rebuild",
+  "stg.applying": "Applying…",
   "stg.discard": "Discard",
   "stg.problem": "These changes cannot be applied as they stand.",
   "stg.pendingBadge": "Pending",

@@ -4,7 +4,7 @@ import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
 import { movedBoxHash } from "../lib/routes.js";
 import { refreshHost } from "../lib/store.js";
-import { confirmDialog, openDialog, toast, toastError, withBusy } from "../lib/ui.js";
+import { confirmDialog, openDialog, toast, toastError } from "../lib/ui.js";
 import { changeText } from "./box-actions.js";
 import { bindFoldSections, foldSectionHtml } from "./fold-section.js";
 
@@ -151,15 +151,51 @@ function checkpointField(preview) {
     : { key: "checkpoint", label: t("stg.checkpointData"), help: t("stg.checkpointDataHelp"), checked: true };
 }
 
+/*
+ * Applying rebuilds the box on the server, which can take tens of seconds. While a request is in flight every button that
+ * starts an apply is disabled and shows a spinner with the applying text, so the same apply cannot be started twice. The
+ * state is kept per box, since the banner and the diff dialog draw their own buttons.
+ */
+const applying = new Set();
+const APPLY_SELECTOR = '[data-staged="apply"],[data-staged-next]';
+
+/** The class the buttons that are working take, so a page can style the state beyond the disabled opacity. */
+const BUSY_CLASS = "is-busy";
+/** Marks an apply button that a staged problem keeps disabled, so ending an apply leaves it as it was. */
+const BLOCKED = "data-staged-blocked";
+
+/** Whether an apply of the box `boxId` is in flight. */
+export const isApplying = (boxId) => applying.has(boxId);
+
+const applyLabel = (busy) =>
+  busy
+    ? `<span class="spinner" aria-hidden="true"></span>${esc(t("stg.applying"))}`
+    : `${icon("refresh")}${esc(t("stg.apply"))}`;
+
+/** The page's apply buttons, one per banner and dialog that is open. */
+const applyButtons = () => [...(document.querySelectorAll?.(APPLY_SELECTOR) ?? [])];
+
+/** Puts every apply button in the page into the applying state, or back out of it, and disables it while it works. */
+function markApplying(busy) {
+  for (const button of applyButtons()) {
+    button.disabled = busy || button.getAttribute(BLOCKED) !== null;
+    button.classList.toggle(BUSY_CLASS, busy);
+    if (busy) button.setAttribute("aria-busy", "true");
+    else button.removeAttribute("aria-busy");
+    button.innerHTML = applyLabel(busy);
+  }
+}
+
 /** Shows the planned changes. Resolves true when the user goes on to apply them from there. */
-function openDiff(staged) {
+function openDiff(staged, boxId) {
   return new Promise((resolve) => {
     let next = false;
+    const busy = isApplying(boxId);
     const { root, close } = openDialog({
       title: t("stg.diffDialogTitle"),
       description: esc(t("stg.diffDialogText")),
       body: changesHtml(staged.changes),
-      footer: `<button class="btn" data-close>${esc(t("common.close"))}</button><button class="btn btn-primary" data-staged-next ${staged.problem ? "disabled" : ""}>${icon("refresh")}${esc(t("stg.apply"))}</button>`,
+      footer: `<button class="btn" data-close>${esc(t("common.close"))}</button><button class="btn btn-primary${busy ? ` ${BUSY_CLASS}` : ""}" data-staged-next ${staged.problem ? `${BLOCKED}="1"` : ""} ${staged.problem || busy ? "disabled" : ""}${busy ? ' aria-busy="true"' : ""}>${applyLabel(busy)}</button>`,
       onClose: () => resolve(next),
     });
     root.querySelector("[data-staged-next]").addEventListener("click", () => {
@@ -174,6 +210,8 @@ function openDiff(staged) {
  * follows the box to its new container id. Resolves true when the box was rebuilt.
  */
 async function applyStaged(box) {
+  // A second click while the rebuild runs would send a second apply; the server refuses it, and nothing is drawn.
+  if (isApplying(box.boxId)) return false;
   let fresh;
   let preview;
   try {
@@ -193,6 +231,9 @@ async function applyStaged(box) {
     onOpen: (root) => bindFoldSections(root),
   });
   if (!ok) return false;
+  // From here the request can take tens of seconds: the apply buttons say so and cannot be pressed again.
+  applying.add(fresh.boxId);
+  markApplying(true);
   let result;
   try {
     result = await api(`/api/boxes/${enc(fresh.id)}/staged/apply`, {
@@ -201,6 +242,8 @@ async function applyStaged(box) {
       headers: { "if-match": String(fresh.revision) },
     });
   } catch (err) {
+    applying.delete(fresh.boxId);
+    markApplying(false);
     toastError(t("stg.applyFailed"), err);
     // The staged changes may have moved on (a 412) or gone; the banner shows them as they now stand.
     fetchStaged(fresh.id)
@@ -208,12 +251,15 @@ async function applyStaged(box) {
       .catch(() => undefined);
     return false;
   }
+  applying.delete(fresh.boxId);
+  const next = result?.box?.id;
+  const address = next && next !== box.id ? movedBoxHash(location.hash, box.id, next) : null;
+  // A box that moved is followed to its new container, so its page is drawn again and its buttons start idle.
+  if (!address) markApplying(false);
   const safety = result?.safety ? ` ${t("rb.safetyTaken")}` : "";
   toast(t("rb.done"), { message: t("rb.doneText", { name: fresh.name }) + safety });
   announceStaged(fresh.boxId, null);
   refreshHost();
-  const next = result?.box?.id;
-  const address = next && next !== box.id ? movedBoxHash(location.hash, box.id, next) : null;
   if (address) location.hash = address;
   return true;
 }
@@ -237,9 +283,10 @@ async function discardStaged(box) {
 }
 
 /** The banner's markup, or "" when nothing waits. */
-export function stagedBannerHtml(staged) {
+export function stagedBannerHtml(staged, boxId = null) {
   const pending = staged?.pending ?? [];
   if (!pending.length) return "";
+  const busy = boxId !== null && isApplying(boxId);
   const fields = pending.map((field) => t(`rebuild.field.${field}`)).join(t("stg.listSep"));
   const problem = staged.problem
     ? `<div class="callout danger staged-problem">${icon("alert")}<span><strong>${esc(t("stg.problem"))}</strong> ${esc(staged.problem)}</span></div>`
@@ -249,7 +296,7 @@ export function stagedBannerHtml(staged) {
       <span class="staged-text"><strong>${esc(t("stg.banner", { n: pending.length }))}</strong><span class="staged-fields">${esc(fields)}</span></span>
       <span class="staged-actions">
         <button type="button" class="btn btn-sm" data-staged="diff">${esc(t("stg.viewDiff"))}</button>
-        <button type="button" class="btn btn-sm btn-primary" data-staged="apply" ${staged.problem ? "disabled" : ""}>${icon("refresh")}${esc(t("stg.apply"))}</button>
+        <button type="button" class="btn btn-sm btn-primary${busy ? ` ${BUSY_CLASS}` : ""}" data-staged="apply" ${staged.problem ? `${BLOCKED}="1"` : ""} ${staged.problem || busy ? "disabled" : ""}${busy ? ' aria-busy="true"' : ""}>${applyLabel(busy)}</button>
         <button type="button" class="btn btn-sm" data-staged="discard">${esc(t("stg.discard"))}</button>
       </span>
     </div>${problem}`;
@@ -257,7 +304,8 @@ export function stagedBannerHtml(staged) {
 
 /**
  * The banner above a box's settings. It reads the staged changes when it mounts, again when the box's revision changes
- * (an apply or a rebuild may have used them), and draws what any card announces.
+ * (an apply or a rebuild may have used them), and draws what any card announces. While this box's apply is in flight the
+ * banner says so: the button shows a spinner and cannot be pressed again.
  */
 export function mountStagedBanner(container, { box }) {
   let staged = null;
@@ -267,7 +315,7 @@ export function mountStagedBanner(container, { box }) {
 
   const draw = () => {
     if (disposed) return;
-    container.innerHTML = stagedBannerHtml(staged);
+    container.innerHTML = stagedBannerHtml(staged, box().boxId);
     container.hidden = container.innerHTML === "";
   };
 
@@ -288,10 +336,11 @@ export function mountStagedBanner(container, { box }) {
     if (!button || !staged) return;
     switch (button.dataset.staged) {
       case "diff":
-        void openDiff(staged).then((next) => next && applyStaged(box()));
+        void openDiff(staged, box().boxId).then((next) => next && applyStaged(box()));
         break;
       case "apply":
-        void withBusy(button, () => applyStaged(box()));
+        // The button draws its own applying state, and applyStaged refuses a second call, so no second press lands.
+        void applyStaged(box());
         break;
       case "discard":
         void discardStaged(box());
@@ -311,6 +360,10 @@ export function mountStagedBanner(container, { box }) {
   void read();
 
   return {
+    /** Draws the banner again, for a change the page made on its own, such as an apply that started or ended. */
+    draw() {
+      draw();
+    },
     onBoxChange() {
       if (disposed || box().revision === revision) return;
       revision = box().revision;

@@ -35,6 +35,12 @@
   opacity: 0.55;
   cursor: not-allowed;
 }
+/* A button that is working, such as an apply whose rebuild runs: it keeps its colour and shows a spinner, so it reads as
+   in progress rather than as unavailable. */
+.btn.is-busy:disabled {
+  opacity: 0.85;
+  cursor: progress;
+}
 .btn-primary {
   background: var(--accent);
   border-color: var(--accent);

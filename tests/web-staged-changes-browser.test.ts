@@ -203,6 +203,54 @@ describe.skipIf(!executablePath)("staged rebuild changes in a box's settings (re
   );
 
   test(
+    "the apply button says the rebuild is running and cannot start a second one, and a failure brings it back",
+    async () => {
+      const box = (await rest<{ box: BoxRow }>("POST", "/api/boxes", { name: "busybox", cpus: 1, memoryMb: 256 })).box;
+      await rest("PUT", `/api/boxes/${encodeURIComponent(box.boxId)}/staged`, { profile: "strict" });
+      await page.goto(settingsUrl(box, "security"));
+
+      // The apply is held open, so the page can be looked at while the rebuild would be running on the server.
+      const applies: string[] = [];
+      const held = Promise.withResolvers<void>();
+      await page.route("**/staged/apply", async (route) => {
+        applies.push(route.request().method());
+        await held.promise;
+        await route.fulfill({
+          status: 412,
+          contentType: "application/json",
+          body: JSON.stringify({ error: { code: "revision_conflict", message: "The box changed since the preview." } }),
+        });
+      });
+
+      await page.locator("[data-staged='apply']").click();
+      await page.locator(".dialog #cfm-ok").click();
+
+      const apply = page.locator("[data-staged='apply']");
+      await webExpect(apply).toBeDisabled();
+      await webExpect(apply).toHaveAttribute("aria-busy", "true");
+      await webExpect(apply.locator(".spinner")).toHaveCount(1);
+      await webExpect(apply).toHaveText(english("stg.applying"));
+
+      // A second press, forced past the disabled state and then dispatched on it, starts nothing: no request, no dialog.
+      await apply.click({ force: true });
+      await apply.dispatchEvent("click");
+      await page.waitForTimeout(300);
+      expect(applies).toEqual(["POST"]);
+      await webExpect(page.locator("#cfm-ok")).toHaveCount(0);
+
+      held.resolve();
+      await webExpect(apply).toBeEnabled();
+      await webExpect(apply).not.toHaveAttribute("aria-busy", "true");
+      await webExpect(apply).toHaveText(english("stg.apply"));
+      // The banner still shows the staged changes the refused apply left in place.
+      await webExpect(page.locator("#bsStaged .staged-banner")).toContainText(english("stg.banner", { n: 1 }));
+      expect((await stagedNow(box.boxId))?.pending).toEqual(["profile"]);
+      await page.unroute("**/staged/apply");
+    },
+    TIMEOUT_MS,
+  );
+
+  test(
     "discard drops the staged changes after a confirm and leaves the box alone",
     async () => {
       const box = (await rest<{ box: BoxRow }>("POST", "/api/boxes", { name: "dropbox", cpus: 1, memoryMb: 256 })).box;

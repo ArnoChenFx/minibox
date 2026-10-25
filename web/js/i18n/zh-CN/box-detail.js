@@ -462,6 +462,7 @@ export default {
   "stg.listSep": "、",
   "stg.viewDiff": "查看差异",
   "stg.apply": "应用并重建",
+  "stg.applying": "正在应用…",
   "stg.discard": "放弃",
   "stg.problem": "这些变更目前无法应用。",
   "stg.pendingBadge": "待应用",
