@@ -29,13 +29,15 @@ import {
   cleanupConfirmation,
   cleanupPreview,
   confirmRollback,
+  pendingRollbackOf,
   pendingRollbackView,
+  type PendingRollbackView,
   undoConfirmation,
   undoPreview,
   undoRollback,
 } from "../services/rollback";
 import { requireRevision } from "../specs/revision";
-import { snapshotVisible, specViews, ttlFor } from "../tokens/model";
+import { boxVisible, snapshotVisible, specViews, ttlFor, viewOfSpec } from "../tokens/model";
 import { assertCheckpointQuota, assertWithinQuota, underCheckpointQuota, underQuota } from "../tokens/quota";
 import { assertHostDiskRoom } from "../volumes/disk";
 import { assertCanCreateDefaultMounts, assertCanWrite } from "./authz";
@@ -370,6 +372,59 @@ export const boxRollbackGet = defineOperation({
   run: async ({ host }, _input, box) => ({ rollback: pendingRollbackView(host, box.boxId) }),
 });
 
+/** A box a list names: the ids the console keys it by, and the name it shows. */
+const RollbackBoxRefSchema = z.object({
+  id: z.string().meta({ description: "The box's container id, the id the console's box pages use." }),
+  boxId: z.string().meta({ description: "The box's stable id, `bx_…`." }),
+  name: z.string(),
+  hostId: z.string().meta({ description: "The host the box runs on." }),
+});
+
+/**
+ * Every rollback that waits for its confirm or undo, in one read, so the storage page does not ask box by box. Only
+ * rollbacks of boxes that are still there are listed: one whose box is gone has nothing left to confirm or undo. A record
+ * that cannot be read is logged and skipped, so one failing record does not fail the list. A token sees only the boxes
+ * its grants cover.
+ */
+export const boxRollbackList = defineOperation({
+  name: "box.rollback.list",
+  tag: "checkpoints",
+  summary: "Read every rollback that waits for its confirm or undo",
+  kind: "read",
+  scope: "checkpoint:read",
+  async: false,
+  input: z.object({}),
+  output: z.object({
+    rollbacks: z.array(
+      z.object({
+        box: RollbackBoxRefSchema,
+        rollback: PendingRollbackSchema.meta({
+          description: "The rollback, as `GET /api/boxes/:id/rollback` returns it.",
+        }),
+      }),
+    ),
+  }),
+  rest: [{ method: "GET", path: "/api/rollbacks" }],
+  run: async ({ host: requestHost, allHosts, principal }) => {
+    const hosts = allHosts?.() ?? [requestHost];
+    const entries: { box: z.input<typeof RollbackBoxRefSchema>; rollback: PendingRollbackView }[] = [];
+    for (const host of hosts) {
+      for (const record of host.checkpoints.pendingRollbacks()) {
+        if (record.hostId !== host.host.id) continue;
+        // A rollback of a box that is gone has nothing to confirm or undo, so it is left out as the box read would be.
+        const spec = host.specs.read(record.boxId);
+        if (!spec) continue;
+        if (principal.type !== "owner" && !boxVisible(principal, viewOfSpec(spec))) continue;
+        entries.push({
+          box: { id: spec.containerId, boxId: spec.id, name: spec.name, hostId: spec.hostId },
+          rollback: pendingRollbackOf(record),
+        });
+      }
+    }
+    return { rollbacks: entries };
+  },
+});
+
 /**
  * Deletes the volumes a rollback replaced. Those volumes are no longer mounted, and the safety checkpoint still holds
  * their data, so this step is the only one that removes them.
@@ -448,6 +503,7 @@ export const checkpointOperations = [
   checkpointDelete,
   boxRollback,
   boxRollbackGet,
+  boxRollbackList,
   boxRollbackConfirm,
   boxRollbackUndo,
 ];

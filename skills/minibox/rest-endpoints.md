@@ -2,7 +2,7 @@
 
 Base URL: `http://127.0.0.1:3920` (the server's `HOST` and `PORT`). Every request carries `Authorization: Bearer <agent token>`, and every write carries `Content-Type: application/json`.
 
-The complete machine-readable list is [`docs/openapi.json`](https://github.com/ArnoChenFx/minibox/blob/main/docs/openapi.json) (120 paths), and [`docs/reference/api.md`](https://github.com/ArnoChenFx/minibox/blob/main/docs/reference/api.md) describes them by group. Each operation has an `x-scope` (the operation's own scope) and, for the ones MCP also exposes, an `x-mcp` entry.
+The complete machine-readable list is [`docs/openapi.json`](https://github.com/ArnoChenFx/minibox/blob/main/docs/openapi.json) (122 paths), and [`docs/reference/api.md`](https://github.com/ArnoChenFx/minibox/blob/main/docs/reference/api.md) describes them by group. Each operation has an `x-scope` (the operation's own scope) and, for the ones MCP also exposes, an `x-mcp` entry.
 
 Conventions in the tables below:
 
@@ -32,6 +32,12 @@ Conventions in the tables below:
 | `POST` | `/api/boxes/{id}/ports` | `port:expose` | `{ "port": 8000 }` |
 | `DELETE` | `/api/boxes/{id}/ports/{port}` | `port:expose` | |
 | `DELETE` | `/api/boxes/{id}/self-token` | `box:write` | Revokes the box's own agent token |
+| `GET` | `/api/boxes/{id}/staged` | `box:read` | The staged changes, `null` when none |
+| `PUT` | `/api/boxes/{id}/staged` | `box:write` | `template`, `mounts`, `env`, `network`, `egress`, `profile` |
+| `DELETE` | `/api/boxes/{id}/staged` | `box:write` | Discards them |
+| `GET` | `/api/boxes/{id}/staged/preview` | `box:read` | What applying would change |
+| `POST` | `/api/boxes/{id}/staged/apply` | owner | If-Match. Rebuilds the box |
+| `GET` | `/api/staged` | `box:read` | Every box's staged changes in one read: `{ "staged": [{ "box", "staged" }] }`. Only boxes with something staged are listed |
 | `GET` | `/api/boxes/{id}/questions` | `box:read` | Questions the box's agent asked |
 | `POST` | `/api/questions/{id}/answer` | `box:write` | `{ "answer" }`. Once only |
 
@@ -113,6 +119,7 @@ All paths are jailed inside the volume. `{id}` is a `vol_…` or a volume name; 
 | `POST` | `/api/checkpoints/{id}/fork` | `box:write` | `name`, `cpus`, `memoryMb`, `profile`, `copyHome`, `ttlSec`. `202` |
 | `POST` | `/api/boxes/{id}/rollback` | `checkpoint:restore` | If-Match, `confirm`, `checkpoint`. `202` |
 | `GET` | `/api/boxes/{id}/rollback` | `checkpoint:read` | The rollback waiting for confirm or undo |
+| `GET` | `/api/rollbacks` | `checkpoint:read` | Every waiting rollback in one read: `{ "rollbacks": [{ "box", "rollback" }] }`. Only boxes that wait are listed |
 | `POST` | `/api/boxes/{id}/rollback/confirm` | `volume:write` | Deletes the volumes it replaced |
 | `POST` | `/api/boxes/{id}/rollback/undo` | `checkpoint:restore` | If-Match. Mounts them again |
 | `PATCH` | `/api/checkpoints/{id}` | `checkpoint:write` | Pin or relabel. `202` |

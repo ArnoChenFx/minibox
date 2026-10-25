@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
 
 import type { App } from "../src/app";
 import type { HostMetrics } from "../src/host/metrics";
@@ -499,5 +501,161 @@ describe("a rollback over HTTP belongs to the token that started it", () => {
     expect((await finishedTask(harness.base, confirmed.json.taskId ?? "")).status).toBe("succeeded");
     const after = await call(harness.base, `/api/boxes/${boxId}/rollback`);
     expect((after.json as unknown as { rollback: unknown }).rollback).toBeNull();
+  });
+});
+
+describe("every waiting rollback in one read", () => {
+  const GB = 1024 ** 3;
+  const ROOMY_HOST = { cpu: { cores: 64 }, memory: { total: 64 * GB } } as unknown as HostMetrics;
+
+  let harness: Harness;
+  let restoreLogs: () => void;
+
+  beforeEach(() => {
+    restoreLogs = silenceLogs();
+    harness = startHarness();
+    harness.app.monitor.snapshot = async () => ROOMY_HOST;
+  });
+
+  afterEach(() => {
+    harness.stop();
+    restoreLogs();
+  });
+
+  const list = (token?: string) => call(harness.base, "/api/rollbacks", { token });
+  type RollbackView = {
+    boxId: string;
+    checkpoint: { id: string; label: string };
+    replaced: { id: string; name: string; path: string }[];
+    restored: { id: string; name: string; path: string }[];
+  };
+  type Listed = {
+    rollbacks: { box: { id: string; boxId: string; name: string; hostId: string }; rollback: RollbackView }[];
+  };
+  const entriesOf = (reply: ReturnType<typeof list> extends Promise<infer T> ? T : never) =>
+    (reply.json as unknown as Listed).rollbacks;
+
+  async function makeBoxOver(name: string, token?: string): Promise<string> {
+    const reply = await call(harness.base, "/api/boxes", { token, body: { name, cpus: 1, memoryMb: 256 } });
+    expect(reply.status).toBe(201);
+    return reply.json.box?.boxId ?? "";
+  }
+
+  async function takeOver(boxId: string, token?: string): Promise<string> {
+    const started = await call(harness.base, `/api/boxes/${boxId}/checkpoints`, { method: "POST", body: {}, token });
+    expect(started.status).toBe(202);
+    const done = await finishedTask(harness.base, started.json.taskId ?? "");
+    const id = done.result?.checkpoint?.id;
+    if (!id) throw new Error("the take returned no checkpoint");
+    return id;
+  }
+
+  /** Rolls a box back to a fresh checkpoint, so a rollback waits for its confirm or undo. */
+  async function rollBackOver(boxId: string, token?: string): Promise<string> {
+    const checkpoint = await takeOver(boxId, token);
+    const started = await call(harness.base, `/api/boxes/${boxId}/rollback`, {
+      method: "POST",
+      token,
+      body: { checkpoint, confirm: true },
+      headers: { "if-match": "1" },
+    });
+    expect(started.status).toBe(202);
+    expect((await finishedTask(harness.base, started.json.taskId ?? "")).status).toBe("succeeded");
+    return checkpoint;
+  }
+
+  test("the list is empty while nothing waits, and it carries the shape of the single-box read", async () => {
+    const boxId = await makeBoxOver("alpha");
+
+    expect(entriesOf(await list())).toEqual([]);
+
+    const checkpoint = await rollBackOver(boxId);
+
+    const entries = entriesOf(await list());
+    expect(entries).toHaveLength(1);
+    const [entry] = entries;
+    expect(entry?.box).toMatchObject({ boxId, name: "alpha", hostId: "local" });
+    expect(entry?.rollback.checkpoint.id).toBe(checkpoint);
+    expect(entry?.rollback.replaced.map((volume) => volume.path).toSorted()).toEqual(["/home/dev", "/workspace"]);
+    // The same record the single-box read returns, field for field.
+    const single = await call(harness.base, `/api/boxes/${boxId}/rollback`);
+    expect(entry?.rollback).toEqual((single.json as unknown as { rollback: RollbackView }).rollback);
+  });
+
+  test("several boxes that wait are listed, and a box with none is left out", async () => {
+    const alpha = await makeBoxOver("alpha");
+    await makeBoxOver("beta");
+    const gamma = await makeBoxOver("gamma");
+    await rollBackOver(alpha);
+    await rollBackOver(gamma);
+
+    expect(
+      entriesOf(await list())
+        .map((entry) => entry.box.name)
+        .toSorted(),
+    ).toEqual(["alpha", "gamma"]);
+
+    // A confirmed rollback stops waiting, so its box drops out of the list.
+    const confirmed = await call(harness.base, `/api/boxes/${alpha}/rollback/confirm`, {
+      method: "POST",
+      body: { confirm: true },
+    });
+    expect(confirmed.status).toBe(202);
+    expect((await finishedTask(harness.base, confirmed.json.taskId ?? "")).status).toBe("succeeded");
+    expect(entriesOf(await list()).map((entry) => entry.box.name)).toEqual(["gamma"]);
+  });
+
+  test("a record that cannot be read is skipped, and a record of a box that is gone is left out", async () => {
+    const alpha = await makeBoxOver("alpha");
+    const beta = await makeBoxOver("beta");
+    await rollBackOver(alpha);
+    await rollBackOver(beta);
+
+    // A corrupt record reads as none, as the single-box read does, and the others are still listed.
+    const checkpoints = harness.app.hosts.get().checkpoints;
+    writeFileSync(join(checkpoints.rollbackDir(), `${alpha}.json`), "{not json");
+    expect(entriesOf(await list()).map((entry) => entry.box.name)).toEqual(["beta"]);
+
+    // A box that is gone keeps its record only until startup settles it, and is left out of the list meanwhile.
+    const gamma = await makeBoxOver("gamma");
+    await rollBackOver(gamma);
+    const record = checkpoints.pendingRollback(gamma);
+    expect(record).not.toBeNull();
+    expect((await call(harness.base, `/api/boxes/${gamma}?skipTrash=true`, { method: "DELETE" })).status).toBe(200);
+    if (record) checkpoints.writePendingRollback(record);
+    expect(entriesOf(await list()).map((entry) => entry.box.name)).toEqual(["beta"]);
+  });
+
+  test("a token sees the rollbacks of the boxes its grants cover, and only those", async () => {
+    const alpha = await makeBoxOver("alpha");
+    const beta = await makeBoxOver("beta");
+    await rollBackOver(alpha);
+    await rollBackOver(beta);
+
+    const watcher = mint(harness.app, { name: "watcher", preset: "operator", boxes: { type: "ids", ids: [alpha] } });
+    expect(entriesOf(await list(watcher.secret)).map((entry) => entry.box.name)).toEqual(["alpha"]);
+
+    const every = mint(harness.app, { name: "every", preset: "readonly", boxes: { type: "all" } });
+    expect(
+      entriesOf(await list(every.secret))
+        .map((entry) => entry.box.name)
+        .toSorted(),
+    ).toEqual(["alpha", "beta"]);
+
+    const none = mint(harness.app, { name: "none", preset: "readonly" });
+    expect(entriesOf(await list(none.secret))).toEqual([]);
+  });
+
+  test("a token with no checkpoint scope is refused, and so is one whose host is not granted", async () => {
+    await makeBoxOver("alpha");
+    const exec = mint(harness.app, { name: "exec", scopes: ["exec"] });
+    expect(refused(await list(exec.secret))).toEqual({ status: 403, key: "operation_forbidden" });
+
+    const elsewhere = mint(harness.app, {
+      name: "elsewhere",
+      preset: "readonly",
+      hosts: { type: "list", ids: ["edge"] },
+    });
+    expect(refused(await list(elsewhere.secret))).toEqual({ status: 403, key: "host_not_granted" });
   });
 });

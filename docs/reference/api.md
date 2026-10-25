@@ -2,7 +2,7 @@
 
 Every MiniBox operation is available over a JSON REST API under `/api`. The console, the [CLI](cli.md) and the [MCP tools](mcp.md) use the same operations.
 
-The full machine-readable description is the OpenAPI 3.1 document in [`openapi.json`](../openapi.json). Import it into any OpenAPI tool to generate a client. The document describes 134 operations in 21 groups.
+The full machine-readable description is the OpenAPI 3.1 document in [`openapi.json`](../openapi.json). Import it into any OpenAPI tool to generate a client. The document describes 151 operations in 23 groups.
 
 ## Authentication
 
@@ -149,6 +149,12 @@ The tables below list every operation in [`openapi.json`](../openapi.json), grou
 | `PUT` | `/api/boxes/{id}/startup-command` | Set a box's startup command, as `{ "command", "applyNow" }`. Needs `If-Match`, `exec` and `secret:use` |
 | `DELETE` | `/api/boxes/{id}/startup-command` | Remove a box's startup command. Needs `If-Match`, `exec` and `secret:use` |
 | `POST` | `/api/boxes/{id}/startup-command/run` | Run a box's startup command again now. The box must be running. Needs `exec` and `secret:use` |
+| `GET` | `/api/boxes/{id}/staged` | Read a box's staged changes. `staged` is `null` when nothing is staged |
+| `PUT` | `/api/boxes/{id}/staged` | Stage changes that rebuild a box: `template`, `mounts`, `env`, `network`, `egress`, `profile` |
+| `DELETE` | `/api/boxes/{id}/staged` | Discard a box's staged changes |
+| `GET` | `/api/boxes/{id}/staged/preview` | Preview applying a box's staged changes |
+| `POST` | `/api/boxes/{id}/staged/apply` | Apply a box's staged changes. Needs `If-Match`; owner only |
+| `GET` | `/api/staged` | Every box's staged changes in one read, as `{ "staged": [{ "box", "staged" }] }`. Only boxes with something staged are listed, and a box that cannot be read is skipped |
 
 ### exec
 
@@ -264,6 +270,7 @@ These are owner only. A key logs in to every box over direct SSH, so no token ma
 | `POST` | `/api/checkpoints/{id}/fork` | Create a box from a checkpoint |
 | `POST` | `/api/checkpoints/{id}/copy` | Copy a checkpoint to another host `{ "host" }`. Returns `202`; the task result holds the copy. Owner only |
 | `GET` | `/api/boxes/{id}/rollback` | Read the rollback of a box that waits for its confirm or undo |
+| `GET` | `/api/rollbacks` | Every waiting rollback in one read, as `{ "rollbacks": [{ "box", "rollback" }] }`. Only boxes that wait are listed, and a record that cannot be read is skipped |
 | `POST` | `/api/boxes/{id}/rollback` | Roll a box back to one of its checkpoints |
 | `POST` | `/api/boxes/{id}/rollback/confirm` | Confirm a rollback: delete the volumes it replaced |
 | `POST` | `/api/boxes/{id}/rollback/undo` | Undo a rollback: mount the volumes it replaced again |

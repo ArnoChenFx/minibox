@@ -84,9 +84,16 @@ function pick(fields: StagedFields, keep: readonly StagedField[]): StagedFields 
  * record with none left is removed. A plan that fails leaves the record as it is and reports why.
  */
 export async function readStaged(host: HostCtx, box: Box): Promise<StagedView | null> {
-  const record = host.specs.staged.read(box.boxId);
+  return stagedOfSpec(host, specOf(host, box));
+}
+
+/**
+ * The staged changes of one box spec, for a list that reads every box. The spec names the box, so a box that has been
+ * deleted since it was listed is not read again here.
+ */
+export async function stagedOfSpec(host: HostCtx, spec: BoxSpec): Promise<StagedView | null> {
+  const record = host.specs.staged.read(spec.id);
   if (!record) return null;
-  const spec = specOf(host, box);
   let pending: StagedField[];
   try {
     pending = await stillPending(host, spec, record.fields);
@@ -94,7 +101,7 @@ export async function readStaged(host: HostCtx, box: Box): Promise<StagedView | 
     return viewOf(record, stagedFieldsOf(record.fields), [], problemOf(e));
   }
   if (pending.length === 0) {
-    host.specs.staged.remove(box.boxId);
+    host.specs.staged.remove(spec.id);
     return null;
   }
   let current = record;

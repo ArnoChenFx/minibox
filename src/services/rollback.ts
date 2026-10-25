@@ -50,6 +50,11 @@ export interface RollbackUndoPreview {
 export function pendingRollbackView(host: HostCtx, boxId: string): PendingRollbackView | null {
   const pending = host.checkpoints.pendingRollback(boxId);
   if (!pending) return null;
+  return pendingRollbackOf(pending);
+}
+
+/** The view of a rollback record the store already holds, for a list that reads them all. */
+export function pendingRollbackOf(pending: PendingRollback): PendingRollbackView {
   return {
     boxId: pending.boxId,
     checkpoint: { id: pending.checkpointId, label: pending.checkpointLabel },

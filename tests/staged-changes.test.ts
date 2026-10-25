@@ -6,7 +6,7 @@ import type { HostMetrics } from "../src/host/metrics";
 import { RuntimeError } from "../src/runtime";
 import { StagedStore } from "../src/specs/staged";
 import { silenceLogs } from "./support/app";
-import { type Body, call, type Harness, mint, type Reply, startHarness } from "./support/tokens";
+import { type Body, call, type Harness, mint, type Reply, refused, startHarness } from "./support/tokens";
 
 const GB = 1024 ** 3;
 const ROOMY_HOST = { cpu: { cores: 64 }, memory: { total: 64 * GB } } as unknown as HostMetrics;
@@ -306,5 +306,111 @@ describe("staging refuses what a rebuild would refuse", () => {
 
     expect(refused.status).toBe(400);
     expect(stagedOf(await readStaged(boxId))).toBeNull();
+  });
+});
+
+const listStaged = (token?: string) => call(harness.base, "/api/staged", { token });
+
+describe("every box's staged changes in one read", () => {
+  type Listed = { staged: { box: { id: string; boxId: string; name: string; hostId: string }; staged: StagedBody }[] };
+  const entriesOf = (reply: Reply) => (reply.json as unknown as Listed).staged;
+
+  test("the list is empty while nothing is staged, and it carries the shape of the single-box read", async () => {
+    await makeBox("alpha");
+    await makeBox("beta");
+
+    expect(entriesOf(await listStaged())).toEqual([]);
+
+    const { boxId } = await makeBox("gamma");
+    await stage(boxId, { profile: "strict", env: [{ name: "MODE", value: "dev" }] });
+
+    const entries = entriesOf(await listStaged());
+    expect(entries).toHaveLength(1);
+    const [entry] = entries;
+    expect(entry?.box).toMatchObject({ boxId, name: "gamma", hostId: "local" });
+    expect(entry?.staged).toMatchObject({
+      fields: { profile: "strict", env: [{ name: "MODE", value: "dev" }] },
+      pending: ["env", "profile"],
+      problem: null,
+    });
+    // The same record the single-box read returns, field for field.
+    expect(entry?.staged).toEqual(stagedOf(await readStaged(boxId)) as StagedBody);
+  });
+
+  test("several boxes are listed, and a box with nothing staged is left out", async () => {
+    const alpha = await makeBox("alpha");
+    await makeBox("beta");
+    const gamma = await makeBox("gamma");
+    await stage(alpha.boxId, { profile: "strict" });
+    await stage(gamma.boxId, { network: "bridge" });
+
+    const names = entriesOf(await listStaged()).map((entry) => [entry.box.name, entry.staged.pending]);
+    expect(names.toSorted()).toEqual([
+      ["alpha", ["profile"]],
+      ["gamma", ["network"]],
+    ]);
+  });
+
+  test("a box whose staged changes cannot be read is skipped, and the others are still listed", async () => {
+    const alpha = await makeBox("alpha");
+    const beta = await makeBox("beta");
+    await stage(alpha.boxId, { profile: "strict" });
+    await stage(beta.boxId, { profile: "strict" });
+    // A plan that cannot be made leaves the record in place and reports the problem, so the box is still listed.
+    harness.runtime.fail("inspectImage", new RuntimeError("engine", "boom", "boom"));
+    expect(
+      entriesOf(await listStaged())
+        .map((entry) => entry.box.name)
+        .toSorted(),
+    ).toEqual(["alpha", "beta"]);
+
+    // A spec that is gone has no box to read: its record is dropped with the box, so the list stays whole.
+    const gamma = await makeBox("gamma");
+    await stage(gamma.boxId, { profile: "strict" });
+    expect((await call(harness.base, `/api/boxes/${gamma.boxId}?skipTrash=true`, { method: "DELETE" })).status).toBe(
+      200,
+    );
+    expect(
+      entriesOf(await listStaged())
+        .map((entry) => entry.box.name)
+        .toSorted(),
+    ).toEqual(["alpha", "beta"]);
+  });
+
+  test("a read-only token sees the staged changes of the boxes its grants cover, and only those", async () => {
+    const alpha = await makeBox("alpha");
+    const beta = await makeBox("beta");
+    await stage(alpha.boxId, { profile: "strict" });
+    await stage(beta.boxId, { profile: "strict" });
+
+    const reader = mint(harness.app, {
+      name: "reader",
+      preset: "readonly",
+      boxes: { type: "ids", ids: [alpha.boxId] },
+    });
+    expect(entriesOf(await listStaged(reader.secret)).map((entry) => entry.box.name)).toEqual(["alpha"]);
+
+    const every = mint(harness.app, { name: "every", preset: "readonly", boxes: { type: "all" } });
+    expect(
+      entriesOf(await listStaged(every.secret))
+        .map((entry) => entry.box.name)
+        .toSorted(),
+    ).toEqual(["alpha", "beta"]);
+
+    const none = mint(harness.app, { name: "none", preset: "readonly" });
+    expect(entriesOf(await listStaged(none.secret))).toEqual([]);
+  });
+
+  test("a token with no scope for boxes is refused, and so is one whose host is not granted", async () => {
+    await makeBox("alpha");
+    const exec = mint(harness.app, { name: "exec", scopes: ["exec"] });
+    expect(refused(await listStaged(exec.secret))).toEqual({ status: 403, key: "operation_forbidden" });
+
+    const elsewhere = mint(harness.app, {
+      name: "elsewhere",
+      preset: "readonly",
+      hosts: { type: "list", ids: ["edge"] },
+    });
+    expect(refused(await listStaged(elsewhere.secret))).toEqual({ status: 403, key: "host_not_granted" });
   });
 });
