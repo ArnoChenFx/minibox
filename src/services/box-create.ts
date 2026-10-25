@@ -124,7 +124,7 @@ async function undoCreate(host: HostCtx, attempt: CreateAttempt): Promise<void> 
     }
   }
   if (attempt.boxId) {
-    host.startup.endClone(attempt.boxId);
+    host.startup.endSetup(attempt.boxId);
     host.selfTokens.revoke(attempt.boxId);
     try {
       host.specs.remove(attempt.boxId);
@@ -163,7 +163,7 @@ async function buildBox(
   const { runtime, keys, prefix, security } = host;
   if (host.specs.findByName(input.name)) throw conflict(msg("box_exists", { name: input.name }));
   if (input.selfToken) assertSelfTokenHost(host);
-  const awaitsClone = input.awaitsClone === true && input.startupCommand !== undefined;
+  const awaitsSetup = input.awaitsSetup === true && input.startupCommand !== undefined;
   const env = input.env ?? [];
   assertSecretsSet(host.secrets, env);
 
@@ -267,7 +267,7 @@ async function buildBox(
       env,
       tools: desiredToolsOf(input.tools, loadCatalog(dirname(host.specs.dir()))),
       ...(input.startupCommand !== undefined ? { startupCommand: input.startupCommand } : {}),
-      ...(awaitsClone ? { startupAwaitsClone: true } : {}),
+      ...(awaitsSetup ? { startupAwaitsSetup: true } : {}),
       ...(input.selfToken ? { selfToken: true } : {}),
       labels: {},
       lifecycle: {
@@ -288,7 +288,7 @@ async function buildBox(
       recovery: null,
       history: [],
     };
-    if (awaitsClone) host.startup.beginClone(id);
+    if (awaitsSetup) host.startup.beginSetup(id);
     host.specs.write(spec);
     return created.id;
   });

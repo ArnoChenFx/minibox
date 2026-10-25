@@ -128,7 +128,7 @@ export default {
   "sc.applyNow": "现在也运行一次",
   "sc.applyNowHelp": "Box 正在运行，新命令会立即开始。",
   "sc.status.none": "未设置",
-  "sc.status.cloning": "等待仓库克隆完成",
+  "sc.status.cloning": "等待 Box 设置完成",
   "sc.status.waiting": "等待下次启动",
   "sc.status.running": "运行中",
   "sc.status.exited": "已退出（代码 {code}）",

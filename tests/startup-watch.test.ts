@@ -5,7 +5,7 @@ import type { HostCtx } from "../src/host/registry";
 import { HostSampler } from "../src/host/sampler";
 import type { ExecSpec, RuntimeEvent } from "../src/runtime";
 import { createBox, stopBox } from "../src/services/boxes";
-import { finishClone } from "../src/services/startup";
+import { finishSetup } from "../src/services/startup";
 import { INIT_SESSION } from "../src/startup/command";
 import { createTestApp, silenceLogs } from "./support/app";
 import type { FakeRuntime } from "./support/fake-runtime";
@@ -171,7 +171,7 @@ describe("startup watch", () => {
       cpus: 1,
       memoryMb: 256,
       startupCommand: "npm run dev",
-      awaitsClone: true,
+      awaitsSetup: true,
     });
     await host.startup.settle();
     await listen(app);
@@ -181,7 +181,7 @@ describe("startup watch", () => {
     await quiet(host);
     expect(launchCount(runtime, box.id)).toBe(0);
 
-    await finishClone(host, box.boxId, null);
+    await finishSetup(host, box.boxId, null);
     await host.startup.settle();
     expect(launchCount(runtime, box.id)).toBe(1);
   });

@@ -568,9 +568,11 @@ export default {
   "err.startup_command_box_stopped_hint": "Start the box. The command runs at every start.",
   "err.startup_command_failed": "MiniBox could not run the startup command: {detail}",
   "err.startup_command_clone_failed": "The startup command did not start, because the repository clone failed.",
+  "err.startup_command_setup_failed":
+    "The startup command did not start, because the box's setup failed. The setup task shows why.",
   "err.startup_command_clone_unfinished":
-    "The startup command did not start, because a server restart cut the repository clone short. Run the command again to start it.",
-  "err.startup_command_awaits_clone": "The startup command waits for the repository clone to finish.",
+    "The startup command did not start, because a server restart cut the box's setup short. Run the command again to start it.",
+  "err.startup_command_awaits_clone": "The startup command waits for the box's setup to finish.",
   "err.startup_command_invalid": "The startup command must be text.",
   "err.startup_command_forbidden":
     "A startup command runs in the box and may hold secrets. This credential may not set, remove or run one. It needs the exec and secret:use scopes, or the admin preset.",
