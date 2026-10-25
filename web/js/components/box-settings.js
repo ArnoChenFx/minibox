@@ -1,6 +1,5 @@
 import { BOX_SETTINGS, boxSettingsOf } from "../lib/box-settings.js";
 import { esc, revealInStrip } from "../lib/dom.js";
-import { dateTime } from "../lib/format.js";
 import { t } from "../lib/i18n.js";
 import { boxHash } from "../lib/routes.js";
 import { mountResources } from "./box-resources.js";
@@ -9,19 +8,12 @@ import { mountMounts } from "./box-volumes.js";
 import { mountCheckpoints } from "./checkpoints.js";
 import { mountEgressCard } from "./egress-card.js";
 import { mountEnvCard } from "./env-card.js";
+import { mountLifecycleCard } from "./lifecycle-card.js";
 import { mountStagedBanner } from "./staged-changes.js";
 import { mountStartupCard } from "./startup-card.js";
 
 function kvCard(title, rows) {
   return `<div class="card"><div class="card-head"><h3>${esc(title)}</h3></div><div class="card-body"><dl class="kv">${rows}</dl></div></div>`;
-}
-
-function lifecycleRows(b) {
-  return `<dt>${t("bd.desired")}</dt><dd>${b.desired === "stopped" ? t("bd.desiredStopped") : t("bd.desiredRunning")}</dd>
-    <dt>${t("bd.sleeping")}</dt><dd>${b.sleeping ? t("bd.sleepingYes") : t("bd.sleepingNo")}${b.stopReason ? ` <span class="subtle">(${esc(t(`bd.stopReason.${b.stopReason}`))})</span>` : ""}</dd>
-    <dt>${t("bd.lastActivity")}</dt><dd>${b.lastActivityAt ? dateTime(b.lastActivityAt) : t("bd.lastActivityUnknown")}</dd>
-    <dt>${t("bd.idleTimeout")}</dt><dd>${b.idleTimeoutSec === 0 ? t("bd.idleNever") : b.idleTimeoutSec != null ? t("bd.seconds", { n: b.idleTimeoutSec }) : t("bd.idleInherit")}</dd>
-    <dt>${t("bd.ttl")}</dt><dd>${b.ttlSec != null ? t("bd.seconds", { n: b.ttlSec }) : t("bd.ttlNone")}</dd>`;
 }
 
 function securityRows(b) {
@@ -38,19 +30,21 @@ function withBoxChanges(card, onChange) {
   };
 }
 
-function lifecycleSection(panel, { box, onChange }) {
+/**
+ * The startup command and the idle timeout and TTL. The startup card keeps its own state, so the section forwards each box
+ * change to it; the lifecycle card redraws itself and reads the box again once it saves.
+ */
+function lifecycleSection(panel, { box, onChange, refreshBox }) {
   panel.innerHTML = `<div id="bsStartup"></div><div id="bsLifecycle"></div>`;
   const startup = mountStartupCard(panel.querySelector("#bsStartup"), { box });
-  const draw = () => {
-    panel.querySelector("#bsLifecycle").innerHTML = kvCard(t("bd.setLifecycle"), lifecycleRows(box()));
-  };
-  draw();
+  const lifecycle = mountLifecycleCard(panel.querySelector("#bsLifecycle"), { box, refreshBox });
   const off = onChange(() => {
-    draw();
+    lifecycle.onBoxChange();
     startup.onBoxChange();
   });
   return () => {
     off();
+    lifecycle.dispose();
     startup.dispose();
   };
 }

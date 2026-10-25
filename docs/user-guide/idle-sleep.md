@@ -5,7 +5,7 @@ A box can stop itself when nothing has used it for a while. This is called sleep
 ## Idle sleep
 
 - The administrator sets the default idle timeout with `BOX_IDLE_TIMEOUT_SEC`. The default is `0`, which means idle sleep is off.
-- Each box can use the default timeout, or its own. The box's **Settings** tab, under **Lifecycle**, shows its **Idle timeout**: **Global default**, **Never sleep**, or the box's own number of seconds.
+- Each box can use the default timeout, or its own. The box's **Settings** tab, under **Lifecycle**, shows and changes its **Idle timeout**: **Global default**, **Never sleep**, or the box's own number of seconds.
 - A box sleeps when all of these are true:
   - Nothing is using it.
   - Nothing has used it for at least the timeout.
@@ -46,7 +46,9 @@ A TTL is a lifetime that starts when the box is created. When the TTL ends, Mini
 
 A box whose TTL has ended does not start again. Starting, restarting, rebuilding, running commands and opening terminals or previews all fail until the TTL is cleared or set later. Clear it or set a later TTL, and then start the box.
 
-The create dialog has no TTL field. The console shows the TTL and the idle timeout of each box, but it does not change them. Set them with the [REST API](../reference/api.md).
+The create dialog has no TTL field. Change both the idle timeout and the TTL in the console: open the box, then **Settings** and **Lifecycle**, and click **Edit** on the lifecycle card. The idle timeout is **Global default**, **Never sleep** or the box's own number of seconds, and the TTL is **No TTL** or a lifetime, entered with a unit such as 30 minutes or 2 hours. **Save** applies the change at once, with no rebuild. A box that is already stopped stays stopped, and a TTL that has already ended keeps the box stopped until it is cleared or set later.
+
+The same two fields are in `PATCH /api/boxes/{id}` (`idleTimeoutSec` and `ttlSec`) for scripts and agents. See the [REST API](../reference/api.md).
 
 ## Status labels
 
