@@ -4,6 +4,9 @@
 
 ## [Unreleased]
 
+### 新增
+- **宿主机设置页与概览可以看 `docker system df` 的明细**（Refs [#192](https://github.com/ArnoChenFx/minibox/issues/192)）：新增 `GET /api/hosts/{id}/disk`（操作 `host.disk`，scope `host:manage`，仅所有者），返回 `{ id, status, checkedAt, supported, reason, detail, breakdown }`，`breakdown` 里是 `images`、`containers`、`volumes`、`buildCache` 四类，每类带 `count`、`activeCount`、`totalBytes`、`reclaimableBytes`。运行时新增 `Runtime.diskBreakdown({ signal })`，本地与 unix / tcp / ssh 宿主机都走 dockerode 的 `df()`（`GET /system/df`）：API 1.52 及以后的引擎报 `ImageUsage` 等四段自带总量，更早的引擎报四个数组、没有计数，由 MiniBox 自己求和（镜像按 `Size`/`VirtualSize` 与 `Containers`、容器按 `SizeRw` 与 `State`、卷按 `UsageData.Size` 与 `RefCount`、构建缓存按 `Size` 与 `InUse`/`Shared`），引擎从未测量过的条目（`-1`）不计入。**引擎没有报告的类别或数字一律是 `null`，不是 0，也不会抛错**；读取沿用宿主机原有的 `host.readTimeoutMs`（`src/lib/abort.ts` 的 `untilAborted`），一台宿主机不应答不会拖住页面：`reason` 区分 `agent_host`、`offline`、`timeout`、`engine`（带引擎原文），状态码仍是 `200`，只有宿主机 id 不存在才 `404 host_not_found`。**Agent 宿主机没有读数**：`AgentRuntime.diskBreakdown()` 按现有风格 `refused("diskBreakdown")`（`unsupported`），`diskBreakdown` 也进了 `REFUSED_OPERATIONS`，所以 Agent 宿主机直接回 `supported: false, reason: "agent_host"`，不会 500。界面在宿主机设置表里每行下面加一条存储明细（四类占用、在用数量、可回收量与百分比），概览的宿主机卡片也带同一总量（悬停按类别拆开），中英文文案 `st.disk.*` 与 `ov.hostDisk` 齐全；每台宿主机一次请求、并行读取，表格先画、读数后填，读取失败只留空自己那一行。既有的 `diskUsage` 语义与水位逻辑（`src/volumes/disk.ts`、`src/volumes/health.ts`、概览 `host.disk_low`）完全不变，新能力是纯增量。OpenAPI 重新生成，`docs/reference/api.md` 新增「Engine storage」一节，中英文《宿主机》《卷与存储》与 `docs/reference/agent.md` 的拒绝列表同步说明（含 Agent 宿主机没有读数这件事），parity transcript 补了两条交换。
+
 ## [0.6.7] - 2026-10-26
 
 ### 新增

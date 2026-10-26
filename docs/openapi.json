@@ -40923,6 +40923,441 @@
         }
       }
     },
+    "/api/hosts/{id}/disk": {
+      "get": {
+        "operationId": "host.disk",
+        "tags": [
+          "hosts"
+        ],
+        "summary": "Show what a host's engine holds",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 32,
+              "description": "Host id, as host.list reports it."
+            }
+          },
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "description": "The host id."
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "online",
+                        "offline",
+                        "unknown"
+                      ]
+                    },
+                    "checkedAt": {
+                      "type": "string",
+                      "description": "When this reading was taken, as ISO time."
+                    },
+                    "supported": {
+                      "type": "boolean",
+                      "description": "Whether the host's engine can report this at all. An agent host cannot: its engine is not reachable for this read."
+                    },
+                    "reason": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "agent_host",
+                            "offline",
+                            "timeout",
+                            "engine"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "Why breakdown is null: agent_host for an agent host, offline for a host whose last check failed, timeout when the engine did not answer within the host's read timeout, engine when the engine refused the read. Null when the breakdown is there."
+                    },
+                    "detail": {
+                      "description": "The engine's own message when reason is engine.",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "breakdown": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "images": {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "count": {
+                                      "anyOf": [
+                                        {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ],
+                                      "description": "Entries of this class the engine holds."
+                                    },
+                                    "activeCount": {
+                                      "anyOf": [
+                                        {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ],
+                                      "description": "Entries in use: images a container uses, running containers, mounted volumes."
+                                    },
+                                    "totalBytes": {
+                                      "description": "Bytes this class takes.",
+                                      "type": [
+                                        "number",
+                                        "null"
+                                      ]
+                                    },
+                                    "reclaimableBytes": {
+                                      "description": "Bytes removing everything unused would free.",
+                                      "type": [
+                                        "number",
+                                        "null"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "count",
+                                    "activeCount",
+                                    "totalBytes",
+                                    "reclaimableBytes"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "containers": {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "count": {
+                                      "anyOf": [
+                                        {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ],
+                                      "description": "Entries of this class the engine holds."
+                                    },
+                                    "activeCount": {
+                                      "anyOf": [
+                                        {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ],
+                                      "description": "Entries in use: images a container uses, running containers, mounted volumes."
+                                    },
+                                    "totalBytes": {
+                                      "description": "Bytes this class takes.",
+                                      "type": [
+                                        "number",
+                                        "null"
+                                      ]
+                                    },
+                                    "reclaimableBytes": {
+                                      "description": "Bytes removing everything unused would free.",
+                                      "type": [
+                                        "number",
+                                        "null"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "count",
+                                    "activeCount",
+                                    "totalBytes",
+                                    "reclaimableBytes"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "volumes": {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "count": {
+                                      "anyOf": [
+                                        {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ],
+                                      "description": "Entries of this class the engine holds."
+                                    },
+                                    "activeCount": {
+                                      "anyOf": [
+                                        {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ],
+                                      "description": "Entries in use: images a container uses, running containers, mounted volumes."
+                                    },
+                                    "totalBytes": {
+                                      "description": "Bytes this class takes.",
+                                      "type": [
+                                        "number",
+                                        "null"
+                                      ]
+                                    },
+                                    "reclaimableBytes": {
+                                      "description": "Bytes removing everything unused would free.",
+                                      "type": [
+                                        "number",
+                                        "null"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "count",
+                                    "activeCount",
+                                    "totalBytes",
+                                    "reclaimableBytes"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "buildCache": {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "count": {
+                                      "anyOf": [
+                                        {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ],
+                                      "description": "Entries of this class the engine holds."
+                                    },
+                                    "activeCount": {
+                                      "anyOf": [
+                                        {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ],
+                                      "description": "Entries in use: images a container uses, running containers, mounted volumes."
+                                    },
+                                    "totalBytes": {
+                                      "description": "Bytes this class takes.",
+                                      "type": [
+                                        "number",
+                                        "null"
+                                      ]
+                                    },
+                                    "reclaimableBytes": {
+                                      "description": "Bytes removing everything unused would free.",
+                                      "type": [
+                                        "number",
+                                        "null"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "count",
+                                    "activeCount",
+                                    "totalBytes",
+                                    "reclaimableBytes"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "images",
+                            "containers",
+                            "volumes",
+                            "buildCache"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "Images, containers, volumes and build cache as `docker system df` reports them, or null when the host has no reading. A class, or a figure within one, that the engine does not report is null rather than zero."
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "status",
+                    "checkedAt",
+                    "supported",
+                    "reason",
+                    "detail",
+                    "breakdown"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable, or a storage pool backing the request cannot be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "read",
+        "x-scope": "host:manage",
+        "x-async": false,
+        "x-mcp": {
+          "name": "get_host_disk",
+          "toolset": "meta"
+        }
+      }
+    },
     "/api/hosts/test": {
       "post": {
         "operationId": "host.test",

@@ -371,6 +371,7 @@ An entry is kept for `TRASH_RETENTION_DAYS` days, see [Configuration](configurat
 |---|---|---|
 | `GET` | `/api/hosts` | List hosts |
 | `GET` | `/api/hosts/usage` | Show what each host runs and uses |
+| `GET` | `/api/hosts/{id}/disk` | What the host's engine holds, as `docker system df` counts it: images, containers, volumes and build cache, each with its total and reclaimable bytes. Owner only. An agent host has no reading, and a host whose engine does not answer reports why. See [Engine storage](#engine-storage-docker-system-df) |
 | `POST` | `/api/hosts` | Add a host |
 | `POST` | `/api/hosts/test` | Test a host connection |
 | `POST` | `/api/hosts/pairing` | Create a one-time pairing code for a new agent host `{ "id", "name"? }`. Returns `201` with the code and when it expires |
@@ -378,6 +379,44 @@ An entry is kept for `TRASH_RETENTION_DAYS` days, see [Configuration](configurat
 | `DELETE` | `/api/hosts/{id}` | Remove a host |
 
 An agent connects on its own: it exchanges the pairing code at `POST /api/agent/pair`, then keeps a WebSocket open at `/api/agent/connect`. Both are used by the agent, not by clients. See [Agent](agent.md).
+
+#### Engine storage (`docker system df`)
+
+`GET /api/hosts/{id}/disk` answers what one host's engine holds, the way `docker system df` reports it. It is a read, so it changes nothing, and it needs the owner: no token scope reaches it.
+
+```json
+{
+  "id": "local",
+  "status": "online",
+  "checkedAt": "2026-10-26T10:00:00.000Z",
+  "supported": true,
+  "reason": null,
+  "detail": null,
+  "breakdown": {
+    "images":     { "count": 4, "activeCount": 2, "totalBytes": 629145600, "reclaimableBytes": 209715200 },
+    "containers": { "count": 3, "activeCount": 1, "totalBytes": 31457280,  "reclaimableBytes": 20971520 },
+    "volumes":    { "count": 6, "activeCount": 5, "totalBytes": 3145728000, "reclaimableBytes": 524288000 },
+    "buildCache": { "count": 9, "activeCount": 0, "totalBytes": 943718400, "reclaimableBytes": 943718400 }
+  }
+}
+```
+
+`breakdown` holds one entry per class, each with the entries the engine holds (`count`), the entries in use (`activeCount`: images a container uses, running or paused containers, volumes a container mounts, build cache in use), the bytes the class takes (`totalBytes`) and the bytes removing everything unused would free (`reclaimableBytes`).
+
+The reading is the engine's own accounting, not the host filesystem's. The disk watermark that MiniBox enforces is a different figure, read from the filesystem the engine's root directory is on; it is not part of this answer. See [Volumes and storage](../user-guide/volumes-and-storage.md#host-free-space).
+
+**A figure the engine does not report is `null`, never zero.** Engines differ: API 1.52 and later answer `ImageUsage`, `ContainerUsage`, `VolumeUsage` and `BuildCacheUsage` with totals per class, and older engines answer plain arrays with no counts, which MiniBox sums. A class the engine leaves out entirely is `null`, and so is any figure within one. So a class, or a figure, that a given engine cannot report is shown as unknown rather than as nothing.
+
+**A host with no reading answers `breakdown: null` and a `reason`**, with status `200` rather than an error, so a page that lists several hosts keeps working when one of them cannot answer:
+
+| `reason` | When |
+|---|---|
+| `agent_host` | The host is a MiniBox agent. Its engine is behind the agent's own connection, which does not carry this read, so `supported` is `false`. An agent host never has a reading. |
+| `offline` | The host's last connection check failed, or its engine refused the read as unavailable. The engine is not asked again while the host is offline. |
+| `timeout` | The engine did not answer within the host's read timeout, the same `readTimeoutMs` a box read uses (5 s). |
+| `engine` | The engine answered with an error. `detail` holds its own message. |
+
+A host id no host carries answers `404` (`host_not_found`).
 
 ### notify
 

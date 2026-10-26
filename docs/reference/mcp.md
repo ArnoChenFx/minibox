@@ -75,6 +75,7 @@ The tables below list each tool and the operation it calls, taken from the `x-mc
 |---|---|
 | `list_hosts` | `GET /api/hosts` |
 | `get_host_usage` | `GET /api/hosts/usage` |
+| `get_host_disk` | `GET /api/hosts/{id}/disk` |
 | `add_host` | `POST /api/hosts` |
 | `test_host` | `POST /api/hosts/test` |
 | `remove_host` | `DELETE /api/hosts/{id}` |

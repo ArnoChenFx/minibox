@@ -2136,6 +2136,22 @@
     "body": "{\"hosts\":[{\"id\":\"local\",\"name\":\"Local\",\"transport\":\"local\",\"endpoint\":\"unix:///nonexistent-minibox-test.sock\",\"status\":\"online\",\"latencyMs\":null,\"capacity\":null,\"dockerVersion\":null,\"error\":null,\"boxes\":3,\"createdAt\":null}]}"
   },
   {
+    "step": "read the engine storage of the local host",
+    "method": "GET",
+    "path": "/api/hosts/local/disk",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"id\":\"local\",\"status\":\"online\",\"checkedAt\":\"<time>\",\"supported\":true,\"reason\":null,\"detail\":null,\"breakdown\":{\"images\":{\"count\":3,\"activeCount\":2,\"totalBytes\":6000000000,\"reclaimableBytes\":2000000000},\"containers\":{\"count\":2,\"activeCount\":1,\"totalBytes\":100000000,\"reclaimableBytes\":50000000},\"volumes\":{\"count\":4,\"activeCount\":3,\"totalBytes\":3000000000,\"reclaimableBytes\":500000000},\"buildCache\":{\"count\":5,\"activeCount\":0,\"totalBytes\":1000000000,\"reclaimableBytes\":1000000000}}}"
+  },
+  {
+    "step": "read the engine storage of a missing host",
+    "method": "GET",
+    "path": "/api/hosts/nowhere/disk",
+    "status": 404,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Host “nowhere” was not found.\",\"retryable\":false,\"key\":\"host_not_found\",\"params\":{\"host\":\"nowhere\"}}}"
+  },
+  {
     "step": "create a box to export",
     "method": "POST",
     "path": "/api/boxes",

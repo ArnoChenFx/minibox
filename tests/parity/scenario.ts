@@ -764,6 +764,9 @@ async function recordScenario(): Promise<Exchange[]> {
     await send("remove the lab host", "DELETE", "/api/hosts/lab");
     await send("remove a missing host", "DELETE", "/api/hosts/missing");
     await send("list hosts after removing lab", "GET", "/api/hosts");
+    // What a host's engine holds (`docker system df`), and a host id no host carries.
+    await send("read the engine storage of the local host", "GET", "/api/hosts/local/disk");
+    await send("read the engine storage of a missing host", "GET", "/api/hosts/nowhere/disk");
 
     const portBox = boxId(
       (await post("create a box to export", "/api/boxes", { name: "portbox", cpus: 1, memoryMb: 256 })).json,
