@@ -110,11 +110,9 @@ describe.skipIf(!executablePath)("the create box dialog's custom volumes (real b
         );
       expect(choices).toContain(english("mount.roleCreate", { role: english("vol.roleWorkspace") }));
       await webExpect(
-        rows
-          .nth(2)
-          .locator("[data-volume] option", {
-            hasText: english("mount.roleCreate", { role: english("vol.roleTools") }),
-          }),
+        rows.nth(2).locator("[data-volume] option", {
+          hasText: english("mount.roleCreate", { role: english("vol.roleTools") }),
+        }),
       ).toHaveCount(1);
 
       // Removing the home row means that volume is not created, and the note names what MiniBox will create.
