@@ -36,13 +36,15 @@ export function roleMount(role) {
 
 /**
  * The choices a create row offers: one per role, which MiniBox creates for the box, then the volumes that exist. The
- * tools role mounts the host's shared tools volume when there is one, so its label says so.
+ * tools role mounts the host's shared tools volume when there is one, so its label says so, and its own volume when
+ * there is none.
  */
 export function createMountChoices(volumes, sharedTools) {
   const roles = DEFAULT_MOUNTS.map((mount) => ({
     value: roleValue(mount.role),
     role: mount.role,
     shared: mount.role === "tools" && sharedTools,
+    noShared: mount.role === "tools" && !sharedTools,
   }));
   return [...roles, ...volumes.map((volume) => ({ value: volume.id, role: null, shared: false, volume }))];
 }

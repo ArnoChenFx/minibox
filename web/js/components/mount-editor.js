@@ -20,8 +20,9 @@ export function roleLabel(role) {
   return t(ROLE_LABEL_KEY[role] ?? "mount.volume");
 }
 
-/** The label of the choice that creates a role's volume for a new box. */
-function roleChoiceLabel(role, shared) {
+/** The label of the choice that creates a role's volume for a new box, and of the shared tools volume it reuses. */
+function roleChoiceLabel(role, shared, noShared) {
+  if (noShared) return t("mount.roleSharedNone");
   return t(shared ? "mount.roleShared" : "mount.roleCreate", { role: roleLabel(role) });
 }
 
@@ -30,7 +31,7 @@ function createVolumeOptions(choices, selected) {
   const options = [`<option value="">${esc(t("mount.choose"))}</option>`];
   for (const choice of choices.filter((item) => item.role)) {
     options.push(
-      `<option value="${esc(choice.value)}" ${choice.value === selected ? "selected" : ""}>${esc(roleChoiceLabel(choice.role, choice.shared))}</option>`,
+      `<option value="${esc(choice.value)}" ${choice.value === selected ? "selected" : ""}>${esc(roleChoiceLabel(choice.role, choice.shared, choice.noShared))}</option>`,
     );
   }
   const group = choices

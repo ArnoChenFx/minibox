@@ -28,7 +28,10 @@ export interface VolumeChoice {
 export interface CreateMountChoice {
   value: string;
   role: string | null;
+  /** True for the tools role when the host already has a shared tools volume, which it mounts. */
   shared: boolean;
+  /** True for the tools role when the host has none, so the create makes the shared volume. */
+  noShared: boolean;
   volume?: VolumeChoice;
 }
 
@@ -51,4 +54,13 @@ export declare function canonicalMounts(mounts: readonly Partial<Mount>[] | null
 export declare function isVolumeErrorKey(key: unknown): boolean;
 export declare function volumeChoices(volumes: readonly VolumeLike[], liveBoxIds: ReadonlySet<string>): VolumeChoice[];
 export declare function sharedToolsChoice(choices: readonly VolumeChoice[]): VolumeChoice | null;
-export declare function checkMountRows(rows: readonly Mount[]): { mounts: CreateMount[] } | { problem: MountProblem };
+/** A row of a create's mount list: a volume it mounts, or the role whose volume it has MiniBox create. */
+export interface MountRow {
+  volume: string;
+  path: string;
+  mode: "rw" | "ro";
+}
+
+export declare function checkMountRows(
+  rows: readonly MountRow[],
+): { mounts: CreateMount[] } | { problem: MountProblem };

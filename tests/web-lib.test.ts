@@ -18,8 +18,13 @@ import {
 import {
   canonicalMounts,
   checkMountRows,
+  createMountChoices,
   DEFAULT_MOUNTS,
   isVolumeErrorKey,
+  roleMount,
+  roleOfValue,
+  roleValue,
+  sharedToolsChoice,
   validMountPath,
   volumeChoices,
 } from "../web/js/lib/mounts.js";
@@ -680,6 +685,69 @@ describe("mount lists", () => {
       { id: "vol_2", name: "orphan", role: null, rwMounts: 0, disabled: false },
       { id: "vol_3", name: "shared", role: null, rwMounts: 2, disabled: false },
     ]);
+  });
+
+  test("a create row can name a role to create, and the roles it names are what the server makes", () => {
+    expect(DEFAULT_MOUNTS.map((mount) => roleValue(mount.role))).toEqual([
+      "role:workspace",
+      "role:home",
+      "role:tools",
+      "role:cache",
+    ]);
+    for (const mount of DEFAULT_MOUNTS) {
+      expect(roleOfValue(roleValue(mount.role))).toBe(mount.role);
+      expect(roleMount(mount.role)).toEqual(mount);
+    }
+    // A volume id, an empty choice and a role the model does not have are not roles.
+    expect([roleOfValue("vol_a"), roleOfValue(""), roleOfValue(null), roleOfValue("role:scratch")]).toEqual([
+      null,
+      null,
+      null,
+      null,
+    ]);
+  });
+
+  test("the rows of the default list are sent as roles, and a row that names a role keeps the role's path and mode", () => {
+    expect(checkMountRows(DEFAULT_MOUNTS.map((mount) => ({ volume: roleValue(mount.role), ...mount })))).toEqual({
+      mounts: [{ role: "workspace" }, { role: "home" }, { role: "tools" }, { role: "cache" }],
+    });
+    // A row that creates a role cannot move it, so the server's own keys are what the dialog shows.
+    expect(checkMountRows([{ volume: roleValue("workspace"), path: "/data", mode: "rw" }])).toEqual({
+      problem: { code: "mount_create_role_path", role: "workspace", path: "/data", expected: "/workspace" },
+    });
+    expect(
+      checkMountRows([
+        { volume: roleValue("home"), path: "/home/dev", mode: "rw" },
+        { volume: roleValue("home"), path: "/home/dev", mode: "rw" },
+      ]),
+    ).toEqual({ problem: { code: "mount_create_role_duplicate", role: "home" } });
+  });
+
+  test("a create row offers the roles first, then the volumes that exist, and names the shared tools volume", () => {
+    const volumes = volumeChoices(
+      [
+        { id: "vol_1", name: "notes", role: null, ownership: "independent", ownerBoxId: null, rwMounts: 0 },
+        { id: "vol_2", name: "shared-tools", role: "tools", ownership: "independent", ownerBoxId: null, rwMounts: 0 },
+      ],
+      new Set(),
+    );
+    const choices = createMountChoices(volumes, sharedToolsChoice(volumes) !== null);
+    expect(choices.map((choice) => choice.value)).toEqual([
+      "role:workspace",
+      "role:home",
+      "role:tools",
+      "role:cache",
+      "vol_1",
+      "vol_2",
+    ]);
+    // The tools role reuses the host's shared tools volume, and says it creates one when the host has none.
+    expect(choices.find((choice) => choice.role === "tools")).toMatchObject({ shared: true, noShared: false });
+    expect(createMountChoices(volumes, false).find((choice) => choice.role === "tools")).toMatchObject({
+      shared: false,
+      noShared: true,
+    });
+    expect(sharedToolsChoice(volumes)?.name).toBe("shared-tools");
+    expect(sharedToolsChoice(volumeChoices([], new Set()))).toBeNull();
   });
 
   test("volume and mount errors are the ones the Volumes section shows", () => {

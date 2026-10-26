@@ -109,11 +109,9 @@ describe.skipIf(!executablePath)("the create box dialog's custom volumes (real b
           options.map((option) => (option as unknown as { textContent: string }).textContent?.trim() ?? ""),
         );
       expect(choices).toContain(english("mount.roleCreate", { role: english("vol.roleWorkspace") }));
-      await webExpect(
-        rows.nth(2).locator("[data-volume] option", {
-          hasText: english("mount.roleCreate", { role: english("vol.roleTools") }),
-        }),
-      ).toHaveCount(1);
+      // This host has no shared tools volume yet, so the tools row says the create makes one.
+      expect(choices).toContain(english("mount.roleSharedNone"));
+      await webExpect(rows.nth(2).locator("[data-volume]")).toHaveValue("role:tools");
 
       // Removing the home row means that volume is not created, and the note names what MiniBox will create.
       await rows.nth(1).locator("[data-remove-mount]").click();
@@ -136,6 +134,7 @@ describe.skipIf(!executablePath)("the create box dialog's custom volumes (real b
       // The tools row mounted the shared tools volume, which this host did not have before the create made one.
       const tools = created.mounts.find((mount) => mount.role === "tools");
       expect(tools?.mode).toBe("ro");
+      await webExpect(box).toHaveCount(0);
       const { volumes: listed } = await rest<{ volumes: { id: string; name: string; role: string | null }[] }>(
         "GET",
         "/api/volumes",
