@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import type { HostMetrics } from "../src/host/metrics";
 import { RuntimeError } from "../src/runtime";
-import { StagedStore } from "../src/specs/staged";
+import { mergeStaged, STAGED_FIELDS, stagedFieldsOf, StagedStore } from "../src/specs/staged";
 import { silenceLogs } from "./support/app";
 import { type Body, call, type Harness, mint, type Reply, refused, startHarness } from "./support/tokens";
 
@@ -93,6 +93,43 @@ describe("staging rebuild changes", () => {
 
     expect(stagedOf(await stage(boxId, { profile: "standard" }))?.pending).toEqual(["network"]);
     expect(stagedOf(await stage(boxId, { network: "mbtest-boxes" }))).toBeNull();
+    expect(stagedOf(await readStaged(boxId))).toBeNull();
+  });
+
+  test("a template, an egress policy and a profile are staged and listed in the API's order", async () => {
+    const { boxId } = await makeBox("alpha");
+    harness.runtime.seedImage("mbtest-template:next", {
+      [harness.app.hosts.get().keys.template]: "true",
+      [harness.app.hosts.get().keys.templateName]: "next",
+    });
+
+    await stage(boxId, { profile: "strict" });
+    await stage(boxId, { egress: { mode: "proxy-only", presets: ["agent-default"], domains: ["example.org"] } });
+    const staged = stagedOf(await stage(boxId, { template: "mbtest-template:next" }));
+
+    expect(staged?.pending).toEqual(["template", "egress", "profile"]);
+    expect(staged?.fields).toMatchObject({
+      template: "mbtest-template:next",
+      profile: "strict",
+      egress: {
+        mode: "proxy-only",
+        presets: ["agent-default"],
+        domains: ["example.org"],
+        allow: expect.arrayContaining(["api.anthropic.com", "example.org"]),
+      },
+    });
+    expect(staged?.changes.map((change) => change.field)).toEqual(["template", "egress", "profile", "containerName"]);
+    expect(staged?.changes.find((change) => change.field === "egress")).toMatchObject({ from: "open" });
+    // Nothing was rebuilt: the box keeps its revision and its own template and profile.
+    expect(await getBox(boxId)).toMatchObject({ profile: "standard", revision: 1 });
+  });
+
+  test("an egress policy staged back to open drops out, and so does a template staged back to the box's", async () => {
+    const { boxId } = await makeBox("alpha");
+    await stage(boxId, { egress: { mode: "none" } });
+    expect(stagedOf(await stage(boxId, { egress: { mode: "open" } }))).toBeNull();
+
+    await stage(boxId, { template: "mbtest-template:base" });
     expect(stagedOf(await readStaged(boxId))).toBeNull();
   });
 
@@ -496,5 +533,30 @@ describe("every box's staged changes in one read", () => {
       hosts: { type: "list", ids: ["edge"] },
     });
     expect(refused(await listStaged(elsewhere.secret))).toEqual({ status: 403, key: "host_not_granted" });
+  });
+});
+
+describe("staging fields in the browser's shape", () => {
+  test("a field passed again replaces the staged value and a field left out keeps it", () => {
+    const merged = mergeStaged({ template: "a", profile: "strict" }, { profile: "relaxed", network: "bridge" });
+    expect(merged).toEqual({ template: "a", profile: "relaxed", network: "bridge" });
+  });
+
+  test("merging into nothing keeps only the fields the request names", () => {
+    expect(mergeStaged(null, { env: [{ name: "MODE", value: "dev" }] })).toEqual({
+      env: [{ name: "MODE", value: "dev" }],
+    });
+    expect(stagedFieldsOf(mergeStaged(null, {}))).toEqual([]);
+  });
+
+  test("the staged fields are the six rebuild fields, in the order the API lists them", () => {
+    expect([...STAGED_FIELDS]).toEqual(["template", "mounts", "env", "network", "egress", "profile"]);
+  });
+});
+
+describe("the staged field names the API takes", () => {
+  test("every staged field is one the PUT body accepts, and each is listed in the record's pending", () => {
+    // The list the schema is built from and the list the API returns have to be the same list.
+    expect([...STAGED_FIELDS]).toEqual(["template", "mounts", "env", "network", "egress", "profile"]);
   });
 });

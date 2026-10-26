@@ -4,6 +4,9 @@
 
 ## [Unreleased]
 
+### 变更
+- **Box 设置里的模板、网络出站与安全档位也走暂存，不再「保存即重建」**（Refs [#192](https://github.com/ArnoChenFx/minibox/issues/192)）：`StagedFields` 早就收下了 `template`、`network`、`egress` 和 `profile`（见 `src/specs/staged.ts`），但控制台只有环境变量卡片（`env-card.js`）和挂载卡片（`box-volumes.js`）会调用 `stageFields()` 并显示「待应用」，模板、网络与安全配置这些卡片一直是直接重建。现在 **设置 → 安全** 一组改成三张会暂存的卡片：**模板**（`box-template-card.js`，输入镜像引用并校验，规则与 `POST /api/boxes/{id}/rebuild` 的 `template` 相同）、**网络出站**（`egress-card.js` 的编辑器，档位 `open` / `none` / `proxy-only` 加预设与额外主机，只有 `proxy-only` 才显示预设与主机）与**安全档位**（`box-security-card.js`，`standard` / `strict` / `relaxed`）。三张卡片都照环境变量卡片的样子走：点**保存**只 `PUT /api/boxes/{id}/staged`，卡片随后把暂存值标成**待应用**并改显示暂存值，**取消**就是丢弃这次编辑；改回 Box 已有的值时不写暂存记录，横幅也不再计数。**agent 令牌**（创建时固定）与**进程上限 / runtime**（`BOX_PIDS_LIMIT`、容器 runtime 属于宿主机设置，Box 规格里没有可暂存字段）**故意没有接暂存**，仍是只读展示。顶部横幅与「应用并重建」本来就把记录里所有字段算进 `pending`，因此不需要改流程；差异对话框本来就会把每个变更按 `rebuild.field.*` 显示字段名（模板 / 网络 / 网络出站 / 安全档位，中英文都有），值照计划写入的原文显示，所以 `egress` 与 `profile` 无需额外映射；这次只是补了单测，把「六个字段都能在差异里按名字显示」钉住。暂存语义没变：暂存不重建、应用时才重建、记录写在 `DATA_DIR/boxes/staged/` 因此重启仍在、一个 Box 一份记录、`If-Match` 与 `stagedAt` 校验照旧。服务端只做了整理：`src/specs/staged.ts` 新增可单测的 `mergeStaged()`（服务端与测试共用「后写覆盖、缺省保留」的合并规则），`src/operations/staged.ts` 的字段名改从 `STAGED_FIELDS` 派生，OpenAPI 没有变化。新增 `tests/web-staged-rebuild-fields.test.ts`（纯逻辑与读源码的静态断言）、`tests/web-staged-rebuild-browser.test.ts`（真机浏览器：三张卡片暂存、横幅计数、差异、应用后一次重建并清空、改回原值后记录消失、刷新后仍在），并在 `tests/staged-changes.test.ts` 与 `tests/web-staged-changes.test.ts` 补了模板 / 出站 / 档位的暂存、合并、差异渲染与横幅计数。另外修掉一处窄屏溢出：`@media (max-width: 900px)` 里 `.segmented` 只把两列的网格改成了 `minmax(0, 1fr)`，`.segmented-3` 仍是裸 `1fr`（下限是内容的 min-content 宽度），于是安全档位那行三个带说明的按钮在 320px 窗口下把整页撑到 331px；现在三列与四列也各自保留列数并改成 `minmax(0, 1fr)`，新增的样式断言与真机浏览器断言（320px 下三张卡片及其编辑器都不横向溢出）钉住它。中英文《Box》《环境变量与密钥》《卷与存储》《网络出站（管理员）》同步说明哪些设置现在可以暂存。
+
 ## [0.6.7] - 2026-10-26
 
 ### 新增
