@@ -89,9 +89,15 @@
   .content {
     padding-bottom: calc(20px + var(--tabbar-h) + env(safe-area-inset-bottom, 0px));
   }
-  /* The drawer's foot keeps clear of the home indicator, which the bar already leaves room for. */
+  /* The drawer stops where the bar starts. A fixed drawer runs the full height of the window, which would put it over the
+     bar's left half: its own foot would take the press meant for Overview or Boxes. Ending it above the bar keeps all four
+     entries reachable, and the bar already leaves room for the home indicator, so the drawer adds no inset of its own. */
   .sidebar {
-    padding-bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+    top: 0;
+    /* The bar is 1px taller than --tabbar-h: it draws a top border, and the drawer paints above the bar. */
+    bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom, 0px) + 1px);
+    height: auto;
+    padding-bottom: 14px;
   }
 
   /* While a field on the page has the keyboard, the bar steps aside: the on-screen keyboard would otherwise cover it,

@@ -214,8 +214,14 @@ describe("the tab bar's wiring in app.js", () => {
     expect(toasts).toContain("bottom: calc(20px + var(--tabbar-h) + env(safe-area-inset-bottom, 0px));");
   });
 
-  test("the drawer's own foot keeps clear of the home indicator", () => {
-    expect(block(TABBAR, ".sidebar")).toContain("padding-bottom: calc(14px + env(safe-area-inset-bottom, 0px));");
+  test("the drawer ends where the bar starts, so every entry of the bar stays reachable", () => {
+    // A fixed drawer runs the full height of the window, which puts it over the bar's left half: its own foot then takes
+    // the press meant for Overview or Boxes. The drawer stops above the bar instead, inset and all.
+    const drawer = block(TABBAR, ".sidebar");
+    expect(drawer).toContain("bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom, 0px) + 1px);");
+    expect(drawer).toContain("height: auto;");
+    // Nothing of the drawer sits at the window's own bottom edge any more.
+    expect(drawer).not.toContain("padding-bottom: calc(14px");
   });
 });
 

@@ -294,6 +294,61 @@ describe.skipIf(!executablePath)("the bottom tab bar (real browser)", () => {
     );
 
     test(
+      "the open drawer ends above the bar, so all four entries stay reachable and none opens About by mistake",
+      async () => {
+        await page.goto(`${consoleUrl}/#/settings`);
+        await webExpect(page.locator("#view h1").first()).toBeVisible();
+        await page.locator("#moreBtn").click();
+        await webExpect(page.locator("#moreBtn")).toHaveAttribute("aria-expanded", "true");
+        await page.waitForFunction(() => {
+          const view = globalThis as unknown as { document: { querySelector(selector: string): El | null } };
+          const sidebar = view.document.querySelector("#sidebar");
+          return sidebar !== null && Math.round(sidebar.getBoundingClientRect().left) === 0;
+        });
+        // A fixed drawer runs the full height of the window and covers the bar's left half; ending it above the bar is
+        // what keeps Overview and Boxes pressable. What is on top at each entry's centre says which one it is.
+        const hits = await page.evaluate(() => {
+          const view = globalThis as unknown as {
+            document: {
+              querySelectorAll(selector: string): El[];
+              querySelector(selector: string): El | null;
+              elementFromPoint(x: number, y: number): (El & { closest(selector: string): unknown }) | null;
+            };
+            innerHeight: number;
+          };
+          const doc = view.document;
+          const bar = doc.querySelector("#tabbar")!;
+          const drawer = doc.querySelector("#sidebar")!;
+          return {
+            drawerBottom: Math.round(drawer.getBoundingClientRect().bottom),
+            barTop: Math.round(bar.getBoundingClientRect().top),
+            onTop: [...doc.querySelectorAll("#tabbar [data-tab]")].map((entry) => {
+              const rect = entry.getBoundingClientRect();
+              const hit = doc.elementFromPoint(
+                Math.round(rect.left + rect.width / 2),
+                Math.round(rect.top + rect.height / 2),
+              );
+              return [entry.dataset.tab, hit === entry || Boolean(hit?.closest("#tabbar"))];
+            }),
+          };
+        });
+        expect(hits.drawerBottom).toBeLessThanOrEqual(hits.barTop);
+        expect(hits.onTop).toEqual([
+          ["overview", true],
+          ["boxes", true],
+          ["activity", true],
+          ["more", true],
+        ]);
+        // Pressing Boxes while the drawer is open goes to Boxes, not to the drawer's own foot.
+        await page.locator('#tabbar [data-tab="boxes"]').click();
+        await webExpect(page).toHaveURL((url) => url.hash === "#/boxes");
+        await webExpect(page.locator("#view h1").first()).toHaveText("Boxes");
+        await webExpect(page.locator("#moreBtn")).toHaveAttribute("aria-expanded", "false");
+      },
+      TIMEOUT_MS,
+    );
+
+    test(
       "a press beside the open drawer closes it, and so does Escape",
       async () => {
         await page.goto(`${consoleUrl}/#/overview`);
