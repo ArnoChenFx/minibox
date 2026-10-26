@@ -278,6 +278,10 @@ export default {
   "err.host_id_reserved": "「{host}」是保留字，不能作为宿主机 id。",
   "err.host_auto_offline": "没有可以放置 Box 的在线宿主机。",
   "err.host_auto_no_room": "持有该模板、或能够构建它的在线宿主机都没有容纳 {cpus} 核、{memoryMb} MB 内存 Box 的余量。",
+  "err.host_auto_no_label_match": "没有任何在线宿主机同时带有本次创建要求的全部标签（{labels}）。Box 未放置。",
+  "err.host_labels_invalid": "宿主机标签无效：{reason}",
+  "err.host_labels_need_auto":
+    "hostLabels 只用于 host: auto 选择宿主机。请把 host 设为 auto 由标签挑选，或指定一台宿主机并去掉 hostLabels。",
   "err.host_exists": "已存在 id 为「{host}」的宿主机。",
   "err.host_not_found": "找不到宿主机「{host}」。",
   "err.host_is_local": "不能移除本机宿主机。",

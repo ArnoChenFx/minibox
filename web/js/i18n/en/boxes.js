@@ -82,6 +82,7 @@ export default {
   "act.host.add": "Added host",
   "act.host.pairing.create": "Created pairing code",
   "act.host.test": "Tested host connection",
+  "act.host.labels.set": "Set host labels",
   "act.host.revoke": "Revoked host agent",
   "act.host.remove": "Removed host",
   "act.notify.channel.set": "Saved notification channel",
@@ -192,7 +193,7 @@ export default {
   "cb.buildStillRunning": "The build is still running. Create the box when it finishes.",
   "cb.hostAuto": "Automatic: the host with the most room",
   "cb.hostAutoHelp":
-    "The box goes to the online host that holds its template and has the most room for it, counting the CPU and memory its running boxes book. When no such host has room, an official template is built on the online host with the most room that does not hold it yet.",
+    "The box goes to the online host that holds its template and has the most room for it, counting the CPU and memory its running boxes book. When no such host has room, an official template is built on the online host with the most room that does not hold it yet. Through the API or the command line, hostLabels keeps the pick to the hosts that carry those labels.",
   "cb.overHost": "Exceeds host capacity",
   "cb.memory": "Memory",
   "cb.profile": "Security profile",

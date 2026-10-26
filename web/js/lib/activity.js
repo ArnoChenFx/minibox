@@ -84,6 +84,7 @@ export const ACTION_ICON = {
   "host.add": "server",
   "host.pairing.create": "link",
   "host.test": "check",
+  "host.labels.set": "pencil",
   "host.revoke": "x",
   "host.remove": "trash",
   "notify.channel.set": "sliders",
