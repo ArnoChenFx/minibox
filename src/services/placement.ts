@@ -18,6 +18,25 @@ export interface PlacementRequest {
    * a fallback: a holder with room always wins.
    */
   readonly buildable?: boolean;
+  /**
+   * Labels every candidate host must carry. A host that lacks one, or whose value differs, is not considered at all, so
+   * this filter runs before the template and capacity checks. Empty or absent keeps the placement as it always was.
+   */
+  readonly hostLabels?: Record<string, string>;
+}
+
+/** Whether a host carries every label the request asks for. A value has to match exactly, and an empty value must be empty. */
+export function matchesHostLabels(host: HostCtx, want: Record<string, string> | undefined): boolean {
+  if (want === undefined) return true;
+  const labels = host.host.labels;
+  return Object.entries(want).every(([key, value]) => Object.hasOwn(labels, key) && labels[key] === value);
+}
+
+/** The labels as the refusal names them, in the order the caller gave them: `gpu=true, arch=amd64`. */
+export function hostLabelsText(want: Record<string, string>): string {
+  return Object.entries(want)
+    .map(([key, value]) => (value === "" ? key : `${key}=${value}`))
+    .join(", ");
 }
 
 async function holdsImage(host: HostCtx, image: string): Promise<boolean> {
@@ -79,20 +98,31 @@ async function roomiest(hosts: readonly HostCtx[], want: Booking): Promise<HostC
 }
 
 /**
- * The host a box goes to when a create names `auto`. Only online hosts are considered. The hosts that hold the template
- * come first, and the roomiest of them with room for the box wins. Only when none of them has room, and the template is
- * buildable, the roomiest of the hosts that do not hold it yet is chosen, and that host builds the template. An agent
- * host builds nothing, so it is never chosen that way. Without a buildable template, a template that no online host
- * holds is refused.
+ * The host a box goes to when a create names `auto`. Only online hosts are considered, and only those that carry every
+ * label the request asks for, when it asks for any. The hosts that hold the template come first, and the roomiest of them
+ * with room for the box wins. Only when none of them has room, and the template is buildable, the roomiest of the hosts
+ * that do not hold it yet is chosen, and that host builds the template. An agent host builds nothing, so it is never
+ * chosen that way. Without a buildable template, a template that no online host holds is refused.
  */
 export async function placeBox(hosts: readonly HostCtx[], request: PlacementRequest): Promise<HostCtx> {
   const online = hosts.filter((host) => host.host.status === "online");
   if (online.length === 0) throw new AppError(503, "docker_unavailable", msg("host_auto_offline"));
 
-  const holds = await Promise.all(online.map((host) => holdsImage(host, request.image)));
-  const holding = online.filter((_, index) => holds[index]);
+  const wanted = request.hostLabels !== undefined && Object.keys(request.hostLabels).length > 0;
+  const labelled = wanted ? online.filter((host) => matchesHostLabels(host, request.hostLabels)) : online;
+  if (wanted && labelled.length === 0) {
+    throw new AppError(
+      422,
+      "insufficient_capacity",
+      msg("host_auto_no_label_match", { labels: hostLabelsText(request.hostLabels ?? {}) }),
+      { field: "hostLabels" },
+    );
+  }
+
+  const holds = await Promise.all(labelled.map((host) => holdsImage(host, request.image)));
+  const holding = labelled.filter((_, index) => holds[index]);
   const builders = request.buildable
-    ? online.filter((host, index) => !holds[index] && host.host.transport !== "agent")
+    ? labelled.filter((host, index) => !holds[index] && host.host.transport !== "agent")
     : [];
   if (holding.length === 0 && builders.length === 0) {
     throw badRequest(msg("template_image_missing", { image: request.image }), { field: "template" });

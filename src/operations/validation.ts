@@ -10,7 +10,14 @@ import {
   MAX_EGRESS_DOMAINS,
   normalizeEgress,
 } from "../egress/policy";
-import { AUTO_HOST, HOST_ID_RE } from "../host/store";
+import {
+  AUTO_HOST,
+  HOST_ID_RE,
+  HOST_LABEL_COUNT_MAX,
+  HOST_LABEL_KEY_RE,
+  HOST_LABEL_VALUE_MAX,
+  hostLabelsProblem,
+} from "../host/store";
 import { AppError } from "../lib/errors";
 import { msg, type MessageKey } from "../lib/messages";
 import {
@@ -158,6 +165,42 @@ export const hostId = () =>
 
 /** A host id, or `auto`, which a box create uses to pick the host itself. */
 export const hostOrAuto = () => z.union([z.literal(AUTO_HOST), hostId()]);
+
+/** The host labels the caller gave, as `{ key: value }`, or the problem with them. `field` names the input they came in. */
+function hostLabelCheck(field: "hostLabels" | "labels") {
+  return (value: unknown): Checked<Record<string, string> | undefined> => {
+    if (value === undefined || value === null) return accept(undefined);
+    const problem = hostLabelsProblem(value);
+    if (problem !== null) return reject(msg("host_labels_invalid", { reason: problem }), field);
+    return accept({ ...(value as Record<string, string>) });
+  };
+}
+
+const HOST_LABELS_META: Meta = {
+  type: "object",
+  maxProperties: HOST_LABEL_COUNT_MAX,
+  propertyNames: { type: "string", pattern: HOST_LABEL_KEY_RE.source },
+  additionalProperties: { type: "string", maxLength: HOST_LABEL_VALUE_MAX },
+};
+
+/**
+ * Labels an `auto` create selects a host by: every entry has to match the host's own labels exactly. Only `host: auto`
+ * reads it, and a create that names a host is refused if it also sends labels, since the named host is not filtered.
+ */
+export const hostLabelSelector = () =>
+  field(hostLabelCheck("hostLabels"), {
+    ...HOST_LABELS_META,
+    description:
+      'Labels every candidate host must carry, as an object of key and value pairs, such as { "gpu": "true", "arch": "amd64" }. Only with host: auto, which then considers only the online hosts that carry all of them. A key is lowercase, optionally namespaced with one slash, and a value is a single line of at most 256 characters. Omitted, auto picks among every online host as it always has.',
+  }).optional();
+
+/** Labels a host carries, for host.add and host.labels.set. An empty object clears them. */
+export const hostLabelsInput = () =>
+  field(hostLabelCheck("labels"), {
+    ...HOST_LABELS_META,
+    description:
+      'Labels the host carries, as an object of key and value pairs, such as { "gpu": "true" }. An auto create selects hosts by them. At most 32 entries; a key is lowercase, optionally namespaced with one slash, and a value is a single line of at most 256 characters. An empty object clears them.',
+  });
 
 export const boxName = () =>
   field((value) => checkName(value, "boxName"), {

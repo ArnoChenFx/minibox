@@ -21,6 +21,33 @@ export const HOST_ID_RE = /^[a-z][a-z0-9-]{0,31}$/;
 /** The value a box create takes to have a host picked for it. No host may use it as its id. */
 export const AUTO_HOST = "auto";
 
+/** The most labels one host may carry, and the longest value each may hold. Boxes use the same limits. */
+export const HOST_LABEL_COUNT_MAX = 32;
+export const HOST_LABEL_VALUE_MAX = 256;
+
+/**
+ * A host label key: a name such as `gpu`, or a namespaced one such as `org/arch`. Both halves are lowercase letters,
+ * digits, dots, underscores or hyphens, and start with a letter, so a label reads the same on every host.
+ */
+export const HOST_LABEL_KEY_RE = /^[a-z][a-z0-9._-]{0,62}(?:\/[a-z][a-z0-9._-]{0,62})?$/;
+
+/** The problem with a set of host labels, as a sentence for the caller, or null when every entry is acceptable. */
+export function hostLabelsProblem(labels: unknown): string | null {
+  if (labels === undefined || labels === null) return null;
+  if (typeof labels !== "object" || Array.isArray(labels)) return "labels must be an object of key and value pairs";
+  const entries = Object.entries(labels);
+  if (entries.length > HOST_LABEL_COUNT_MAX) return `at most ${HOST_LABEL_COUNT_MAX} labels are allowed`;
+  for (const [key, value] of entries) {
+    if (!HOST_LABEL_KEY_RE.test(key)) {
+      return `“${key}” is not a label key: use a lowercase name such as gpu, or a namespaced one such as org/arch`;
+    }
+    if (typeof value !== "string" || value.length > HOST_LABEL_VALUE_MAX || /\p{Cc}/u.test(value)) {
+      return `the value of “${key}” must be a single line of at most ${HOST_LABEL_VALUE_MAX} characters`;
+    }
+  }
+  return null;
+}
+
 /** What `hosts.json` records about one remote host. The credentials are not in it. */
 export interface StoredHost {
   readonly id: string;
@@ -30,6 +57,11 @@ export interface StoredHost {
   /** The SSH host key the host was added with, as `SHA256:…`. Null for TLS and unix hosts. */
   readonly hostKeyFingerprint: string | null;
   readonly createdAt: string;
+  /**
+   * Labels an `auto` create may select this host by. Optional and empty by default, so a hosts file written before
+   * labels existed still reads: a host without the field carries none.
+   */
+  readonly labels?: Record<string, string>;
 }
 
 /** Credential files of one host, by the name the caller gives. Each is written mode 600 under `hosts/<id>`. */
@@ -50,6 +82,18 @@ const StoredHostSchema = z
       .regex(/^SHA256:[A-Za-z0-9+/]+$/)
       .nullable(),
     createdAt: z.string().min(1),
+    // Optional, so an older hosts file without labels still loads. A file that carries a label that is not acceptable
+    // is refused rather than silently losing it.
+    labels: z
+      .record(
+        z.string().regex(HOST_LABEL_KEY_RE),
+        z
+          .string()
+          .max(HOST_LABEL_VALUE_MAX)
+          .refine((value) => !/\p{Cc}/u.test(value)),
+      )
+      .refine((labels) => Object.keys(labels).length <= HOST_LABEL_COUNT_MAX)
+      .optional(),
   })
   .strict();
 
