@@ -697,6 +697,128 @@ table.table {
     justify-content: flex-end;
   }
 }
+@media (max-width: 640px) {
+  /* Each checkpoint is a card too: the label with its kinds on the right, then the time and the size, then what it
+     holds, then the actions. The header row is gone, so a field names itself, as the volume cards do. */
+  .table.sck-table {
+    min-width: 0;
+  }
+  .table.sck-table colgroup,
+  .table.sck-table thead {
+    display: none;
+  }
+  .table.sck-table,
+  .table.sck-table tbody {
+    display: block;
+  }
+  .table.sck-table tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "label    kind"
+      "time     size"
+      "contents contents"
+      "actions  actions";
+    gap: 0 12px;
+    padding: 12px 18px;
+    border-bottom: 1px solid var(--border);
+    white-space: normal;
+  }
+  .table.sck-table tr:last-child {
+    border-bottom: 0;
+  }
+  .table.sck-table tr > td {
+    margin-bottom: 4px;
+  }
+  .table.sck-table tr > td:last-child {
+    margin-bottom: 0;
+  }
+  .table.sck-table td,
+  .card > .table-wrap > .table.sck-table tr > td:is(:first-child, :last-child) {
+    display: block;
+    padding: 0;
+    border: 0;
+    min-width: 0;
+    max-width: none;
+    white-space: normal;
+  }
+  /* As with the volume cards: beat the card-table padding rule head-on, so the first and last fields line up with the
+     rest of the card. */
+  .card > .table-wrap > .table.sck-table tr:not(.group-row) > td:is(:first-child, :last-child) {
+    padding-left: 0;
+    padding-right: 0;
+  }
+  .table.sck-table .sck-label {
+    grid-area: label;
+    align-self: center;
+  }
+  /* A long label or reason wraps here rather than running under the kinds. */
+  .table.sck-table .sck-label > div {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .table.sck-table .sck-kind-cell {
+    grid-area: kind;
+    align-self: center;
+    justify-self: end;
+  }
+  .table.sck-table .sck-kinds {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+  .table.sck-table .sck-time {
+    grid-area: time;
+    align-self: baseline;
+    color: var(--text-3);
+    font-size: 12px;
+  }
+  .table.sck-table .sck-time .subtle {
+    display: inline;
+    margin-left: 6px;
+  }
+  .table.sck-table .sck-size {
+    grid-area: size;
+    align-self: baseline;
+    font-size: 12px;
+  }
+  .table.sck-table .sck-contents {
+    grid-area: contents;
+    color: var(--text-2);
+    font-size: 12px;
+  }
+  .table.sck-table .sck-contents > div {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  /* A field with nothing in it takes no room. */
+  .table.sck-table td.sck-empty {
+    display: none;
+  }
+  .table.sck-table .sck-actions {
+    grid-area: actions;
+    margin-top: 4px;
+  }
+  .table.sck-table td[data-label]::before {
+    content: attr(data-label);
+    display: inline;
+    margin-right: 6px;
+    color: var(--text-3);
+    font-size: 12px;
+    font-weight: 400;
+  }
+  /* A group header, the show-all button and an empty state keep a row of their own. */
+  .table.sck-table tr.group-row,
+  .table.sck-table tr.toggle-row {
+    display: block;
+    padding: 0;
+  }
+  .table.sck-table tr > td[colspan] {
+    grid-column: 1 / -1;
+  }
+  .table.sck-table tr.toggle-row > td {
+    padding: 6px 18px;
+  }
+}
 
 /* A box's checkpoint tab: the storage timeline's columns and icon actions, sized for the settings section. The kinds sit
    on the label line and what the checkpoint holds under it, so no column wraps at 1280px. */
