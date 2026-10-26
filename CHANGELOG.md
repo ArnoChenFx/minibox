@@ -4,6 +4,9 @@
 
 ## [Unreleased]
 
+### 新增
+- **`host: "auto"` 可以按标签匹配宿主机**（Refs [#192](https://github.com/ArnoChenFx/minibox/issues/192)）：宿主机新增标签，创建 Box 时用 `hostLabels` 让 `auto` 只在带这些标签的宿主机中选择。`StoredHost` 与 `hosts.json` 新增可选 `labels`（键为小写，可用一个斜杠表示命名空间如 `org/arch`；值为单行、最多 256 字符，可为空；每台最多 32 个），旧 `hosts.json` 没有该字段照常读取，不合规的标签在读取时即报错而不是被静默丢弃。`GET /api/hosts` 的每台宿主机带 `labels`，`POST /api/hosts` 接受 `labels`，新增 `PATCH /api/hosts/{id}`（操作 `host.labels.set`，scope `host:manage`，MCP `set_host_labels`）整体替换标签，传空对象即清空。本机宿主机（`local`）也能有标签：`.env` 的 `HOST_LABELS`（`gpu,arch=amd64` 形式）在启动时写入 `hosts.json` 里 id 为 `local` 的记录，而 `PATCH /api/hosts/local` 改的是同一处，已有标签会保留，所以旧的 `.env` 不会覆盖控制台里的修改。`POST /api/boxes` 新增 `hostLabels` 对象，只能和 `host: "auto"` 一起用：只在这些标签**全部**匹配的在线宿主机中挑选，其余语义完全不变（模板优先、buildable 回退、Agent 宿主机不 build、roomiest 选择、容量与 overcommit 拒绝都在标签筛选之后照旧生效）；指定宿主机又发标签以 `host_labels_need_auto` 拒绝，标签无人匹配以新的 `422 insufficient_capacity` + `host_auto_no_label_match`（中英文 `err.host_auto_no_label_match`）拒绝并在 `params.labels` 列出标签，不给 `hostLabels` 时行为与之前完全一致。CLI 新增 `minibox host labels get|set` 与 `box create --host auto --host-label KEY=VALUE`（可重复），`--host-label` 只能配合 `--host auto`。设置页的宿主机列表在名字下显示标签徽标。OpenAPI、REST/CLI/MCP/配置参考、skill 的端点与 toolset 表、中英文《宿主机》与《Box》文档、以及 HTTP parity transcript 同步更新。
+
 ## [0.6.7] - 2026-10-26
 
 ### 新增

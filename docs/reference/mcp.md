@@ -77,6 +77,7 @@ The tables below list each tool and the operation it calls, taken from the `x-mc
 | `get_host_usage` | `GET /api/hosts/usage` |
 | `add_host` | `POST /api/hosts` |
 | `test_host` | `POST /api/hosts/test` |
+| `set_host_labels` | `PATCH /api/hosts/{id}`. Takes `id` and `labels`, the local host included. An empty object clears them |
 | `remove_host` | `DELETE /api/hosts/{id}` |
 | `list_notify_channels` | `GET /api/notify/channels`. Owner only |
 | `set_notify_channel` | `PUT /api/notify/channels/{id}`. Owner only |

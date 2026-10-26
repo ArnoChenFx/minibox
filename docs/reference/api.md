@@ -84,7 +84,7 @@ Errors have the same shape, with the matching HTTP status:
 | `volume_over_limit` | 409 | A box mounts a volume that is over its hard limit with the `stop` action. Raise or clear the limit, or free space in the volume, and then start the box |
 | `precondition_failed` | 412 | The `If-Match` revision is stale |
 | `unsupported_media_type` | 415 | The `Content-Type` is not JSON |
-| `insufficient_capacity` | 422 | The host does not have enough capacity for the request |
+| `insufficient_capacity` | 422 | The host does not have enough capacity for the request, or `auto` with `hostLabels` found no online host that carries them (`host_auto_no_label_match`) |
 | `precondition_required` | 428 | A required `If-Match` header is missing |
 | `too_many_requests` | 429 | A limit was reached. Try again later. |
 | `docker_error` | 502 | The Docker engine returned an error |
@@ -132,7 +132,7 @@ The tables below list every operation in [`openapi.json`](../openapi.json), grou
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/api/boxes` | List boxes |
-| `POST` | `/api/boxes` | Create and start a box. A `repo` object clones a Git repository into `/workspace` on the first create. A template built from a `devcontainer.json` may forward ports and run its `postCreateCommand`. The response's `setup.taskId` names the setup task, which runs those steps, and `clone.taskId` names the same task when `repo` is given. A box created with a `startupCommand` runs it only after that whole setup has ended. `selfToken: true` gives the box's agent its self token |
+| `POST` | `/api/boxes` | Create and start a box. A `repo` object clones a Git repository into `/workspace` on the first create. A template built from a `devcontainer.json` may forward ports and run its `postCreateCommand`. The response's `setup.taskId` names the setup task, which runs those steps, and `clone.taskId` names the same task when `repo` is given. A box created with a `startupCommand` runs it only after that whole setup has ended. `selfToken: true` gives the box's agent its self token. `host` is a host id, `auto` or absent (the local host). `hostLabels`, with `host: "auto"`, keeps the placement to the online hosts that carry every given label; see [Host labels](#host-labels) |
 | `GET` | `/api/boxes/{id}` | Get one box |
 | `PATCH` | `/api/boxes/{id}` | Update a box in place |
 | `DELETE` | `/api/boxes/{id}` | Delete a box. Its data is kept in the recycle bin unless `skipTrash=true`, and `deleteVolume=true` also deletes the volumes it owns. The response's `trash` names the entry, or is `null` |
@@ -371,13 +371,30 @@ An entry is kept for `TRASH_RETENTION_DAYS` days, see [Configuration](configurat
 |---|---|---|
 | `GET` | `/api/hosts` | List hosts |
 | `GET` | `/api/hosts/usage` | Show what each host runs and uses |
-| `POST` | `/api/hosts` | Add a host |
+| `POST` | `/api/hosts` | Add a host. Takes the fields below, plus an optional `labels` object, which is checked as `PATCH /api/hosts/{id}` checks it |
 | `POST` | `/api/hosts/test` | Test a host connection |
+| `PATCH` | `/api/hosts/{id}` | Replace a host's labels, as `{ "labels": { "gpu": "true" } }`. The local host takes them too. An empty object clears them. Returns `200` with the host |
 | `POST` | `/api/hosts/pairing` | Create a one-time pairing code for a new agent host `{ "id", "name"? }`. Returns `201` with the code and when it expires |
 | `POST` | `/api/hosts/{id}/revoke` | Revoke an agent host. Its agent is disconnected and cannot reconnect |
 | `DELETE` | `/api/hosts/{id}` | Remove a host |
 
+Each host in `GET /api/hosts` carries `labels`: the labels it can be selected by, empty when it carries none.
+
 An agent connects on its own: it exchanges the pairing code at `POST /api/agent/pair`, then keeps a WebSocket open at `/api/agent/connect`. Both are used by the agent, not by clients. See [Agent](agent.md).
+
+#### Host labels
+
+A host label is a key and a value, and `hostLabels` on a box create matches them. A key is lowercase letters, digits, dots, underscores and hyphens, starting with a letter, and may name a namespace with one slash, as in `org/arch`. A value is a single line of at most 256 characters, and may be empty. A host carries at most 32 labels. A label that breaks a rule is refused with `400` and the key `host_labels_invalid`, and nothing is written.
+
+`POST /api/boxes` takes `hostLabels` with `host: "auto"`:
+
+```json
+{ "name": "trainer", "cpus": 4, "memoryMb": 8192, "host": "auto", "hostLabels": { "gpu": "true", "org/arch": "amd64" } }
+```
+
+Only the online hosts that carry every entry are considered, and each value has to match exactly. The rest of the placement is unchanged: a host that holds the template comes before one that does not, the roomiest of them wins, and only an owner's official template may be built on a host that lacks it. With `hostLabels`, a create that names a host is refused with `400` `host_labels_need_auto`, and a set of labels that no online host carries is refused with `422` `insufficient_capacity` and the key `host_auto_no_label_match`, which names the labels in `params.labels`. Without `hostLabels` the placement is exactly what it was, so `local` stays the default and the template and overcommit rules do not change. See [Hosts](../user-guide/hosts.md#choose-a-host-by-labels).
+
+The local host's labels can also come from `HOST_LABELS` (see [Configuration](configuration.md)); `PATCH /api/hosts/local` overrides them, and the hosts file keeps the result.
 
 ### notify
 
