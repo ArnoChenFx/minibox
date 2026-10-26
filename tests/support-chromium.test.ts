@@ -32,6 +32,12 @@ const lookup = (over: Partial<ChromiumLookup> & Pick<ChromiumLookup, "exists" | 
 });
 
 describe("resolveChromiumPath", () => {
+  test.each([
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+    "/Applications/Chromium.app/Contents/MacOS/Chromium",
+  ])("on macOS the system bundle at %s is found", (path) => {
+    expect(resolveChromiumPath(lookup({ ...machine([path]), platform: "darwin" }))).toBe(path);
+  });
   test("PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH wins over every other source", () => {
     const found = resolveChromiumPath(
       lookup({

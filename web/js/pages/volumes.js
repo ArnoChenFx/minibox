@@ -7,6 +7,7 @@ import { bindSearchBox, searchBoxHtml } from "../components/search-box.js";
 import { waitTask, taskErrorText } from "../components/tasks.js";
 import { usageCellHtml } from "../components/volume-usage.js";
 import { api, enc, errorText } from "../lib/api.js";
+import { checkpointGroupId } from "../lib/checkpoint-groups.js";
 import { esc } from "../lib/dom.js";
 import { bytes, dateTime, relTime } from "../lib/format.js";
 import { hostName, multiHost } from "../lib/hosts.js";
@@ -182,7 +183,7 @@ function poolHtml(volume, pool) {
 function latestHtml(checkpoint) {
   if (!checkpoint) return `<span class="subtle">—</span>`;
   const tip = `${checkpoint.label} · ${dateTime(checkpoint.createdAt)}`;
-  const focus = checkpoint.boxId ? enc(checkpoint.boxId) : enc(`volume:${checkpoint.boxName ?? ""}`);
+  const focus = enc(checkpointGroupId(checkpoint));
   return `<a class="vol-latest" href="#/storage/checkpoints/${focus}" title="${esc(tip)}"><span class="nowrap">${esc(relTime(checkpoint.createdAt))}</span><span class="subtle truncate">${esc(checkpoint.label)}</span></a>`;
 }
 

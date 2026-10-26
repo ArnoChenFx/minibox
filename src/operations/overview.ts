@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import type { StoredEvent } from "../events/store";
 import type { HostCapacity, HostCtx } from "../host/registry";
+import { untilAborted } from "../lib/abort";
 import { log } from "../lib/logger";
 import { checkpointFailed } from "../notify/rules";
 import type { Box } from "../services/box-model";
@@ -332,7 +333,7 @@ async function overcommitAttention(host: HostCtx): Promise<Attention[]> {
     booked = await bookedOn(host);
     // Nothing is booked, so nothing can be over a limit the host reports. Skipping the read keeps an idle host cheap.
     if (booked.cpus <= 0 && booked.memoryBytes <= 0) return [];
-    capacity = await host.capacity();
+    capacity = await untilAborted(host.capacity(), AbortSignal.timeout(host.readTimeoutMs));
   } catch (e) {
     log.warn("overview.capacity_failed", { host: host.host.id, error: String(e) });
     return [];

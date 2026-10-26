@@ -72,6 +72,15 @@ function keys<T>(body: string): T {
 }
 
 describe("the bytes each key sends", () => {
+  test("application cursor mode uses SS3 for arrows and leaves the other keys unchanged", () => {
+    const normal = keys<Record<string, string | null>>(
+      `return Object.fromEntries(TERM_KEYS.map((key) => [key.id, keyBytes(key.id, { applicationCursorKeysMode: false })]));`,
+    );
+    const application = keys<Record<string, string | null>>(
+      `return Object.fromEntries(TERM_KEYS.map((key) => [key.id, keyBytes(key.id, { applicationCursorKeysMode: true })]));`,
+    );
+    expect(application).toEqual({ ...normal, left: "\u001bOD", up: "\u001bOA", down: "\u001bOB", right: "\u001bOC" });
+  });
   test("the row is Esc, Tab, Ctrl, the four arrows, Ctrl-C and Ctrl-D, in that order", () => {
     const ids = keys<string[]>(`return TERM_KEYS.map((key) => key.id);`);
     expect(ids).toEqual(["esc", "tab", "ctrl", "left", "up", "down", "right", "ctrlC", "ctrlD"]);
@@ -295,7 +304,7 @@ describe("the row's wiring in the terminal panel", () => {
 
   test("the keys send through xterm's own input, the channel the keyboard uses", () => {
     expect(PANEL).toContain("xterm.input(data, true);");
-    expect(PANEL).toContain("const data = keyBytes(id);");
+    expect(PANEL).toContain("const data = keyBytes(id, xterm.modes);");
   });
 
   test("the keys follow the session: they are disabled until it can take input, and Ctrl resets when it cannot", () => {

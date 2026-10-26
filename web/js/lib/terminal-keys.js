@@ -21,9 +21,12 @@ export const TERM_KEYS = [
   { id: "ctrlD", label: "^D", aria: "bd.termKeyCtrlD", bytes: "\u0004" },
 ];
 
-/** The bytes a key sends. The sticky Ctrl sends nothing on its own, so it has none. */
-export function keyBytes(id) {
+/** The bytes a key sends, following xterm's cursor mode. The sticky Ctrl sends nothing on its own, so it has none. */
+export function keyBytes(id, modes) {
   const key = TERM_KEYS.find((candidate) => candidate.id === id);
+  if (modes?.applicationCursorKeysMode && ["left", "up", "down", "right"].includes(id)) {
+    return key.bytes.replace("[", "O");
+  }
   return typeof key?.bytes === "string" ? key.bytes : null;
 }
 

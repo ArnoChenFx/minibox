@@ -103,10 +103,15 @@ describe.skipIf(!executablePath)("snapshotting a volume from the storage page (r
       // The row now shows the snapshot it took, linked to the group the volume's snapshots form.
       const latest = row(page, "notes").locator(".vol-latest");
       await webExpect(latest).toBeVisible();
-      await webExpect(latest).toHaveAttribute("href", "#/storage/checkpoints/volume%3Anotes");
+      const volumeId = host.volumes.resolve("notes", host.host.id)!.id;
+      await webExpect(latest).toHaveAttribute(
+        "href",
+        `#/storage/checkpoints/${encodeURIComponent(`volume:${volumeId}`)}`,
+      );
 
       // The Checkpoints tab groups the record under the volume, and marks the group as a volume's rather than a box's.
-      await page.goto(`${consoleUrl}/#/storage/checkpoints`);
+      await page.locator("#taskDrawer .task-head [data-close]").click();
+      await latest.click({ timeout: 5000 });
       const group = page.locator("#sckRows .sck-group", { hasText: "notes" });
       await webExpect(group).toBeVisible();
       await webExpect(group).toContainText("Volume");

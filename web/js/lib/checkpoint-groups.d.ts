@@ -1,9 +1,14 @@
 export interface GroupedCheckpoint {
+  id: string;
+  legacy?: boolean;
+  data?: readonly { volumeId: string }[];
   boxId: string | null;
   boxName: string | null;
   createdAt: string;
   bytes?: number;
 }
+
+export declare function checkpointGroupId(checkpoint: GroupedCheckpoint): string;
 
 export interface GroupBox {
   boxId: string;

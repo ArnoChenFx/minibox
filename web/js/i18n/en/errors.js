@@ -192,6 +192,7 @@ export default {
   "err.checkpoint_volume_not_mounted": "Volume {volume} is not mounted by this box, so it cannot be included.",
   "err.volume_snapshot_host_offline":
     "Host {host} is offline, so volume {volume} cannot be snapshotted. Snapshot it once the host is back online.",
+  "err.volume_busy": "Volume {volume} is being snapshotted or removed. Try again once that operation finishes.",
   "err.checkpoint_other_box":
     "Checkpoint {id} was taken from another box. Roll back a box only to its own checkpoints.",
   "err.checkpoint_no_data": "Checkpoint {id} holds no volume data, so there is nothing to roll back.",
