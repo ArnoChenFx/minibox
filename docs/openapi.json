@@ -774,8 +774,65 @@
                     "type": "array",
                     "maxItems": 16,
                     "items": {
-                      "type": "object",
-                      "description": "Either { volume, path, mode } for a volume that exists, or { role } for a volume MiniBox creates for this box. A role mount takes the role's path and mode, which it may repeat but not change."
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "description": "Mount a volume that exists.",
+                          "properties": {
+                            "volume": {
+                              "type": "string",
+                              "description": "Volume id (vol_…) or volume name."
+                            },
+                            "path": {
+                              "type": "string",
+                              "description": "Absolute path inside the box."
+                            },
+                            "mode": {
+                              "type": "string",
+                              "enum": [
+                                "rw",
+                                "ro"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "volume",
+                            "path",
+                            "mode"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "description": "Have MiniBox create this role's volume for the box.",
+                          "properties": {
+                            "role": {
+                              "type": "string",
+                              "enum": [
+                                "workspace",
+                                "home",
+                                "tools",
+                                "cache"
+                              ],
+                              "description": "Role volume to create: workspace at /workspace read-write, home at /home/dev read-write, tools at /opt/minibox/tools read-only, cache at /home/dev/.cache read-write. The tools role mounts the host's shared tools volume, creating it when the host has none."
+                            },
+                            "path": {
+                              "type": "string",
+                              "description": "Optional, and only the role's own path."
+                            },
+                            "mode": {
+                              "type": "string",
+                              "enum": [
+                                "rw",
+                                "ro"
+                              ],
+                              "description": "Optional, and only the role's own mode."
+                            }
+                          },
+                          "required": [
+                            "role"
+                          ]
+                        }
+                      ]
                     },
                     "description": "Mounts this box gets. An entry is { volume, path, mode } to mount a volume that exists, or { role } to have MiniBox create that role's volume for this box: workspace at /workspace read-write, home at /home/dev read-write, tools at /opt/minibox/tools read-only, cache at /home/dev/.cache read-write. A role the list omits is not created. The tools role mounts the host's shared tools volume, and creates it when the host has none. Omitted, MiniBox creates workspace, home, tools and cache. An empty list creates a box with no mounts. Mounting an existing volume needs volume:attach, and a read-write one also needs volume:write. A role volume is new, so every role mount needs volume:write, and the tools role also needs volume:attach when the shared volume already exists."
                   },

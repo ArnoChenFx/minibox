@@ -848,9 +848,33 @@ export const rebuildMounts = () =>
   }).optional();
 
 const CREATE_MOUNT_ITEMS: Meta = {
-  type: "object",
-  description:
-    "Either { volume, path, mode } for a volume that exists, or { role } for a volume MiniBox creates for this box. A role mount takes the role's path and mode, which it may repeat but not change.",
+  anyOf: [
+    {
+      type: "object",
+      description: "Mount a volume that exists.",
+      properties: {
+        volume: { type: "string", description: "Volume id (vol_…) or volume name." },
+        path: { type: "string", description: "Absolute path inside the box." },
+        mode: { type: "string", enum: ["rw", "ro"] },
+      },
+      required: ["volume", "path", "mode"],
+    },
+    {
+      type: "object",
+      description: "Have MiniBox create this role's volume for the box.",
+      properties: {
+        role: {
+          type: "string",
+          enum: ["workspace", "home", "tools", "cache"],
+          description:
+            "Role volume to create: workspace at /workspace read-write, home at /home/dev read-write, tools at /opt/minibox/tools read-only, cache at /home/dev/.cache read-write. The tools role mounts the host's shared tools volume, creating it when the host has none.",
+        },
+        path: { type: "string", description: "Optional, and only the role's own path." },
+        mode: { type: "string", enum: ["rw", "ro"], description: "Optional, and only the role's own mode." },
+      },
+      required: ["role"],
+    },
+  ],
 };
 
 const CREATE_MOUNTS_HELP =

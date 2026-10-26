@@ -280,8 +280,19 @@ describe("creating a box from role mounts", () => {
   });
 });
 
+interface DocumentedMounts {
+  description?: string;
+  items?: {
+    anyOf?: {
+      description?: string;
+      required?: string[];
+      properties?: Record<string, { description?: string; enum?: string[] }>;
+    }[];
+  };
+}
+
 /** The mounts property of a create, as docs/openapi.json describes it. */
-function documentedMounts(): { description?: string; items?: { description?: string } } | undefined {
+function documentedMounts(): DocumentedMounts | undefined {
   const doc = JSON.parse(renderOpenApi(OPERATIONS, pkg.version)) as {
     paths: Record<
       string,
@@ -289,9 +300,7 @@ function documentedMounts(): { description?: string; items?: { description?: str
     >;
   };
   const schema = doc.paths["/api/boxes"]?.post?.requestBody?.content["application/json"]?.schema;
-  const properties = schema?.properties as
-    | Record<string, { description?: string; items?: { description?: string } }>
-    | undefined;
+  const properties = schema?.properties as Record<string, DocumentedMounts> | undefined;
   return properties?.mounts;
 }
 
@@ -299,7 +308,12 @@ describe("the mount list of a create in the OpenAPI document", () => {
   test("it says a role the list omits is not created, and what each entry holds", () => {
     const mounts = documentedMounts();
     expect(mounts?.description).toContain("A role the list omits is not created");
-    expect(mounts?.items?.description).toContain("{ role }");
     expect(mounts?.description).toContain("/opt/minibox/tools");
+    const shapes = mounts?.items?.anyOf ?? [];
+    // One shape mounts a volume that exists, the other names a role whose volume MiniBox creates.
+    expect(shapes.map((shape) => shape.required)).toEqual([["volume", "path", "mode"], ["role"]]);
+    expect(shapes[0]?.properties?.mode?.enum).toEqual(["rw", "ro"]);
+    expect(shapes[1]?.properties?.role?.enum).toEqual([...VOLUME_ROLES]);
+    expect(shapes[1]?.properties?.role?.description).toContain("shared tools volume");
   });
 });
