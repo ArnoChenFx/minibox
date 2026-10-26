@@ -1256,6 +1256,42 @@ async function recordScenario(): Promise<Exchange[]> {
     await waitTask(base, snapped.json);
     await post("snapshot a cache volume", `/api/volumes/${snapCacheId}/checkpoints`, {});
     await post("snapshot a missing volume", "/api/volumes/nowhere/checkpoints", {});
+
+    // Host labels, appended after the steps above so their event sequence numbers stay as they were recorded. A box
+    // create on auto with hostLabels picks only among the hosts that carry every label it asks for.
+    await post("set the local host's labels", "/api/hosts/local", { labels: { gpu: "true", "org/arch": "amd64" } });
+    await patch("replace the local host's labels", "/api/hosts/local", { labels: { gpu: "true" } });
+    await patch("set a label that is not valid", "/api/hosts/local", { labels: { "Bad Key": "x" } });
+    await patch("set labels on a host that is not added", "/api/hosts/nowhere", { labels: {} });
+    await send("list hosts after setting labels", "GET", "/api/hosts");
+    await post("create with labels but no auto host", "/api/boxes", {
+      name: "labelled",
+      cpus: 1,
+      memoryMb: 256,
+      host: "local",
+      hostLabels: { gpu: "true" },
+    });
+    await post("create with a label key that is not valid", "/api/boxes", {
+      name: "labelled",
+      cpus: 1,
+      memoryMb: 256,
+      host: "auto",
+      hostLabels: { "Bad Key": "x" },
+    });
+    await post("create on auto with labels no host carries", "/api/boxes", {
+      name: "labelled",
+      cpus: 1,
+      memoryMb: 256,
+      host: "auto",
+      hostLabels: { gpu: "true", zone: "eu" },
+    });
+    await post("create on auto with the local host's label", "/api/boxes", {
+      name: "labelled",
+      cpus: 1,
+      memoryMb: 256,
+      host: "auto",
+      hostLabels: { gpu: "true" },
+    });
   } finally {
     server.stop(true);
     app.throttle.stop();
