@@ -7,6 +7,9 @@
 ### 新增
 - 概览页的 **需要关注** 列表新增宿主机 CPU 与内存超配两项（[#192](https://github.com/ArnoChenFx/minibox/issues/192)）：某台在线宿主机上运行中 Box 预定的 CPU（`host.cpu_overcommit`）或内存（`host.memory_overcommit`）之和超过「宿主机容量 × `HOST_OVERCOMMIT`」时，列表给出 warning 级条目，文案带上已预定量与允许的上限（CPU 按核数、内存按字节由前端格式化），**查看** 跳到宿主机设置页。恰好等于上限不算超配，宿主机未报告容量（null）的那一项跳过，离线的宿主机仍只报 `host.offline`。`GET /api/overview` 的 `attention[].kind` 枚举与 `params` 说明、OpenAPI、中英文《Box》《宿主机》文档同步更新。
 
+### 修复
+- 预览中继新增一条 debug 日志，说明当前转发流量实际走的是哪一种中继实现：字段 `msg` 为 `preview.relay_selected`，`relay` 为 `binary`（容器内投放的静态 Rust 二进制）或 `python3`（回退脚本），并带上 `box`、`port` 与 `host`（宿主机 id）。以前只能进容器翻 `/proc` 才知道，现在每个容器的首次桥接各记一条；同一容器（同一宿主机与 containerId）之后的连接不再重复，容器重建或投放失败转回退时才各记一条新的。级别为 debug，默认不可见，需要设置 `LOG_LEVEL=debug` 才会输出；日志关闭时不做任何字符串拼接。
+
 ## [0.6.6] - 2026-10-26
 
 ### 变更

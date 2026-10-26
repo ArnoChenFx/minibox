@@ -27,8 +27,16 @@ export function setLogSink(write: (level: Level, line: string) => void, minLevel
   };
 }
 
+/**
+ * Whether a line at `level` would be written now. A caller whose fields cost something to build asks first, so a line
+ * that is off costs no string work at all.
+ */
+export function logEnabled(level: Level): boolean {
+  return ORDER[level] >= ORDER[sink ? sinkFloor : threshold];
+}
+
 function emit(level: Level, msg: string, fields?: Record<string, unknown>): void {
-  if (ORDER[level] < ORDER[sink ? sinkFloor : threshold]) return;
+  if (!logEnabled(level)) return;
   const line = JSON.stringify({ ts: new Date().toISOString(), level, msg, ...fields });
   if (sink) sink(level, line);
   else if (level === "error" || level === "warn") console.error(line);
