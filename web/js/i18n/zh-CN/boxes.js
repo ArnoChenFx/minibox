@@ -55,6 +55,7 @@ export default {
   "act.checkpoint.schedule": "设置定时检查点",
   "act.checkpoint.schedule.clear": "清除定时检查点",
   "act.template.create": "构建模板",
+  "act.template.fork": "派生模板",
   "act.template.rebuild": "重新构建模板",
   "act.template.sync": "将模板复制到宿主机",
   "act.template.official.build": "构建官方模板",

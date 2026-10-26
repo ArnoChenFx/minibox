@@ -4,6 +4,9 @@
 
 ## [Unreleased]
 
+### 新增
+- **模板 fork（派生）**：新增 `POST /api/templates/{ref}/fork`（操作 `template.fork`，scope `template:write`，同步返回 `201` + `{ template: { ref, name } }`），把一个已有模板的镜像与构建记录复制成一个可以二次修改的新模板。输入为 `ref`（源模板的镜像引用、tag 或名称）、`name`（新模板名）、可选 `description`，以及可选的 `?host=`（源模板所在的宿主机，省略则用第一台持有它的宿主机）。镜像复制采用与 `template.save` 相同的提交方式：用一个源镜像的临时容器 `commit` 成新 tag，写入 `template=true`、`templateName`、`templateDesc`、`createdBy`、`created`、`snapshot=false` 等既有标签，并把 `snapshotOf`/`snapshotOfId` 置空（派生不是从 Box 保存的），源模板的 tag、标签与镜像都不动。构建记录原样复制到新名字下（`source`、`init`、`createdBy` 保留，`description` 用调用方给的或源模板的），但 `imageId` 改写为新镜像 id，因此 `template.rebuild` 能直接按新模板自己的记录重建，且不会重建到原模板的镜像上；源模板没有记录时（例如从 Box 保存的模板）照样可以 fork，只是新模板 `buildKind` 为空、不能重新构建，与现状一致，不当作错误。名字冲突沿用 `assertTemplateNameAvailable` + `holdingTemplateName`（`409 template_name_taken`），源模板不存在或不是模板时 `404 template_not_found`；权限与 `template.save` 一致（`template:write`，令牌需 `tool:install` scope，且只能派生自己可见的模板、派生到空闲的名字），Agent 宿主机照旧 `refuseAgent`。控制台模板页每张卡片新增 **派生** 动作，弹出与新建模板同风格的对话框，预填空闲的 `<原名>-copy`（占用则 `-copy-2`…，仍限 63 字符）与源模板描述，并说明会复制构建参数、之后可以改名改描述并重新构建、从 Box 保存的模板派生后不能重新构建；提交后按既有方式刷新列表并把新卡片滚入视野（fork 是快操作，不起任务）。CLI 新增 `minibox template fork <ref> <new-name> [--description TEXT] [--host ID] [--json]`，MCP tools toolset 新增 `fork_template`。OpenAPI、REST/CLI/MCP 参考、skill 端点表与中英文《模板》文档同步更新。
+
 ## [0.6.7] - 2026-10-26
 
 ### 新增
