@@ -7,7 +7,13 @@ import { isBoxId } from "../specs/revision";
 import { isCheckpointId, newCheckpointId } from "./id";
 import { PackageStore } from "./packages";
 import { type BoxSchedule, BoxScheduleSchema } from "./schedule";
-import { CHECKPOINT_VERSION, type CheckpointRecord, type PendingRollback, ROLLBACK_VERSION } from "./types";
+import {
+  CHECKPOINT_VERSION,
+  type CheckpointRecord,
+  type PendingRollback,
+  type RolledVolume,
+  ROLLBACK_VERSION,
+} from "./types";
 
 const DEFAULT_PACKAGE_MAX_BYTES = 2 * 1024 * 1024 * 1024;
 
@@ -18,6 +24,17 @@ export interface CheckpointStoreOptions {
 
 const isEnoent = (e: unknown): boolean => typeof e === "object" && e !== null && "code" in e && e.code === "ENOENT";
 
+function isRolledVolume(value: unknown): value is RolledVolume {
+  if (typeof value !== "object" || value === null) return false;
+  const volume = value as Partial<RolledVolume>;
+  return (
+    typeof volume.volumeId === "string" &&
+    typeof volume.name === "string" &&
+    typeof volume.engineName === "string" &&
+    typeof volume.path === "string"
+  );
+}
+
 function isPendingRollback(value: unknown): value is PendingRollback {
   if (typeof value !== "object" || value === null) return false;
   const pending = value as Partial<PendingRollback>;
@@ -26,12 +43,18 @@ function isPendingRollback(value: unknown): value is PendingRollback {
     typeof pending.boxId === "string" &&
     isBoxId(pending.boxId) &&
     typeof pending.hostId === "string" &&
+    typeof pending.boxName === "string" &&
+    typeof pending.checkpointLabel === "string" &&
+    (pending.createdBy === null || typeof pending.createdBy === "string") &&
+    typeof pending.createdAt === "string" &&
     typeof pending.checkpointId === "string" &&
     isCheckpointId(pending.checkpointId) &&
     typeof pending.safetyCheckpointId === "string" &&
     isCheckpointId(pending.safetyCheckpointId) &&
     Array.isArray(pending.replaced) &&
-    Array.isArray(pending.restored)
+    pending.replaced.every(isRolledVolume) &&
+    Array.isArray(pending.restored) &&
+    pending.restored.every(isRolledVolume)
   );
 }
 
@@ -253,7 +276,8 @@ export class CheckpointStore {
       text = readFileSync(this.pendingPath(boxId), "utf8");
     } catch (e) {
       if (isEnoent(e)) return null;
-      throw e;
+      log.warn("checkpoint.rollback_unreadable", { box: boxId, error: String(e) });
+      return null;
     }
     try {
       const parsed = JSON.parse(text) as unknown;

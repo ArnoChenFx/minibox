@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { BOX_PROFILES } from "../box-profile";
+import { untilAborted } from "../lib/abort";
 import { log } from "../lib/logger";
 import { getBox } from "../services/boxes";
 import {
@@ -122,26 +123,26 @@ export const boxStagedList = defineOperation({
   rest: [{ method: "GET", path: "/api/staged" }],
   run: async ({ host: requestHost, allHosts, principal }) => {
     const hosts = allHosts?.() ?? [requestHost];
-    const entries: { box: z.input<typeof StagedBoxRefSchema>; staged: StagedView }[] = [];
-    for (const host of hosts) {
-      for (const spec of host.specs.list()) {
-        if (spec.hostId !== host.host.id) continue;
-        if (principal.type !== "owner" && !boxVisible(principal, viewOfSpec(spec))) continue;
-        let staged: StagedView | null;
-        try {
-          staged = await stagedOfSpec(host, spec);
-        } catch (e) {
-          log.warn("box.staged_unreadable", { box: spec.name, host: host.host.id, error: String(e) });
-          continue;
-        }
-        if (!staged) continue;
-        entries.push({
-          box: { id: spec.containerId, boxId: spec.id, name: spec.name, hostId: spec.hostId },
-          staged,
-        });
-      }
-    }
-    return { staged: entries };
+    const entries = await Promise.all(
+      hosts.flatMap((host) => {
+        if (host.host.status === "offline") return [];
+        return host.specs
+          .list()
+          .filter((spec) => spec.hostId === host.host.id && boxVisible(principal, viewOfSpec(spec)))
+          .map(async (spec): Promise<{ box: z.input<typeof StagedBoxRefSchema>; staged: StagedView } | null> => {
+            const deadline = AbortSignal.timeout(host.readTimeoutMs);
+            try {
+              const staged = await untilAborted(stagedOfSpec(host, spec, deadline), deadline);
+              if (!staged) return null;
+              return { box: { id: spec.containerId, boxId: spec.id, name: spec.name, hostId: spec.hostId }, staged };
+            } catch (e) {
+              log.warn("box.staged_unreadable", { box: spec.name, host: host.host.id, error: String(e) });
+              return null;
+            }
+          });
+      }),
+    );
+    return { staged: entries.filter((entry) => entry !== null) };
   },
 });
 
