@@ -222,6 +222,7 @@ describe("OpenAPI document", () => {
       "volume.limits.set",
       "volume.list",
       "volume.prune",
+      "volume.snapshot",
       "volume.usage",
     ]);
   });

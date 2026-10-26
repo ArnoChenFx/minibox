@@ -54,7 +54,8 @@ function rowHtml(checkpoint, group) {
     pending: Boolean(group.pending),
     elsewhere,
   });
-  // A deleted box has nothing to roll back: a fork brings its data back as a new box.
+  // A deleted box has nothing to roll back: a fork brings its data back as a new box. A volume snapshot has no box at
+  // all, so `rules.rollback` already says why, and the deleted-box wording would name a box that never existed.
   const rollback = group.deleted ? { allowed: false, reason: "ck.reasonBoxDeleted" } : rules.rollback;
   const kinds = kindsOf(checkpoint)
     .map((kind) => `<span class="badge ${KIND_CLASS[kind]}">${esc(t(`ck.kind.${kind}`))}</span>`)
@@ -82,6 +83,8 @@ function rowHtml(checkpoint, group) {
 function groupHeadHtml(group, folded) {
   const size = group.rows.length ? `<span class="subtle">${esc(bytes(group.bytes))}</span>` : "";
   const deleted = group.deleted ? `<span class="badge">${esc(t("ck.boxDeleted"))}</span>` : "";
+  // A group named after a volume holds snapshots of that volume, not of a box: the badge says so.
+  const volume = group.volume ? `<span class="badge badge-accent">${esc(t("ck.volumeGroup"))}</span>` : "";
   const pending = group.pending ? `<span class="badge badge-warning">${esc(t("ck.pendingTitle"))}</span>` : "";
   const tools = group.box
     ? `<a class="icon-btn" href="#/boxes/${enc(group.box.id)}/settings/checkpoints" title="${esc(t("ck.openBox"))}" aria-label="${esc(t("ck.openBox"))}">${icon("settings")}</a>
@@ -89,7 +92,7 @@ function groupHeadHtml(group, folded) {
     : "";
   return `<tr class="group-row sck-group" data-group="${esc(group.id)}"><td colspan="${COLUMNS}"><div class="sck-group-head">
     <button type="button" class="group-toggle" data-action="ck-group" data-group="${esc(group.id)}" aria-expanded="${!folded}"${group.rows.length ? "" : " disabled"}>
-      ${icon("chevron")}<strong>${esc(group.name)}</strong><span class="badge">${group.rows.length}</span>${size}${deleted}${pending}
+      ${icon("chevron")}<strong>${esc(group.name)}</strong><span class="badge">${group.rows.length}</span>${size}${volume}${deleted}${pending}
     </button>
     <div class="sck-group-tools">${tools}</div>
   </div></td></tr>`;

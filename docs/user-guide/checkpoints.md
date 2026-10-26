@@ -37,7 +37,10 @@ The list shows each checkpoint's **Taken** time, **Label**, **Kind** and **Conte
 - **Manual**: a checkpoint that you took.
 - **Automatic**: a checkpoint that MiniBox took. MiniBox takes one before each rollback, before a box is rebuilt or has a volume attached or detached (a [safety checkpoint](#safety-checkpoints)), and on a [schedule](#scheduled-checkpoints) if you set one.
 - **Pinned**: a checkpoint that you pinned.
+- **Volume snapshot**: a snapshot of one volume taken on its own, without a box. Its record names no box, and the storage page's **Checkpoints** tab groups it under the volume, with the badge **Volume**. See [Volumes and storage](volumes-and-storage.md#snapshot-a-volume).
 - **Legacy snapshot**: a snapshot from before checkpoints existed. You can fork it or delete it, but not roll back to it.
+
+A **Volume snapshot** cannot be forked, exported, copied or rolled back to: it holds one volume's data and no box settings, so there is no template or size to make a box from, and a package would describe no box. It can be pinned and deleted like any other checkpoint.
 
 ## Fork a checkpoint
 

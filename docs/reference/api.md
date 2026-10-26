@@ -201,6 +201,7 @@ The tables below list every operation in [`openapi.json`](../openapi.json), grou
 | `POST` | `/api/volumes/prune` | List the orphaned volumes: MiniBox volumes that no box or container uses. With `dryRun: false` the volumes named in `ids`, which must be the ids the dry run listed, are removed; nothing else is, and a named volume that is no longer an orphan, or is the tools volume, a system volume or in use, is refused with its reason. `dryRun` defaults to `true`. Owner only. `olderThan`, such as `30d`, keeps the volumes used more recently. Each host is reported in `hosts`. An offline or failing host is skipped |
 | `POST` | `/api/volumes/{id}/attach` | Mount a volume on a box. Takes a safety checkpoint of the box first, unless `safetyCheckpoint` is `false` |
 | `POST` | `/api/volumes/{id}/detach` | Unmount a volume from a box. Takes a safety checkpoint of the box first, unless `safetyCheckpoint` is `false` |
+| `POST` | `/api/volumes/{id}/checkpoints` | Snapshot one volume on its own, as a checkpoint whose record names no box. Takes `label` and `pinned`. Returns `202`; the finished task holds the checkpoint. A cache or tools volume answers `400` |
 | `POST` | `/api/volumes/{id}/usage` | Measure a volume |
 | `PUT` | `/api/volumes/{id}/limits` | Set a volume's soft and hard limits in bytes, and the action at the hard limit (`warn` or `stop`). A field left out keeps its value, and `null` clears a limit. Owner only. An NFS volume answers `400` |
 | `GET` | `/api/pools` | List storage pools |

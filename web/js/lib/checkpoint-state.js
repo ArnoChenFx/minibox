@@ -3,7 +3,7 @@
  * enforces each rule as well: these only say, before a press, why a control is off.
  */
 
-export const KINDS = ["manual", "automatic", "pinned", "legacy"];
+export const KINDS = ["manual", "automatic", "pinned", "volume", "legacy"];
 export const HOLD_MODES = ["live", "pause", "stop"];
 export const REASON_KEYS = [
   "ck.reasonLegacy",
@@ -17,6 +17,7 @@ export const REASON_KEYS = [
   "ck.reasonCopyLegacy",
   "ck.reasonCopyEmpty",
   "ck.reasonCopySystem",
+  "ck.reasonVolumeSnapshot",
 ];
 
 /** The translation of each reason a scheduled run can be skipped for, as the server names it. */
@@ -36,10 +37,16 @@ export const PASSPHRASE_MAX = 1024;
 export const SCHEDULE_HOURS = Object.freeze({ min: 1, max: 720 });
 const SCHEDULE_TIME = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
-/** The kinds a row carries. A legacy snapshot is read-only, so it carries only that kind. */
+/** Whether a checkpoint is a snapshot of one volume taken on its own: its record names no box. */
+export const isVolumeSnapshot = (checkpoint) => checkpoint.boxId === null;
+
+/**
+ * The kinds a row carries. A legacy snapshot is read-only, so it carries only that kind. A record with no box is a
+ * snapshot of a single volume, which says so instead of naming a box it was taken from.
+ */
 export function kindsOf(checkpoint) {
   if (checkpoint.legacy) return ["legacy"];
-  const kinds = [checkpoint.auto ? "automatic" : "manual"];
+  const kinds = [isVolumeSnapshot(checkpoint) ? "volume" : checkpoint.auto ? "automatic" : "manual"];
   if (checkpoint.pinned) kinds.push("pinned");
   return kinds;
 }
@@ -74,14 +81,20 @@ export function rowActions(checkpoint, { held = false, pending = false, elsewher
       delete: ALLOWED,
     };
   }
+  let remove = ALLOWED;
+  if (held) remove = refused("ck.reasonHeld");
+  else if (checkpoint.pinned) remove = refused("ck.reasonPinned");
+  // A snapshot of one volume names no box, so it holds no template, size or profile: a fork has nothing to make a box
+  // from, a package has no settings to describe, and there is no box to roll back. Only pinning and deleting apply.
+  if (isVolumeSnapshot(checkpoint)) {
+    const noBox = refused("ck.reasonVolumeSnapshot");
+    return { fork: noBox, export: noBox, copy: noBox, rollback: noBox, pin: ALLOWED, delete: remove };
+  }
   const owned = checkpoint.data.some((layer) => layer.ownership === "owned");
   let rollback = ALLOWED;
   if (pending) rollback = refused("ck.reasonPending");
   else if (elsewhere) rollback = refused("ck.reasonOtherHost");
   else if (!owned) rollback = refused("ck.reasonNoData");
-  let remove = ALLOWED;
-  if (held) remove = refused("ck.reasonHeld");
-  else if (checkpoint.pinned) remove = refused("ck.reasonPinned");
   let exportable = ALLOWED;
   if (checkpoint.data.length === 0) exportable = refused("ck.reasonEmpty");
   else if (checkpoint.system !== null) exportable = refused("ck.reasonSystem");

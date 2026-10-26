@@ -37,8 +37,13 @@ function forkPlan(data: DataLayer[], copyHome: boolean): { roles: Map<VolumeRole
   return { roles, copies };
 }
 
-/** Refuses a fork whose copies would take a default mount's path, so the request answers before any volume is made. */
+/**
+ * Refuses a fork whose copies would take a default mount's path, so the request answers before any volume is made. A
+ * record with no box settings cannot be forked at all: a snapshot of one volume holds no template or resources to make a
+ * box from, so it is refused before a task starts rather than failing inside one.
+ */
 export function assertForkable(checkpoint: CheckpointView, copyHome: boolean): void {
+  if (checkpoint.spec === null) throw conflict(msg("checkpoint_no_spec", { id: checkpoint.id }));
   forkPlan(checkpoint.data, copyHome);
 }
 

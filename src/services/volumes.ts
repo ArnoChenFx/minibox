@@ -81,12 +81,6 @@ export interface PoolsView {
   health: PoolHealth[];
 }
 
-function requireVolume(host: HostCtx, ref: string): VolumeRecord {
-  const volume = host.volumes.resolve(ref, host.host.id);
-  if (!volume || volume.hostId !== host.host.id) throw notFound(msg("volume_not_found", { volume: ref }));
-  return volume;
-}
-
 function mountsOf(host: HostCtx, volume: VolumeRecord): VolumeMountView[] {
   const mounts: VolumeMountView[] = [];
   for (const spec of host.specs.list()) {
@@ -161,9 +155,19 @@ export async function listVolumes(host: HostCtx): Promise<VolumeView[]> {
     .toSorted((a, b) => a.name.localeCompare(b.name));
 }
 
+/**
+ * The record a volume reference names, on this host. A missing volume is a 404, and one that lives on another host is
+ * found there by the operation's host routing, so this reads the host it runs on.
+ */
+export function requireVolumeRecord(host: HostCtx, ref: string): VolumeRecord {
+  const volume = host.volumes.resolve(ref, host.host.id);
+  if (!volume || volume.hostId !== host.host.id) throw notFound(msg("volume_not_found", { volume: ref }));
+  return volume;
+}
+
 export async function getVolume(host: HostCtx, ref: string): Promise<VolumeView> {
   const engines = await claimedEngines(host);
-  const volume = requireVolume(host, ref);
+  const volume = requireVolumeRecord(host, ref);
   return viewOf(host, volume, !engines.has(volume.engineName));
 }
 
@@ -309,7 +313,7 @@ export async function deleteVolume(
   ref: string,
   opts: { skipTrash?: boolean; createdBy?: string | null; record?: RecordNote; teardown?: boolean } = {},
 ): Promise<{ name: string; trash: TrashRef | null }> {
-  const volume = requireVolume(host, ref);
+  const volume = requireVolumeRecord(host, ref);
   const outcome = await removeGuarded(host, volume, {
     skipTrash: opts.skipTrash ?? false,
     principal: opts.createdBy ?? null,
@@ -497,7 +501,7 @@ export async function attachVolume(
   safety: SafetyHook | null,
   record?: RecordNote,
 ): Promise<{ box: Box; warning: "shared_rw" | null; safety: RebuildResult["safety"] }> {
-  const volume = requireVolume(host, ref);
+  const volume = requireVolumeRecord(host, ref);
   if (!validMountPath(input.path)) throw badRequest(msg("mount_path_invalid", { path: input.path }));
   const spec = await readSpec(host, input.box);
   const warning = warnShared(host, volume, input.mode, spec.id);
@@ -514,7 +518,7 @@ export async function detachVolume(
   safety: SafetyHook | null,
   record?: RecordNote,
 ): Promise<RebuildResult> {
-  const volume = requireVolume(host, ref);
+  const volume = requireVolumeRecord(host, ref);
   const spec = await readSpec(host, input.box);
   const mounts = spec.mounts.filter((mount) => !(mount.volume === volume.engineName && mount.path === input.path));
   if (mounts.length === spec.mounts.length) throw notFound(msg("mount_not_found", { path: input.path }));
@@ -541,7 +545,7 @@ async function applyMounts(
 
 /** Measures a volume now, the same sample the periodic sampler takes. A failed measurement is thrown after it is recorded. */
 export async function measureVolume(host: HostCtx, ref: string): Promise<VolumeView> {
-  const volume = requireVolume(host, ref);
+  const volume = requireVolumeRecord(host, ref);
   const sample = await sampleWithin(host, volume);
   const next = recordSample(host, volume.id, sample);
   if (!sample.ok) throw sample.error instanceof Error ? sample.error : new Error(sample.message);
@@ -554,7 +558,7 @@ export async function measureVolume(host: HostCtx, ref: string): Promise<VolumeV
  * its usage is the whole share's: a quota belongs on the NAS export.
  */
 export function setVolumeLimits(host: HostCtx, ref: string, patch: LimitPatch): void {
-  const volume = requireVolume(host, ref);
+  const volume = requireVolumeRecord(host, ref);
   const pool = host.volumes.readPools().pools.find((item) => item.name === volume.pool);
   if (pool?.backend === "nfs") throw badRequest(msg("volume_limit_nfs", { volume: volume.name }));
   const next: VolumeRecord = {

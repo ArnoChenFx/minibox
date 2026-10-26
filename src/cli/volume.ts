@@ -1,4 +1,5 @@
 import { type CliIo, fail, parseOptions, printJson, request } from "./shared";
+import { awaitStarted } from "./task";
 
 /** One volume a delete or a prune reports. A preview row has no status; its `blocked` reason says why it stays. */
 interface VolumeRow {
@@ -125,7 +126,34 @@ async function volumePruneCommand(argv: string[], env: Record<string, string | u
     : 0;
 }
 
-/** `volume delete` and `volume prune`: removing volumes, and finding the ones nothing uses. */
+/**
+ * `volume snapshot <id|name> [--label TEXT] [--pin]`: snapshots one volume on its own, without a box. The task it starts
+ * prints the checkpoint's id once the backup has finished.
+ */
+async function volumeSnapshotCommand(
+  argv: string[],
+  env: Record<string, string | undefined>,
+  io: CliIo,
+): Promise<number> {
+  const options = parseOptions(argv, ["--label"], ["--json", "--pin"]);
+  const [id, ...more] = options.positional;
+  const label = options.values.get("--label");
+  if (!id || more.length > 0) throw new Error("minibox volume snapshot needs one volume id or name");
+  const started = await request(env, "POST", `/api/volumes/${encodeURIComponent(id)}/checkpoints`, {
+    ...(label === undefined ? {} : { label }),
+    pinned: options.switches.has("--pin"),
+  });
+  if (started.status >= 400) return fail(io, started.status, started.json, started.text);
+  return awaitStarted(
+    env,
+    io,
+    started.json,
+    options,
+    (task) => (task.result as { checkpoint: { id: string } }).checkpoint.id,
+  );
+}
+
+/** `volume delete`, `volume prune` and `volume snapshot`: removing volumes, finding the ones nothing uses, and keeping one. */
 export async function volumeCommand(
   argv: string[],
   env: Record<string, string | undefined>,
@@ -134,5 +162,6 @@ export async function volumeCommand(
   const [sub, ...rest] = argv;
   if (sub === "delete") return volumeDeleteCommand(rest, env, io);
   if (sub === "prune") return volumePruneCommand(rest, env, io);
-  throw new Error("minibox volume needs delete or prune");
+  if (sub === "snapshot") return volumeSnapshotCommand(rest, env, io);
+  throw new Error("minibox volume needs delete, prune or snapshot");
 }

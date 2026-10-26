@@ -1901,15 +1901,45 @@ describe("CLI volume prune and delete", () => {
     }
   });
 
+  test("volume snapshot prints the checkpoint it took, and --pin keeps it", async () => {
+    const env = serve();
+    try {
+      await createVolume(env.app.hosts.get(), { name: "notes", role: null, createdBy: null });
+
+      const out = io();
+      expect(
+        await runCli(["volume", "snapshot", "notes", "--label", "before the edit", "--pin"], env.env, out, lines([])),
+      ).toBe(0);
+      const checkpointId = out.out.trim();
+      expect(checkpointId).toMatch(/^ck_/);
+
+      const read = await api(env.env.MINIBOX_URL, "GET", `/api/checkpoints/${checkpointId}`);
+      expect(read.json).toMatchObject({
+        checkpoint: { id: checkpointId, boxId: null, boxName: "notes", label: "before the edit", pinned: true },
+      });
+
+      const cache = io();
+      await createVolume(env.app.hosts.get(), { name: "cache-a", role: "cache", createdBy: null });
+      expect(await runCli(["volume", "snapshot", "cache-a"], env.env, cache, lines([]))).toBe(1);
+      expect(cache.err).toContain("is never part of a checkpoint");
+    } finally {
+      env.stop();
+    }
+  });
+
   test("volume usage errors exit 2 without calling the server", async () => {
     const env = { MINIBOX_URL: "http://127.0.0.1:9", MINIBOX_ACCESS_KEY: TEST_KEY };
     const cases: [string[], string][] = [
-      [["volume"], "needs delete or prune"],
-      [["volume", "frobnicate"], "needs delete or prune"],
+      [["volume"], "needs delete, prune or snapshot"],
+      [["volume", "frobnicate"], "needs delete, prune or snapshot"],
       [["volume", "delete"], "needs one or more volume ids or names"],
       [["volume", "delete", "notes", "--color", "red"], "Unknown option --color"],
       [["volume", "prune", "--older-than"], "--older-than needs a value"],
       [["volume", "prune", "--color", "red"], "Unknown option --color"],
+      [["volume", "snapshot"], "needs one volume id or name"],
+      [["volume", "snapshot", "notes", "other"], "needs one volume id or name"],
+      [["volume", "snapshot", "notes", "--label"], "--label needs a value"],
+      [["volume", "snapshot", "notes", "--color", "red"], "Unknown option --color"],
     ];
     for (const [argv, message] of cases) {
       const sink = io();

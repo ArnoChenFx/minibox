@@ -14,20 +14,19 @@ export function latestByVolume(checkpoints) {
 }
 
 /**
- * How a snapshot of the volume is taken: a checkpoint of a box that mounts it. An owned volume goes with its owner box,
- * which always includes it. An independent one is named in the checkpoint of the first box that mounts it. `block` is
- * the i18n key of why it cannot be taken, and is empty when it can.
+ * How a snapshot of the volume is taken. An owned volume goes with its owner box, which always includes it, so it is a
+ * checkpoint of that box. An independent volume is snapshotted on its own, without any box: `own` says so, and the plan
+ * names no box, so a volume no box mounts can be snapshotted too. `block` is the i18n key of why it cannot be taken, and
+ * is empty when it can.
  */
 export function snapshotPlan(volume) {
   if (!volume.checkpoint || volume.role === "tools") return { block: "vol.snapshotExcluded" };
   if (volume.ownership === "owned") {
     if (volume.ownerMissing || !volume.ownerBoxId) return { block: "vol.snapshotNoBox" };
     const name = volume.mounts.find((mount) => mount.boxId === volume.ownerBoxId)?.boxName ?? null;
-    return { block: "", boxId: volume.ownerBoxId, boxName: name, include: [] };
+    return { block: "", own: false, boxId: volume.ownerBoxId, boxName: name, include: [] };
   }
-  const mount = volume.mounts[0];
-  if (!mount) return { block: "vol.snapshotUnmounted" };
-  return { block: "", boxId: mount.boxId, boxName: mount.boxName, include: [volume.id] };
+  return { block: "", own: true, boxId: null, boxName: null, include: [volume.id] };
 }
 
 /**

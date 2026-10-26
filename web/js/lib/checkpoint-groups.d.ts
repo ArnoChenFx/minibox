@@ -15,6 +15,8 @@ export interface CheckpointGroup<C extends GroupedCheckpoint, B extends GroupBox
   name: string;
   box: B | null;
   deleted: boolean;
+  /** True when the group holds snapshots of one volume, which name no box: the group is not a deleted box. */
+  volume?: boolean;
   rows: C[];
   bytes: number;
   newest: number;

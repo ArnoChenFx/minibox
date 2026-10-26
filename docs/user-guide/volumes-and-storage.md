@@ -50,6 +50,19 @@ Changing the mounts of a box rebuilds it. The box keeps its name and its volumes
 
 The same volume can be mounted by several boxes. When you mount a volume read-write in a second box, the console asks you to confirm. Docker does not lock files between boxes, so two boxes that write the same file can overwrite each other's work.
 
+## Snapshot a volume
+
+Click **Snapshot** on a volume to keep a copy of its data as a checkpoint.
+
+- An **independent** volume is snapshotted on its own, whether or not a box mounts it. The checkpoint's record names no box, and holds that one volume. The **Checkpoints** tab groups it under the volume's name, with the badge **Volume**, and the row's **Contents** names the volume. A box that mounts the volume keeps running while the copy is taken.
+- A volume that a box **owns** goes with its owner box, so its **Snapshot** button takes a checkpoint of that box. That box's checkpoint always includes its workspace and home volumes.
+
+The snapshot is a manual checkpoint, so [retention](checkpoints.md#checkpoint-list) never expires it on its own, and it can be pinned and deleted like any other checkpoint. It holds no box settings, so it cannot be forked into a box, exported, copied or rolled back to: those buttons are off, and the API refuses each with its reason. To take a box's settings and data together, take a checkpoint of the box instead.
+
+A cache volume and the shared tools volume are never part of a checkpoint, so their **Snapshot** button is off. A volume the engine has lost cannot be snapshotted either, since a copy would only create it again empty.
+
+The command line snapshots a volume too: `minibox volume snapshot <id|name> [--label TEXT] [--pin]`, which prints the checkpoint's id.
+
 ## Delete a volume
 
 Click **Delete** on the volume. MiniBox does not delete a volume that a box still mounts.

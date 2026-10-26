@@ -50,6 +50,8 @@ Commands:
   minibox volume prune [id|name...] [--older-than 30d] [--yes] [--json]
                                        List the orphaned volumes: MiniBox volumes no box or container uses.
                                        --yes removes them. A volume used in the last five minutes is kept
+  minibox volume snapshot <id|name> [--label TEXT] [--pin] [--no-wait] [--json]
+                                       Snapshot one volume on its own, without a box. Prints the checkpoint id
   minibox exec <box> [options] -- <argv...>
       --cwd DIR         Working directory (default /workspace)
       --user USER       Container user (default dev; the strict profile allows only dev or 1000)

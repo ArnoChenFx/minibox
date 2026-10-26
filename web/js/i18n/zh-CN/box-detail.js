@@ -274,6 +274,7 @@ export default {
   "ev.container.start": "容器已启动",
   "ev.container.stop": "容器已停止",
   "ev.container.oom": "内存不足",
+  "ev.volume.snapshot": "已为卷创建快照",
   "ev.volume.usage_high": "卷超过软上限",
   "ev.volume.usage_limit": "卷超过硬上限",
   "ev.host.disk_low": "宿主机磁盘不足",

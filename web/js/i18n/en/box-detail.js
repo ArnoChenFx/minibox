@@ -281,6 +281,7 @@ export default {
   "ev.container.start": "Container started",
   "ev.container.stop": "Container stopped",
   "ev.container.oom": "Out of memory",
+  "ev.volume.snapshot": "Volume snapshotted",
   "ev.volume.usage_high": "Volume over soft limit",
   "ev.volume.usage_limit": "Volume over hard limit",
   "ev.host.disk_low": "Host disk low",

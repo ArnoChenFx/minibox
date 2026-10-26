@@ -35,6 +35,7 @@ export default {
   "task.op.box.setup": "设置 Box",
   "task.op.snapshot.create": "创建快照",
   "task.op.checkpoint.create": "拍摄检查点",
+  "task.op.volume.snapshot": "为卷创建快照",
   "task.op.checkpoint.fork": "派生检查点",
   "task.op.checkpoint.update": "修改检查点",
   "task.op.checkpoint.delete": "删除检查点",

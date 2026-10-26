@@ -82,6 +82,7 @@ curl -s -H "Authorization: Bearer $MINIBOX_TOKEN" -H 'Content-Type: application/
 | Logs and stats | — | `GET /api/boxes/{id}/logs?tail=`, `GET /api/boxes/{id}/stats` |
 | Rebuild / move a box | `rebuild_box` (rebuild), `move_box` (move) | `POST /api/boxes/{id}/rebuild`, `/move` |
 | Volumes and pools | storage toolset | `/api/volumes`, `/api/pools` |
+| Snapshot one volume | `snapshot_volume` (storage) | `POST /api/volumes/{id}/checkpoints` |
 | Startup command | `get_/set_/delete_/run_startup_command` (core) | `/api/boxes/{id}/startup-command` |
 
 The full endpoint table is in [rest-endpoints.md](rest-endpoints.md); the tool list per toolset is in [mcp-toolsets.md](mcp-toolsets.md).
@@ -156,6 +157,14 @@ curl -s -H "Authorization: Bearer $MINIBOX_TOKEN" -H 'Content-Type: application/
 ```
 
 `consistency` is `live` (default, crash-consistent), `pause` (freeze the box) or `stop` (stop it and start it again). Export, import, copy and schedule are owner-only.
+
+A single volume can be snapshotted without a box, which is what the storage page's **Snapshot** button does for an independent volume. The record names no box, so it can be pinned and deleted, but not forked, exported, copied or rolled back (each is refused with its reason):
+
+```bash
+curl -s -H "Authorization: Bearer $MINIBOX_TOKEN" -H 'Content-Type: application/json' \
+  -d '{"label":"before-the-migration","pinned":true}' \
+  http://127.0.0.1:3920/api/volumes/vol_xxx/checkpoints
+```
 
 ### Tokens and least privilege
 

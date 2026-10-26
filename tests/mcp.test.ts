@@ -252,6 +252,7 @@ describe("MCP", () => {
         "restore_trash",
         "set_checkpoint_schedule",
         "set_volume_limits",
+        "snapshot_volume",
         "test_target",
       ]);
 

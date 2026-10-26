@@ -163,6 +163,7 @@ const SAMPLES: Record<string, (boxId: string, app: App) => unknown> = {
   }),
   "volume.usage": () => ({ id: "spare" }),
   "volume.limits.set": () => ({ id: "spare", softBytes: 1048576, hardBytes: 2097152, action: "warn" }),
+  "volume.snapshot": () => ({ id: "spare", label: "spare snapshot" }),
   "pool.list": () => ({}),
   "pool.replace": () => ({ pools: [{ name: "local", backend: "local", default: true }], confirm: true }),
   "tool.catalog": () => ({}),
@@ -1205,6 +1206,7 @@ describe("projections", () => {
       "restore_trash",
       "set_checkpoint_schedule",
       "set_volume_limits",
+      "snapshot_volume",
       "test_target",
     ]);
     expect(

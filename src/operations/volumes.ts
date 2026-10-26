@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import type { EventTarget } from "../events/types";
 import type { HostCtx } from "../host/registry";
+import { assertVolumeReadable, takeVolumeCheckpoint } from "../services/checkpoints";
 import { preRebuildSafety } from "../services/safety";
 import { pruneVolumes } from "../services/volume-prune";
 import type { OutcomeError } from "../services/volume-refs";
@@ -21,13 +22,16 @@ import {
   previewDeleteVolume,
   previewDeleteVolumes,
   previewPools,
+  requireVolumeRecord,
   savePools,
   setVolumeLimits,
   type VolumeView,
 } from "../services/volumes";
 import { requireRevision } from "../specs/revision";
 import { hostAllowed, refusal, specViews, volumeVisible } from "../tokens/model";
+import { assertCheckpointQuota, underCheckpointQuota } from "../tokens/quota";
 import { ageMs } from "../volumes/age";
+import { assertHostDiskRoom } from "../volumes/disk";
 import type { PoolDraft, RoleDraft } from "../volumes/pools";
 import {
   assertCanAdministerPools,
@@ -37,11 +41,12 @@ import {
   canDeleteVolume,
 } from "./authz";
 import { defineOperation } from "./define";
-import { fromEveryHost, hostOfVolume } from "./routing";
-import { BoxSchema, OutcomeSchema, SafetyCheckpointSchema, TrashRefSchema } from "./schemas";
+import { fromEveryHost, hostOfVolume, refuseAgent } from "./routing";
+import { BoxSchema, CheckpointSchema, OutcomeSchema, SafetyCheckpointSchema, TrashRefSchema } from "./schemas";
 import type { OperationContext } from "./types";
 import {
   boxId,
+  checkpointLabel,
   confirmFlag,
   dryRunFlag,
   expectedRevision,
@@ -168,7 +173,11 @@ export const VolumeSchema = z.object({
   }),
 });
 
-const volumeTarget = (volume: VolumeView): EventTarget => ({ kind: "volume", id: volume.id, name: volume.name });
+const volumeTarget = (volume: Pick<VolumeView, "id" | "name">): EventTarget => ({
+  kind: "volume",
+  id: volume.id,
+  name: volume.name,
+});
 
 const volumeList = defineOperation({
   name: "volume.list",
@@ -704,6 +713,68 @@ const volumeLimitsSet = defineOperation({
   },
 });
 
+/**
+ * Snapshots one volume on its own, without a box. The record names no box: it is a checkpoint of that volume, so the
+ * storage page can keep a volume's data whether or not a box mounts it. Cache and tools volumes are refused, as they are
+ * for every checkpoint, and so is a volume the host cannot read.
+ */
+const volumeSnapshot = defineOperation({
+  name: "volume.snapshot",
+  tag: "volumes",
+  summary: "Snapshot a volume",
+  kind: "write",
+  scope: "checkpoint:create",
+  async: true,
+  conflicts: true,
+  input: z.object({
+    id: z.string().meta({ description: "Volume id (vol_…) or volume name." }),
+    label: checkpointLabel(),
+    pinned: z
+      .boolean()
+      .default(false)
+      .meta({ description: "Keep the snapshot until it is unpinned. A pinned checkpoint cannot be deleted." }),
+  }),
+  output: z.object({ checkpoint: CheckpointSchema }),
+  rest: [{ method: "POST", path: "/api/volumes/:id/checkpoints", body: true, status: 202 }],
+  cli: "volume snapshot",
+  mcp: {
+    toolset: "storage",
+    name: "snapshot_volume",
+    description:
+      "Snapshot one volume without a box, as a checkpoint whose record names no box and holds that volume alone. The volume may be mounted by a box or by none, and a box that mounts it is neither paused nor stopped. A cache or tools volume is refused, as it is for a checkpoint. label names the snapshot, and pinned true keeps it until it is unpinned. Returns a task id; the finished task holds the checkpoint.",
+  },
+  hostFor: (ctx, input) => hostOfVolume(ctx, input.id),
+  // A backup reads the volume with a helper container, which an agent host cannot run.
+  precondition: async ({ host }) => refuseAgent(host, "checkpoints"),
+  resolve: async ({ host }, input) => requireVolumeRecord(host, input.id),
+  beforeTask: async (ctx, _input, volume) => {
+    // The same gates a checkpoint has: the volume must be one a checkpoint may hold, the host must have it, and the
+    // token's quota and the host's free space must allow another checkpoint.
+    await assertVolumeReadable(ctx.host, volume);
+    assertCheckpointQuota(ctx);
+    await assertHostDiskRoom(ctx.host);
+  },
+  exclusive: ({ host }, _input, volume) => `volume.snapshot:${host.host.id}:${volume.id}`,
+  activity: { action: () => "volume.snapshot", target: (_input, volume) => volume.name },
+  audit: { target: (_input, volume) => volume && volumeTarget(volume) },
+  run: async (ctx, input, volume) => ({
+    checkpoint: await underCheckpointQuota(ctx, () =>
+      takeVolumeCheckpoint(
+        ctx.host,
+        volume,
+        {
+          label: input.label,
+          pinned: input.pinned,
+          include: { system: false, volumes: [] },
+          consistency: "live",
+        },
+        ctx.principal.id,
+        ctx.task,
+      ),
+    ),
+  }),
+});
+
 export const volumeOperations = [
   volumeList,
   volumeGet,
@@ -715,6 +786,7 @@ export const volumeOperations = [
   volumeDetach,
   volumeUsage,
   volumeLimitsSet,
+  volumeSnapshot,
   poolList,
   poolReplace,
 ];

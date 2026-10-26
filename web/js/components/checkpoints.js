@@ -3,6 +3,7 @@ import {
   browserTimezone,
   contentsOf,
   HOLD_MODES,
+  isVolumeSnapshot,
   kindsOf,
   newestFirst,
   passphraseOk,
@@ -707,6 +708,8 @@ export function pendingHtml(pending) {
 }
 
 export function contentsText(checkpoint) {
+  // A snapshot of one volume holds that volume alone, and its record names it: there is no box to name the contents by.
+  if (isVolumeSnapshot(checkpoint)) return t("ck.contentsVolume", { name: checkpoint.boxName ?? "—" });
   const { roles, others, system } = contentsOf(checkpoint);
   const parts = roles.map((role) => t(role === "workspace" ? "vol.roleWorkspace" : "vol.roleHome"));
   if (others) parts.push(t("ck.contentsOther", { n: others }));

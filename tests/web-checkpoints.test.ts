@@ -7,6 +7,7 @@ import { SKIP_REASONS } from "../src/checkpoints/schedule";
 import { ROOT } from "../src/config";
 import { checkpointPackageOperations } from "../src/operations/checkpoint-packages";
 import { checkpointOperations } from "../src/operations/checkpoints";
+import { volumeOperations } from "../src/operations/volumes";
 import en from "../web/js/i18n/en.js";
 import zh from "../web/js/i18n/zh-CN.js";
 import {
@@ -14,6 +15,7 @@ import {
   contentsOf,
   HOLD_MODES,
   KINDS,
+  isVolumeSnapshot,
   kindsOf,
   newestFirst,
   passphraseOk,
@@ -142,6 +144,25 @@ describe("checkpoint rules", () => {
     expect(kindsOf(row())).toEqual(["manual"]);
     expect(kindsOf(row({ auto: true, pinned: true }))).toEqual(["automatic", "pinned"]);
     expect(kindsOf(row({ legacy: true, data: [] }))).toEqual(["legacy"]);
+  });
+
+  test("a record with no box is a snapshot of one volume, which says so instead of naming a box", () => {
+    const snapshot = row({ boxId: null, data: [{ role: null, ownership: "independent" }] });
+    expect(isVolumeSnapshot(snapshot)).toBe(true);
+    expect(kindsOf(snapshot)).toEqual(["volume"]);
+    expect(kindsOf({ ...snapshot, pinned: true })).toEqual(["volume", "pinned"]);
+    expect(isVolumeSnapshot(row())).toBe(false);
+  });
+
+  test("a snapshot of one volume names no box, so it can only be pinned or deleted, and every other action says why", () => {
+    const snapshot = row({ boxId: null, data: [{ role: null, ownership: "independent" }] });
+    const actions = rowActions(snapshot);
+    for (const action of [actions.fork, actions.export, actions.copy, actions.rollback]) {
+      expect(action).toEqual({ allowed: false, reason: "ck.reasonVolumeSnapshot" });
+    }
+    expect([actions.pin.allowed, actions.delete.allowed]).toEqual([true, true]);
+    // A pinned volume snapshot is still refused a delete, as any pinned checkpoint is.
+    expect(rowActions({ ...snapshot, pinned: true }).delete).toEqual({ allowed: false, reason: "ck.reasonPinned" });
   });
 
   test("contents name the workspace and home, count the other volumes, and flag a system layer", () => {
@@ -940,9 +961,13 @@ describe("checkpoint translations", () => {
   });
 
   test("every async checkpoint operation has a task label in both languages", () => {
-    const operations = [...checkpointOperations, ...checkpointPackageOperations];
-    const keys = operations.filter((op) => op.async).map((op) => `task.op.${op.name}`);
-    expect(keys).toEqual(expect.arrayContaining(["task.op.checkpoint.export", "task.op.checkpoint.import"]));
+    const operations = [...checkpointOperations, ...checkpointPackageOperations, ...volumeOperations];
+    const keys = operations
+      .filter((op) => op.async && (op.tag === "checkpoints" || op.name === "volume.snapshot"))
+      .map((op) => `task.op.${op.name}`);
+    expect(keys).toEqual(
+      expect.arrayContaining(["task.op.checkpoint.export", "task.op.checkpoint.import", "task.op.volume.snapshot"]),
+    );
     expect(keys.filter((key) => !(key in en) || !(key in zh))).toEqual([]);
   });
 

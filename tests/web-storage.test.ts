@@ -48,7 +48,7 @@ describe("storage checkpoint timeline", () => {
       [
         ck("a", "b1", "2026-10-05T00:00:00Z"),
         ck("b", "b2", "2026-10-01T00:00:00Z"),
-        ck("c", null, "2026-10-09T00:00:00Z"),
+        ck("c", "b9", "2026-10-09T00:00:00Z", [], { boxName: "gone" }),
       ],
       [
         { boxId: "b1", name: "one" },
@@ -56,9 +56,39 @@ describe("storage checkpoint timeline", () => {
       ],
       new Map([["b2", { id: "rb" }]]),
     );
-    expect(groups.map((group) => group.id)).toEqual(["b2", "b1", "deleted:gone"]);
+    expect(groups.map((group) => group.id)).toEqual(["b2", "b1", "b9"]);
     expect(groups[0]!.pending).toEqual({ id: "rb" });
     expect(groups[2]).toMatchObject({ deleted: true, name: "gone", box: null });
+  });
+});
+
+/** A record of a snapshot taken of one volume on its own: it names no box, and its box name is the volume's. */
+const volumeSnapshot = (id: string, volumeName: string, createdAt: string) =>
+  ck(id, null, createdAt, ["v1"], { boxName: volumeName });
+
+describe("storage checkpoint timeline: volume snapshots", () => {
+  test("a record with no box is grouped under the volume it holds, and is not a deleted box", () => {
+    const groups = groupCheckpoints(
+      [
+        volumeSnapshot("a", "notes", "2026-10-04T00:00:00Z"),
+        ck("b", "b9", "2026-10-01T00:00:00Z", [], { boxName: "gone" }),
+      ],
+      [{ boxId: "b1", name: "one" }],
+    );
+    expect(groups.map((group) => [group.id, group.name, group.deleted, group.volume])).toEqual([
+      ["b1", "one", false, undefined],
+      ["volume:notes", "notes", false, true],
+      ["b9", "gone", true, false],
+    ]);
+    expect(groups[1]!.rows.map((row) => row.id)).toEqual(["a"]);
+  });
+
+  test("snapshots of two volumes are two groups, each named after its own volume", () => {
+    const groups = groupCheckpoints(
+      [volumeSnapshot("a", "notes", "2026-10-04T00:00:00Z"), volumeSnapshot("b", "data", "2026-10-02T00:00:00Z")],
+      [],
+    );
+    expect(groups.map((group) => group.name)).toEqual(["notes", "data"]);
   });
 });
 
@@ -73,14 +103,24 @@ describe("storage volume rows", () => {
     expect(latest.has("v3")).toBe(false);
   });
 
-  test("an independent volume snapshots through the first box that mounts it, naming itself", () => {
-    expect(snapshotPlan(volume())).toEqual({ block: "", boxId: "b1", boxName: "one", include: ["v1"] });
-    expect(snapshotPlan(volume({ mounts: [] })).block).toBe("vol.snapshotUnmounted");
+  test("an independent volume is snapshotted on its own, without borrowing the box that mounts it", () => {
+    expect(snapshotPlan(volume())).toEqual({ block: "", own: true, boxId: null, boxName: null, include: ["v1"] });
+  });
+
+  test("an independent volume that no box mounts can still be snapshotted", () => {
+    expect(snapshotPlan(volume({ mounts: [] }))).toEqual({
+      block: "",
+      own: true,
+      boxId: null,
+      boxName: null,
+      include: ["v1"],
+    });
   });
 
   test("an owned volume snapshots with its owner box, and excluded or orphaned ones are blocked", () => {
     expect(snapshotPlan(volume({ ownership: "owned", ownerBoxId: "b1" }))).toEqual({
       block: "",
+      own: false,
       boxId: "b1",
       boxName: "one",
       include: [],

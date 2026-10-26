@@ -243,6 +243,8 @@ export const MESSAGES = {
   checkpoint_volume_excluded:
     "Volume {volume} is never part of a checkpoint. Cache and tools volumes are left out of every checkpoint.",
   checkpoint_volume_not_mounted: "Volume {volume} is not mounted by this box, so it cannot be included.",
+  volume_snapshot_host_offline:
+    "Host {host} is offline, so volume {volume} cannot be snapshotted. Snapshot it once the host is back online.",
   checkpoint_other_box: "Checkpoint {id} was taken from another box. Roll back a box only to its own checkpoints.",
   checkpoint_no_data: "Checkpoint {id} holds no volume data, so there is nothing to roll back.",
   checkpoint_legacy_read_only: "Snapshot {id} was made before checkpoints. It can be forked or deleted, not changed.",

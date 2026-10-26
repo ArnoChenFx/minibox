@@ -5,8 +5,14 @@ const time = (checkpoint) => Date.parse(checkpoint.createdAt) || 0;
 /**
  * One group per box, each with its checkpoints newest first and their total size. A box that still exists keeps its
  * current name, and one with no checkpoints gets an empty group, so a checkpoint can be taken from it. Checkpoints of a
- * deleted box form a group of their own under the name they were taken with. Groups with a rollback waiting for its
- * confirm or undo come first, then the rest by their newest checkpoint, then the empty ones, then the deleted boxes.
+ * deleted box form a group of their own under the name they were taken with.
+ *
+ * A checkpoint whose record names no box is a snapshot of one volume, taken on its own. Its record carries the volume's
+ * name as its box name, so those checkpoints form a group named after the volume, and `volume` marks it: the group is not
+ * a deleted box, and its rows say so instead of offering a rollback.
+ *
+ * Groups with a rollback waiting for its confirm or undo come first, then the rest by their newest checkpoint, then the
+ * empty ones, then the deleted boxes and the volume snapshots.
  */
 export function groupCheckpoints(checkpoints, boxes, pending = new Map()) {
   const groups = new Map();
@@ -14,10 +20,20 @@ export function groupCheckpoints(checkpoints, boxes, pending = new Map()) {
     groups.set(box.boxId, { id: box.boxId, name: box.name, box, deleted: false, rows: [], bytes: 0, newest: 0 });
   }
   for (const checkpoint of checkpoints) {
-    const id = checkpoint.boxId ?? `deleted:${checkpoint.boxName ?? ""}`;
+    const volume = checkpoint.boxId === null;
+    const id = volume ? `volume:${checkpoint.boxName ?? ""}` : checkpoint.boxId;
     let group = groups.get(id);
     if (!group) {
-      group = { id, name: checkpoint.boxName ?? "—", box: null, deleted: true, rows: [], bytes: 0, newest: 0 };
+      group = {
+        id,
+        name: checkpoint.boxName ?? "—",
+        box: null,
+        deleted: !volume,
+        volume,
+        rows: [],
+        bytes: 0,
+        newest: 0,
+      };
       groups.set(id, group);
     }
     group.rows.push(checkpoint);
@@ -26,7 +42,8 @@ export function groupCheckpoints(checkpoints, boxes, pending = new Map()) {
   }
   const rank = (group) => {
     if (pending.get(group.id)) return 0;
-    if (group.deleted) return 3;
+    // A group that is not a box, such as a deleted box's or a volume's snapshots, comes after the boxes.
+    if (!group.box) return 3;
     return group.rows.length ? 1 : 2;
   };
   return [...groups.values()]
