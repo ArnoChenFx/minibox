@@ -48,7 +48,7 @@ For a quicker local run, `bun run check:quick` runs the same three static checks
 | `bun run test:site` | Chromium | Browser tests for the homepage. |
 | `bun run screenshots` | Docker and Chromium | Captures the console screenshots for the README and the homepage. Not part of CI. See [Screenshots](#screenshots). |
 
-`bun test` also runs the browser tests in `tests/`: `preview-browser.test.ts` and the ten `web-*-browser.test.ts` files. They drive a real Chromium against a MiniBox server on a fake runtime, so they need no Docker, only a browser. (`files-browser.test.ts` has "browser" in its name but tests the file API, not a page.) `tests/support/chromium.ts` finds it, in this order:
+`bun test` also runs the browser tests in `tests/`: `preview-browser.test.ts` and the `web-*-browser.test.ts` files. They drive a real Chromium against a MiniBox server on a fake runtime, so they need no Docker, only a browser. (`files-browser.test.ts` has "browser" in its name but tests the file API, not a page.) `tests/support/chromium.ts` finds it, in this order:
 
 1. `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH`, when it points to a file that exists.
 2. The Chromium Playwright itself installed (`bunx playwright install chromium`), when it exists.

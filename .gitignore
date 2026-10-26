@@ -22,3 +22,6 @@ dist/
 .bun/
 .DS_Store
 relay/target/
+
+# evidence attachments published through the chat, not part of the source
+attachments/
