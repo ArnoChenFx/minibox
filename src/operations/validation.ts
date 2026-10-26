@@ -612,6 +612,9 @@ function mountPathOk(path: unknown): path is string {
   );
 }
 
+/** A create mount list the server refuses: no volume and no role, or a field a mount of that kind cannot carry. */
+const createMountInvalid = () => reject(msg("mount_create_invalid"), "mounts");
+
 /**
  * The mounts a create asks for: `{ volume, path, mode }` mounts of recorded volumes, and `{ role }` mounts whose volume
  * MiniBox creates for the box. A role mount may repeat the role's own path and mode, but not another one, and the same
@@ -619,7 +622,7 @@ function mountPathOk(path: unknown): path is string {
  */
 function checkCreateMounts(value: unknown): Checked<CreateMount[] | undefined> {
   if (value === undefined) return accept(undefined);
-  const invalid = () => reject(msg("mount_create_invalid"), "mounts");
+  const invalid = createMountInvalid;
   if (!Array.isArray(value) || value.length > MOUNT_MAX) return invalid();
   const mounts: CreateMount[] = [];
   const paths = new Set<string>();

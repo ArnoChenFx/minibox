@@ -4,6 +4,9 @@
 
 ## [Unreleased]
 
+### 新增
+- **创建 Box 的自定义卷模式可以直接新建角色卷**：以前 `POST /api/boxes` 的 `mounts` 只能挂载已经存在的卷，创建对话框的**自定义**模式也只能从已有卷里挑，既不能顺手挂上默认的共享 tools 卷，也不能让 MiniBox 为新 Box 新建 workspace、home、cache 卷。现在 `mounts` 的每一项既可以是原来的 `{ volume, path, mode }`（挂载已有卷，保持向后兼容），也可以是 `{ role }`（`workspace`、`home`、`tools`、`cache` 之一），由 MiniBox 为新 Box 新建该角色的卷：角色卷的存储池走 `poolForRole`，路径与模式由角色固定（`{ role }` 也可以重复角色自己的 `path`/`mode`，但换成别的值会被拒绝）。**列表里没列出的角色就不创建**，所以 `[{ role: "tools" }]` 只挂共享 tools 卷，`[{ role: "workspace" }]` 只建工作区。`tools` 角色命中宿主机已有的共享 tools 卷时复用它（`findSharedTools` 语义），没有记录时才建共享卷，因此一台宿主机始终只有一个 tools 卷。权限上新建角色卷需要 `volume:write`（工作区若收养遗留的 `<prefix>-ws-<name>` 卷仍按挂载已有卷检查，需要 `volume:attach` + `volume:write`），复用共享 tools 卷需要 `volume:attach`。校验拒绝自相矛盾的组合：同时给 `volume` 和 `role`、两者都不给、同一角色列两次、角色挂到别的路径或别的模式，分别是 `mount_create_invalid`、`mount_create_role_duplicate`、`mount_create_role_path`、`mount_create_role_mode`，中英文文案与 `err.*` 词典都已补齐。创建对话框的**自定义**模式预置的四行改为直接选中「新建 workspace 卷 / 新建 home 卷 / 共享 tools 卷 / 新建 cache 卷」，与默认模式一致，删掉一行就等于不创建该卷；行内角色卷的路径与模式只读，选已有卷时恢复可编辑。默认模式下宿主机还没有共享 tools 卷时，`cb.volumesDefaultHelpNoTools` 说明 MiniBox 会一并新建一个。OpenAPI 重新生成，REST 参考的错误表与 `POST /api/boxes` 一行、中英文《Box》《卷与存储》文档同步更新。新增 `tests/box-create-mounts.test.ts`（校验与合并逻辑，以及「只建列出的角色」「tools 复用一个共享卷」「同时给 volume 和 role 被拒」「权限」）与真实浏览器测试 `tests/web-create-box-volumes-browser.test.ts`（自定义模式能选到「新建 workspace 卷」与共享 tools 卷并正确提交）。
+
 ## [0.6.7] - 2026-10-26
 
 ### 新增

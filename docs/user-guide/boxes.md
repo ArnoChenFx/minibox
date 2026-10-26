@@ -25,7 +25,7 @@ Every box runs as the user `dev`, user ID 1000. Inside a box, `sudo` works witho
 7. To change the security profile, open **Advanced** and choose a profile. The default is `standard`. The same section takes an optional **Network egress**, which limits what the box can reach outside the host, and an optional **Startup command**. See [Network egress](../admin/network-egress.md) and [Startup command](#startup-command).
 8. To clone a Git repository into `/workspace`, open **Clone a repository into /workspace**. See [Clone a repository](#clone-a-repository).
 9. To install agent CLIs or other tools with the box, tick them under **Tools**. See [Tools](tools.md).
-10. Open **Volumes: defaults**, then choose **Defaults** to mount the workspace, home, cache and tools volumes, or **Customize** to pick the volumes yourself. See [Volumes and storage](volumes-and-storage.md).
+10. Open **Volumes: defaults**, then choose **Defaults** to mount the workspace, home, cache and tools volumes, or **Customize** to pick the volumes yourself. In **Customize**, each row mounts a volume that already exists, or has MiniBox create one of the box's role volumes (workspace, home, tools or cache) for it, and a role you remove is not created. See [Volumes and storage](volumes-and-storage.md#volume-roles).
 11. To set environment variables, open **Environment variables**. See [Environment variables and secrets](environment-and-secrets.md).
 12. Click **Create and start**.
 
@@ -46,7 +46,7 @@ The clone runs once, when the box is created:
 - It is shallow. The workspace gets the latest commit of the branch, without the history.
 - The box is created first, then its setup runs as its own task, **Set up box**. The setup clones the repository, then forwards the ports and runs the `postCreateCommand` that the template sets, if it sets them. Follow it in the **Tasks** panel. If the clone fails, the box stays, and the task shows why.
 - Starting, stopping, restarting and rebuilding a box never clone again, and never run the setup again. See [The setup of a box](templates.md#the-setup-of-a-box).
-- `/workspace` must be writable. The default volumes give a new box an empty workspace. If you choose **Customize** and mount a volume that already has files at `/workspace`, the clone fails.
+- `/workspace` must be writable. The default volumes give a new box an empty workspace, and so does the workspace row of **Customize**. If you mount a volume that already has files at `/workspace`, the clone fails.
 
 The secret's value is read for the clone only. It is never written into the box or its image, and the task log shows the clone output with the value replaced. A secret that is not set stops the create before anything is created. For what a clone can reach and how SSH host keys are checked, see [Security](../admin/security.md#template-builds-and-repository-clones).
 

@@ -254,21 +254,24 @@ describe("creating a box from role mounts", () => {
   });
 });
 
-describe("the mount list of a create in the OpenAPI document", () => {
-  /** The mounts property of a create, as docs/openapi.json describes it. */
-  const documented = () => {
-    const doc = JSON.parse(renderOpenApi(OPERATIONS, pkg.version)) as {
-      paths: Record<
-        string,
-        { post?: { requestBody?: { content: Record<string, { schema: Record<string, unknown> }> } } }
-      >;
-    };
-    const schema = doc.paths["/api/boxes"]?.post?.requestBody?.content["application/json"]?.schema;
-    return (schema?.properties as Record<string, { description?: string; items?: { description?: string } }>).mounts;
+/** The mounts property of a create, as docs/openapi.json describes it. */
+function documentedMounts(): { description?: string; items?: { description?: string } } | undefined {
+  const doc = JSON.parse(renderOpenApi(OPERATIONS, pkg.version)) as {
+    paths: Record<
+      string,
+      { post?: { requestBody?: { content: Record<string, { schema: Record<string, unknown> }> } } }
+    >;
   };
+  const schema = doc.paths["/api/boxes"]?.post?.requestBody?.content["application/json"]?.schema;
+  const properties = schema?.properties as
+    | Record<string, { description?: string; items?: { description?: string } }>
+    | undefined;
+  return properties?.mounts;
+}
 
+describe("the mount list of a create in the OpenAPI document", () => {
   test("it says a role the list omits is not created, and what each entry holds", () => {
-    const mounts = documented();
+    const mounts = documentedMounts();
     expect(mounts?.description).toContain("A role the list omits is not created");
     expect(mounts?.items?.description).toContain("{ role }");
     expect(mounts?.description).toContain("/opt/minibox/tools");
