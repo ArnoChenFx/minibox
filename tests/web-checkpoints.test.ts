@@ -154,6 +154,19 @@ describe("checkpoint rules", () => {
     expect(isVolumeSnapshot(row())).toBe(false);
   });
 
+  test("a legacy snapshot with no box id is not a volume snapshot: it holds a system layer and no volume data", () => {
+    const legacyNoBox = row({
+      legacy: true,
+      boxId: null,
+      data: [],
+      system: { image: "snap:old", imageId: "sha256:1" },
+    });
+    expect(isVolumeSnapshot(legacyNoBox)).toBe(false);
+    expect(kindsOf(legacyNoBox)).toEqual(["legacy"]);
+    // It stays read-only: fork and delete, and the legacy reason for everything else.
+    expect(rowActions(legacyNoBox).rollback).toEqual({ allowed: false, reason: "ck.reasonLegacy" });
+  });
+
   test("a snapshot of one volume names no box, so it can only be pinned or deleted, and every other action says why", () => {
     const snapshot = row({ boxId: null, data: [{ role: null, ownership: "independent" }] });
     const actions = rowActions(snapshot);
@@ -354,6 +367,29 @@ const safety = checkpoint({
 const newer = checkpoint({ id: "ck_new", label: "newer", createdAt: at(9) });
 const older = checkpoint({ id: "ck_old", label: "older", createdAt: at(1) });
 const other = checkpoint({ id: "ck_other", boxId: "bx_beta", boxName: "beta", label: "beta only", createdAt: at(4) });
+/** A snapshot of one volume taken on its own: no box, the volume's name where a box name would be. */
+const volumeSnapshot = checkpoint({
+  id: "ck_volsnap",
+  boxId: null,
+  boxName: "notes",
+  label: "notes before the migration",
+  specRevision: null,
+  spec: null,
+  data: [
+    {
+      volumeId: "vol_notes",
+      path: "",
+      mode: "rw",
+      role: null,
+      ownership: "independent",
+      owner: null,
+      snapshotId: "snap_n",
+      bytes: 4096,
+    },
+  ],
+  system: null,
+  bytes: 4096,
+});
 
 const pendingRollback = {
   boxId: "bx_alpha",
@@ -369,6 +405,7 @@ const fixtures = {
   box: BOX,
   manual,
   legacy,
+  volumeSnapshot,
   pinnedManual,
   safety,
   pendingRollback,
@@ -441,6 +478,7 @@ const markup = runConsole<Markup>(
   `return {
     manual: component.checkpointRowHtml(fixtures.manual, {}),
     legacy: component.checkpointRowHtml(fixtures.legacy, {}),
+    volumeSnapshot: component.checkpointRowHtml(fixtures.volumeSnapshot, {}),
     pinned: component.checkpointRowHtml(fixtures.pinnedManual, {}),
     held: component.checkpointRowHtml(fixtures.safety, { held: true, pending: true }),
     empty: component.checkpointCardHtml({ rows: [], pending: null, usage: null }),
@@ -494,6 +532,23 @@ describe("checkpoint rows", () => {
     expect(html).toContain("2.5 KB");
     expect(html).toContain("before &lt;b&gt;upgrade&lt;/b&gt;");
     expect(html).not.toContain("<b>upgrade</b>");
+  });
+
+  test("a volume snapshot says so, names the volume it holds, and offers only pin and delete", () => {
+    const html = markup.volumeSnapshot ?? "";
+    // The kind badge is styled, not the bare default a class name that does not exist gives it.
+    expect(html).toContain('badge-accent">Volume snapshot</span>');
+    expect(html).not.toContain("undefined");
+    // Its contents name the volume, since there is no box to name them by.
+    expect(html).toContain("Volume \u201cnotes\u201d");
+    expect(html).not.toContain("Workspace");
+    // Fork, export and rollback are off with the reason; pin and delete stay on.
+    for (const action of ["ck-fork", "ck-export", "ck-rollback"]) {
+      expect(isDisabled(buttonFor(html, action, "ck_volsnap"))).toBe(true);
+      expect(titleOf(buttonFor(html, action, "ck_volsnap"))).toBe(escaped(en["ck.reasonVolumeSnapshot"] ?? ""));
+    }
+    expect(isDisabled(buttonFor(html, "ck-pin", "ck_volsnap"))).toBe(false);
+    expect(isDisabled(buttonFor(html, "ck-delete", "ck_volsnap"))).toBe(false);
   });
 
   test("a legacy snapshot is read-only: rollback and pin are off with the reason, and fork and delete stay on", () => {
@@ -794,6 +849,7 @@ describe("the Chinese console", () => {
       fixtures,
       `return {
       legacy: component.checkpointRowHtml(fixtures.legacy, {}),
+      volumeSnapshot: component.checkpointRowHtml(fixtures.volumeSnapshot, {}),
       usage: component.usageHtml(fixtures.exceeded),
       daily: component.scheduleHtml(fixtures.dailySchedule, "Asia/Shanghai"),
       unknown: component.scheduleHtml({ ...fixtures.dailySchedule, timezone: "Mars/Olympus", timezoneUnknown: true }, "Asia/Shanghai"),

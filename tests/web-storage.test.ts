@@ -90,6 +90,21 @@ describe("storage checkpoint timeline: volume snapshots", () => {
     );
     expect(groups.map((group) => group.name)).toEqual(["notes", "data"]);
   });
+
+  test("a legacy snapshot that carries no box id stays a deleted box's group, not a volume's", () => {
+    const groups = groupCheckpoints(
+      [
+        ck("old", null, "2026-10-04T00:00:00Z", [], { legacy: true, boxName: null }),
+        volumeSnapshot("a", "notes", "2026-10-03T00:00:00Z"),
+      ],
+      [],
+    );
+    // Both come after the boxes; the newer snapshot's group first. The legacy one is a deleted box's, the other a volume's.
+    expect(groups.map((group) => [group.id, group.volume, group.deleted])).toEqual([
+      ["deleted:", false, true],
+      ["volume:notes", true, false],
+    ]);
+  });
 });
 
 describe("storage volume rows", () => {

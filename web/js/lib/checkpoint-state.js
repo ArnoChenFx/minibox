@@ -37,8 +37,11 @@ export const PASSPHRASE_MAX = 1024;
 export const SCHEDULE_HOURS = Object.freeze({ min: 1, max: 720 });
 const SCHEDULE_TIME = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
-/** Whether a checkpoint is a snapshot of one volume taken on its own: its record names no box. */
-export const isVolumeSnapshot = (checkpoint) => checkpoint.boxId === null;
+/**
+ * Whether a checkpoint is a snapshot of one volume taken on its own: its record names no box. A legacy snapshot is not
+ * one, even when the image it came from carried no box id: it holds a system layer and no volume at all.
+ */
+export const isVolumeSnapshot = (checkpoint) => !checkpoint.legacy && checkpoint.boxId === null;
 
 /**
  * The kinds a row carries. A legacy snapshot is read-only, so it carries only that kind. A record with no box is a

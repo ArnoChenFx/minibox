@@ -20,8 +20,13 @@ export function groupCheckpoints(checkpoints, boxes, pending = new Map()) {
     groups.set(box.boxId, { id: box.boxId, name: box.name, box, deleted: false, rows: [], bytes: 0, newest: 0 });
   }
   for (const checkpoint of checkpoints) {
-    const volume = checkpoint.boxId === null;
-    const id = volume ? `volume:${checkpoint.boxName ?? ""}` : checkpoint.boxId;
+    // Only a record that names no box and is not a legacy snapshot is a snapshot of one volume: a legacy snapshot has
+    // no volume data, so it stays a deleted box's group even when its image carried no box id.
+    const volume = !checkpoint.legacy && checkpoint.boxId === null;
+    // A legacy snapshot can name no box at all, so it keeps the fallback key a deleted box's group always had.
+    const id = volume
+      ? `volume:${checkpoint.boxName ?? ""}`
+      : (checkpoint.boxId ?? `deleted:${checkpoint.boxName ?? ""}`);
     let group = groups.get(id);
     if (!group) {
       group = {

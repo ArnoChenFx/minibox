@@ -28,7 +28,13 @@ import { openTasks, taskErrorText, waitTask } from "./tasks.js";
 /** How many checkpoints the box's tab lists before its show-all toggle. */
 const LIST_ROWS = 8;
 
-export const KIND_CLASS = { legacy: "badge-warning", pinned: "badge-success", automatic: "", manual: "badge-accent" };
+export const KIND_CLASS = {
+  legacy: "badge-warning",
+  pinned: "badge-success",
+  automatic: "",
+  manual: "badge-accent",
+  volume: "badge-accent",
+};
 
 const callout = (tone, text) => `<div class="callout ${tone}">${icon("alert")}<span>${esc(text)}</span></div>`;
 
