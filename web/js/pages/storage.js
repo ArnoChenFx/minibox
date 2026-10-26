@@ -1,4 +1,4 @@
-import { sectionPanelHtml, sectionTabsHtml } from "../components/section-tabs.js";
+import { bindTabStrips, sectionPanelHtml, sectionTabsHtml } from "../components/section-tabs.js";
 import { mountStorageCheckpoints } from "../components/storage-checkpoints.js";
 import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
@@ -19,6 +19,10 @@ export function render(view, tab = "volumes", arg = "") {
     ${sectionTabsHtml("storage", TABS, tab, arg)}
     ${sectionPanelHtml("storage", tab)}`;
   const body = view.querySelector("#sectionBody");
-  if (tab === "checkpoints") return mountStorageCheckpoints(body, { focus: arg });
-  return volumes.render(body);
+  const strip = bindTabStrips(view);
+  const mounted = tab === "checkpoints" ? mountStorageCheckpoints(body, { focus: arg }) : volumes.render(body);
+  return () => {
+    strip();
+    mounted?.();
+  };
 }

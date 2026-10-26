@@ -60,13 +60,17 @@ function rowHtml(checkpoint, group) {
     .map((kind) => `<span class="badge ${KIND_CLASS[kind]}">${esc(t(`ck.kind.${kind}`))}</span>`)
     .join("");
   const contents = contentsText(checkpoint);
+  // `data-label` names the contents on a phone, where the row is a card and the column header is gone. The other fields
+  // name themselves there: a date, a size and a kind badge read as what they are. Contents that hold nothing are marked
+  // so that layout leaves the line out instead of drawing a lone dash.
+  const contentsClass = contents === "—" ? "sck-contents sck-empty" : "sck-contents";
   return `<tr>
-    <td class="nowrap" title="${esc(dateTime(checkpoint.createdAt))}">${esc(dateTime(checkpoint.createdAt))}<div class="subtle">${esc(relTime(checkpoint.createdAt))}</div></td>
+    <td class="sck-time nowrap" title="${esc(dateTime(checkpoint.createdAt))}">${esc(dateTime(checkpoint.createdAt))}<div class="subtle">${esc(relTime(checkpoint.createdAt))}</div></td>
     <td class="sck-label"><div class="truncate" title="${esc(checkpoint.label)}">${esc(checkpoint.label)}</div>${checkpoint.reason ? `<div class="subtle truncate" title="${esc(checkpoint.reason)}">${esc(checkpoint.reason)}</div>` : ""}</td>
-    <td><div class="ck-badges sck-kinds">${kinds}</div></td>
-    <td class="sck-contents"><div class="truncate" title="${esc(contents)}">${esc(contents)}</div></td>
-    <td class="num nowrap">${esc(bytes(checkpoint.bytes))}</td>
-    <td><div class="actions">
+    <td class="sck-kind-cell"><div class="ck-badges sck-kinds">${kinds}</div></td>
+    <td class="${contentsClass}" data-label="${esc(t("ck.colContents"))}"><div class="truncate" title="${esc(contents)}">${esc(contents)}</div></td>
+    <td class="sck-size num nowrap">${esc(bytes(checkpoint.bytes))}</td>
+    <td class="sck-actions"><div class="actions">
       ${actionButton("ck-fork", checkpoint, "copy", t("ck.fork"), rules.fork)}
       ${actionButton("ck-rollback", checkpoint, "history", t("ck.rollback"), rollback)}
       ${actionButton("ck-pin", checkpoint, "layers", checkpoint.pinned ? t("ck.unpin") : t("ck.pin"), rules.pin)}

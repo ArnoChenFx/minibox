@@ -9,6 +9,7 @@ import { attachVolume, detachMount, restoreMount } from "../components/box-volum
 import { takeCheckpoint } from "../components/checkpoints.js";
 import { mountFiles } from "../components/files.js";
 import { openSaveTemplate } from "../components/save-template.js";
+import { bindTabStrips } from "../components/section-tabs.js";
 import { mountTerminal } from "../components/terminal-panel.js";
 import { api, enc } from "../lib/api.js";
 import { boxSettingsOf } from "../lib/box-settings.js";
@@ -56,6 +57,7 @@ export function render(view, id, tab = "overview", sub = undefined) {
   let leaving = false;
   let mounts = 0;
   let tabCleanup = null;
+  let stripCleanup = null;
   let frames = 0;
   let headShown = "";
   let lastSampleAt = 0;
@@ -176,6 +178,8 @@ export function render(view, id, tab = "overview", sub = undefined) {
     painted = true;
     const tabs = view.querySelector(".tabs");
     revealInStrip(tabs, tabs.querySelector('[aria-selected="true"]'));
+    stripCleanup?.();
+    stripCleanup = bindTabStrips(view);
     // The session the address names opens once. A later mount of this page keeps the session on screen, which the
     // terminal remembers as the box's last one.
     const entry = entrySession;
@@ -256,6 +260,8 @@ export function render(view, id, tab = "overview", sub = undefined) {
     for (const off of offs) off();
     stopFallback();
     tabCleanup?.();
+    stripCleanup?.();
+    stripCleanup = null;
   };
 }
 
