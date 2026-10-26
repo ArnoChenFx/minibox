@@ -20,6 +20,8 @@ export const ATTENTION_LABEL = Object.freeze({
   "pool.unreachable": "ov.attn.pool_unreachable",
   "host.offline": "ov.attn.host_offline",
   "host.disk_low": "ov.attn.disk_low",
+  "host.cpu_overcommit": "ov.attn.cpu_overcommit",
+  "host.memory_overcommit": "ov.attn.memory_overcommit",
 });
 
 /** The page of the storage or host an item names. Box conditions open the box's tab that shows them instead. */
@@ -28,6 +30,8 @@ const PAGE_OF = Object.freeze({
   "pool.unreachable": "#/storage/volumes",
   "host.offline": "#/settings/hosts",
   "host.disk_low": "#/settings/hosts",
+  "host.cpu_overcommit": "#/settings/hosts",
+  "host.memory_overcommit": "#/settings/hosts",
 });
 
 /** The box tab, and the settings section on the settings tab, that shows each box condition. */
@@ -48,9 +52,9 @@ export function attentionHref(item) {
 
 /**
  * The dictionary key and parameters that word an attention item, or null for a kind this console does not know. `bytes`
- * formats the byte counts of a volume.
+ * formats the byte counts of a volume or of a host's booked memory, and `cpus` formats its CPU cores.
  */
-export function attentionText(item, { bytes = String } = {}) {
+export function attentionText(item, { bytes = String, cpus = String } = {}) {
   const p = item.params;
   switch (item.kind) {
     case "box.oom":
@@ -76,6 +80,10 @@ export function attentionText(item, { bytes = String } = {}) {
       return { key: "ov.text.host_offline", params: {} };
     case "host.disk_low":
       return { key: "ov.text.disk_low", params: { free: p.free, min: p.min } };
+    case "host.cpu_overcommit":
+      return { key: "ov.text.cpu_overcommit", params: { booked: cpus(p.booked), limit: cpus(p.limit) } };
+    case "host.memory_overcommit":
+      return { key: "ov.text.memory_overcommit", params: { booked: bytes(p.booked), limit: bytes(p.limit) } };
     default:
       return null;
   }

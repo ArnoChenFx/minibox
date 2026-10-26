@@ -4,6 +4,9 @@
 
 ## [Unreleased]
 
+### 新增
+- 概览页的 **需要关注** 列表新增宿主机 CPU 与内存超配两项（[#192](https://github.com/ArnoChenFx/minibox/issues/192)）：某台在线宿主机上运行中 Box 预定的 CPU（`host.cpu_overcommit`）或内存（`host.memory_overcommit`）之和超过「宿主机容量 × `HOST_OVERCOMMIT`」时，列表给出 warning 级条目，文案带上已预定量与允许的上限（CPU 按核数、内存按字节由前端格式化），**查看** 跳到宿主机设置页。恰好等于上限不算超配，宿主机未报告容量（null）的那一项跳过，离线的宿主机仍只报 `host.offline`。`GET /api/overview` 的 `attention[].kind` 枚举与 `params` 说明、OpenAPI、中英文《Box》《宿主机》文档同步更新。
+
 ## [0.6.6] - 2026-10-26
 
 ### 变更

@@ -28,6 +28,8 @@ const SERVER_PARAMS: Record<string, Record<string, string | number>> = {
   "pool.unreachable": {},
   "host.offline": {},
   "host.disk_low": { free: 5, min: 10 },
+  "host.cpu_overcommit": { booked: 3, limit: 2 },
+  "host.memory_overcommit": { booked: 6 * MB, limit: 4 * MB },
 };
 
 function itemOf(
@@ -118,7 +120,7 @@ describe("attentionText", () => {
     expect(attentionText(itemOf("pool.unreachable", {}))?.key).toBe("ov.text.pool_unreachable");
   });
 
-  test("the fields, the checkpoint and the disk percentages reach the sentence", () => {
+  test("the fields, the checkpoint, the disk percentages and a host's booked totals reach the sentence", () => {
     expect(attentionText(itemOf("box.drift", { fields: "cpus" }))).toEqual({
       key: "ov.text.drift",
       params: { fields: "cpus" },
@@ -133,6 +135,17 @@ describe("attentionText", () => {
     });
   });
 
+  test("a host's overcommitted CPU reads in cores and its memory in bytes, each by the page's formatter", () => {
+    expect(
+      attentionText(itemOf("host.cpu_overcommit", { booked: 3, limit: 2 }), { cpus: (n) => `${n} cores` }),
+    ).toEqual({ key: "ov.text.cpu_overcommit", params: { booked: "3 cores", limit: "2 cores" } });
+    expect(
+      attentionText(itemOf("host.memory_overcommit", { booked: 6 * MB, limit: 4 * MB }), {
+        bytes: (n) => `${n / MB} MB`,
+      }),
+    ).toEqual({ key: "ov.text.memory_overcommit", params: { booked: "6 MB", limit: "4 MB" } });
+  });
+
   test("a kind the console does not know has no sentence", () => {
     expect(attentionText(itemOf("container.restarted"))).toBeNull();
   });
@@ -144,6 +157,8 @@ describe("where an attention item leads", () => {
     expect(attentionHref(itemOf("pool.unreachable", {}, { box: null }))).toBe("#/storage/volumes");
     expect(attentionHref(itemOf("host.offline", {}, { box: null }))).toBe("#/settings/hosts");
     expect(attentionHref(itemOf("host.disk_low", {}, { box: null }))).toBe("#/settings/hosts");
+    expect(attentionHref(itemOf("host.cpu_overcommit", {}, { box: null }))).toBe("#/settings/hosts");
+    expect(attentionHref(itemOf("host.memory_overcommit", {}, { box: null }))).toBe("#/settings/hosts");
   });
 
   test("a box condition opens the box tab that shows it", () => {

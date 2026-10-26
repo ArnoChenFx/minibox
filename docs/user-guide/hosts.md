@@ -57,6 +57,8 @@ A copy sends the image the same way a move does, so the target engine must keep 
 
 With more than one host, MiniBox counts the CPU and memory that running boxes reserve on each host. A new box, a resize or a move that would reserve more than the host has is refused. `HOST_OVERCOMMIT` allows more, up to 10 times the host's capacity (see [Configuration](../reference/configuration.md)). A stopped box reserves nothing.
 
+A host whose running boxes reserve more CPU or memory than its capacity times `HOST_OVERCOMMIT` is listed under **Needs attention** on the overview, with the booked total and the limit. Lowering `HOST_OVERCOMMIT`, or a host that reports a smaller engine after a restart, can put it there; the items clear once the reservations fit again. A figure the host does not report is not checked.
+
 ## Move a box to another host
 
 1. Open the box and click **Move to host**. The button appears when there is more than one host.
