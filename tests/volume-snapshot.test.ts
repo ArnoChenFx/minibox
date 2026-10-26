@@ -2,8 +2,10 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
 import type { HostMetrics } from "../src/host/metrics";
 import type { HostCtx } from "../src/host/registry";
+import { takeVolumeCheckpoint } from "../src/services/checkpoint-volume";
 import { createVolume, getVolume } from "../src/services/volumes";
 import { remeasureHostDisk } from "../src/volumes/disk";
+import { removeEngine } from "../src/volumes/provision";
 import { silenceLogs } from "./support/app";
 import {
   type CheckpointBody,
@@ -78,6 +80,83 @@ describe("snapshotting one volume over HTTP", () => {
     }
     return out;
   }
+
+  test("deletion cannot slip between snapshot admission and its first owner helper", async () => {
+    const volume = await createVolume(host, { name: "notes", role: null, createdBy: "owner" });
+    seed(volume.engineName, "important.txt", "original data");
+    const entered = Promise.withResolvers<void>();
+    const gate = Promise.withResolvers<void>();
+    const create = harness.runtime.createContainer.bind(harness.runtime);
+    harness.runtime.createContainer = async (spec) => {
+      if (spec.name?.startsWith(`${host.prefix}-owner-`)) {
+        entered.resolve();
+        await gate.promise;
+      }
+      return create(spec);
+    };
+    const started = await call(harness.base, `/api/volumes/${volume.id}/checkpoints`, { method: "POST", body: {} });
+    expect(started.status).toBe(202);
+    try {
+      await entered.promise;
+      const removed = await call(harness.base, `/api/volumes/${volume.id}?confirm=true&skipTrash=true`, {
+        method: "DELETE",
+      });
+      expect(removed).toMatchObject({ status: 409, json: { error: { key: "volume_busy" } } });
+      // Box deletion and migration also use this lower-level path.
+      expect((await removeEngine(host, volume.engineName)).status).toBe("failed");
+      expect(filesOf(volume.engineName)).toEqual({ "important.txt": "original data" });
+    } finally {
+      gate.resolve();
+    }
+    const done = await finishedTask(harness.base, started.json.taskId ?? "");
+    expect(done.status).toBe("succeeded");
+    const layer = host.checkpoints.read(done.result?.checkpoint?.id ?? "")?.data[0];
+    expect(layer?.bytes).toBeGreaterThan(0);
+    expect(
+      harness.checkpoints.snapshots
+        .get(layer?.snapshotId ?? "")
+        ?.files.get("important.txt")
+        ?.content?.toString(),
+    ).toBe("original data");
+    expect(
+      (await call(harness.base, `/api/volumes/${volume.id}?confirm=true&skipTrash=true`, { method: "DELETE" })).status,
+    ).toBe(200);
+  });
+
+  test("a removal already in flight prevents a snapshot, and a stale task cannot recreate the deleted volume", async () => {
+    const volume = await createVolume(host, { name: "notes", role: null, createdBy: "owner" });
+    const entered = Promise.withResolvers<void>();
+    const gate = Promise.withResolvers<void>();
+    const remove = harness.runtime.removeVolume.bind(harness.runtime);
+    harness.runtime.removeVolume = async (name) => {
+      entered.resolve();
+      await gate.promise;
+      return remove(name);
+    };
+    const input = { pinned: false, include: { system: false, volumes: [] }, consistency: "live" as const };
+    const record = host.volumes.read(volume.id)!;
+    const deleting = call(harness.base, `/api/volumes/${volume.id}?confirm=true&skipTrash=true`, { method: "DELETE" });
+    try {
+      await entered.promise;
+      await expect(takeVolumeCheckpoint(host, record, input, "owner")).rejects.toMatchObject({ key: "volume_busy" });
+    } finally {
+      gate.resolve();
+    }
+    expect((await deleting).status).toBe(200);
+    await expect(takeVolumeCheckpoint(host, record, input, "owner")).rejects.toMatchObject({ key: "volume_missing" });
+    expect(harness.runtime.volumes.has(volume.engineName)).toBe(false);
+  });
+
+  test("a failed backup releases its reservation so the volume can be deleted", async () => {
+    const volume = await createVolume(host, { name: "notes", role: null, createdBy: "owner" });
+    harness.checkpoints.failBackupOf.add(volume.engineName);
+    const started = await call(harness.base, `/api/volumes/${volume.id}/checkpoints`, { method: "POST", body: {} });
+    expect(started.status).toBe(202);
+    expect((await finishedTask(harness.base, started.json.taskId ?? "")).status).toBe("failed");
+    expect(
+      (await call(harness.base, `/api/volumes/${volume.id}?confirm=true&skipTrash=true`, { method: "DELETE" })).status,
+    ).toBe(200);
+  });
 
   test("an independent volume no box mounts is snapshotted on its own: the record names no box and holds that one volume", async () => {
     const volume = await createVolume(host, { name: "notes", role: null, createdBy: "owner" });

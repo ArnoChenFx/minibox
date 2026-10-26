@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { groupCheckpoints } from "../web/js/lib/checkpoint-groups.js";
+import { checkpointGroupId, groupCheckpoints } from "../web/js/lib/checkpoint-groups.js";
 import { latestByVolume, snapshotPlan, stagedMountsByVolume } from "../web/js/lib/volume-row.js";
 
 const ck = (id: string, boxId: string | null, createdAt: string, volumes: string[] = [], extra = {}) => ({
@@ -63,10 +63,36 @@ describe("storage checkpoint timeline", () => {
 });
 
 /** A record of a snapshot taken of one volume on its own: it names no box, and its box name is the volume's. */
-const volumeSnapshot = (id: string, volumeName: string, createdAt: string) =>
-  ck(id, null, createdAt, ["v1"], { boxName: volumeName });
+const volumeSnapshot = (id: string, volumeName: string, createdAt: string, volumeId = `v-${volumeName}`) =>
+  ck(id, null, createdAt, [volumeId], { boxName: volumeName });
 
 describe("storage checkpoint timeline: volume snapshots", () => {
+  test("equal names on different hosts or after recreation remain distinct, and renames keep one group", () => {
+    const snapshots = [
+      { ...volumeSnapshot("old", "notes", "2026-10-01T00:00:00Z", "v-local"), hostId: "local" },
+      { ...volumeSnapshot("edge", "notes", "2026-10-02T00:00:00Z", "v-edge"), hostId: "edge" },
+      { ...volumeSnapshot("replacement", "notes", "2026-10-03T00:00:00Z", "v-new"), hostId: "local" },
+      { ...volumeSnapshot("renamed", "renamed-notes", "2026-10-04T00:00:00Z", "v-local"), hostId: "local" },
+    ];
+    const groups = groupCheckpoints(snapshots, []);
+    expect(groups.map((group) => [group.id, group.rows.map((row) => row.id)])).toEqual([
+      ["volume:v-local", ["renamed", "old"]],
+      ["volume:v-new", ["replacement"]],
+      ["volume:v-edge", ["edge"]],
+    ]);
+    for (const checkpoint of snapshots) {
+      expect(groups.find((group) => group.id === checkpointGroupId(checkpoint))?.rows).toContain(checkpoint);
+    }
+  });
+
+  test("a volume snapshot with no layer falls back to its record id, never its display name", () => {
+    const snapshots = [
+      ck("a", null, "2026-10-01", [], { boxName: "notes" }),
+      ck("b", null, "2026-10-02", [], { boxName: "notes" }),
+    ];
+    expect(groupCheckpoints(snapshots, []).map((group) => group.id)).toEqual(["volume:b", "volume:a"]);
+  });
+
   test("a record with no box is grouped under the volume it holds, and is not a deleted box", () => {
     const groups = groupCheckpoints(
       [
@@ -77,7 +103,7 @@ describe("storage checkpoint timeline: volume snapshots", () => {
     );
     expect(groups.map((group) => [group.id, group.name, group.deleted, group.volume])).toEqual([
       ["b1", "one", false, undefined],
-      ["volume:notes", "notes", false, true],
+      ["volume:v-notes", "notes", false, true],
       ["b9", "gone", true, false],
     ]);
     expect(groups[1]!.rows.map((row) => row.id)).toEqual(["a"]);
@@ -102,7 +128,7 @@ describe("storage checkpoint timeline: volume snapshots", () => {
     // Both come after the boxes; the newer snapshot's group first. The legacy one is a deleted box's, the other a volume's.
     expect(groups.map((group) => [group.id, group.volume, group.deleted])).toEqual([
       ["deleted:", false, true],
-      ["volume:notes", true, false],
+      ["volume:v-notes", true, false],
     ]);
   });
 });

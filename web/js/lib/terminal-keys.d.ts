@@ -14,8 +14,8 @@ export interface TermKey {
 /** The keys of the terminal's auxiliary row, in the order the row shows them. */
 export declare const TERM_KEYS: readonly TermKey[];
 
-/** The bytes a key sends, or null when the key sends nothing of its own. */
-export declare function keyBytes(id: string): string | null;
+/** The bytes a key sends in xterm's current cursor mode, or null when the key sends nothing of its own. */
+export declare function keyBytes(id: string, modes?: { applicationCursorKeysMode: boolean }): string | null;
 
 /**
  * The control character the sticky Ctrl makes out of one typed character, or null when it leaves the character as it is.

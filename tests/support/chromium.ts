@@ -14,10 +14,10 @@ const BUILD_BINARIES = [
   join("Google Chrome for Testing.app", "Contents", "MacOS", "Google Chrome for Testing"),
 ];
 
-/** Installed Chrome bundles on macOS, relative to the user's home and to `/Applications`. */
+/** Installed Chrome bundles on macOS, relative to an Applications directory. */
 const MAC_CHROME_APPS = [
-  ["Applications", "Google Chrome.app", "Contents", "MacOS", "Google Chrome"],
-  ["Applications", "Chromium.app", "Contents", "MacOS", "Chromium"],
+  ["Google Chrome.app", "Contents", "MacOS", "Google Chrome"],
+  ["Chromium.app", "Contents", "MacOS", "Chromium"],
 ];
 
 type Readdir = (dir: string) => string[];
@@ -97,7 +97,7 @@ function systemChromium(
     }
   }
   if (platform === "darwin") {
-    for (const root of [home, "/Applications"]) {
+    for (const root of [join(home, "Applications"), "/Applications"]) {
       for (const parts of MAC_CHROME_APPS) {
         const path = join(root, ...parts);
         if (exists(path)) return path;

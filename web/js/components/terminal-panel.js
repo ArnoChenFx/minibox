@@ -258,7 +258,7 @@ function mountLive(root, b, session) {
       return;
     }
     if (ctrlArmed()) setCtrl(false);
-    const data = keyBytes(id);
+    const data = keyBytes(id, xterm.modes);
     if (data !== null) sendBytes(data);
   };
 

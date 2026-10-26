@@ -2,6 +2,14 @@
 
 const time = (checkpoint) => Date.parse(checkpoint.createdAt) || 0;
 
+/** A volume's identity survives renames and distinguishes equal names on different hosts or after recreation. */
+export function checkpointGroupId(checkpoint) {
+  if (!checkpoint.legacy && checkpoint.boxId === null) {
+    return `volume:${checkpoint.data?.[0]?.volumeId ?? checkpoint.id}`;
+  }
+  return checkpoint.boxId ?? `deleted:${checkpoint.boxName ?? ""}`;
+}
+
 /**
  * One group per box, each with its checkpoints newest first and their total size. A box that still exists keeps its
  * current name, and one with no checkpoints gets an empty group, so a checkpoint can be taken from it. Checkpoints of a
@@ -24,9 +32,7 @@ export function groupCheckpoints(checkpoints, boxes, pending = new Map()) {
     // no volume data, so it stays a deleted box's group even when its image carried no box id.
     const volume = !checkpoint.legacy && checkpoint.boxId === null;
     // A legacy snapshot can name no box at all, so it keeps the fallback key a deleted box's group always had.
-    const id = volume
-      ? `volume:${checkpoint.boxName ?? ""}`
-      : (checkpoint.boxId ?? `deleted:${checkpoint.boxName ?? ""}`);
+    const id = checkpointGroupId(checkpoint);
     let group = groups.get(id);
     if (!group) {
       group = {

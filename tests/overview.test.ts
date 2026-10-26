@@ -633,6 +633,23 @@ describe("what needs attention", () => {
     expect((await overview(h.base)).attention).toEqual([]);
   });
 
+  test("a capacity read that never answers times out while the other attention items remain visible", async () => {
+    const h = start();
+    await makeBox(h.base, "alpha");
+    poolHealth(h.app, "unreachable", "gone");
+    const host = h.app.hosts.get();
+    host.readTimeoutMs = 40;
+    const gate = Promise.withResolvers<{ cpus: number; memoryBytes: number }>();
+    host.capacity = () => gate.promise;
+    try {
+      const result = await Promise.race([overview(h.base), Bun.sleep(1000).then(() => null)]);
+      expect(result).not.toBeNull();
+      expect(result?.attention).toEqual([expect.objectContaining({ kind: "pool.unreachable" })]);
+    } finally {
+      gate.resolve({ cpus: 64, memoryBytes: 64 * GB });
+    }
+  });
+
   test("a host that is offline reports no overcommit, since its boxes cannot be read", async () => {
     const h = start();
     h.app.monitor.snapshot = async () => TIGHT_HOST;

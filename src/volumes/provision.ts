@@ -4,6 +4,7 @@ import { log } from "../lib/logger";
 import { msg } from "../lib/messages";
 import { RuntimeError } from "../runtime";
 import type { BoxMount } from "../specs/types";
+import { reserveVolumeRemoval } from "./activity";
 import { VolumeChanges } from "./changes";
 import { assertHostDiskRoom } from "./disk";
 import {
@@ -241,6 +242,8 @@ export type EngineRemoval = { status: "removed" | "missing" } | { status: "faile
 
 /** Removes an engine volume. `not_found` counts as already gone. A failure is returned with the engine's own message. */
 export async function removeEngine(host: HostCtx, engineName: string): Promise<EngineRemoval> {
+  const release = reserveVolumeRemoval(host, engineName);
+  if (!release) return { status: "failed", detail: msg("volume_busy", { volume: engineName }).text };
   try {
     await host.runtime.removeVolume(engineName);
     return { status: "removed" };
@@ -248,5 +251,7 @@ export async function removeEngine(host: HostCtx, engineName: string): Promise<E
     if (e instanceof RuntimeError && e.kind === "not_found") return { status: "missing" };
     log.warn("volume.remove_failed", { volume: engineName, error: String(e) });
     return { status: "failed", detail: e instanceof RuntimeError ? e.detail : String(e) };
+  } finally {
+    release();
   }
 }
