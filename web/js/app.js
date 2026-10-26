@@ -144,6 +144,9 @@ function init() {
   document.addEventListener("pointerdown", (e) => {
     const target = e.target instanceof HTMLElement ? e.target : null;
     if (isField(target) || !target?.closest("#view")) return;
+    // The terminal's key row is a part of the keyboard, not a press away from it: pressing a key there keeps the
+    // keyboard up, so the bar stays aside and the row keeps the room the bar would take.
+    if (target.closest(".term-keys")) return;
     setTyping(false);
   });
   $("#logoutBtn").addEventListener("click", async () => {
