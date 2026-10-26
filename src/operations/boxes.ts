@@ -38,10 +38,12 @@ import { hasRebuildFields } from "../specs/plan";
 import { requireRevision } from "../specs/revision";
 import { boxVisible, hostAllowed, refusal, ttlFor, viewOfBox } from "../tokens/model";
 import { underQuota } from "../tokens/quota";
+import { type CreateMount, isRoleMount } from "../volumes/create-mounts";
 import { assertHostDiskRoom } from "../volumes/disk";
 import {
   assertCanChangeMounts,
   assertCanCreateDefaultMounts,
+  assertCanCreateMounts,
   assertCanSkipTrash,
   assertTemplateSetupAllowed,
 } from "./authz";
@@ -67,6 +69,7 @@ import {
   boxName,
   boxProfile,
   confirmFlag,
+  createMounts,
   cpusWithDefault,
   deleteVolumeFlag,
   egressInput,
@@ -236,9 +239,9 @@ function setupFailureOf(e: unknown): Msg {
 }
 
 /** A clone writes into the workspace, so the new box must mount one writable. The default mounts create an empty one. */
-function assertCloneWorkspace(input: { mounts?: { path: string; mode: "rw" | "ro" }[]; repo?: unknown }): void {
+function assertCloneWorkspace(input: { mounts?: CreateMount[]; repo?: unknown }): void {
   if (input.repo === undefined || input.mounts === undefined) return;
-  if (!input.mounts.some((mount) => mount.path === WORKSPACE && mount.mode === "rw")) {
+  if (!input.mounts.some((mount) => isRoleMount(mount) || (mount.path === WORKSPACE && mount.mode === "rw"))) {
     throw badRequest(msg("repo_needs_workspace"), { field: "repo" });
   }
 }
@@ -259,19 +262,7 @@ export const boxCreate = defineOperation({
     memoryMb: memoryWithDefault(DEFAULT_RESOURCES.memoryMb),
     profile: boxProfile(),
     egress: egressInput(),
-    mounts: z
-      .array(
-        z.object({
-          volume: z.string().meta({ description: "Volume id (vol_…) or volume name." }),
-          path: z.string().meta({ description: "Absolute path inside the box." }),
-          mode: z.enum(["rw", "ro"]),
-        }),
-      )
-      .optional()
-      .meta({
-        description:
-          "Mounts to use instead of the four role volumes. An empty list creates a box with no mounts. Omitted, MiniBox creates workspace, home, tools and cache.",
-      }),
+    mounts: createMounts(),
     env: boxEnv("create"),
     idleTimeoutSec: idleTimeout(),
     ttlSec: ttl("create"),
@@ -310,7 +301,7 @@ export const boxCreate = defineOperation({
     toolset: "core",
     name: "create_box",
     description:
-      "Create and start a box from a template with the given CPU and memory limits and security profile. Optional selfToken gives the box's agent a self token, written to /run/minibox/self-token, for the self operations (see get_info); the token is rotated on every start and removed on stop. Optional repo clones a Git repository into /workspace once, on this first create: url, optional branch, and secretRef for a token or base64 deploy key, which is read from the secret store and never stored in the box. A template built from a devcontainer.json may also forward its ports and run its postCreateCommand once, in /workspace as dev; creating from it needs the exec scope for the command and port:expose for the ports. The setup runs as a task, returned as setup.taskId (clone.taskId as well when repo is given), and the clone needs a writable /workspace. When the host lacks the template, an owner's create first copies it from another host that holds it, or builds an official template (node, python, go or minimal) there, as a task returned as sync.taskId, and waits for it. Optional host names the machine to create it on: a host id from list_hosts, or auto to pick the online host with the most room that holds the template, or, for an owner's official template when no holder has room, the roomiest other host, which builds it (default local). Running boxes on a host may not book more CPU or memory than the host has times its overcommit ratio, checked on a control plane with more than one host. Omitting the profile uses the host default. Optional egress sets the box's network access: open (the default, which reaches the internet), none (a private network with no route out, while exec, SSH and preview still work), or proxy-only with presets and domains, which reach the internet only through a MiniBox proxy that logs each host it allows or refuses. Omitting mounts creates workspace, home, tools and cache volumes. An empty mounts list creates a box with no mounts. Optional idleTimeoutSec (0 disables sleep) and ttlSec set lifecycle. Optional tools is a list of catalog ids recorded on the spec; call reconcile_tools afterwards to install them. Optional env entries are { name, value } for a plain value or { name, secretRef } for a secret set with the secret API; a secret that is not set fails the create, and a reference needs the secret:use scope. Optional startupCommand is a shell command the box runs at every start, through bash -lc in /workspace; it needs the exec and secret:use scopes, and get_startup_command reads it back. A box created from a template does not inherit a startup command unless one is passed. Mounting an existing volume requires volume:attach. A read-write mount, and the workspace, home and cache volumes a new box creates, also require volume:write.",
+      "Create and start a box from a template with the given CPU and memory limits and security profile. Optional selfToken gives the box's agent a self token, written to /run/minibox/self-token, for the self operations (see get_info); the token is rotated on every start and removed on stop. Optional repo clones a Git repository into /workspace once, on this first create: url, optional branch, and secretRef for a token or base64 deploy key, which is read from the secret store and never stored in the box. A template built from a devcontainer.json may also forward its ports and run its postCreateCommand once, in /workspace as dev; creating from it needs the exec scope for the command and port:expose for the ports. The setup runs as a task, returned as setup.taskId (clone.taskId as well when repo is given), and the clone needs a writable /workspace. When the host lacks the template, an owner's create first copies it from another host that holds it, or builds an official template (node, python, go or minimal) there, as a task returned as sync.taskId, and waits for it. Optional host names the machine to create it on: a host id from list_hosts, or auto to pick the online host with the most room that holds the template, or, for an owner's official template when no holder has room, the roomiest other host, which builds it (default local). Running boxes on a host may not book more CPU or memory than the host has times its overcommit ratio, checked on a control plane with more than one host. Omitting the profile uses the host default. Optional egress sets the box's network access: open (the default, which reaches the internet), none (a private network with no route out, while exec, SSH and preview still work), or proxy-only with presets and domains, which reach the internet only through a MiniBox proxy that logs each host it allows or refuses. Omitting mounts creates workspace, home, tools and cache volumes. A mounts entry is either { volume, path, mode } for a volume that exists, or { role } for a volume MiniBox creates for this box: workspace, home, tools or cache. A role the list omits is not created, so the custom list can mount the shared tools volume without the other three, or create any subset of the roles. The tools role mounts the host's shared tools volume and creates it when the host has none. An empty mounts list creates a box with no mounts. Optional idleTimeoutSec (0 disables sleep) and ttlSec set lifecycle. Optional tools is a list of catalog ids recorded on the spec; call reconcile_tools afterwards to install them. Optional env entries are { name, value } for a plain value or { name, secretRef } for a secret set with the secret API; a secret that is not set fails the create, and a reference needs the secret:use scope. Optional startupCommand is a shell command the box runs at every start, through bash -lc in /workspace; it needs the exec and secret:use scopes, and get_startup_command reads it back. A box created from a template does not inherit a startup command unless one is passed. Mounting an existing volume requires volume:attach. A read-write mount, and every role volume a new box creates, also require volume:write; the tools role also needs volume:attach when the shared volume already exists.",
   },
   hostFor: (ctx, input) => {
     if (input.host !== AUTO_HOST) return hostById(ctx, input.host ?? LOCAL_HOST_ID);
@@ -340,7 +331,7 @@ export const boxCreate = defineOperation({
   run: async (ctx, input) => {
     const { host, principal, record } = ctx;
     if (input.mounts) {
-      await assertCanChangeMounts(ctx, input.mounts, []);
+      await assertCanCreateMounts(ctx, input.mounts, input.name);
     } else {
       await assertCanCreateDefaultMounts(ctx, input.name);
     }

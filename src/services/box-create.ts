@@ -13,11 +13,12 @@ import { newBoxId, isBoxId } from "../specs/revision";
 import type { BoxMount, MountMode, BoxSpec } from "../specs/types";
 import { loadCatalog } from "../tools/catalog";
 import { VolumeChanges } from "../volumes/changes";
+import { type CreateMount, isRoleMount, mountPointOf, rolesToCreate } from "../volumes/create-mounts";
 import { assertVolumesPresent, healSharedToolsMounts, poolsUsed, trackPoolRoots } from "../volumes/engine";
 import { assertPoolsReachable } from "../volumes/health";
 import { assertMountsWithinLimits } from "../volumes/limits";
 import { validMountPath } from "../volumes/mounts";
-import { provisionDefaultMounts } from "../volumes/provision";
+import { provisionDefaultMounts, provisionRoleMounts } from "../volumes/provision";
 import { assertMountAllowed, mountTarget } from "./attachments";
 import { type CreateBoxInput, type Box, MB } from "./box-model";
 import { ensureBoxNetwork } from "./box-network";
@@ -68,6 +69,42 @@ async function resolveCreateMounts(host: HostCtx, mounts: BoxMount[], known: Set
     assertMountAllowed(host, null, mount.volume, await mountTarget(host, mount.volume));
   }
   return resolved;
+}
+
+/**
+ * The mounts a create asked for. A mount that names a volume is attached, with the checks a new box is held to. A mount
+ * that names a role has MiniBox create that role's volume for the box, so only the roles the list names exist, and the
+ * tools role mounts the host's shared tools volume instead of making a second one. A list with no role mount keeps the
+ * mounts exactly as the request gave them.
+ */
+async function mountsForCreate(
+  host: HostCtx,
+  requested: readonly CreateMount[],
+  box: { id: string; name: string; createdBy: string | null },
+  known: Set<string>,
+  changes: VolumeChanges,
+): Promise<BoxMount[]> {
+  const roles = rolesToCreate(requested);
+  const created = roles.length === 0 ? [] : await provisionRoleMounts(host, box, roles, known, changes);
+  const made = new Map(created.map((mount) => [mount.path, mount]));
+  const attached: BoxMount[] = [];
+  for (const mount of requested) {
+    if (isRoleMount(mount)) {
+      const built = made.get(mountPointOf(mount).path);
+      if (!built) throw badRequest(msg("mount_create_invalid"));
+      made.delete(mountPointOf(mount).path);
+      attached.push(built);
+      continue;
+    }
+    attached.push({ volume: mount.volume, ...mountPointOf(mount) });
+  }
+  if (made.size > 0) throw badRequest(msg("mount_create_invalid"));
+  if (roles.length === 0) return resolveCreateMounts(host, attached, known);
+  await assertVolumesPresent(
+    host,
+    attached.map((mount) => mount.volume),
+  );
+  return attached;
 }
 
 function engineMounts(mounts: BoxMount[]): { source: string; target: string; mode: MountMode }[] {
@@ -186,7 +223,7 @@ async function buildBox(
   const createdBy = input.createdBy ?? "owner";
   const known = new Set<string>([image]);
   const mounts = input.mounts
-    ? await resolveCreateMounts(host, input.mounts, known)
+    ? await mountsForCreate(host, input.mounts, { id, name: input.name, createdBy }, known, attempt.changes)
     : await provisionDefaultMounts(host, { id, name: input.name, createdBy }, known, attempt.changes);
   assertMountsWithinLimits(host, mounts);
   await trackPoolRoots(host, poolsUsed(host, mounts), attempt.changes);

@@ -14,7 +14,17 @@ import { bytes, gbOrMb } from "../lib/format.js";
 import { hostFilter, hostsNow, multiHost } from "../lib/hosts.js";
 import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
-import { checkMountRows, DEFAULT_MOUNTS, isVolumeErrorKey, MOUNT_MAX, volumeChoices } from "../lib/mounts.js";
+import {
+  checkMountRows,
+  createMountChoices,
+  DEFAULT_MOUNTS,
+  isVolumeErrorKey,
+  MOUNT_MAX,
+  roleOfValue,
+  roleValue,
+  sharedToolsChoice,
+  volumeChoices,
+} from "../lib/mounts.js";
 import { filterBySearch, searchTerms } from "../lib/search.js";
 import { chosenSummary, loadFolded, saveFolded } from "../lib/section-fold.js";
 import { STARTUP_COMMAND_MAX_BYTES, startupProblem, startupProblemKey } from "../lib/startup.js";
@@ -33,7 +43,7 @@ import { emptyState, nameError, openDialog, toast } from "../lib/ui.js";
 import { bindEnvRows, envProblemText, envRow, readEnvRows, secretChoicesHtml, secretNames } from "./env-editor.js";
 import { bindFoldSections, foldSectionHtml, setFoldOpen } from "./fold-section.js";
 import { bindToggles, isToggled, limitList, listToggleHtml } from "./list-toggle.js";
-import { mountRow, readMountRows } from "./mount-editor.js";
+import { mountRow, readMountRows, roleLabel } from "./mount-editor.js";
 import { bindSearchBox, searchBoxHtml } from "./search-box.js";
 import { openTasks, taskErrorText, waitTask } from "./tasks.js";
 
@@ -51,9 +61,16 @@ const AUTO_HOST = "auto";
 
 const agentHost = (id) => hostsNow().find((h) => h.id === id)?.transport === "agent";
 
-/** The text for a custom row the dialog refuses before sending. Paths use the server's own messages. */
+/** The text for a custom row the dialog refuses before sending. The server's own messages name the path or the role. */
 function problemText(problem) {
-  return problem.code === "volume" ? t("cb.mountVolumeRequired") : t(`err.${problem.code}`, { path: problem.path });
+  if (problem.code === "volume") return t("cb.mountVolumeRequired");
+  if (problem.code === "mount_create_role_duplicate") {
+    return t(`err.${problem.code}`, { role: roleLabel(problem.role) });
+  }
+  if (problem.code === "mount_create_role_path") {
+    return t(`err.${problem.code}`, { ...problem, role: roleLabel(problem.role) });
+  }
+  return t(`err.${problem.code}`, { path: problem.path });
 }
 
 const categoryLabel = (id) => t(`tool.cat.${id}`);
@@ -91,6 +108,14 @@ function templateOptionHtml(template, selectedRef) {
 async function loadChoices() {
   const [volumeBody, boxBody] = await Promise.all([api("/api/volumes"), api("/api/boxes?stats=false")]);
   return volumeChoices(volumeBody.volumes, new Set(boxBody.boxes.map((box) => box.boxId)));
+}
+
+/**
+ * The volume list a custom row offers: the roles MiniBox can create, then the volumes that exist. `sharedTools` is the
+ * host's shared tools volume, which the tools role mounts instead of making a second one.
+ */
+function mountChoicesOf(choices) {
+  return createMountChoices(choices, sharedToolsChoice(choices) !== null);
 }
 
 /**
@@ -179,6 +204,8 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
   };
   let choices = null;
   let seeded = false;
+  /** The shared tools volume the host has, as the volume list holds it. Null when the host has none yet. */
+  let toolsShared = null;
 
   let catalog = [];
   try {
@@ -532,19 +559,26 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
     q("#cbRepoErr").textContent = message;
   };
 
+  /** The row list's note: what MiniBox creates for the roles it names, and the volumes it mounts as they are. */
   const refreshMounts = () => {
     if (!choices) return;
     const rows = readMountRows(q("#cbMountRows"));
     const note = q("#cbMountsNote");
-    let text = "";
-    if (choices.length === 0) text = t("cb.mountsNoVolumes");
-    else if (rows.length === 0) text = t("cb.mountsNone");
-    else if (rows.length >= MOUNT_MAX) text = t("cb.mountsLimit", { max: MOUNT_MAX });
-    note.textContent = text;
-    note.hidden = text === "";
+    const roles = rows.map((row) => roleOfValue(row.volume)).filter(Boolean);
+    const lines = [];
+    if (rows.length === 0) lines.push(t("cb.mountsNone"));
+    else if (rows.length >= MOUNT_MAX) lines.push(t("cb.mountsLimit", { max: MOUNT_MAX }));
+    if (roles.length) lines.push(t("cb.mountsCreated", { roles: roles.map(roleLabel).join(", ") }));
+    const names = rows
+      .filter((row) => !roleOfValue(row.volume) && row.volume)
+      .map((row) => choices.find((choice) => choice.id === row.volume)?.name)
+      .filter(Boolean);
+    if (names.length) lines.push(t("cb.mountsExisting", { names: names.join(", ") }));
+    note.textContent = lines.join(" ");
+    note.hidden = lines.length === 0;
     q("#cbAddMount").disabled = rows.length >= MOUNT_MAX;
     const shared = rows
-      .filter((row) => row.mode === "rw")
+      .filter((row) => row.mode === "rw" && !roleOfValue(row.volume))
       .map((row) => choices.find((choice) => choice.id === row.volume))
       .filter((choice) => choice && choice.rwMounts > 0)
       .map((choice) => `<div>${esc(t("vol.sharedRwMessage", { name: choice.name }))}</div>`);
@@ -562,6 +596,7 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
       seg.disabled = true;
       try {
         choices = await loadChoices();
+        toolsShared = sharedToolsChoice(choices);
       } catch (e) {
         q("#cbVolErr").textContent = e.message;
         return;
@@ -571,14 +606,22 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
     }
     if (custom && !seeded) {
       seeded = true;
+      // The four rows the default mode creates, so a custom list starts as the defaults and a removed row is one role less.
       for (const m of DEFAULT_MOUNTS) {
-        q("#cbMountRows").append(mountRow({ volume: "", path: m.path, mode: m.mode }, { volumes: choices }));
+        q("#cbMountRows").append(
+          mountRow(
+            { volume: roleValue(m.role), path: m.path, mode: m.mode },
+            { volumes: choices, create: true, choices: mountChoicesOf(choices) },
+          ),
+        );
       }
     }
     state.volumesMode = mode;
     $$("#cbVolMode .seg", root).forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.volMode === mode)));
     q("#cbVolCustom").hidden = !custom;
-    q("#cbVolHelp").textContent = t(custom ? "cb.volumesCustomHelp" : "cb.volumesDefaultHelp");
+    q("#cbVolHelp").textContent = t(
+      custom ? "cb.volumesCustomHelp" : toolsShared ? "cb.volumesDefaultHelp" : "cb.volumesDefaultHelpNoTools",
+    );
     q("#cbVolumesTitle").textContent = t("cb.volumesSummary", {
       mode: t(custom ? "cb.volumesModeCustom" : "cb.volumesModeDefault"),
     });
@@ -592,7 +635,12 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
       if (b && b.dataset.volMode !== state.volumesMode) chooseVolumesMode(b.dataset.volMode);
     });
     q("#cbAddMount").addEventListener("click", () => {
-      q("#cbMountRows").append(mountRow({ volume: "", path: "/data", mode: "rw" }, { volumes: choices }));
+      q("#cbMountRows").append(
+        mountRow(
+          { volume: "", path: "/data", mode: "rw" },
+          { volumes: choices, create: true, choices: mountChoicesOf(choices) },
+        ),
+      );
       refreshMounts();
     });
     q("#cbMountRows").addEventListener("change", refreshMounts);

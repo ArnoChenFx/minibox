@@ -676,9 +676,9 @@ describe("mount lists", () => {
       { id: "vol_3", name: "shared", ownership: "independent", ownerBoxId: null, rwMounts: 2 },
     ] as const;
     expect(volumeChoices(volumes, new Set(["bx_live"]))).toEqual([
-      { id: "vol_1", name: "workspace", rwMounts: 1, disabled: true },
-      { id: "vol_2", name: "orphan", rwMounts: 0, disabled: false },
-      { id: "vol_3", name: "shared", rwMounts: 2, disabled: false },
+      { id: "vol_1", name: "workspace", role: null, rwMounts: 1, disabled: true },
+      { id: "vol_2", name: "orphan", role: null, rwMounts: 0, disabled: false },
+      { id: "vol_3", name: "shared", role: null, rwMounts: 2, disabled: false },
     ]);
   });
 

@@ -222,17 +222,23 @@ export default {
   "cb.volumesDefault": "Defaults",
   "cb.volumesDefaultHint": "Workspace, home, cache, tools",
   "cb.volumesCustom": "Customize",
-  "cb.volumesCustomHint": "Pick existing volumes",
+  "cb.volumesCustomHint": "Pick or create volumes",
   "cb.volumesDefaultHelp":
     "MiniBox creates a workspace, home and cache volume for this box, and mounts the shared tools volume read-only.",
-  "cb.volumesCustomHelp": "Choose the volumes this box mounts. Each one must already exist.",
+  "cb.volumesDefaultHelpNoTools":
+    "MiniBox creates a workspace, home and cache volume for this box. This host has no shared tools volume yet, so MiniBox creates one too and mounts it read-only.",
+  "cb.volumesCustomHelp":
+    "Each row mounts a volume that already exists, or has MiniBox create one of this box's role volumes: workspace, home, tools or cache. A role you remove is not created.",
   "cb.volumesReplace":
-    "Custom volumes replace the defaults. This box gets only the volumes listed here, and MiniBox creates none of its own. To add a volume to the defaults, attach it from the box page after the box is created.",
+    "This box gets only the mounts listed here. MiniBox creates a role volume only for a role a row names, so removing a row means that volume is not created. The tools row mounts the host's shared tools volume when there is one, and creates it when there is none.",
   "cb.mountsNoVolumes": "No volumes exist yet. Create one on the Volumes page, or keep the defaults.",
   "cb.mountsNone": "No volumes: the box starts with nothing mounted.",
   "cb.mountsLimit": "A box takes at most {max} mounts.",
   "cb.mountsOwned": "Volumes that another box owns are unavailable here.",
-  "cb.mountVolumeRequired": "Choose a volume for every mount.",
+  "cb.mountVolumeRequired": "Choose a volume or a role for every mount.",
+  "cb.mountRoleRequired": "A mount that creates a role volume must keep that role's own path and mode.",
+  "cb.mountsCreated": "MiniBox creates: {roles}.",
+  "cb.mountsExisting": "Mounts existing volumes: {names}.",
   "rb.desc":
     "Volumes, the stable id and the name stay. The writable layer, running processes and the container IP do not.",
   "rb.help":
@@ -250,6 +256,10 @@ export default {
   "mount.add": "Add mount",
   "mount.remove": "Remove",
   "mount.choose": "Choose a volume",
+  "mount.existing": "Volumes that exist",
+  "mount.roleCreate": "Create the {role} volume",
+  "mount.roleShared": "Shared tools volume",
+  "mount.roleSharedNone": "Create the shared tools volume",
   "rb.preview": "Preview",
   "rb.apply": "Apply rebuild",
   "rb.previewTitle": "This rebuild is not applied yet",
