@@ -9,6 +9,7 @@ import type { Server } from "bun";
 import { type App, createApp } from "../src/app";
 import { COOKIE_NAME } from "../src/auth";
 import type { Config } from "../src/config";
+import { setLogSink } from "../src/lib/logger";
 import { PreviewRelay } from "../src/preview/relay";
 import { RELAY_PATHS } from "../src/preview/relay-binary";
 import type { ExecSession, ExecSpec } from "../src/runtime";
@@ -32,6 +33,8 @@ interface Bed {
   cookie: string;
   /** The relay processes that ran for the edge host, each with its argv. */
   relays: string[][];
+  /** The debug lines that reported which relay implementation a box's preview traffic used. */
+  relayLines: string[];
   cleanups: (() => void)[];
   stop(): void;
 }
@@ -110,8 +113,13 @@ async function bed(overrides: Partial<Config> = {}): Promise<Bed> {
   expect(added.status).toBe(201);
   const relays: string[][] = [];
   relayOnLoopback(edge, relays);
+  // Only the relay's own selection lines are kept, so the sink does not hold the rest of a test's debug output.
+  const relayLines: string[] = [];
+  const restoreSink = setLogSink((_level, line) => {
+    if (line.includes('"preview.relay_selected"')) relayLines.push(line);
+  });
   const cookie = `${COOKIE_NAME}=${encodeURIComponent(await signIn(base))}`;
-  const cleanups: (() => void)[] = [];
+  const cleanups: (() => void)[] = [restoreSink];
   return {
     app,
     local,
@@ -120,6 +128,7 @@ async function bed(overrides: Partial<Config> = {}): Promise<Bed> {
     base,
     cookie,
     relays,
+    relayLines,
     cleanups,
     stop: () => {
       for (const cleanup of cleanups) cleanup();
@@ -348,6 +357,96 @@ describe("static relay placement and fallback", () => {
       );
       expect(on.edge.callsTo("writeContainerFile")).toHaveLength(1);
       expect(on.relays).toHaveLength(3);
+    } finally {
+      on.stop();
+    }
+  });
+
+  test("the binary relay is reported once per container, and later connections stay silent", async () => {
+    const on = await bed();
+    try {
+      const port = serviceOn(on, () => new Response("ok", { headers: { connection: "close" } }));
+      const box = await makeBox(on, "binary-logged");
+
+      for (let call = 0; call < 3; call += 1) {
+        const res = await fetch(`${on.base}/box/binary-logged/${port}/`, { headers: { cookie: on.cookie } });
+        expect(res.status).toBe(200);
+        expect(await res.text()).toBe("ok");
+      }
+
+      // All three connections ran the placed binary, and only the first one said so.
+      expect(on.relays).toHaveLength(3);
+      expect(RELAY_PATHS.includes(on.relays[0]?.[0] ?? "")).toBe(true);
+      const lines = on.relayLines.map((line) => JSON.parse(line) as Record<string, unknown>);
+      expect(lines).toHaveLength(1);
+      expect(lines[0]).toMatchObject({
+        level: "debug",
+        msg: "preview.relay_selected",
+        port,
+        relay: "binary",
+        host: "edge",
+      });
+      expect(lines[0]?.box).toBe(box.boxId);
+    } finally {
+      on.stop();
+    }
+  });
+
+  test("a binary that fails and falls back to python3 reports the fallback once", async () => {
+    const on = await bed();
+    try {
+      const normal = on.edge.startExec.bind(on.edge);
+      on.edge.startExec = async (id, spec) => {
+        if (RELAY_PATHS.includes(spec.cmd[0] ?? "")) {
+          on.relays.push(spec.cmd);
+          return localExec("/bin/sh", ["-c", "echo 'relay: Permission denied' >&2; exit 126"]);
+        }
+        return normal(id, spec);
+      };
+      const port = serviceOn(on, () => new Response("ok", { headers: { connection: "close" } }));
+      await makeBox(on, "python-logged");
+
+      for (let call = 0; call < 2; call += 1) {
+        const res = await fetch(`${on.base}/box/python-logged/${port}/`, { headers: { cookie: on.cookie } });
+        expect(res.status).toBe(200);
+        expect(await res.text()).toBe("ok");
+      }
+
+      // Two binaries were tried, then the second connection ran the script; the fallback is said once.
+      expect(on.relays.filter((cmd) => RELAY_PATHS.includes(cmd[0] ?? ""))).toHaveLength(2);
+      expect(on.relays.filter((cmd) => cmd[0] === "python3")).toHaveLength(2);
+      const lines = on.relayLines.map((line) => JSON.parse(line) as Record<string, unknown>);
+      expect(lines).toHaveLength(1);
+      expect(lines[0]).toMatchObject({
+        level: "debug",
+        msg: "preview.relay_selected",
+        port,
+        relay: "python3",
+        host: "edge",
+      });
+      expect(lines[0]?.box).toBeTruthy();
+    } finally {
+      on.stop();
+    }
+  });
+
+  test("a binary relay that cannot reach the port is still reported as the binary", async () => {
+    const on = await bed();
+    try {
+      const port = closedPort();
+      await makeBox(on, "binary-refused");
+
+      for (let call = 0; call < 2; call += 1) {
+        const res = await fetch(`${on.base}/box/binary-refused/${port}/`, { headers: { cookie: on.cookie } });
+        expect(res.status).toBe(502);
+        await res.text();
+      }
+
+      // The binary answered `err`, so it is what the traffic used, and the refusal does not turn into a fallback.
+      expect(on.relays.every((cmd) => RELAY_PATHS.includes(cmd[0] ?? ""))).toBe(true);
+      const lines = on.relayLines.map((line) => JSON.parse(line) as Record<string, unknown>);
+      expect(lines).toHaveLength(1);
+      expect(lines[0]).toMatchObject({ level: "debug", msg: "preview.relay_selected", port, relay: "binary" });
     } finally {
       on.stop();
     }
