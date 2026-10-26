@@ -6,6 +6,7 @@ import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
 import { terminalHash } from "../lib/routes.js";
 import {
+  availableHeight,
   ceilingHeight,
   clampHeight,
   clearHeight,
@@ -231,30 +232,68 @@ function mountLive(root, b, session) {
   let height = 0;
 
   /**
+   * The room this page leaves for the screen, measured rather than assumed: the window's height, less where the screen
+   * starts, less what the page draws under it. The last two come from the page itself — the screen's own box and the
+   * content's foot, which is under the grabber, the help line and the content's padding — so a box whose name wraps the
+   * page head onto two lines, a narrower window or a longer help line needs no special case. Measured on every apply,
+   * since the page's furniture changes with the window's width as well as its height.
+   */
+  const room = () => {
+    const content = root.closest(".content") ?? document.body;
+    const screenBox = screen.getBoundingClientRect();
+    // Measured in the page's own coordinates, which `getBoundingClientRect()` is not: it is relative to the window, so a
+    // page the reader has scrolled down would report a smaller top and a larger room, and a drag that scrolled the page
+    // would then hand back a taller "default" than the page really leaves.
+    const scrolled = window.scrollY;
+    return availableHeight({
+      viewportHeight: window.innerHeight,
+      screenTop: screenBox.top + scrolled,
+      screenBottom: screenBox.bottom + scrolled,
+      contentBottom: content.getBoundingClientRect().bottom + scrolled,
+    });
+  };
+
+  /**
    * Draws the screen `height` pixels tall and refits xterm to it, which is what makes the terminal rework its columns
    * and rows: `fit.fit()` calls `terminal.resize()`, the panel's `onResize` subscription sends the new `{type:"resize"}`
-   * frame to tmux, and the shell inside redraws to the new size. A height that does not fit the window is clamped, not
-   * dropped. The handle tells a screen reader where it sits between its ends.
+   * frame to tmux, and the shell inside redraws to the new size. A height that does not fit the room the page leaves is
+   * clamped, not dropped. The handle tells a screen reader where it sits between its ends.
+   *
+   * By default the screen takes exactly the room there is, so the whole terminal and its grabber are in the window; the
+   * old 460px stays as the floor for a window too short even for that. More lines than the window holds are the reader's
+   * to ask for, by dragging the grabber, which may take the screen past the fold.
    *
    * Only a desktop takes a height of its own. At 900px and below the screen keeps the height the stylesheet gives it — a
    * phone's `min(52vh, 340px)`, a tablet's 460px — so nothing about a phone changes, and the property is taken back off
    * when a window is narrowed across the breakpoint.
    */
+  /** The room the last apply measured, so a re-measure can tell whether anything moved. */
+  let lastRoom = -1;
   const reapply = (refit = true) => {
-    height = clampHeight(preferred ?? defaultHeight(window.innerHeight), window.innerHeight);
+    const space = room();
+    lastRoom = space;
+    height = clampHeight(preferred ?? defaultHeight(space), space);
     if (desktopScreen()) screen.style.setProperty("--term-h", `${height}px`);
     else screen.style.removeProperty("--term-h");
     if (refit) fit.fit();
     if (grabber) {
-      const ceiling = ceilingHeight(window.innerHeight);
       grabber.setAttribute("aria-valuemin", String(MIN_HEIGHT));
-      grabber.setAttribute("aria-valuemax", String(ceiling));
+      grabber.setAttribute("aria-valuemax", String(ceilingHeight(space)));
       grabber.setAttribute("aria-valuenow", String(height));
     }
   };
 
   /** Remembers the height on this machine, so a reload, another box or another session opens the same way. */
   const rememberHeight = () => writeHeight(storage(), height);
+
+  /**
+   * Measures again and redraws only when the room has moved: the frame is built before the session chips and the control
+   * bar are filled in, and either may wrap onto a second line and push the screen down. What is under the screen is not
+   * affected by the screen's own height, so this is a stable measurement rather than a moving one.
+   */
+  const syncHeight = () => {
+    if (room() !== lastRoom) reapply();
+  };
 
   reapply();
 
@@ -274,6 +313,7 @@ function mountLive(root, b, session) {
       ? sessions.map((s) => sessionChipHtml(s, current)).join("")
       : `<span class="subtle">${t("bd.noSessions")}</span>`;
     root.querySelector("#tTitle").textContent = current ? `${b.name}: ${current}` : b.name;
+    syncHeight();
   };
 
   const renderControl = () => {
@@ -281,6 +321,7 @@ function mountLive(root, b, session) {
       control.innerHTML = "";
       xterm.options.disableStdin = true;
       setKeysEnabled(false);
+      syncHeight();
       return;
     }
     const human = view.controller === "human";
@@ -292,6 +333,7 @@ function mountLive(root, b, session) {
       <span class="control-actions">${action}<button class="btn btn-sm btn-ghost" data-control="close">${icon("x")}${t("bd.closeSession")}</button></span>`;
     xterm.options.disableStdin = !view.canType;
     setKeysEnabled(view.canType);
+    syncHeight();
   };
 
   /**
@@ -537,7 +579,7 @@ function mountLive(root, b, session) {
    */
   const onGrabberKey = (event) => {
     if (event.altKey || event.ctrlKey || event.metaKey) return;
-    const next = heightForKey(event.key, height, window.innerHeight);
+    const next = heightForKey(event.key, height, room());
     if (next === null) return;
     event.preventDefault();
     if (resetsHeight(event.key)) {

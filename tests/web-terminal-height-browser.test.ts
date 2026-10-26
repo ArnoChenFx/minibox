@@ -22,10 +22,22 @@ afterAll(restoreLogs);
 
 const TIMEOUT_MS = 30_000;
 const PHONE = { width: 390, height: 844 };
-/** The two desktop windows the reader asked about: a 1280x800 laptop and a 1440x900 one. */
+/**
+ * The desktop windows measured, with what the page leaves for the screen on each (measured in Chromium on a box's
+ * terminal tab; the box's head wraps to two lines on the two narrower windows, which pushes the screen 48px further
+ * down). `room` is that space, and the default is `clamp(460, room, 980)`, so:
+ *
+ *   1280x800    room 335   the old 460px does not fit: the default is 460 and the page scrolls, as it did before
+ *   1440x900    room 435   the same: 460 by default, and the screen and grabber end inside the window
+ *   1920x1080   room 663   the default is 663px, and the whole page fits the window without scrolling
+ *
+ * `fits` is whether the screen and its grabber are inside the window by default, and `taller` whether the default grows
+ * past the old 460px.
+ */
 const DESKTOPS = [
-  { width: 1280, height: 800 },
-  { width: 1440, height: 900 },
+  { width: 1280, height: 800, fits: false, taller: false },
+  { width: 1440, height: 900, fits: true, taller: false },
+  { width: 1920, height: 1080, fits: true, taller: true },
 ];
 /** The height the terminal was fixed at before this change, which a desktop has to grow past. */
 const LEGACY_HEIGHT = 460;
@@ -216,31 +228,38 @@ describe.skipIf(!executablePath)("the terminal's height (real browser)", () => {
   describe("on a desktop", () => {
     for (const viewport of DESKTOPS) {
       test(
-        `at ${viewport.width}x${viewport.height} the terminal is taller than the old ${LEGACY_HEIGHT}px and still fits the window`,
+        `at ${viewport.width}x${viewport.height} the default keeps the whole terminal and its grabber in the window`,
         async () => {
           const context = await signedIn({ viewport });
           try {
             const page = await context.newPage();
             await openTerminal(page);
             const seen = await shape(page);
-            // The empty band under a 460px frame is gone: the screen takes the room the window leaves.
-            expect(seen.screen.height).toBeGreaterThan(LEGACY_HEIGHT);
-            // And the frame is not pushed so far down that the reader has to scroll to find it.
-            expect(seen.screen.top).toBeLessThan(viewport.height);
-            expect(seen.screen.bottom).toBeLessThan(viewport.height + 200);
-            // Nothing spills out of the window sideways, and the page still scrolls up and down as it always did.
+            // Nothing spills out of the window sideways, and the page is not a fixed app layout: its content is at least
+            // as tall as the window, and a taller terminal makes it scroll.
             expect(seen.fits).toBe(true);
-            expect(seen.scrollHeight).toBeGreaterThan(viewport.height);
+            expect(seen.scrollHeight).toBeGreaterThanOrEqual(viewport.height);
             // The grabber is drawn under the screen, and it is the desktop's: a phone hides it.
             expect(seen.grabberDisplay).toBe("flex");
             expect(seen.grabber.height).toBeGreaterThanOrEqual(8);
             expect(Math.abs(seen.grabber.top - seen.screen.bottom)).toBeLessThanOrEqual(1);
             expect(seen.grabberRole).toBe("separator");
             expect(seen.grabberOrientation).toBe("horizontal");
+            // Wherever the page has room for the old height, the screen's foot and the grabber's are inside the window:
+            // the default never opens taller than the room there is.
+            if (viewport.fits) {
+              expect(seen.screen.bottom).toBeLessThanOrEqual(viewport.height);
+              expect(seen.grabber.bottom).toBeLessThanOrEqual(viewport.height);
+            }
+            // The old height is the floor, so the default is never shorter than it; where the room allows more, the
+            // default takes it.
+            expect(seen.screen.height).toBeGreaterThanOrEqual(LEGACY_HEIGHT);
+            if (viewport.taller) expect(seen.screen.height).toBeGreaterThan(LEGACY_HEIGHT);
+            else expect(seen.screen.height).toBe(LEGACY_HEIGHT);
             // What the reader sees is the height the module worked out, and xterm is fitted to it.
             expect(seen.termHeight).toBe(`${seen.screen.height}px`);
             expect(seen.grabberNow).toBe(seen.screen.height);
-            expect(seen.grabberMax).toBeGreaterThanOrEqual(seen.screen.height);
+            expect(seen.grabberMax).toBeGreaterThan(seen.screen.height);
             expect((await terminalSize(page)).rows).toBeGreaterThan(10);
             await page.screenshot({ path: `/tmp/terminal-height-${viewport.width}x${viewport.height}.png` });
           } finally {
@@ -250,6 +269,69 @@ describe.skipIf(!executablePath)("the terminal's height (real browser)", () => {
         TIMEOUT_MS,
       );
     }
+
+    test(
+      "at 1280x800 the default is the old 460px, and the drag still takes the screen past the window's foot",
+      async () => {
+        const context = await signedIn({ viewport: DESKTOPS[0]! });
+        try {
+          const page = await context.newPage();
+          await openTerminal(page);
+          const before = await shape(page);
+          // The room there is cannot hold the old height, so the default is the old height and the page scrolls, as it
+          // did before: the screen's foot is the same 398 + 460 = 858 it always was, and the grabber sits under it. This
+          // is the floor case, not a regression — the old height was already past this window's foot before the change.
+          expect(before.screen.height).toBe(LEGACY_HEIGHT);
+          expect(before.screen.bottom).toBe(before.screen.top + LEGACY_HEIGHT);
+          expect(before.screen.bottom).toBeGreaterThan(DESKTOPS[0]!.height);
+          // What matters is that the drag is not weakened to match: the ceiling is still above the default.
+          expect(before.grabberMax).toBeGreaterThan(before.screen.height);
+          await drag(page, 200);
+          await page.waitForTimeout(300);
+          const dragged = await shape(page);
+          expect(dragged.screen.height).toBeGreaterThan(before.screen.height);
+          // The screen's foot is now below the window's, which is what a reader who wants more lines asked for.
+          expect(dragged.screen.bottom).toBeGreaterThan(DESKTOPS[0]!.height);
+          expect(dragged.grabberNow).toBe(dragged.screen.height);
+        } finally {
+          await context.close();
+        }
+      },
+      TIMEOUT_MS,
+    );
+
+    test(
+      "at 1920x1080 the terminal takes the room the window leaves, well past the old height",
+      async () => {
+        const context = await signedIn({ viewport: DESKTOPS[2]! });
+        try {
+          const page = await context.newPage();
+          await openTerminal(page);
+          const seen = await shape(page);
+          // The band that used to be empty under a 460px screen is part of the terminal now, and the grabber sits at the
+          // window's foot rather than below it.
+          expect(seen.screen.height).toBeGreaterThan(LEGACY_HEIGHT + 100);
+          expect(seen.screen.bottom).toBeLessThanOrEqual(DESKTOPS[2]!.height);
+          expect(seen.grabber.bottom).toBeLessThanOrEqual(DESKTOPS[2]!.height);
+          // And the cursor's line is on screen without scrolling the page first, which is the point of the default.
+          const cursor = await page.evaluate(() => {
+            const view = globalThis as unknown as {
+              document: { querySelector(selector: string): { getBoundingClientRect(): { bottom: number } } | null };
+              innerHeight: number;
+            };
+            const rows = view.document.querySelector(".xterm-rows");
+            return rows === null
+              ? null
+              : { bottom: Math.round(rows.getBoundingClientRect().bottom), view: view.innerHeight };
+          });
+          expect(cursor).not.toBeNull();
+          expect(cursor!.bottom).toBeLessThanOrEqual(cursor!.view);
+        } finally {
+          await context.close();
+        }
+      },
+      TIMEOUT_MS,
+    );
 
     test(
       "the grabber is named in English, focusable, and its focus ring is visible",
@@ -385,8 +467,8 @@ describe.skipIf(!executablePath)("the terminal's height (real browser)", () => {
           const tall = (await shape(page)).screen.height;
           expect(tall).toBeGreaterThan(LEGACY_HEIGHT);
 
-          // A 700px window leaves 400px for the screen, so the remembered height cannot be drawn as it is: it is clamped
-          // to what fits rather than dropped.
+          // A shorter window has less room, so the remembered height cannot be drawn as it is: it is clamped to what the
+          // page leaves rather than dropped.
           await page.setViewportSize({ width: 1280, height: 700 });
           await page.waitForTimeout(400);
           const small = await shape(page);

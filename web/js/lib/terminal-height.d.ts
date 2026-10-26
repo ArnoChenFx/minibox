@@ -10,8 +10,8 @@ export declare const DEFAULT_MAX: number;
 /** The tallest the terminal may be dragged to, on any window, in pixels. */
 export declare const MAX_HEIGHT: number;
 
-/** What the default height keeps for the page's own furniture and the band under the frame, in pixels. */
-export declare const CHROME_HEIGHT: number;
+/** The furniture the stylesheet's first-paint fallback assumes, in pixels. */
+export declare const FALLBACK_CHROME: number;
 
 /** How much further than the default a reader may drag the grabber, in pixels. */
 export declare const EXTRA_HEIGHT: number;
@@ -22,17 +22,31 @@ export declare const LEGACY_HEIGHT: number;
 /** How far one press of an arrow key on the grabber moves the terminal, in pixels. */
 export declare const STEP: number;
 
-/** The terminal height for a window `viewportHeight` pixels tall, before the reader has dragged anything. */
-export declare function defaultHeight(viewportHeight: number): number;
+/** What the page measures about itself: its window, the screen's box, and the bottom of the page content. */
+export interface PageRoom {
+  viewportHeight: number;
+  screenTop: number;
+  screenBottom: number;
+  contentBottom: number;
+}
 
-/** The tallest the terminal may be on a `viewportHeight`-tall window. */
-export declare function ceilingHeight(viewportHeight: number): number;
+/**
+ * The room the page leaves for the screen: the window's height less the screen's own top and everything the page draws
+ * under the screen (the grabber, the help line, the content's bottom padding).
+ */
+export declare function availableHeight(page: PageRoom): number;
 
-/** `height` brought inside the range the terminal may take on a `viewportHeight`-tall window. */
-export declare function clampHeight(height: number, viewportHeight: number): number;
+/** The terminal height for `room` pixels of space, before the reader has dragged anything. */
+export declare function defaultHeight(room: number): number;
+
+/** The tallest the terminal may be with `room` pixels of space. */
+export declare function ceilingHeight(room: number): number;
+
+/** `height` brought inside the range the terminal may take with `room` pixels of space. */
+export declare function clampHeight(height: number, room: number): number;
 
 /** The height one step up (`direction` 1) or down (-1) from `height`, kept inside the range above. */
-export declare function stepHeight(height: number, direction: number, viewportHeight: number): number;
+export declare function stepHeight(height: number, direction: number, room: number): number;
 
 /**
  * The height a stored value stands for, or null when it stands for none: a missing key, a value from another version, or
@@ -53,7 +67,7 @@ export declare function clearHeight(storage: Pick<Storage, "removeItem"> | null 
  * The height the grabber's key press asks for, or null for a key it does not handle. ArrowUp grows the terminal,
  * ArrowDown shrinks it, and Home, End and Enter restore the default height.
  */
-export declare function heightForKey(key: string, height: number, viewportHeight: number): number | null;
+export declare function heightForKey(key: string, height: number, room: number): number | null;
 
 /** Whether a key press on the grabber puts the default height back, rather than stepping one way or the other. */
 export declare function resetsHeight(key: string): boolean;

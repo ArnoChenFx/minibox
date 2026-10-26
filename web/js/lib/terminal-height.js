@@ -2,29 +2,36 @@
  * The height of the terminal on a desktop screen.
  *
  * The terminal used to be a fixed 460px, which on a 1080p or 1440p screen left a band of empty page under the frame: it
- * ended well above the fold, with nothing below it to scroll to. Here the height follows the window instead, and the
- * reader can drag it to whatever suits them. A phone is untouched: at 640px and below the terminal keeps its
- * `min(52vh, 340px)` height, the key row under it and the keyboard logic, and nothing in this module is consulted.
+ * ended well above the fold, with nothing below it to scroll to. Here the height follows the room the window actually
+ * leaves, measured in the page itself rather than guessed from the window height, and the reader can drag it taller if
+ * they want more lines. A phone is untouched: at 640px and below the terminal keeps its `min(52vh, 340px)` height, the
+ * key row under it and the keyboard logic, and nothing in this module is consulted.
  *
- * The default is `clamp(LEGACY_HEIGHT, 100vh - CHROME_HEIGHT, DEFAULT_MAX)`, the expression the stylesheet carries for
- * `.terminal` in `terminal-logs.css`, so the two cannot drift apart without a test saying so:
+ * The default is `clamp(LEGACY_HEIGHT, room, DEFAULT_MAX)`, where `room` is what the page leaves for the screen:
  *
- *   LEGACY_HEIGHT   460px   the height the terminal always had, which the default never opens shorter than
- *   CHROME_HEIGHT   300px   the room the window keeps for the page's own furniture and the band under the frame
- *   DEFAULT_MAX     980px   the ceiling of the default, so a very tall window does not grow a frame nobody can read
+ *   room = window.innerHeight - the screen's own top - everything between the screen's foot and the content's foot
  *
- * That gives 500px on a 1280x800 window (the old 460px plus the band that was empty under it), 600px at 1440x900, 780px
- * on a 1080p screen and 980px on a 1440p one. `CHROME_HEIGHT` is measured in Chromium on the box's terminal tab: 398px
- * of page above the screen (top bar 56, content padding 28, page head 102, tab strip 43, session bar 60, terminal bar 45,
- * control bar 45) and 38px of frame under it (the grabber's 12px) and page under that (the help line and the content's
- * bottom padding). Of the rest, 100px is left for the frame to end a little past the fold, so the terminal gets as many
- * lines as it can and the page scrolls the help line into view.
+ * `availableHeight` works that out from three measurements the panel takes on mount and again on every window resize: the
+ * screen's top, its bottom, and the bottom of the page's `.content`. The last two give the furniture under the screen —
+ * the grabber's 12px, the help line's 26px and the content's 28px of bottom padding — without this file having to know
+ * any of it. Measuring beats a constant: the page above the screen is 398px at 1280px wide (the box's head wraps to two
+ * lines) and 350px at 1920px, so no single number fits both.
  *
- * A reader can drag the grabber up to `EXTRA_HEIGHT` past the default, as far as `MAX_HEIGHT`: the default is the height
- * that leaves the page comfortable, and the extra 120px is there for a reader who would rather scroll a little than see
- * fewer lines. Downwards the floor is `MIN_HEIGHT`, about a dozen lines, enough to read what a command printed. The
- * height they pick is remembered in `localStorage`, under a key that carries its version, so a later layout can start
- * over instead of inheriting a number that no longer means anything.
+ * What that gives, in Chromium on the box's terminal tab:
+ *
+ *   1280x800    room 335   -> 460px (the floor: the old height, which already ran past the fold by 58px, as it did before)
+ *   1440x900    room 435   -> 460px (the floor; screen bottom 858 and grabber 870 both inside the window)
+ *   1920x1080   room 663   -> 663px (screen bottom 1013 and grabber 1025 both inside the window)
+ *
+ * So by default the whole screen and its grabber are in the window wherever the old 460px fitted, and where it did not
+ * the terminal is exactly as tall as it always was. A reader who wants more lines than that drags the grabber: the
+ * ceiling is `EXTRA_HEIGHT` past the default, up to `MAX_HEIGHT`, and the page scrolls for it.
+ *
+ * The stylesheet carries a first-paint fallback, `clamp(460px, calc(100vh - 555px), 980px)`, so the page paints sensibly
+ * before this module has measured anything. Its 555px is the largest furniture any desktop page has (measured at 901px
+ * wide, where the box's head wraps to two lines: 470px above the screen and 85px under it), so the fallback never opens
+ * taller than the measured default — and on those windows the two are the same. The panel replaces it with the measured
+ * height as soon as it mounts, and a test pins the numbers together.
  */
 
 /** The key the reader's height is remembered under. The version is part of it, so a later layout can start over. */
@@ -39,8 +46,11 @@ export const DEFAULT_MAX = 980;
 /** The tallest the terminal may be dragged to, on any window. */
 export const MAX_HEIGHT = 1100;
 
-/** What the default height keeps for the page's own furniture and the band under the frame. */
-export const CHROME_HEIGHT = 300;
+/**
+ * The furniture the stylesheet's first-paint fallback assumes: the most any desktop page has, its screen's top plus what
+ * is under the screen. Measured at 901px wide, where the box's head wraps to two lines (470px + 85px).
+ */
+export const FALLBACK_CHROME = 555;
 
 /** How much further than the default a reader may drag the grabber, before `MAX_HEIGHT` stops it. */
 export const EXTRA_HEIGHT = 120;
@@ -51,33 +61,40 @@ export const LEGACY_HEIGHT = 460;
 /** How far one press of an arrow key on the grabber moves the terminal. */
 export const STEP = 24;
 
-/** The terminal height for a window `viewportHeight` pixels tall, before the reader has dragged anything. */
-export function defaultHeight(viewportHeight) {
-  return Math.round(Math.min(DEFAULT_MAX, Math.max(LEGACY_HEIGHT, viewportHeight - CHROME_HEIGHT)));
+/**
+ * The room the page leaves for the screen, from the measurements the panel takes: the screen's `top` and `bottom` and the
+ * page content's `bottom`, all from `getBoundingClientRect()`, and the window's own height. What sits under the screen —
+ * the grabber, the help line, the content's bottom padding — is the difference between the last two, so no constant has
+ * to guess at it. A page whose furniture is already taller than the window leaves no room, never a negative one.
+ */
+export function availableHeight({ viewportHeight, screenTop, screenBottom, contentBottom }) {
+  const below = Math.max(0, contentBottom - screenBottom);
+  return Math.max(0, Math.round(viewportHeight - screenTop - below));
+}
+
+/** The terminal height for `room` pixels of space, before the reader has dragged anything. */
+export function defaultHeight(room) {
+  return Math.round(Math.min(DEFAULT_MAX, Math.max(LEGACY_HEIGHT, room)));
 }
 
 /**
- * The tallest the terminal may be on a `viewportHeight`-tall window: the default plus the room a drag may take, kept
- * under `MAX_HEIGHT`. A window too short for even the old 460px still has `EXTRA_HEIGHT` above the floor, so the grabber
- * can always be dragged both ways, and the page scrolls rather than squeezing the terminal to nothing.
+ * The tallest the terminal may be with `room` pixels of space: the default plus the room a drag may take, kept under
+ * `MAX_HEIGHT`. A window too short for even the old 460px still has `EXTRA_HEIGHT` above the floor, so the grabber can
+ * always be dragged both ways and a reader who wants more lines than the window holds can have them.
  */
-export function ceilingHeight(viewportHeight) {
-  return Math.min(MAX_HEIGHT, defaultHeight(viewportHeight) + EXTRA_HEIGHT);
+export function ceilingHeight(room) {
+  return Math.min(MAX_HEIGHT, defaultHeight(room) + EXTRA_HEIGHT);
 }
 
-/**
- * `height` brought inside the range the terminal may take on a `viewportHeight`-tall window. A height that is not a
- * finite number falls back to the default.
- */
-export function clampHeight(height, viewportHeight) {
-  if (typeof height !== "number" || !Number.isFinite(height)) return defaultHeight(viewportHeight);
-  const ceiling = ceilingHeight(viewportHeight);
-  return Math.round(Math.min(ceiling, Math.max(MIN_HEIGHT, height)));
+/** `height` brought inside the range the terminal may take with `room` pixels of space. */
+export function clampHeight(height, room) {
+  if (typeof height !== "number" || !Number.isFinite(height)) return defaultHeight(room);
+  return Math.round(Math.min(ceilingHeight(room), Math.max(MIN_HEIGHT, height)));
 }
 
 /** The height one step up (`direction` 1) or down (-1) from `height`, kept inside the range above. */
-export function stepHeight(height, direction, viewportHeight) {
-  return clampHeight(height + direction * STEP, viewportHeight);
+export function stepHeight(height, direction, room) {
+  return clampHeight(height + direction * STEP, room);
 }
 
 /**
@@ -125,16 +142,16 @@ export function clearHeight(storage) {
  * The height the grabber's key press asks for, or null for a key it does not handle. Up grows the terminal and Down
  * shrinks it, which is how the frame moves as the reader watches it; Home, End and Enter put the default height back.
  */
-export function heightForKey(key, height, viewportHeight) {
+export function heightForKey(key, height, room) {
   switch (key) {
     case "ArrowUp":
-      return stepHeight(height, 1, viewportHeight);
+      return stepHeight(height, 1, room);
     case "ArrowDown":
-      return stepHeight(height, -1, viewportHeight);
+      return stepHeight(height, -1, room);
     case "Home":
     case "End":
     case "Enter":
-      return defaultHeight(viewportHeight);
+      return defaultHeight(room);
     default:
       return null;
   }
