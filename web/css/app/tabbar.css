@@ -1,0 +1,115 @@
+/* ---------- Bottom tab bar (phones) ----------
+   A phone gets one entry per thumb instead of a menu button: Overview, Boxes and Activity open their page in place, and
+   More opens the sidebar, which is already the off-canvas drawer under 900px. Above 640px the bar is gone and the menu
+   button works as it always did; on a desktop neither exists. The bar sits over the page, so `.content` keeps the height
+   of the bar plus the iPhone home-indicator inset as bottom padding, and a page's last line stays clear of it. */
+.tabbar,
+.nav-scrim {
+  display: none;
+}
+
+@media (max-width: 640px) {
+  :root {
+    --tabbar-h: 52px;
+  }
+  .tabbar {
+    position: fixed;
+    inset: auto 0 0;
+    z-index: 55;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    background: color-mix(in srgb, var(--bg-elev) 92%, transparent);
+    backdrop-filter: saturate(1.4) blur(10px);
+    border-top: 1px solid var(--border);
+  }
+  .tabbar > a,
+  .tabbar > button {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    min-width: 0;
+    min-height: var(--tabbar-h);
+    padding: 6px 2px;
+    border: 0;
+    border-radius: 0;
+    background: none;
+    color: var(--text-3);
+    font-size: 11.5px;
+    font-weight: 500;
+    line-height: 1.2;
+    text-decoration: none;
+  }
+  .tabbar > a:hover {
+    color: var(--text-2);
+    text-decoration: none;
+  }
+  .tabbar > a > span:last-child,
+  .tabbar > button > span:last-child {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .tabbar .icon {
+    width: 22px;
+    height: 22px;
+  }
+  .tabbar > a.active,
+  .tabbar > button[aria-expanded="true"],
+  .tabbar > button.active {
+    color: var(--accent-text);
+  }
+  .tabbar > a:focus-visible,
+  .tabbar > button:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+  }
+
+  /* Tapping beside the open drawer closes it. The scrim stays under the top bar, the bar and the drawer, so those keep
+     working as they do today: the bar's More closes the drawer, the drawer's entries open their page, and the top bar's
+     buttons stay reachable. */
+  .shell.nav-open .nav-scrim {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 19;
+    padding: 0;
+    border: 0;
+    background: rgba(9, 9, 11, 0.45);
+  }
+
+  /* The bar is the only way into the sidebar here, so the top bar's menu button would be a second entry to it. */
+  .icon-btn.menu-btn {
+    display: none;
+  }
+
+  /* Room for the bar and the home indicator, so no page ends under it. */
+  .content {
+    padding-bottom: calc(20px + var(--tabbar-h) + env(safe-area-inset-bottom, 0px));
+  }
+  /* The drawer's foot keeps clear of the home indicator, which the bar already leaves room for. */
+  .sidebar {
+    padding-bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+  }
+
+  /* While a field on the page has the keyboard, the bar steps aside: the on-screen keyboard would otherwise cover it,
+     and a terminal keeps its last line. The top bar's menu button takes the bar's place, so the drawer stays one press
+     away. The page keeps the padding above, so nothing moves. A press on the page itself brings the bar back. */
+  .shell.typing .tabbar {
+    display: none;
+  }
+  .shell.typing .icon-btn.menu-btn {
+    display: inline-grid;
+  }
+  /* A dialog covers the screen and holds attention, so the bar is not part of it, whether or not it has a field. */
+  body:has(.overlay) .tabbar {
+    display: none;
+  }
+
+  /* A toast says what a tap did, so it rises above the bar rather than landing on it. */
+  .toasts {
+    bottom: calc(20px + var(--tabbar-h) + env(safe-area-inset-bottom, 0px));
+  }
+}

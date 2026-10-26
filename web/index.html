@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>MiniBox</title>
   <meta name="description" content="MiniBox: personal dev environments for AI agents" />
   <meta name="theme-color" content="#4F46E5" />
@@ -16,7 +16,7 @@
 </head>
 <body>
   <div class="shell" id="shell">
-    <aside class="sidebar" aria-label="Main navigation" data-i18n-attr="aria-label:nav.main">
+    <aside class="sidebar" id="sidebar" aria-label="Main navigation" data-i18n-attr="aria-label:nav.main">
       <a class="brand" href="#/overview" aria-label="MiniBox home" data-i18n-attr="aria-label:nav.home"><img data-logo src="/assets/logo.svg" alt="MiniBox" /></a>
       <nav class="nav" id="nav">
         <a href="#/overview" data-nav="overview"><span data-icon="dashboard"></span><span data-i18n="nav.overview">Overview</span></a>
@@ -43,6 +43,13 @@
       <div class="owner-key-banner" id="ownerKeyBanner" hidden></div>
       <main class="content" id="view" tabindex="-1"></main>
     </div>
+    <button type="button" class="nav-scrim" id="navScrim" aria-label="Close navigation" data-i18n-attr="aria-label:shell.closeNav" tabindex="-1"></button>
+    <nav class="tabbar" id="tabbar" aria-label="Sections" data-i18n-attr="aria-label:shell.tabbar">
+      <a href="#/overview" data-tab="overview"><span data-icon="dashboard"></span><span data-i18n="nav.overview">Overview</span></a>
+      <a href="#/boxes" data-tab="boxes"><span data-icon="box"></span><span data-i18n="nav.boxes">Boxes</span></a>
+      <a href="#/activity" data-tab="activity"><span data-icon="activity"></span><span data-i18n="nav.activity">Activity</span></a>
+      <button type="button" id="moreBtn" data-tab="more" aria-expanded="false" aria-controls="sidebar"><span data-icon="menu"></span><span data-i18n="nav.more">More</span></button>
+    </nav>
   </div>
   <div id="toasts" class="toasts" role="status" aria-live="polite"></div>
   <script src="/vendor/xterm/xterm.js" defer></script>
