@@ -37,6 +37,8 @@ Copy the 64-character key. Keep it private. Anyone with the key controls MiniBox
 2. In **Access key**, paste the key.
 3. Click **Sign in**.
 
+On a phone the console shows a bar at the bottom of the window: **Overview**, **Boxes**, **Activity** and **More**. The first three open their page, and **More** opens the sidebar, which lists every page. The rest of this guide works the same way from either.
+
 ## 4. Build the base template
 
 A box starts from a template. The MiniBox image does not include the base template. MiniBox builds it the first time a box or a helper needs it, but that first build takes a few minutes, so you can build it now instead.

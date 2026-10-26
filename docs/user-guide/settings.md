@@ -17,4 +17,6 @@ Open **Settings** in the sidebar to manage the console and the server's access. 
 
 The **About** page shows the version of MiniBox that is running, and links to the documentation, the changelog and the license. Click the version at the foot of the sidebar to open it.
 
+On a phone the sidebar is a drawer that the **More** tab of the bottom bar opens, and the bar's other three tabs open **Overview**, **Boxes** and **Activity** directly. The bar marks **More** while a page of its own is open, such as this one.
+
 Changes that you make on the **Settings** page take effect at once. Secrets and tokens are shown only once, when you create them.
