@@ -592,14 +592,11 @@ export function render(view) {
     boxes = boxBody.boxes;
     boxNames = new Map(boxes.map((box) => [box.boxId, box.name]));
     latest = latestByVolume(checkpointBody.checkpoints);
-    // A mount staged from here, or on the box, shows as pending rather than as a volume to clean up.
-    const stagedEntries = await Promise.all(
-      boxes.map((box) =>
-        api(`/api/boxes/${enc(box.boxId)}/staged`)
-          .then((body) => ({ box, staged: body.staged }))
-          .catch(() => ({ box, staged: null })),
-      ),
-    );
+    // A mount staged from here, or on the box, shows as pending rather than as a volume to clean up. Every box's staged
+    // changes come in one read, and a read that fails leaves the table as it is without the pending column.
+    const stagedEntries = await api("/api/staged")
+      .then((body) => body.staged ?? [])
+      .catch(() => []);
     stagedMounts = stagedMountsByVolume(stagedEntries, volumes);
     draw();
     drawVolumes();

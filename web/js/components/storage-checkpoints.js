@@ -150,22 +150,17 @@ export function mountStorageCheckpoints(root, { focus = "" } = {}) {
   const load = async () => {
     const token = ++seq;
     try {
-      const [{ checkpoints }, { boxes }, usageBody] = await Promise.all([
+      const [{ checkpoints }, { boxes }, usageBody, pendingBody] = await Promise.all([
         api("/api/checkpoints"),
         api("/api/boxes?stats=false"),
         api("/api/checkpoints/usage").catch(() => null),
+        // Every box's waiting rollback comes in one read. A read that fails shows no pending line, as a box that could not
+        // answer used to.
+        api("/api/rollbacks").catch(() => ({ rollbacks: [] })),
       ]);
-      // There is no list of pending rollbacks, so each box is asked. A box that cannot answer shows none.
-      const pendings = await Promise.all(
-        boxes.map((box) =>
-          api(`/api/boxes/${enc(box.boxId)}/rollback`).then(
-            (reply) => [box.boxId, reply.rollback ?? null],
-            () => [box.boxId, null],
-          ),
-        ),
-      );
       if (disposed || token !== seq) return;
       usage = usageBody;
+      const pendings = (pendingBody.rollbacks ?? []).map((entry) => [entry.box.boxId, entry.rollback]);
       groups = groupCheckpoints(checkpoints, boxes, new Map(pendings));
       draw();
     } catch (err) {

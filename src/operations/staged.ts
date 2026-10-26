@@ -1,10 +1,20 @@
 import { z } from "zod";
 
 import { BOX_PROFILES } from "../box-profile";
+import { log } from "../lib/logger";
 import { getBox } from "../services/boxes";
-import { applyStaged, discardStaged, previewStaged, readStaged, stageChanges } from "../services/staged";
+import {
+  applyStaged,
+  discardStaged,
+  previewStaged,
+  readStaged,
+  type StagedView,
+  stagedOfSpec,
+  stageChanges,
+} from "../services/staged";
 import { requireRevision } from "../specs/revision";
 import type { StagedFields } from "../specs/staged";
+import { boxVisible, viewOfSpec } from "../tokens/model";
 import { assertCanChangeMounts } from "./authz";
 import { boxTarget } from "./boxes";
 import { defineOperation } from "./define";
@@ -40,22 +50,23 @@ const RebuildChangeSchema = z.object({
   to: z.string(),
 });
 
-const StagedSchema = z
-  .object({
-    fields: StagedFieldsSchema.meta({ description: "The staged values. A field left out stays as the box has it." }),
-    pending: z.array(z.enum(STAGED_FIELD_NAMES)).meta({
-      description: "The staged fields that still differ from the box. A field that matches the box again is dropped.",
-    }),
-    changes: z.array(RebuildChangeSchema).meta({ description: "What applying would change, field by field." }),
-    problem: z.string().nullable().meta({
-      description: "Why the staged changes cannot be applied as they stand, such as a secret that is no longer set.",
-    }),
-    baseRevision: z.number().int(),
-    updatedAt: z.string(),
-    updatedBy: z.string(),
-  })
-  .nullable()
-  .meta({ description: "Null when nothing is staged." });
+/** One box's staged changes, as every endpoint that returns them holds them. */
+const StagedRecordSchema = z.object({
+  fields: StagedFieldsSchema.meta({ description: "The staged values. A field left out stays as the box has it." }),
+  pending: z.array(z.enum(STAGED_FIELD_NAMES)).meta({
+    description: "The staged fields that still differ from the box. A field that matches the box again is dropped.",
+  }),
+  changes: z.array(RebuildChangeSchema).meta({ description: "What applying would change, field by field." }),
+  problem: z.string().nullable().meta({
+    description: "Why the staged changes cannot be applied as they stand, such as a secret that is no longer set.",
+  }),
+  baseRevision: z.number().int(),
+  updatedAt: z.string(),
+  updatedBy: z.string(),
+});
+
+/** The staged changes of a box that may have none. `null` is a box with nothing staged. */
+const StagedSchema = StagedRecordSchema.nullable().meta({ description: "Null when nothing is staged." });
 
 const StagedPreviewSchema = z.object({
   changes: z.array(RebuildChangeSchema),
@@ -76,6 +87,63 @@ const StagedPreviewSchema = z.object({
 });
 
 const resolveBox = ({ host }: OperationContext, input: { id: string }) => getBox(host, input.id);
+
+/** A box a list names: the ids the console keys it by, and the name it shows. */
+const StagedBoxRefSchema = z.object({
+  id: z.string().meta({ description: "The box's container id, the id the console's box pages use." }),
+  boxId: z.string().meta({ description: "The box's stable id, `bx_…`." }),
+  name: z.string(),
+  hostId: z.string().meta({ description: "The host the box runs on." }),
+});
+
+/**
+ * Every box's staged changes in one read, so the storage page does not ask box by box. Only boxes with something staged
+ * are listed: a box that has none is left out. A box that cannot be read is logged and skipped, so one failing box does
+ * not fail the list. A token sees only the boxes its grants cover.
+ */
+export const boxStagedList = defineOperation({
+  name: "box.staged.list",
+  tag: "boxes",
+  summary: "Read the staged changes of every box",
+  kind: "read",
+  scope: "box:read",
+  async: false,
+  input: z.object({}),
+  output: z.object({
+    staged: z.array(
+      z.object({
+        box: StagedBoxRefSchema,
+        staged: StagedRecordSchema.meta({
+          description: "The box's staged changes, as `GET /api/boxes/:id/staged` returns them.",
+        }),
+      }),
+    ),
+  }),
+  rest: [{ method: "GET", path: "/api/staged" }],
+  run: async ({ host: requestHost, allHosts, principal }) => {
+    const hosts = allHosts?.() ?? [requestHost];
+    const entries: { box: z.input<typeof StagedBoxRefSchema>; staged: StagedView }[] = [];
+    for (const host of hosts) {
+      for (const spec of host.specs.list()) {
+        if (spec.hostId !== host.host.id) continue;
+        if (principal.type !== "owner" && !boxVisible(principal, viewOfSpec(spec))) continue;
+        let staged: StagedView | null;
+        try {
+          staged = await stagedOfSpec(host, spec);
+        } catch (e) {
+          log.warn("box.staged_unreadable", { box: spec.name, host: host.host.id, error: String(e) });
+          continue;
+        }
+        if (!staged) continue;
+        entries.push({
+          box: { id: spec.containerId, boxId: spec.id, name: spec.name, hostId: spec.hostId },
+          staged,
+        });
+      }
+    }
+    return { staged: entries };
+  },
+});
 
 export const boxStagedGet = defineOperation({
   name: "box.staged.get",
@@ -226,4 +294,11 @@ export const boxStagedApply = defineOperation({
     ),
 });
 
-export const stagedOperations = [boxStagedGet, boxStagedSet, boxStagedDiscard, boxStagedPreview, boxStagedApply];
+export const stagedOperations = [
+  boxStagedGet,
+  boxStagedList,
+  boxStagedSet,
+  boxStagedDiscard,
+  boxStagedPreview,
+  boxStagedApply,
+];

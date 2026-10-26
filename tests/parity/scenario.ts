@@ -482,6 +482,8 @@ async function recordScenario(): Promise<Exchange[]> {
     );
     await send("events with limit 0", "GET", "/api/events?limit=0");
     await send("events of alpha that failed", "GET", "/api/events?box=alpha&status=error");
+    await send("read the staged changes of every box", "GET", "/api/staged");
+    await send("read every rollback that waits", "GET", "/api/rollbacks");
     await send("list tasks", "GET", "/api/tasks");
     const finished = await send("read the base build task", "GET", `/api/tasks/${String(built.json?.taskId ?? "")}`);
     await send("read a missing task", "GET", "/api/tasks/01ARZ3NDEKTSV4RRFFQ69G5FAV");

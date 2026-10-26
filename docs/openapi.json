@@ -8098,6 +8098,350 @@
         "x-cli": "box unstage"
       }
     },
+    "/api/staged": {
+      "get": {
+        "operationId": "box.staged.list",
+        "tags": [
+          "boxes"
+        ],
+        "summary": "Read the staged changes of every box",
+        "parameters": [
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "staged": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "box": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string",
+                                "description": "The box's container id, the id the console's box pages use."
+                              },
+                              "boxId": {
+                                "type": "string",
+                                "description": "The box's stable id, `bx_…`."
+                              },
+                              "name": {
+                                "type": "string"
+                              },
+                              "hostId": {
+                                "type": "string",
+                                "description": "The host the box runs on."
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "boxId",
+                              "name",
+                              "hostId"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "staged": {
+                            "type": "object",
+                            "properties": {
+                              "fields": {
+                                "type": "object",
+                                "properties": {
+                                  "template": {
+                                    "type": "string"
+                                  },
+                                  "mounts": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "volume": {
+                                          "type": "string"
+                                        },
+                                        "path": {
+                                          "type": "string"
+                                        },
+                                        "mode": {
+                                          "type": "string",
+                                          "enum": [
+                                            "rw",
+                                            "ro"
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "volume",
+                                        "path",
+                                        "mode"
+                                      ],
+                                      "additionalProperties": false
+                                    }
+                                  },
+                                  "env": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "name": {
+                                          "type": "string"
+                                        },
+                                        "value": {
+                                          "type": "string"
+                                        },
+                                        "secretRef": {
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "name"
+                                      ],
+                                      "additionalProperties": false
+                                    }
+                                  },
+                                  "network": {
+                                    "type": "string"
+                                  },
+                                  "egress": {
+                                    "type": "object",
+                                    "properties": {
+                                      "mode": {
+                                        "type": "string",
+                                        "enum": [
+                                          "open",
+                                          "none",
+                                          "proxy-only"
+                                        ]
+                                      },
+                                      "presets": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "string",
+                                          "enum": [
+                                            "agent-default",
+                                            "package-registries"
+                                          ]
+                                        }
+                                      },
+                                      "domains": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "string"
+                                        }
+                                      },
+                                      "allow": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "string"
+                                        }
+                                      }
+                                    },
+                                    "required": [
+                                      "mode",
+                                      "presets",
+                                      "domains",
+                                      "allow"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  "profile": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string",
+                                        "enum": [
+                                          "standard",
+                                          "strict",
+                                          "relaxed"
+                                        ]
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  }
+                                },
+                                "additionalProperties": false,
+                                "description": "The staged values. A field left out stays as the box has it."
+                              },
+                              "pending": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string",
+                                  "enum": [
+                                    "template",
+                                    "mounts",
+                                    "env",
+                                    "network",
+                                    "egress",
+                                    "profile"
+                                  ]
+                                },
+                                "description": "The staged fields that still differ from the box. A field that matches the box again is dropped."
+                              },
+                              "changes": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "field": {
+                                      "type": "string",
+                                      "enum": [
+                                        "template",
+                                        "mounts",
+                                        "env",
+                                        "network",
+                                        "egress",
+                                        "profile",
+                                        "containerName"
+                                      ]
+                                    },
+                                    "from": {
+                                      "type": "string"
+                                    },
+                                    "to": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "field",
+                                    "from",
+                                    "to"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                "description": "What applying would change, field by field."
+                              },
+                              "problem": {
+                                "description": "Why the staged changes cannot be applied as they stand, such as a secret that is no longer set.",
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "baseRevision": {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              "updatedAt": {
+                                "type": "string"
+                              },
+                              "updatedBy": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "fields",
+                              "pending",
+                              "changes",
+                              "problem",
+                              "baseRevision",
+                              "updatedAt",
+                              "updatedBy"
+                            ],
+                            "additionalProperties": false,
+                            "description": "The box's staged changes, as `GET /api/boxes/:id/staged` returns them."
+                          }
+                        },
+                        "required": [
+                          "box",
+                          "staged"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "staged"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable, or a storage pool backing the request cannot be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "read",
+        "x-scope": "box:read",
+        "x-async": false
+      }
+    },
     "/api/boxes/{id}/staged/preview": {
       "get": {
         "operationId": "box.staged.preview",
@@ -26736,6 +27080,243 @@
         "x-scope": "checkpoint:read",
         "x-async": false,
         "x-cli": "box rollback-status"
+      }
+    },
+    "/api/rollbacks": {
+      "get": {
+        "operationId": "box.rollback.list",
+        "tags": [
+          "checkpoints"
+        ],
+        "summary": "Read every rollback that waits for its confirm or undo",
+        "parameters": [
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "rollbacks": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "box": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string",
+                                "description": "The box's container id, the id the console's box pages use."
+                              },
+                              "boxId": {
+                                "type": "string",
+                                "description": "The box's stable id, `bx_…`."
+                              },
+                              "name": {
+                                "type": "string"
+                              },
+                              "hostId": {
+                                "type": "string",
+                                "description": "The host the box runs on."
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "boxId",
+                              "name",
+                              "hostId"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "rollback": {
+                            "type": "object",
+                            "properties": {
+                              "boxId": {
+                                "type": "string"
+                              },
+                              "checkpoint": {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "string"
+                                  },
+                                  "label": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "label"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "safetyCheckpointId": {
+                                "type": "string"
+                              },
+                              "createdBy": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "createdAt": {
+                                "type": "string"
+                              },
+                              "replaced": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "id": {
+                                      "type": "string"
+                                    },
+                                    "name": {
+                                      "type": "string"
+                                    },
+                                    "path": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "id",
+                                    "name",
+                                    "path"
+                                  ],
+                                  "additionalProperties": false
+                                }
+                              },
+                              "restored": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "id": {
+                                      "type": "string"
+                                    },
+                                    "name": {
+                                      "type": "string"
+                                    },
+                                    "path": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "id",
+                                    "name",
+                                    "path"
+                                  ],
+                                  "additionalProperties": false
+                                }
+                              }
+                            },
+                            "required": [
+                              "boxId",
+                              "checkpoint",
+                              "safetyCheckpointId",
+                              "createdBy",
+                              "createdAt",
+                              "replaced",
+                              "restored"
+                            ],
+                            "additionalProperties": false,
+                            "description": "The rollback, as `GET /api/boxes/:id/rollback` returns it."
+                          }
+                        },
+                        "required": [
+                          "box",
+                          "rollback"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "rollbacks"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable, or a storage pool backing the request cannot be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "read",
+        "x-scope": "checkpoint:read",
+        "x-async": false
       }
     },
     "/api/boxes/{id}/rollback/confirm": {
