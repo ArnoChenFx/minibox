@@ -25,7 +25,46 @@ import * as trash from "./pages/trash.js";
 
 const PAGES = { about, activity, boxDetail, boxes, library, overview, settings, storage, trash };
 
+/** The tab bar's own entries: the first three open their page, and More opens the sidebar for everything else. */
+const TABS = ["overview", "boxes", "activity"];
+
 let cleanup = null;
+
+/** The drawer under 900px is a fixed sidebar that `#shell.nav-open` shows; the scrim and More reflect whether it is open. */
+function setNavOpen(open) {
+  $("#shell").classList.toggle("nav-open", open);
+  $("#moreBtn").setAttribute("aria-expanded", String(open));
+}
+
+const navOpen = () => $("#shell").classList.contains("nav-open");
+
+/** While a field on the page has the keyboard, the bar hides and the menu button shows in its place. */
+const setTyping = (typing) => $("#shell").classList.toggle("typing", typing);
+
+/** Whether a node is a field that brings up a phone's keyboard: a text field, a text area or an editable region. */
+const isField = (node) =>
+  node instanceof HTMLElement &&
+  node.matches("input:not([type='checkbox']):not([type='radio']), textarea, [contenteditable='true']");
+
+/**
+ * Marks the current entry in the sidebar and in the tab bar. The tab bar has no entry of its own for Storage, Library,
+ * Settings, About or a box's detail page, so those mark More, which opens the sidebar that lists them.
+ */
+function markNav(nav) {
+  for (const link of $$(".sidebar [data-nav]")) {
+    const current = link.dataset.nav === nav;
+    link.classList.toggle("active", current);
+    if (current) link.setAttribute("aria-current", "page");
+    else link.removeAttribute("aria-current");
+  }
+  const tab = TABS.includes(nav) ? nav : "more";
+  for (const item of $$("#tabbar [data-tab]")) {
+    const current = item.dataset.tab === tab;
+    item.classList.toggle("active", current);
+    if (current) item.setAttribute("aria-current", "page");
+    else item.removeAttribute("aria-current");
+  }
+}
 
 function route() {
   const hit = resolveRoute(location.hash.replace(/^#/, ""));
@@ -40,13 +79,9 @@ function route() {
   }
   cleanup?.();
   cleanup = null;
-  for (const link of $$(".sidebar [data-nav]")) {
-    const current = link.dataset.nav === hit.nav;
-    link.classList.toggle("active", current);
-    if (current) link.setAttribute("aria-current", "page");
-    else link.removeAttribute("aria-current");
-  }
-  $("#shell").classList.remove("nav-open");
+  markNav(hit.nav);
+  setNavOpen(false);
+  setTyping(false);
   const crumbs = hit.crumbs.map((k) => t(k));
   setCrumbs(crumbs);
   // Fresh element per route so page-level event listeners never leak across pages.
@@ -86,7 +121,31 @@ function init() {
   renderThemeBtn();
   $("#themeBtn").addEventListener("click", toggleTheme);
   document.addEventListener("themechange", renderThemeBtn);
-  $("#menuBtn").addEventListener("click", () => $("#shell").classList.toggle("nav-open"));
+  $("#menuBtn").addEventListener("click", () => setNavOpen(!navOpen()));
+  // More opens the sidebar in place; the tab bar itself does not navigate, so a page keeps its state.
+  $("#moreBtn").addEventListener("click", () => setNavOpen(!navOpen()));
+  // A press beside the open drawer closes it, as choosing an entry in it does.
+  $("#navScrim").addEventListener("click", () => setNavOpen(false));
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && navOpen()) setNavOpen(false);
+  });
+  // A phone's keyboard comes up over the bottom of the window, where the tab bar sits. While a field on the page has it,
+  // the bar steps aside (`.shell.typing`), so the terminal keeps its last line and the menu button takes its place. A
+  // press on the page itself, or a new page, brings the bar back. The drawer and the top bar leave the state alone, so
+  // the press that opens the drawer does not take away the button it pressed.
+  document.addEventListener("focusin", (e) => {
+    const target = e.target instanceof HTMLElement ? e.target : null;
+    if (isField(target) && !target.closest(".sidebar")) setTyping(true);
+    // Focus moving to something on the page that is not a field, such as the button that opened a dialog, puts the
+    // keyboard away, so the bar comes back. The top bar and the drawer are left out: a press there must not take away
+    // the button it is pressing.
+    else if (target?.closest("#view")) setTyping(false);
+  });
+  document.addEventListener("pointerdown", (e) => {
+    const target = e.target instanceof HTMLElement ? e.target : null;
+    if (isField(target) || !target?.closest("#view")) return;
+    setTyping(false);
+  });
   $("#logoutBtn").addEventListener("click", async () => {
     const ok = await confirmDialog({
       title: t("shell.logout"),
