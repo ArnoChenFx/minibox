@@ -47,6 +47,17 @@ const at = (hash: string) => (url: URL) => url.hash === hash;
 
 const tab = (page: Page, label: string): Locator => page.locator("#view [role='tab']", { hasText: label });
 
+/** The label of the tab that has focus, as the strip holds it. The page's globals are not in this project's tsconfig. */
+const focusedTab = (page: Page): Promise<string | null> =>
+  page.evaluate(() => {
+    const active = (
+      globalThis as unknown as {
+        document: { activeElement: { getAttribute(name: string): string | null; textContent: string | null } | null };
+      }
+    ).document.activeElement;
+    return active && active.getAttribute("role") === "tab" ? (active.textContent?.trim() ?? null) : null;
+  });
+
 const currentEntry = (page: Page): Locator => page.locator(".sidebar [aria-current='page']");
 
 describe.skipIf(!executablePath)("the console's top navigation (real browser)", () => {
@@ -357,6 +368,101 @@ describe.skipIf(!executablePath)("the console's top navigation (real browser)", 
         await webExpect(page).toHaveURL(at("#/library/templates/base"));
         await webExpect(tab(page, "Templates")).toHaveAttribute("aria-selected", "true");
         await webExpect(page.locator('#tpGrid [data-name="base"]')).toHaveClass(/is-focus/);
+      },
+      TIMEOUT_MS,
+    );
+  });
+
+  describe("the tab strips and the keyboard", () => {
+    test(
+      "the arrow keys move focus within Storage's strip, wrap at either end, and Home and End jump",
+      async () => {
+        await page.goto(`${consoleUrl}/#/storage/volumes`);
+        await webExpect(page.locator("#view [role='tablist']")).toHaveCount(1);
+        await tab(page, "Volumes").focus();
+        expect(await focusedTab(page)).toBe("Volumes");
+        // Moving focus does not open the tab: the address stays where it was.
+        await page.keyboard.press("ArrowRight");
+        expect(await focusedTab(page)).toBe("Checkpoints");
+        await webExpect(page).toHaveURL(at("#/storage/volumes"));
+        await page.keyboard.press("ArrowRight");
+        expect(await focusedTab(page)).toBe("Volumes");
+        await page.keyboard.press("ArrowLeft");
+        expect(await focusedTab(page)).toBe("Checkpoints");
+        await page.keyboard.press("End");
+        expect(await focusedTab(page)).toBe("Checkpoints");
+        await page.keyboard.press("Home");
+        expect(await focusedTab(page)).toBe("Volumes");
+        // A key the strip does not handle leaves focus where it was.
+        await page.keyboard.press("ArrowDown");
+        expect(await focusedTab(page)).toBe("Volumes");
+        await webExpect(page).toHaveURL(at("#/storage/volumes"));
+      },
+      TIMEOUT_MS,
+    );
+
+    test(
+      "Enter opens the tab the arrow keys reached, so the keyboard alone switches tabs",
+      async () => {
+        await page.goto(`${consoleUrl}/#/storage/volumes`);
+        await tab(page, "Volumes").focus();
+        await page.keyboard.press("ArrowRight");
+        await page.keyboard.press("Enter");
+        await webExpect(page).toHaveURL(at("#/storage/checkpoints"));
+        await webExpect(tab(page, "Checkpoints")).toHaveAttribute("aria-selected", "true");
+        await webExpect(page.locator("#sckRows")).toContainText("alpha");
+      },
+      TIMEOUT_MS,
+    );
+
+    test(
+      "a click still opens a tab, and Library's strip answers the same keys",
+      async () => {
+        await page.goto(`${consoleUrl}/#/library/templates`);
+        await tab(page, "Templates").click();
+        await webExpect(page).toHaveURL(at("#/library/templates"));
+        await tab(page, "Templates").focus();
+        await page.keyboard.press("ArrowRight");
+        expect(await focusedTab(page)).toBe("Tool catalog");
+        await webExpect(page).toHaveURL(at("#/library/templates"));
+        await page.keyboard.press("Enter");
+        await webExpect(page).toHaveURL(/#\/library\/tools\/bx_/);
+        await webExpect(tab(page, "Tool catalog")).toHaveAttribute("aria-selected", "true");
+      },
+      TIMEOUT_MS,
+    );
+
+    test(
+      "on a phone the focused tab is scrolled into view, so the arrow keys reach a tab off the strip's edge",
+      async () => {
+        const phone = await signedIn({ viewport: { width: 390, height: 844 } });
+        try {
+          const phonePage = await phone.newPage();
+          await phonePage.goto(`${consoleUrl}/#/storage/volumes`);
+          await phonePage.locator("#view [role='tab']", { hasText: "Volumes" }).focus();
+          await phonePage.keyboard.press("ArrowRight");
+          await phonePage.keyboard.press("ArrowLeft");
+          const shown = await phonePage.evaluate(() => {
+            interface Node {
+              textContent: string | null;
+              getBoundingClientRect(): { left: number; right: number };
+            }
+            const view = globalThis as unknown as {
+              document: { activeElement: Node; querySelector(selector: string): Node | null };
+            };
+            const active = view.document.activeElement;
+            const strip = view.document.querySelector("#view [role='tablist']")!;
+            const tabBox = active.getBoundingClientRect();
+            const stripBox = strip.getBoundingClientRect();
+            return {
+              label: active.textContent?.trim() ?? "",
+              inside: tabBox.left >= stripBox.left - 1 && tabBox.right <= stripBox.right + 1,
+            };
+          });
+          expect(shown).toEqual({ label: "Volumes", inside: true });
+        } finally {
+          await phone.close();
+        }
       },
       TIMEOUT_MS,
     );

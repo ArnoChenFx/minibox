@@ -4,6 +4,9 @@
 
 ## [Unreleased]
 
+### 新增
+- **标签页支持方向键导航**（[#173](https://github.com/ArnoChenFx/minibox/issues/173) 后续，Refs [#192](https://github.com/ArnoChenFx/minibox/issues/192)）：焦点在某个标签页上时，← / → 在同一组标签里循环移动焦点（到头绕回），Home / End 跳到第一个 / 最后一个，Space 打开焦点所在的标签。这符合 WAI-ARIA 的 tabs 模式：焦点移动不自动切换页面，鼠标点击与 Enter 的行为不变；焦点移动时标签条会把该标签滚入视野，手机窄屏上也不会丢焦点。实现集中在 `web/js/lib/tab-nav.js`，存储、库与 Box 详情三处标签条都绑上了（`section-tabs.js` 的 `bindTabStrips`）；标签获得焦点时也补上了 `:focus-visible` 轮廓。
+
 ### 变更
 - **存储页的检查点表格在手机上改成卡片布局**（[#173](https://github.com/ArnoChenFx/minibox/issues/173) 后续，Refs [#192](https://github.com/ArnoChenFx/minibox/issues/192)）：这张表有六列（时间、标签、类型、内容、大小、操作），固定列宽合计 820px，在 640px 以下的屏幕上横向溢出。现在照 Box 详情页检查点卡片（#199）与卷表格（#190）的做法，640px 以下每个检查点是一张卡片：标签与类型徽标一行，时间与大小一行，内容带原来的列名一行，操作按钮在右下角；表头与 `colgroup` 隐藏，首尾单元格的 18px 卡片内边距正面覆盖掉，不勾选框也不溢出。没有内容的检查点（`Contents` 为 `—`）不画那一行，分组行、`展开全部` 按钮与空状态仍占整行。桌面端（大于 640px）的表格结构与逐格尺寸与改前一致。
 

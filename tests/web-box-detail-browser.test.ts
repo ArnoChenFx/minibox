@@ -303,6 +303,48 @@ describe.skipIf(!executablePath)("the Box detail page (real browser)", () => {
     );
 
     test(
+      "the arrow keys walk the strip without opening a tab, and Home and End jump to its ends",
+      async () => {
+        await page.goto(boxUrl(running));
+        // The page's globals are not in this project's tsconfig, so they are read through one cast, as other browser
+        // tests do.
+        const focused = (): Promise<string | null> =>
+          page.evaluate(() => {
+            const active = (
+              globalThis as unknown as {
+                document: {
+                  activeElement: { getAttribute(name: string): string | null; textContent: string | null } | null;
+                };
+              }
+            ).document.activeElement;
+            return active && active.getAttribute("role") === "tab" ? (active.textContent?.trim() ?? null) : null;
+          });
+        await tab(page, "Overview").focus();
+        await page.keyboard.press("ArrowRight");
+        await page.keyboard.press("ArrowRight");
+        expect(await focused()).toBe("Files");
+        // Focus moves; the address and the open tab stay put until Enter or a click.
+        await webExpect(page).toHaveURL(at(`#/boxes/${encodeURIComponent(running.id)}`));
+        await webExpect(tab(page, "Overview")).toHaveAttribute("aria-selected", "true");
+        await page.keyboard.press("ArrowLeft");
+        expect(await focused()).toBe("Terminal");
+        await page.keyboard.press("End");
+        expect(await focused()).toBe("Settings");
+        await page.keyboard.press("ArrowRight");
+        expect(await focused()).toBe("Overview");
+        await page.keyboard.press("Home");
+        expect(await focused()).toBe("Overview");
+        await page.keyboard.press("ArrowLeft");
+        expect(await focused()).toBe("Settings");
+        // Enter then opens the tab the keys reached.
+        await page.keyboard.press("Enter");
+        await webExpect(page).toHaveURL(at(`#/boxes/${encodeURIComponent(running.id)}/settings`));
+        await webExpect(tab(page, "Settings")).toHaveAttribute("aria-selected", "true");
+      },
+      TIMEOUT_MS,
+    );
+
+    test(
       "Overview keeps the metrics and the details, and none of the settings cards",
       async () => {
         await page.goto(boxUrl(running));

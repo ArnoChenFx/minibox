@@ -1,6 +1,6 @@
 import { mountBoxTab } from "../components/box-tab.js";
 import { mountTools } from "../components/box-tools.js";
-import { sectionPanelHtml, sectionTabsHtml } from "../components/section-tabs.js";
+import { bindTabStrips, sectionPanelHtml, sectionTabsHtml } from "../components/section-tabs.js";
 import { t } from "../lib/i18n.js";
 import * as templates from "./templates.js";
 
@@ -16,6 +16,13 @@ export function render(view, tab = "templates", arg = "") {
     ${sectionTabsHtml("library", TABS, tab, arg)}
     ${sectionPanelHtml("library", tab)}`;
   const body = view.querySelector("#sectionBody");
-  if (tab === "tools") return mountBoxTab(body, { section: "library", tab, arg, mount: mountTools });
-  return templates.render(body, arg);
+  const strip = bindTabStrips(view);
+  const mounted =
+    tab === "tools"
+      ? mountBoxTab(body, { section: "library", tab, arg, mount: mountTools })
+      : templates.render(body, arg);
+  return () => {
+    strip();
+    mounted?.();
+  };
 }
