@@ -169,3 +169,77 @@
   border-color: transparent;
   color: #a1a1aa;
 }
+
+/* ---------- Terminal keys (phones) ----------
+   A phone's on-screen keyboard has no Esc, no Ctrl, no Tab and no arrows, so under the 640px breakpoint the terminal
+   frame ends in a row of keys for them. The row is part of the frame, after the screen, so it is always in the page
+   where the keyboard leaves it: the bottom tab bar steps aside while a field has the keyboard (`.shell.typing`), and
+   this row is what takes its place at the foot of the terminal. Above 640px there is no row, since a desktop keyboard
+   already has every key. The keys are dark, like the rest of the frame, and each one is at least 36px wide so a thumb
+   can hit it; the row wraps rather than scrolling sideways. */
+.term-keys {
+  display: none;
+}
+
+@media (max-width: 640px) {
+  /* A phone's screen is shorter than a desktop's: the frame ends in the key row, and the keyboard covers the bottom of
+     the window when it is up. A shorter screen keeps the row where the keyboard leaves it instead of pushing it off. */
+  .terminal {
+    height: min(52vh, 340px);
+  }
+  .term-keys {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 8px 10px;
+    background: #141418;
+    border-top: 1px solid #222;
+  }
+  .term-key {
+    /* Five keys a row: nine keys then make two rows, and each key keeps a thumb's width on the narrowest phone. */
+    flex: 1 1 calc((100% - 24px) / 5);
+    min-width: 36px;
+    height: 36px;
+    padding: 0 6px;
+    border-radius: var(--radius-sm);
+    border: 1px solid #34343c;
+    background: #1d1d23;
+    color: #e4e4e7;
+    font: inherit;
+    font-size: 13px;
+    line-height: 1;
+    cursor: pointer;
+    touch-action: manipulation;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  .term-key:hover {
+    background: #26262e;
+  }
+  .term-key:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  /* The sticky Ctrl says it is armed in colour, and `aria-pressed` says the same thing to a screen reader. */
+  .term-key.on,
+  .term-key[aria-pressed="true"] {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+  }
+  .term-key.on:hover,
+  .term-key[aria-pressed="true"]:hover {
+    background: var(--accent-hover);
+    border-color: var(--accent-hover);
+  }
+  /* A session that is read-only, or no session yet, cannot send: the keys say so instead of looking pressable. */
+  .term-keys.off .term-key,
+  .term-key:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+  .term-keys.off .term-key:hover,
+  .term-key:disabled:hover {
+    background: #1d1d23;
+  }
+}

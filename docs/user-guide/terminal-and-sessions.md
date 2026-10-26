@@ -11,6 +11,16 @@ Terminal work happens in sessions. A session is a named tmux session inside the 
 
 If the box is asleep, the terminal wakes it. A box that you stopped by hand does not wake from a terminal. See [Idle sleep and TTL](idle-sleep.md).
 
+## Type on a phone
+
+A phone's on-screen keyboard has no Esc, no Ctrl, no Tab and no arrow keys. On a screen 640 pixels wide or narrower, the terminal ends in a row of keys for them, so a phone can drive the same programs a desktop does.
+
+- **Esc**, **Tab** and the four arrow keys send what the keys of the same name send on a keyboard.
+- **Ctrl** is a modifier. Press it once and it stays on, drawn in the accent colour, and the next character typed goes out as its control character: **Ctrl** then `c` sends Ctrl-C, and **Ctrl** then `[` sends Esc. It turns off by itself after that character, and pressing **Ctrl** again turns it off.
+- **^C** and **^D** send Ctrl-C and Ctrl-D directly, since those are the two a terminal needs most.
+
+The keys send to the session on screen, so they work only while you can type in it: a session an agent holds shows them greyed out until you take it over. Pressing a key does not put the on-screen keyboard away, and what you type next still goes to the terminal. Above 640 pixels there is no row, because a desktop keyboard already has every key.
+
 ## Start a new session
 
 1. On the **Terminal** tab, click **New session**.
