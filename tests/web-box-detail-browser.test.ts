@@ -1,5 +1,4 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { existsSync } from "node:fs";
 
 import {
   type Browser,
@@ -17,25 +16,9 @@ import { startServer } from "../src/server";
 import { sleepBox } from "../src/services/box-lifecycle";
 import en from "../web/js/i18n/en.js";
 import { createTestApp, silenceLogs, TEST_KEY } from "./support/app";
+import { chromiumFor } from "./support/chromium";
 
-/**
- * Chromium comes from PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH or from Playwright's own install (`bunx playwright install
- * chromium`). Locally the suite is skipped without one. In CI a missing browser fails the run.
- */
-function chromiumPath(): string | null {
-  const configured = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH;
-  if (configured) return configured;
-  const bundled = chromium.executablePath();
-  return existsSync(bundled) ? bundled : null;
-}
-
-const executablePath = chromiumPath();
-if (!executablePath && process.env.CI) {
-  throw new Error(
-    "The Box detail test needs Chromium: run `bunx playwright install --with-deps chromium`, or set PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH.",
-  );
-}
-
+const executablePath = chromiumFor("The Box detail test");
 const restoreLogs = silenceLogs();
 afterAll(restoreLogs);
 

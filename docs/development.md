@@ -6,7 +6,7 @@ This page is for people who change MiniBox. To run MiniBox, read [Install](admin
 
 - [Bun](https://bun.sh) 1.4.4 or later. `package.json` sets this as the minimum version.
 - Docker Engine, for the template check and the real-engine tests. The unit tests do not need Docker.
-- Chromium, for the homepage browser tests, the console navigation test, the preview isolation test and `bun run screenshots`. See [Tests](#tests).
+- Chromium, for the browser tests in `tests/` and `bun run screenshots`. See [Tests](#tests).
 
 ## Set up
 
@@ -42,11 +42,20 @@ For a quicker local run, `bun run check:quick` runs the same three static checks
 
 | Command | Needs | What it covers |
 |---|---|---|
-| `bun test` | Nothing, except Chromium for the browser tests | Unit and API tests. Part of `bun run check`. `tests/preview-browser.test.ts` and `tests/web-console-browser.test.ts` use Chromium when one is available. |
+| `bun test` | Nothing, except Chromium for the browser tests | Unit and API tests. Part of `bun run check`. The browser tests run whenever Chromium can be found (see [Tests](#tests)), so layout regressions show up locally. |
 | `bun run test:docker` | Docker | Real-engine tests in `tests/docker-*.test.ts`. Not part of `bun run check`. |
 | `bun run build:template` and `bun run check:template` | Docker | The base template: its user, tools, mount points and each security profile. |
 | `bun run test:site` | Chromium | Browser tests for the homepage. |
 | `bun run screenshots` | Docker and Chromium | Captures the console screenshots for the README and the homepage. Not part of CI. See [Screenshots](#screenshots). |
+
+`bun test` also runs the browser tests in `tests/`: `preview-browser.test.ts`, `files-browser.test.ts` and the `web-*-browser.test.ts` files. They drive the real console with a fake runtime, so they need no Docker, only Chromium. `tests/support/chromium.ts` finds it, in this order:
+
+1. `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH`, when it points to a file that exists.
+2. The Chromium Playwright itself installed (`bunx playwright install chromium`), when it exists.
+3. The newest usable build in a Playwright browser cache: `~/.cache/ms-playwright` on Linux, `~/Library/Caches/ms-playwright` on macOS, or `PLAYWRIGHT_BROWSERS_PATH` when that is set. `chromium-<version>/chrome-linux*/chrome` and `chromium-<version>/chrome-mac*/…` are recognised, so an older cached build such as `chromium-1187` still runs the tests even when the installed Playwright wants a newer one.
+4. `chromium`, `chromium-browser`, `google-chrome` or `google-chrome-stable` on `PATH`, or the installed Chrome bundle on macOS.
+
+A machine with any of those runs the browser tests by default; nothing has to be set. When none is found, the browser suites are skipped locally, and in CI the run fails with an error that names the test file and says how to install a browser. So a layout regression the browser tests cover shows up in `bun test` before it reaches CI.
 
 `bun run test:docker` runs the real-engine test files listed in `scripts/docker-integration.ts`, one process each. Every run uses its own label prefix, which starts with `mbit`, and removes the containers, images, volumes and networks it created, even when a test fails. `DOCKER_SOCKET` selects another Docker socket. `MINIBOX_TEST_IMAGE` replaces the default test image, `alpine:3.20`.
 
@@ -121,7 +130,7 @@ bun run test:site
 
 To use an installed Chromium instead, set `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH`, for example `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium bun run test:site`. Playwright starts and stops its own preview server.
 
-`bun test` runs the preview isolation test, `tests/preview-browser.test.ts`, and the console navigation test, `tests/web-console-browser.test.ts`, with the same browser. They use `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` when that is set, and Playwright's own Chromium otherwise. Without either, they are skipped, except in CI, where a missing browser fails the run.
+The console browser tests in `tests/` find Chromium the same way; see [Tests](#tests).
 
 ### Deployment
 
