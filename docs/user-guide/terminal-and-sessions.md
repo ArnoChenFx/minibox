@@ -21,6 +21,22 @@ A phone's on-screen keyboard has no Esc, no Ctrl, no Tab and no arrow keys. On a
 
 The keys send to the session on screen, so they work only while you can type in it: a session an agent holds shows them greyed out until you take it over. Pressing a key does not put the on-screen keyboard away, and what you type next still goes to the terminal. Above 640 pixels there is no row, because a desktop keyboard already has every key.
 
+## Change the terminal's height
+
+In a desktop browser, on a window wider than 900 pixels, the terminal is as tall as the window leaves room for instead of a fixed 460 pixels, so the band of empty page that used to sit under it on a 1080p or 1440p screen is now part of the terminal. The default height is `clamp(460px, 100vh - 300px, 980px)`: 460 pixels at the shortest, as before, then growing with the window up to 980 pixels. That is 500 pixels on a 1280×800 window, 600 on a 1440×900 one and 780 on a 1080p screen. The page still scrolls up and down as it always did; it is not a fixed app layout.
+
+The terminal frame ends in a grabber, a short bar you can drag to the height you want: drag it down to make the terminal taller, or up to make it shorter, anywhere between 240 pixels and the room the window leaves (120 pixels more than the default). The grabber also works from the keyboard:
+
+- With the focus on the grabber, **↑** makes the terminal 24 pixels taller and **↓** 24 pixels shorter.
+- **Home**, **End** or **Enter** restores the default height, and so does a **double click** on the grabber with the mouse.
+- **Tab** reaches the grabber, which draws a visible outline while it has the focus. A drag does not take the terminal's input focus away, so you can type in the terminal again as soon as it ends.
+
+While you drag, the terminal reworks its columns and rows to the new height (xterm's FitAddon) and sends the new size to the tmux session in the box, so the programs in it see the new window size.
+
+A height you set is remembered in this browser on this machine (`localStorage`, key `minibox:termHeight:v1`), so a reload, another box or another session opens at it, and it is never sent to the server. A window made smaller than the height you picked clamps it to what fits, and a window that grows back gives the rest of it back. A double click, or Home/End, forgets it, and the terminal follows the window again.
+
+A phone (640 pixels and narrower) has no grabber: its terminal keeps `min(52vh, 340px)`, and the key row, the keyboard's room and the scrolling behave exactly as before. A window between 641 and 900 pixels keeps the 460 pixels it had.
+
 ## Start a new session
 
 1. On the **Terminal** tab, click **New session**.

@@ -45,6 +45,80 @@
   height: 460px;
   padding: 8px 10px;
 }
+
+/* The grabber at the foot of the frame, which a desktop drags to resize the screen. A phone and a tablet have none: their
+   height is the stylesheet's own, and it is not the reader's to change there. The 901px block below draws it. */
+.term-grabber {
+  display: none;
+}
+
+/* ---------- A desktop's terminal ----------
+   A 460px screen left a band of empty page under it on a 1080p or 1440p screen. From 901px up the height follows the
+   window instead: `clamp(460px, calc(100vh - 300px), 980px)`, the expression `web/js/lib/terminal-height.js` works out
+   and comments in full. The 460px floor is the height the terminal always had, so a short window opens exactly as
+   before; the 300px is the room the window keeps for the page's own furniture above and below the screen (top bar, page
+   head, tabs, session and control bars, grabber, help line) plus the band the frame may end in past the fold; the 980px
+   ceiling stops a very tall window from growing a frame nobody can read. The reader can replace the default with a height
+   of their own through the grabber below, which sets `--term-h` on the screen (the panel only sets it from 901px up, so
+   a phone and a tablet keep the height the stylesheet gives them). Below 901px nothing here applies: a phone keeps its
+   own height in the 640px block further down, and a tablet keeps the 460px above. */
+@media (min-width: 901px) {
+  /* A column, so the grabber can sit at the frame's foot while coming before the screen in the page: xterm keeps Tab
+     for itself (a terminal needs it), so a handle after the screen could never be reached with the keyboard. `order: 1`
+     puts it after every child that keeps the default order of 0, which is the whole frame; it is the last line on screen
+     and the first thing Tab reaches inside the frame. */
+  .terminal-frame {
+    display: flex;
+    flex-direction: column;
+  }
+  .terminal-frame > .term-grabber {
+    order: 1;
+  }
+  .terminal {
+    height: var(--term-h, clamp(460px, calc(100vh - 300px), 980px));
+  }
+
+  /* The grabber: a horizontal handle at the foot of the frame, a drag away from any height between the shortest and the
+     tallest the window allows. It is a separator to a screen reader, focusable, and its own hover and focus colour so it
+     reads as something to grab. The bar it draws is the accent colour while the pointer is on it or it has the focus.
+     It is positioned so it paints over xterm: the terminal sizes itself to the frame's full height and so hangs a little
+     past the frame's padding box, and the handle has to be the thing the pointer finds at the frame's foot. */
+  .term-grabber {
+    display: flex;
+    position: relative;
+    z-index: 1;
+    align-items: center;
+    justify-content: center;
+    height: 12px;
+    background: #141418;
+    border-top: 1px solid #222;
+    cursor: row-resize;
+    touch-action: none;
+  }
+  .term-grabber::before {
+    content: "";
+    width: 44px;
+    height: 4px;
+    border-radius: 2px;
+    background: #52525b;
+  }
+  .term-grabber:hover::before,
+  .term-grabber:focus-visible::before {
+    background: var(--accent);
+  }
+  .term-grabber:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+  }
+  /* While the pointer drags the handle the cursor stays a resize arrow over the whole page, and nothing under it is
+     selected as the pointer sweeps across the terminal. */
+  body.term-resizing,
+  body.term-resizing * {
+    cursor: row-resize !important;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+}
 .logs {
   margin: 0;
   height: 460px;
@@ -183,7 +257,8 @@
 
 @media (max-width: 640px) {
   /* A phone's screen is shorter than a desktop's: the frame ends in the key row, and the keyboard covers the bottom of
-     the window when it is up. A shorter screen keeps the row where the keyboard leaves it instead of pushing it off. */
+     the window when it is up. A shorter screen keeps the row where the keyboard leaves it instead of pushing it off. A
+     phone's height is the stylesheet's alone: the grabber is not drawn, and the panel sets no height of its own here. */
   .terminal {
     height: min(52vh, 340px);
   }

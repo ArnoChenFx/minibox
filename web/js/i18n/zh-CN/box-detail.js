@@ -206,6 +206,8 @@ export default {
   "bd.termKeyRight": "右方向键",
   "bd.termKeyCtrlC": "Ctrl-C",
   "bd.termKeyCtrlD": "Ctrl-D",
+  "bd.termResize": "终端高度",
+  "bd.termResizeHint": "拖动可以调高或调矮终端。方向键按步长增减，Home 或 End 恢复默认高度，双击抓手也一样。",
   "bd.activity": "活动",
   "bd.activityHelp":
     "命令、容器事件和终端会话保存在事件日志中（默认保留 30 天）。从不记录按键内容，只记录会话与终端的开始和结束，以及发送的按键数与字节数。",

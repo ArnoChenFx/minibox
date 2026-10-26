@@ -4,6 +4,9 @@
 
 ## [Unreleased]
 
+### 新增
+- **桌面端的终端更高，而且可以自己调高度**（控制台改进）：以前 `web/css/app/terminal-logs.css` 把 `.terminal` 写死 460px，1080p 与 1440p 屏幕上终端下面留了一大片空白。现在 901px 及以上的窗口里终端默认按窗口高度铺开，表达式为 `clamp(460px, calc(100vh - 300px), 980px)`（与 `web/js/lib/terminal-height.js` 里的 `defaultHeight()` 同一套数值，注释里写清了 300px 的来源：终端框上方 398px 的页面固定开销、下方抓手与帮助行，以及让框底可以略微越过折叠线的 100px）。1280×800 上是 500px、1440×900 上是 600px、1080p 上是 780px、更髙的窗口封顶 980px；460px 的下限保证矮窗口下不会比改前更矮，页面仍然正常上下滚动，没有改成不可滚动的应用式布局。终端框底部新增一道水平抓手（`role="separator"`、`aria-orientation="horizontal"`、`tabindex="0"`、带 `aria-label`/`title` 与 hover、`:focus-visible` 反馈），鼠标拖动改高度，键盘 **↑**/**↓** 按 24px 步长增减，**Home**/**End**/**Enter** 或双击恢复默认；拖动在 `pointerdown`/`mousedown` 上 `preventDefault`，不会选中文字也不会让页面滚动，拖完焦点仍在 xterm 的 textarea 里。每次改高度都重新 `fit.fit()`，xterm 的 `onResize` 订阅把新的 `{type:"resize"}` 帧发给 tmux（浏览器测试确认 attach 的 exec 真的收到了新的 cols/rows）。调过的高度存在 `localStorage` 的 `minibox:termHeight:v1` 里（只存本地，不发给服务端），刷新、换 Box、换会话都保持，窗口变小则夹到合法范围，认不出或损坏的值回退默认。纯逻辑抽在 `web/js/lib/terminal-height.js`（+ `.d.ts`），文案 `bd.termResize`、`bd.termResizeHint` 进了中英文词典，中英文用户指南的终端篇新增「调整终端高度」一节。手机上（≤640px）不显示抓手，终端高度仍是 `min(52vh, 340px)`，快捷键行、`keysReveal()`、底栏让位与 `visualViewport` 逻辑原样不动（面板只在 901px 以上才设置 `--term-h`，窗口缩到手机宽度时会把该属性移除）；641–900px 的窗口也仍是 460px。测试：`tests/web-terminal-height.test.ts`（纯逻辑、样式与接线）与 `tests/web-terminal-height-browser.test.ts`（真机 Chromium 在 1280×800、1440×900 与 390×844 下量高度、拖动、键盘、双击、持久化与手机端行为）。
+
 ## [0.6.7] - 2026-10-26
 
 ### 新增

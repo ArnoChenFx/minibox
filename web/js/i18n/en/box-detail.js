@@ -212,6 +212,9 @@ export default {
   "bd.termKeyRight": "Right arrow",
   "bd.termKeyCtrlC": "Control-C",
   "bd.termKeyCtrlD": "Control-D",
+  "bd.termResize": "Terminal height",
+  "bd.termResizeHint":
+    "Drag to make the terminal taller or shorter. Arrow keys step, Home or End restores the default, and a double click does the same.",
   "bd.activity": "Activity",
   "bd.activityHelp":
     "Commands, container events and terminal sessions are kept in the event log (30 days by default). Keystrokes are never recorded: only the start and end of each session or terminal, with the number of keys and bytes sent.",
