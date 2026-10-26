@@ -204,8 +204,19 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
   };
   let choices = null;
   let seeded = false;
-  /** The shared tools volume the host has, as the volume list holds it. Null when the host has none yet. */
+  /**
+   * The shared tools volume the host has, as the volume list holds it. Null when the host has none yet, which the
+   * default mode's help says. The list is read when the dialog opens, so that help is right before Customize is picked.
+   */
   let toolsShared = null;
+  if (!snapshot) {
+    try {
+      choices = await loadChoices();
+      toolsShared = sharedToolsChoice(choices);
+    } catch {
+      /* without the list, Customize reads it again and the default help stays the usual one */
+    }
+  }
 
   let catalog = [];
   try {
