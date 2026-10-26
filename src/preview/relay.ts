@@ -7,7 +7,7 @@ import type { Readable } from "node:stream";
 
 import type { HostCtx } from "../host/registry";
 import { AppError, toAppError } from "../lib/errors";
-import { log } from "../lib/logger";
+import { log, logEnabled } from "../lib/logger";
 import { msg } from "../lib/messages";
 import type { ExecSession } from "../runtime";
 import type { Box } from "../services/box-model";
@@ -330,12 +330,17 @@ async function openBridge(host: HostCtx, boxId: string, port: number): Promise<B
   const spec = host.specs.read(boxId);
   const containerId = spec?.containerId;
   if (!containerId) throw new AppError(404, "not_found", msg("box_not_found"));
-  return startRelay(host, containerId, spec.template.digest, port);
+  return startRelay(host, spec.id, containerId, spec.template.digest, port);
 }
+
+/** The two ways a preview relay runs in a box: the placed static binary, or the python3 script it falls back to. */
+type RelayKind = "binary" | "python3";
 
 /** Completed placements and rejected binaries, scoped to their engine and container. */
 const placedRelays = new Map<string, string>();
 const relayRejected = new Set<string>();
+/** The implementation a container's relay settled on, which the debug line below reports once per container. */
+const relayChosen = new Map<string, RelayKind>();
 /** Active placements are shared by all first connections and removed when the write settles. */
 const placingRelays = new Map<string, Promise<string | null>>();
 /** Image IDs are immutable; tags can point at different architectures on different engines or after a pull. */
@@ -343,7 +348,7 @@ const imageArchs = new Map<string, string | null>();
 const CACHE_LIMIT = 1024;
 
 function trimRelayCaches(): void {
-  for (const cache of [placedRelays, relayRejected, imageArchs]) {
+  for (const cache of [placedRelays, relayRejected, relayChosen, imageArchs]) {
     while (cache.size > CACHE_LIMIT) {
       const oldest = cache.keys().next().value;
       if (oldest === undefined) break;
@@ -381,14 +386,20 @@ async function connectRelay(started: Promise<ExecSession>): Promise<Bridged> {
 }
 
 /** Retries a missing or unusable binary once, then remembers the rejection and uses python3. */
-async function startRelay(host: HostCtx, containerId: string, imageId: string | null, port: number): Promise<Bridged> {
+async function startRelay(
+  host: HostCtx,
+  boxId: string,
+  containerId: string,
+  imageId: string | null,
+  port: number,
+): Promise<Bridged> {
   const key = `${host.host.id}:${containerId}`;
   if (!relayRejected.has(key)) {
     for (let attempt = 0; attempt < 2; attempt += 1) {
       const placed = await place(host, containerId, imageId, key);
       if (placed === null) break;
       try {
-        return await connectRelay(
+        const bridged = await connectRelay(
           host.runtime.startExec(containerId, {
             cmd: relayArgv(placed, port),
             env: [],
@@ -397,16 +408,38 @@ async function startRelay(host: HostCtx, containerId: string, imageId: string | 
             tty: false,
           }),
         );
+        noteRelay(host, key, boxId, port, "binary");
+        return bridged;
       } catch (error) {
         // A valid err line means the relay works, but the app's port is unavailable. Retrying cannot fix that.
-        if (error instanceof AppError && error.key === "preview_upstream_failed") throw error;
+        if (error instanceof AppError && error.key === "preview_upstream_failed") {
+          noteRelay(host, key, boxId, port, "binary");
+          throw error;
+        }
         placedRelays.delete(key);
       }
     }
     relayRejected.add(key);
     trimRelayCaches();
   }
-  return connectRelay(runScript(host, containerId, port));
+  const bridged = await connectRelay(runScript(host, containerId, port));
+  noteRelay(host, key, boxId, port, "python3");
+  return bridged;
+}
+
+/**
+ * Says once per container which relay implementation its preview traffic actually uses. Every later connection to the
+ * same engine and container stays silent, and so does a repeated answer for the same implementation; a container that
+ * is rebuilt under the same box id, or a binary that fails and falls back, is a new line. The key is the one the
+ * placement caches already use, so a connection that is already silent pays no string work, and the fields are built
+ * only when a debug line would be written.
+ */
+function noteRelay(host: HostCtx, key: string, boxId: string, port: number, relay: RelayKind): void {
+  if (relayChosen.get(key) === relay) return;
+  relayChosen.set(key, relay);
+  trimRelayCaches();
+  if (!logEnabled("debug")) return;
+  log.debug("preview.relay_selected", { box: boxId, port, relay, host: host.host.id });
 }
 
 /** Shares the entire architecture lookup and atomic file write among concurrent connections to one container. */

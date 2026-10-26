@@ -7,7 +7,7 @@ export default {
   "ov.attentionHint": "Failures and limits on record",
   "ov.attentionNone": "Nothing needs attention.",
   "ov.attentionNoneText":
-    "Out-of-memory kills, failed checkpoints, config drift, rollbacks to confirm, volume limits, unreachable pools and offline hosts show here.",
+    "Out-of-memory kills, failed checkpoints, config drift, rollbacks to confirm, volume limits, unreachable pools and host limits show here.",
   "ov.byToken": "Token {name}",
   "ov.byBox": "Agent in the box",
   "ov.running": "Running",
@@ -31,6 +31,8 @@ export default {
   "ov.attn.pool_unreachable": "Pool unreachable",
   "ov.attn.host_offline": "Host offline",
   "ov.attn.disk_low": "Host disk low",
+  "ov.attn.cpu_overcommit": "Host CPU overcommitted",
+  "ov.attn.memory_overcommit": "Host memory overcommitted",
   "ov.text.oom": "The box ran out of memory and the kernel ended a process in it.",
   "ov.text.checkpoint_failed": "The checkpoint did not complete.",
   "ov.text.checkpoint_failed_detail": "The checkpoint did not complete: {detail}",
@@ -43,6 +45,10 @@ export default {
   "ov.text.pool_unreachable_detail": "The pool did not answer: {detail}",
   "ov.text.host_offline": "The host is offline. Its boxes cannot be reached until it is back.",
   "ov.text.disk_low": "{free}% free, below the {min}% minimum.",
+  "ov.text.cpu_overcommit":
+    "Its boxes reserve {booked}, past the {limit} the overcommit ratio allows. A new box may be refused.",
+  "ov.text.memory_overcommit":
+    "Its boxes reserve {booked}, past the {limit} the overcommit ratio allows. A new box may be refused.",
   "actv.subtitle": "Every operation MiniBox has recorded: who acted, on what, and how it ended.",
   "actv.filters": "Filter the activity log",
   "actv.box": "Box",

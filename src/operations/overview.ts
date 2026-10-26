@@ -1,10 +1,12 @@
 import { z } from "zod";
 
 import type { StoredEvent } from "../events/store";
-import type { HostCtx } from "../host/registry";
+import type { HostCapacity, HostCtx } from "../host/registry";
+import { log } from "../lib/logger";
 import { checkpointFailed } from "../notify/rules";
 import type { Box } from "../services/box-model";
 import { listAllBoxes } from "../services/box-query";
+import { type Booking, bookedOn } from "../services/capacity";
 import type { ExecService } from "../services/exec";
 import { freePercent } from "../volumes/disk";
 import { usageLevel } from "../volumes/limits";
@@ -26,6 +28,8 @@ const OUTPUT_LINES = 3;
 const LINE_MAX = 200;
 const COMMAND_MAX = 300;
 const NOTE_MAX = 200;
+/** Float sums of fractional CPU shares can land a hair above a limit they equal. */
+const EPSILON = 1e-6;
 
 const ATTENTION_KINDS = [
   "box.oom",
@@ -36,6 +40,8 @@ const ATTENTION_KINDS = [
   "pool.unreachable",
   "host.offline",
   "host.disk_low",
+  "host.cpu_overcommit",
+  "host.memory_overcommit",
 ] as const;
 
 const BoxRef = z.object({
@@ -86,7 +92,7 @@ const AttentionSchema = z.object({
   box: BoxRef.nullable().meta({ description: "The box the condition is about, when it is still there." }),
   params: z.record(z.string(), z.union([z.string(), z.number()])).meta({
     description:
-      "Values the console words the condition with. `used` and `limit` are bytes for a volume, `action` is `warn` or `stop`, `fields` lists the drifted settings, `checkpoint` names the rolled-back checkpoint, `free` and `min` are percentages of a host's disk, and `detail` is the message the engine or the pool reported.",
+      "Values the console words the condition with. `used` and `limit` are bytes for a volume, `action` is `warn` or `stop`, `fields` lists the drifted settings, `checkpoint` names the rolled-back checkpoint, `free` and `min` are percentages of a host's disk, `booked` and `limit` are CPU cores for a host's overcommitted CPU and bytes for its overcommitted memory, and `detail` is the message the engine or the pool reported.",
   }),
 });
 
@@ -310,6 +316,59 @@ function eventAttention(events: OperationContext["events"], index: BoxIndex, now
   return [...oom, ...checkpoints];
 }
 
+const round1 = (value: number): number => Math.round(value * 10) / 10;
+
+/**
+ * The CPU and memory the running boxes of a reachable host book, held against the limit its overcommit ratio allows.
+ * One item per resource that is past that limit, so a host can report both. An offline host is skipped: its boxes are not
+ * read, and `host.offline` already covers it. A figure the host does not report is not checked, and a total that only
+ * equals its limit is not over it.
+ */
+async function overcommitAttention(host: HostCtx): Promise<Attention[]> {
+  if (host.host.status === "offline") return [];
+  let capacity: HostCapacity;
+  let booked: Booking;
+  try {
+    booked = await bookedOn(host);
+    // Nothing is booked, so nothing can be over a limit the host reports. Skipping the read keeps an idle host cheap.
+    if (booked.cpus <= 0 && booked.memoryBytes <= 0) return [];
+    capacity = await host.capacity();
+  } catch (e) {
+    log.warn("overview.capacity_failed", { host: host.host.id, error: String(e) });
+    return [];
+  }
+  const ratio = host.capacityPolicy.overcommit;
+  const items: Attention[] = [];
+  const about = {
+    severity: "warning" as const,
+    hostId: host.host.id,
+    at: null,
+    subject: host.host.name,
+    box: null,
+  };
+  if (capacity.cpus !== null) {
+    const limit = capacity.cpus * ratio;
+    if (booked.cpus > limit + EPSILON) {
+      items.push({
+        ...about,
+        kind: "host.cpu_overcommit",
+        params: { booked: round1(booked.cpus), limit: round1(limit) },
+      });
+    }
+  }
+  if (capacity.memoryBytes !== null) {
+    const limit = capacity.memoryBytes * ratio;
+    if (booked.memoryBytes > limit) {
+      items.push({
+        ...about,
+        kind: "host.memory_overcommit",
+        params: { booked: booked.memoryBytes, limit: Math.round(limit) },
+      });
+    }
+  }
+  return items;
+}
+
 async function stateAttention(ctx: OperationContext, boxes: readonly Box[], hosts: readonly HostCtx[]) {
   const items: Attention[] = [];
   const fallback = ctx.host.host.id;
@@ -360,7 +419,9 @@ async function stateAttention(ctx: OperationContext, boxes: readonly Box[], host
   }
 
   const pools = ctx.host.volumes.readPools().pools;
-  for (const host of hosts) {
+  // Every host's booking is read at once, so a slow engine does not hold up the next host.
+  const overcommitted = await Promise.all(hosts.map((host) => overcommitAttention(host)));
+  for (const [position, host] of hosts.entries()) {
     const hostId = host.host.id;
     for (const pool of pools) {
       const health = ctx.host.volumes.healthOf(hostId, pool.name);
@@ -401,6 +462,8 @@ async function stateAttention(ctx: OperationContext, boxes: readonly Box[], host
         params: { free: Math.floor(freePercent(disk)), min: minFree },
       });
     }
+
+    items.push(...(overcommitted[position] ?? []));
   }
   return items;
 }
