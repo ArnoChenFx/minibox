@@ -33,26 +33,49 @@
   .topbar {
     padding: 0 16px;
   }
+  /* One column, and never wider than it: a bare `1fr` floor is the contents' own min-content width, so a long box name
+     in a card would push the whole page sideways. `minmax(0, 1fr)` lets the card shrink and the name truncate instead. */
+  .grid-4,
   .grid-3,
   .grid-2,
   .grid-fit {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
   .kv-cols {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
     gap: 16px;
   }
   .login-page {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
   .login-hero {
     display: none;
   }
   .segmented {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .hide-sm {
     display: none !important;
+  }
+  /* The top bar keeps every icon on a phone, and the trail shortens instead: the menu button, four icons and their gaps
+     leave a 320px phone almost nothing, so the crumbs take what is left and end in an ellipsis rather than pushing the
+     last icon past the window. The separators keep their width, so a short trail still reads as a trail. */
+  .topbar {
+    gap: 8px;
+  }
+  .topbar .crumbs {
+    min-width: 0;
+    overflow: hidden;
+  }
+  .topbar .crumbs > * {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .topbar .crumbs > .sep {
+    flex: 0 0 auto;
+    overflow: visible;
   }
 }
 @media (max-width: 560px) {
@@ -193,14 +216,26 @@ textarea.token-lines {
   margin: 0;
 }
 
-/* A box's title bar on a phone: one row of buttons. Only the first, start or stop, keeps its label; the others show
-   their icon, and their text stays as the accessible name. */
+/* A box's title bar on a phone: one row of buttons, their text kept as the accessible name. A labelled first button
+   plus six icon buttons take 321px, which a 390px phone has; narrower than that the row would run past the window, so
+   the first button turns into its icon too and the seven fit in a 320px row (7 × 34px + 6 × 6px gaps = 274px inside
+   the 288px the page leaves). 321px of buttons needs a 353px window once the page's 32px of padding is off, so 352px is
+   the last width that keeps the label. Wrapping stays as the fallback for a label wider than usual, such as a longer
+   translation. */
 @media (max-width: 560px) {
   .detail-head .page-actions {
-    flex-wrap: nowrap;
+    flex-wrap: wrap;
     gap: 6px;
   }
   .detail-head .page-actions > .btn:not(:first-child) {
+    width: 34px;
+    padding: 0;
+    font-size: 0;
+    gap: 0;
+  }
+}
+@media (max-width: 352px) {
+  .detail-head .page-actions > .btn:first-child {
     width: 34px;
     padding: 0;
     font-size: 0;
