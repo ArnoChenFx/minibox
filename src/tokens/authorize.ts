@@ -464,6 +464,18 @@ const volumeDeleteRule: Rule = async ({ principal, host, resolved }) => {
   }
 };
 
+/**
+ * Snapshotting a volume reads its data and needs the scope a checkpoint does, `checkpoint:create`. The volume must be one
+ * the token may see, as it must be to mount it, so a token cannot copy a volume outside its grants.
+ */
+const volumeSnapshotRule: Rule = async ({ principal, host, resolved }) => {
+  const view = resolved as { id: string; name: string } | undefined;
+  const record = view ? host.volumes.resolve(view.id, host.host.id) : null;
+  if (!view || !record || !volumeVisible(principal, record, specViews(host.specs.list()))) {
+    throw refusal("volume_not_granted", { volume: view?.name ?? "" });
+  }
+};
+
 /** Attaching or detaching needs the box visible. The volume itself is judged by the resource checks while it runs. */
 const volumeAttachRule: Rule = async ({ principal, host, input }) => {
   const box = await getBox(host, String(input.box ?? ""));
@@ -551,6 +563,7 @@ const RULES: ReadonlyMap<string, Rule> = new Map<string, Rule>([
   ["volume.attach", volumeAttachRule],
   ["volume.detach", volumeAttachRule],
   ["volume.usage", volumeRule],
+  ["volume.snapshot", volumeSnapshotRule],
   ["task.list", noAccess],
   ["task.get", noAccess],
   ["session.list", boxRule],

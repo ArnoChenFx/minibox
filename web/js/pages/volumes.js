@@ -178,10 +178,12 @@ function poolHtml(volume, pool) {
   return `<div class="nowrap">${esc(volume.pool)}${backend}</div>${caps.length ? `<div class="subtle vol-caps" title="${esc(t("vol.capsTitle", { caps: words }))}">${esc(words)}</div>` : ""}`;
 }
 
+/** The newest checkpoint of a volume, linked to its group: the box that owns it, or the volume for a snapshot of its own. */
 function latestHtml(checkpoint) {
   if (!checkpoint) return `<span class="subtle">—</span>`;
   const tip = `${checkpoint.label} · ${dateTime(checkpoint.createdAt)}`;
-  return `<a class="vol-latest" href="#/storage/checkpoints${checkpoint.boxId ? `/${enc(checkpoint.boxId)}` : ""}" title="${esc(tip)}"><span class="nowrap">${esc(relTime(checkpoint.createdAt))}</span><span class="subtle truncate">${esc(checkpoint.label)}</span></a>`;
+  const focus = checkpoint.boxId ? enc(checkpoint.boxId) : enc(`volume:${checkpoint.boxName ?? ""}`);
+  return `<a class="vol-latest" href="#/storage/checkpoints/${focus}" title="${esc(tip)}"><span class="nowrap">${esc(relTime(checkpoint.createdAt))}</span><span class="subtle truncate">${esc(checkpoint.label)}</span></a>`;
 }
 
 function rowButton(action, volume, iconName, label, { danger = false, block = "" } = {}) {
@@ -763,28 +765,39 @@ export function render(view) {
     await load();
   };
 
-  /** Snapshots the volume as a checkpoint of the box that mounts it: its owner, or the first box for a shared one. */
+  /**
+   * Snapshots the volume. An owned volume is a checkpoint of its owner box, which always includes it. An independent one
+   * is snapshotted on its own, without a box, whether or not a box mounts it.
+   */
   const snapshot = async (volume) => {
     const plan = snapshotPlan(volume);
     if (plan.block) return toast(t("vol.snapshot"), { type: "info", message: t(plan.block) });
-    const boxName = plan.boxName ?? boxNames.get(plan.boxId) ?? plan.boxId;
+    const boxName = plan.own ? null : (plan.boxName ?? boxNames.get(plan.boxId) ?? plan.boxId);
     const ok = await confirmDialog({
       title: t("vol.snapshotTitle", { name: volume.name }),
-      message: esc(t(plan.include.length ? "vol.snapshotSharedText" : "vol.snapshotOwnedText", { box: boxName })),
+      message: esc(
+        t(
+          plan.own
+            ? volume.mounts.length
+              ? "vol.snapshotSelfMountedText"
+              : "vol.snapshotSelfText"
+            : "vol.snapshotOwnedText",
+          { box: boxName ?? "" },
+        ),
+      ),
       confirmText: t("vol.snapshot"),
     });
     if (!ok) return;
     const label = `${volume.name} ${dateTime(new Date().toISOString())}`.slice(0, 80);
     let started;
     try {
-      started = await api(`/api/boxes/${enc(plan.boxId)}/checkpoints`, {
-        method: "POST",
-        body: { label, include: { volumes: plan.include } },
-      });
+      started = plan.own
+        ? await api(`/api/volumes/${enc(volume.id)}/checkpoints`, { method: "POST", body: { label } })
+        : await api(`/api/boxes/${enc(plan.boxId)}/checkpoints`, { method: "POST", body: { label } });
     } catch (e) {
       return toastError(t("ck.takeFailed"), e);
     }
-    toast(t("ck.takeStarted"), { type: "info", message: boxName });
+    toast(t("ck.takeStarted"), { type: "info", message: boxName ?? volume.name });
     const done = await waitTask(started.taskId);
     if (done.status !== "succeeded") return toastError(t("ck.takeFailed"), { message: taskErrorText(done.error) });
     toast(t("ck.takeDone"), { message: done.result?.checkpoint?.label ?? label });

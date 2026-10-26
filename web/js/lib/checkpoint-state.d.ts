@@ -1,4 +1,4 @@
-export declare const KINDS: readonly ["manual", "automatic", "pinned", "legacy"];
+export declare const KINDS: readonly ["manual", "automatic", "pinned", "volume", "legacy"];
 export declare const HOLD_MODES: readonly ["live", "pause", "stop"];
 export declare const REASON_KEYS: readonly [
   "ck.reasonLegacy",
@@ -12,6 +12,7 @@ export declare const REASON_KEYS: readonly [
   "ck.reasonCopyLegacy",
   "ck.reasonCopyEmpty",
   "ck.reasonCopySystem",
+  "ck.reasonVolumeSnapshot",
 ];
 export declare const SKIP_REASON_KEYS: Readonly<Record<string, string>>;
 export declare const PASSPHRASE_MIN: number;
@@ -25,6 +26,7 @@ export interface CheckpointLayer {
 
 export interface CheckpointRow {
   legacy: boolean;
+  boxId?: string | null;
   auto: boolean;
   pinned: boolean;
   createdAt: string;
@@ -57,6 +59,7 @@ export interface Usage {
   limitBytes: number | null;
 }
 
+export declare const isVolumeSnapshot: (checkpoint: { boxId?: string | null }) => boolean;
 export declare function kindsOf(checkpoint: CheckpointRow): string[];
 export declare function contentsOf(checkpoint: CheckpointRow): { roles: string[]; others: number; system: boolean };
 export declare function rowActions(checkpoint: CheckpointRow, state?: RowState): RowActions;

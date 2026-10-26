@@ -1240,6 +1240,22 @@ async function recordScenario(): Promise<Exchange[]> {
     await post("empty with an empty id list", "/api/trash/empty", { ids: [], confirm: true });
     await post("empty the recycle bin", "/api/trash/empty", { ids: [emptiedEntry], confirm: true });
     await post("empty an entry that is already gone", "/api/trash/empty", { ids: [emptiedEntry], confirm: true });
+
+    // A volume snapshotted on its own, without a box: the record names no box and holds that one volume.
+    const snapVolume = await post("create a volume to snapshot", "/api/volumes", { name: "snap-vol", confirm: true });
+    const snapVolumeId = String((snapVolume.json?.volume as { id?: string } | undefined)?.id ?? "");
+    const snapCache = await post("create a cache volume to refuse", "/api/volumes", {
+      name: "snap-cache",
+      role: "cache",
+      confirm: true,
+    });
+    const snapCacheId = String((snapCache.json?.volume as { id?: string } | undefined)?.id ?? "");
+    const snapped = await post("snapshot the volume", `/api/volumes/${snapVolumeId}/checkpoints`, {
+      label: "volume snapshot",
+    });
+    await waitTask(base, snapped.json);
+    await post("snapshot a cache volume", `/api/volumes/${snapCacheId}/checkpoints`, {});
+    await post("snapshot a missing volume", "/api/volumes/nowhere/checkpoints", {});
   } finally {
     server.stop(true);
     app.throttle.stop();

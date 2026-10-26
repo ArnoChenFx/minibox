@@ -7,6 +7,7 @@ import { SKIP_REASONS } from "../src/checkpoints/schedule";
 import { ROOT } from "../src/config";
 import { checkpointPackageOperations } from "../src/operations/checkpoint-packages";
 import { checkpointOperations } from "../src/operations/checkpoints";
+import { volumeOperations } from "../src/operations/volumes";
 import en from "../web/js/i18n/en.js";
 import zh from "../web/js/i18n/zh-CN.js";
 import {
@@ -14,6 +15,7 @@ import {
   contentsOf,
   HOLD_MODES,
   KINDS,
+  isVolumeSnapshot,
   kindsOf,
   newestFirst,
   passphraseOk,
@@ -142,6 +144,38 @@ describe("checkpoint rules", () => {
     expect(kindsOf(row())).toEqual(["manual"]);
     expect(kindsOf(row({ auto: true, pinned: true }))).toEqual(["automatic", "pinned"]);
     expect(kindsOf(row({ legacy: true, data: [] }))).toEqual(["legacy"]);
+  });
+
+  test("a record with no box is a snapshot of one volume, which says so instead of naming a box", () => {
+    const snapshot = row({ boxId: null, data: [{ role: null, ownership: "independent" }] });
+    expect(isVolumeSnapshot(snapshot)).toBe(true);
+    expect(kindsOf(snapshot)).toEqual(["volume"]);
+    expect(kindsOf({ ...snapshot, pinned: true })).toEqual(["volume", "pinned"]);
+    expect(isVolumeSnapshot(row())).toBe(false);
+  });
+
+  test("a legacy snapshot with no box id is not a volume snapshot: it holds a system layer and no volume data", () => {
+    const legacyNoBox = row({
+      legacy: true,
+      boxId: null,
+      data: [],
+      system: { image: "snap:old", imageId: "sha256:1" },
+    });
+    expect(isVolumeSnapshot(legacyNoBox)).toBe(false);
+    expect(kindsOf(legacyNoBox)).toEqual(["legacy"]);
+    // It stays read-only: fork and delete, and the legacy reason for everything else.
+    expect(rowActions(legacyNoBox).rollback).toEqual({ allowed: false, reason: "ck.reasonLegacy" });
+  });
+
+  test("a snapshot of one volume names no box, so it can only be pinned or deleted, and every other action says why", () => {
+    const snapshot = row({ boxId: null, data: [{ role: null, ownership: "independent" }] });
+    const actions = rowActions(snapshot);
+    for (const action of [actions.fork, actions.export, actions.copy, actions.rollback]) {
+      expect(action).toEqual({ allowed: false, reason: "ck.reasonVolumeSnapshot" });
+    }
+    expect([actions.pin.allowed, actions.delete.allowed]).toEqual([true, true]);
+    // A pinned volume snapshot is still refused a delete, as any pinned checkpoint is.
+    expect(rowActions({ ...snapshot, pinned: true }).delete).toEqual({ allowed: false, reason: "ck.reasonPinned" });
   });
 
   test("contents name the workspace and home, count the other volumes, and flag a system layer", () => {
@@ -333,6 +367,29 @@ const safety = checkpoint({
 const newer = checkpoint({ id: "ck_new", label: "newer", createdAt: at(9) });
 const older = checkpoint({ id: "ck_old", label: "older", createdAt: at(1) });
 const other = checkpoint({ id: "ck_other", boxId: "bx_beta", boxName: "beta", label: "beta only", createdAt: at(4) });
+/** A snapshot of one volume taken on its own: no box, the volume's name where a box name would be. */
+const volumeSnapshot = checkpoint({
+  id: "ck_volsnap",
+  boxId: null,
+  boxName: "notes",
+  label: "notes before the migration",
+  specRevision: null,
+  spec: null,
+  data: [
+    {
+      volumeId: "vol_notes",
+      path: "",
+      mode: "rw",
+      role: null,
+      ownership: "independent",
+      owner: null,
+      snapshotId: "snap_n",
+      bytes: 4096,
+    },
+  ],
+  system: null,
+  bytes: 4096,
+});
 
 const pendingRollback = {
   boxId: "bx_alpha",
@@ -348,6 +405,7 @@ const fixtures = {
   box: BOX,
   manual,
   legacy,
+  volumeSnapshot,
   pinnedManual,
   safety,
   pendingRollback,
@@ -420,6 +478,7 @@ const markup = runConsole<Markup>(
   `return {
     manual: component.checkpointRowHtml(fixtures.manual, {}),
     legacy: component.checkpointRowHtml(fixtures.legacy, {}),
+    volumeSnapshot: component.checkpointRowHtml(fixtures.volumeSnapshot, {}),
     pinned: component.checkpointRowHtml(fixtures.pinnedManual, {}),
     held: component.checkpointRowHtml(fixtures.safety, { held: true, pending: true }),
     empty: component.checkpointCardHtml({ rows: [], pending: null, usage: null }),
@@ -473,6 +532,23 @@ describe("checkpoint rows", () => {
     expect(html).toContain("2.5 KB");
     expect(html).toContain("before &lt;b&gt;upgrade&lt;/b&gt;");
     expect(html).not.toContain("<b>upgrade</b>");
+  });
+
+  test("a volume snapshot says so, names the volume it holds, and offers only pin and delete", () => {
+    const html = markup.volumeSnapshot ?? "";
+    // The kind badge is styled, not the bare default a class name that does not exist gives it.
+    expect(html).toContain('badge-accent">Volume snapshot</span>');
+    expect(html).not.toContain("undefined");
+    // Its contents name the volume, since there is no box to name them by.
+    expect(html).toContain("Volume \u201cnotes\u201d");
+    expect(html).not.toContain("Workspace");
+    // Fork, export and rollback are off with the reason; pin and delete stay on.
+    for (const action of ["ck-fork", "ck-export", "ck-rollback"]) {
+      expect(isDisabled(buttonFor(html, action, "ck_volsnap"))).toBe(true);
+      expect(titleOf(buttonFor(html, action, "ck_volsnap"))).toBe(escaped(en["ck.reasonVolumeSnapshot"] ?? ""));
+    }
+    expect(isDisabled(buttonFor(html, "ck-pin", "ck_volsnap"))).toBe(false);
+    expect(isDisabled(buttonFor(html, "ck-delete", "ck_volsnap"))).toBe(false);
   });
 
   test("a legacy snapshot is read-only: rollback and pin are off with the reason, and fork and delete stay on", () => {
@@ -773,6 +849,7 @@ describe("the Chinese console", () => {
       fixtures,
       `return {
       legacy: component.checkpointRowHtml(fixtures.legacy, {}),
+      volumeSnapshot: component.checkpointRowHtml(fixtures.volumeSnapshot, {}),
       usage: component.usageHtml(fixtures.exceeded),
       daily: component.scheduleHtml(fixtures.dailySchedule, "Asia/Shanghai"),
       unknown: component.scheduleHtml({ ...fixtures.dailySchedule, timezone: "Mars/Olympus", timezoneUnknown: true }, "Asia/Shanghai"),
@@ -940,9 +1017,13 @@ describe("checkpoint translations", () => {
   });
 
   test("every async checkpoint operation has a task label in both languages", () => {
-    const operations = [...checkpointOperations, ...checkpointPackageOperations];
-    const keys = operations.filter((op) => op.async).map((op) => `task.op.${op.name}`);
-    expect(keys).toEqual(expect.arrayContaining(["task.op.checkpoint.export", "task.op.checkpoint.import"]));
+    const operations = [...checkpointOperations, ...checkpointPackageOperations, ...volumeOperations];
+    const keys = operations
+      .filter((op) => op.async && (op.tag === "checkpoints" || op.name === "volume.snapshot"))
+      .map((op) => `task.op.${op.name}`);
+    expect(keys).toEqual(
+      expect.arrayContaining(["task.op.checkpoint.export", "task.op.checkpoint.import", "task.op.volume.snapshot"]),
+    );
     expect(keys.filter((key) => !(key in en) || !(key in zh))).toEqual([]);
   });
 

@@ -3,6 +3,7 @@ import {
   browserTimezone,
   contentsOf,
   HOLD_MODES,
+  isVolumeSnapshot,
   kindsOf,
   newestFirst,
   passphraseOk,
@@ -27,7 +28,13 @@ import { openTasks, taskErrorText, waitTask } from "./tasks.js";
 /** How many checkpoints the box's tab lists before its show-all toggle. */
 const LIST_ROWS = 8;
 
-export const KIND_CLASS = { legacy: "badge-warning", pinned: "badge-success", automatic: "", manual: "badge-accent" };
+export const KIND_CLASS = {
+  legacy: "badge-warning",
+  pinned: "badge-success",
+  automatic: "",
+  manual: "badge-accent",
+  volume: "badge-accent",
+};
 
 const callout = (tone, text) => `<div class="callout ${tone}">${icon("alert")}<span>${esc(text)}</span></div>`;
 
@@ -707,6 +714,8 @@ export function pendingHtml(pending) {
 }
 
 export function contentsText(checkpoint) {
+  // A snapshot of one volume holds that volume alone, and its record names it: there is no box to name the contents by.
+  if (isVolumeSnapshot(checkpoint)) return t("ck.contentsVolume", { name: checkpoint.boxName ?? "—" });
   const { roles, others, system } = contentsOf(checkpoint);
   const parts = roles.map((role) => t(role === "workspace" ? "vol.roleWorkspace" : "vol.roleHome"));
   if (others) parts.push(t("ck.contentsOther", { n: others }));

@@ -35,6 +35,7 @@ export default {
   "task.op.box.setup": "Set up box",
   "task.op.snapshot.create": "Create snapshot",
   "task.op.checkpoint.create": "Create checkpoint",
+  "task.op.volume.snapshot": "Snapshot a volume",
   "task.op.checkpoint.fork": "Fork checkpoint",
   "task.op.checkpoint.update": "Update checkpoint",
   "task.op.checkpoint.delete": "Delete checkpoint",

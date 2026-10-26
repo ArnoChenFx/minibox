@@ -61,6 +61,7 @@ export const ACTION_ICON = {
   "volume.usage": "scale",
   "volume.recreate": "refresh",
   "volume.prune": "trash",
+  "volume.snapshot": "camera",
   "pool.replace": "disk",
   "tool.install": "download",
   "tool.upgrade": "upload",

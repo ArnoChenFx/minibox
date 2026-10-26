@@ -67,6 +67,7 @@ export default {
   "act.volume.usage": "统计卷用量",
   "act.volume.recreate": "重新创建卷",
   "act.volume.prune": "清理孤立卷",
+  "act.volume.snapshot": "为卷创建快照",
   "act.pool.replace": "更新存储池",
   "act.tool.install": "安装工具",
   "act.tool.upgrade": "升级工具",

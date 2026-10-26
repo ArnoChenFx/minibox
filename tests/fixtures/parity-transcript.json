@@ -3718,5 +3718,45 @@
     "status": 200,
     "contentType": "application/json; charset=utf-8",
     "body": "{\"removed\":0,\"refused\":0,\"failed\":0,\"bytes\":0,\"entries\":[],\"hosts\":[{\"hostId\":\"local\",\"name\":\"Local\",\"status\":\"checked\",\"error\":null}]}"
+  },
+  {
+    "step": "create a volume to snapshot",
+    "method": "POST",
+    "path": "/api/volumes",
+    "status": 201,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"volume\":{\"id\":\"<volumeId>\",\"name\":\"snap-vol\",\"hostId\":\"local\",\"pool\":\"local\",\"backend\":\"local\",\"role\":null,\"ownership\":\"independent\",\"ownerBoxId\":null,\"sensitive\":false,\"checkpoint\":true,\"engineName\":\"<volumeId>\",\"bytes\":null,\"bytesAt\":null,\"limits\":{\"softBytes\":null,\"hardBytes\":null,\"action\":\"warn\"},\"usage\":{\"scope\":\"volume\",\"level\":\"unknown\",\"history\":[],\"lastError\":null},\"createdAt\":\"<time>\",\"mounts\":[],\"unattached\":true,\"rwMounts\":0,\"engineMissing\":false,\"ownerMissing\":false}}"
+  },
+  {
+    "step": "create a cache volume to refuse",
+    "method": "POST",
+    "path": "/api/volumes",
+    "status": 201,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"volume\":{\"id\":\"<volumeId>\",\"name\":\"snap-cache\",\"hostId\":\"local\",\"pool\":\"local\",\"backend\":\"local\",\"role\":\"cache\",\"ownership\":\"independent\",\"ownerBoxId\":null,\"sensitive\":false,\"checkpoint\":false,\"engineName\":\"<volumeId>\",\"bytes\":null,\"bytesAt\":null,\"limits\":{\"softBytes\":null,\"hardBytes\":null,\"action\":\"warn\"},\"usage\":{\"scope\":\"volume\",\"level\":\"unknown\",\"history\":[],\"lastError\":null},\"createdAt\":\"<time>\",\"mounts\":[],\"unattached\":true,\"rwMounts\":0,\"engineMissing\":false,\"ownerMissing\":false}}"
+  },
+  {
+    "step": "snapshot the volume",
+    "method": "POST",
+    "path": "/api/volumes/<volumeId>/checkpoints",
+    "status": 202,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"taskId\":\"<ulid>\"}"
+  },
+  {
+    "step": "snapshot a cache volume",
+    "method": "POST",
+    "path": "/api/volumes/<volumeId>/checkpoints",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Volume snap-cache is never part of a checkpoint. Cache and tools volumes are left out of every checkpoint.\",\"retryable\":false,\"key\":\"checkpoint_volume_excluded\",\"params\":{\"volume\":\"snap-cache\"},\"details\":{\"field\":\"id\"}}}"
+  },
+  {
+    "step": "snapshot a missing volume",
+    "method": "POST",
+    "path": "/api/volumes/nowhere/checkpoints",
+    "status": 404,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Volume nowhere was not found.\",\"retryable\":false,\"key\":\"volume_not_found\",\"params\":{\"volume\":\"nowhere\"}}}"
   }
 ]

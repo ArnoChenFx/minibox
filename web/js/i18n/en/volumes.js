@@ -189,10 +189,11 @@ export default {
   "vol.snapshot": "Snapshot",
   "vol.snapshotTitle": "Snapshot {name}?",
   "vol.snapshotOwnedText": "Takes a checkpoint of {box}, which owns this volume and always includes it.",
-  "vol.snapshotSharedText": "Takes a checkpoint of {box} that includes this volume.",
+  "vol.snapshotSelfText": "Snapshots this volume on its own, as a checkpoint that holds it and no box.",
+  "vol.snapshotSelfMountedText":
+    "Snapshots this volume on its own, as a checkpoint that holds it and no box. The boxes that mount it keep running.",
   "vol.snapshotExcluded": "This volume is left out of checkpoints",
   "vol.snapshotNoBox": "Its owner box was deleted",
-  "vol.snapshotUnmounted": "Mount it on a box first: a snapshot is a checkpoint of a box",
   "vol.mountTo": "Mount to box",
   "vol.mountToTitle": "Mount {name} to a box",
   "vol.mountToBox": "Box",

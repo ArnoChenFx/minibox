@@ -70,6 +70,7 @@ Listing and closing sessions are REST and CLI only (`GET`/`DELETE /api/boxes/{id
 | Tool | Needs | What it does |
 |---|---|---|
 | `list_volumes`, `get_volume`, `measure_volume` | `volume:read` | Volumes and their cached size |
+| `snapshot_volume` | `checkpoint:create` | `id`, `label`, `pinned`. Snapshots one volume on its own, as a checkpoint whose record names no box. Returns a task |
 | `create_volume` | `volume:write` | `name`, `pool`, `role`, `confirm` |
 | `delete_volume` | `volume:write` | `id`, `confirm`, `skipTrash` |
 | `delete_volumes` | `volume:delete` | `ids`, `confirm`. One result per volume |

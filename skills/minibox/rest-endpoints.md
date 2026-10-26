@@ -116,6 +116,7 @@ All paths are jailed inside the volume. `{id}` is a `vol_…` or a volume name; 
 | `GET` | `/api/checkpoints` | `checkpoint:read` | Every checkpoint |
 | `GET` | `/api/checkpoints/{id}` | `checkpoint:read` | |
 | `POST` | `/api/boxes/{id}/checkpoints` | `checkpoint:create` | `label`, `reason`, `consistency`, `pinned`, `include`. `202` |
+| `POST` | `/api/volumes/{id}/checkpoints` | `checkpoint:create` | `label`, `pinned`. Snapshot one volume on its own, without a box. `202` |
 | `POST` | `/api/checkpoints/{id}/fork` | `box:write` | `name`, `cpus`, `memoryMb`, `profile`, `copyHome`, `ttlSec`. `202` |
 | `POST` | `/api/boxes/{id}/rollback` | `checkpoint:restore` | If-Match, `confirm`, `checkpoint`. `202` |
 | `GET` | `/api/boxes/{id}/rollback` | `checkpoint:read` | The rollback waiting for confirm or undo |

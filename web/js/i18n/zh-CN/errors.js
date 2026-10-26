@@ -157,6 +157,7 @@ export default {
   "err.checkpoint_not_found": "找不到检查点 {id}。",
   "err.checkpoint_volume_excluded": "卷 {volume} 永远不属于检查点。缓存卷与工具卷不会进入任何检查点。",
   "err.checkpoint_volume_not_mounted": "卷 {volume} 未被本 Box 挂载，无法纳入检查点。",
+  "err.volume_snapshot_host_offline": "宿主机 {host} 已离线，无法为卷 {volume} 创建快照。请等宿主机恢复在线后再试。",
   "err.checkpoint_other_box": "检查点 {id} 取自另一个 Box。只能把 Box 回滚到它自己的检查点。",
   "err.checkpoint_no_data": "检查点 {id} 不含卷数据，没有可以回滚的内容。",
   "err.checkpoint_legacy_read_only": "快照 {id} 创建于检查点功能之前，可以派生或删除，但不能修改。",

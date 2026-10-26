@@ -57,6 +57,11 @@ export interface BackupOptions {
    * restart would only make that removal wait on it.
    */
   keepStopped?: boolean;
+  /**
+   * The name a record with no box carries where a checkpoint's box name would be. A volume snapshotted on its own has no
+   * box, so its name is the volume's, and a list that groups a record with no box shows the volume it holds.
+   */
+  sourceName?: string;
 }
 
 /** The box a backup reads from, and its spec. A backup of a volume no box mounts has none. */
@@ -161,7 +166,7 @@ async function writeCheckpoint(
       id,
       hostId: host.host.id,
       boxId: box?.boxId ?? null,
-      boxName: box?.name ?? null,
+      boxName: box?.name ?? opts.sourceName ?? null,
       label: input.label?.trim() || box?.name || "",
       reason: input.reason?.trim() ?? "",
       createdBy,

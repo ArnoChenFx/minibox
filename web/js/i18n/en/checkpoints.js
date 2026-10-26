@@ -12,7 +12,9 @@ export default {
   "ck.kind.manual": "Manual",
   "ck.kind.automatic": "Automatic",
   "ck.kind.pinned": "Pinned",
+  "ck.kind.volume": "Volume snapshot",
   "ck.kind.legacy": "Legacy snapshot",
+  "ck.contentsVolume": "Volume “{name}”",
   "ck.contentsOther": "Other volumes: {n}",
   "ck.contentsSystem": "System layer",
   "ck.keepShared": "Shared volumes",
@@ -101,6 +103,8 @@ export default {
   "ck.deleteFailed": "Delete failed",
   "ck.reasonLegacy":
     "A snapshot from before checkpoints can be forked or deleted. It cannot be rolled back, pinned or exported.",
+  "ck.reasonVolumeSnapshot":
+    "It is a snapshot of one volume, not of a box, so it records no template or size to make a box from and there is no box to roll back. It can be pinned, copied by hand or deleted.",
   "ck.reasonPending": "Confirm or undo the rollback that is waiting first.",
   "ck.reasonNoData": "This checkpoint holds no volume data to roll back to.",
   "ck.reasonEmpty": "This checkpoint holds no volume data, so there is nothing to export.",
@@ -220,6 +224,7 @@ export default {
   "ck.pendingLineHelp": "Confirm and clean up deletes them; undo the rollback mounts them again.",
   "ck.reasonBoxDeleted": "The box was deleted; fork the checkpoint to get its data back",
   "ck.boxDeleted": "Box deleted",
+  "ck.volumeGroup": "Volume",
   "ck.openBox": "Open the box's checkpoint settings",
   "ck.focusOnly": "Showing only {box}.",
   "ck.focusAll": "Show every box",

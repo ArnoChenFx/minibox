@@ -19,7 +19,9 @@ export interface SnapshotVolume {
 
 export interface SnapshotPlan {
   block: string;
-  boxId?: string;
+  /** True when the volume is snapshotted on its own, as a checkpoint that names no box. */
+  own?: boolean;
+  boxId?: string | null;
   boxName?: string | null;
   include?: string[];
 }

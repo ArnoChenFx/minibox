@@ -19,6 +19,7 @@ export { boxLayers, restoreLayer } from "./checkpoint-layers";
 export type { PlannedLayer } from "./checkpoint-layers";
 export { underBox } from "./checkpoint-quiesce";
 export { assertTakeable, takeCheckpoint, backupBox, backupLayers } from "./checkpoint-take";
+export { assertVolumeReadable, assertVolumeSnapshotable, takeVolumeCheckpoint } from "./checkpoint-volume";
 export type { BackupOptions, BackupSource } from "./checkpoint-take";
 export { assertForkable, forkCheckpoint, forkFrom } from "./checkpoint-fork";
 export {
