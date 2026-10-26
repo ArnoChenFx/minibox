@@ -57,7 +57,10 @@ function resolveMounts(host: HostCtx, mounts: BoxMount[]): BoxMount[] {
   });
 }
 
-/** Explicit mounts name recorded volumes, and each one must pass the attachment rules a new box is held to. */
+/**
+ * A create that names only volumes to attach. A shared tools volume among them that the engine lost is recreated first,
+ * so the attachment rules see it present.
+ */
 async function resolveCreateMounts(host: HostCtx, mounts: BoxMount[], known: Set<string>): Promise<BoxMount[]> {
   const resolved = resolveMounts(host, mounts);
   await healSharedToolsMounts(
@@ -74,8 +77,8 @@ async function resolveCreateMounts(host: HostCtx, mounts: BoxMount[], known: Set
 /**
  * The mounts a create asked for. A mount that names a volume is attached, with the checks a new box is held to. A mount
  * that names a role has MiniBox create that role's volume for the box, so only the roles the list names exist, and the
- * tools role mounts the host's shared tools volume instead of making a second one. A list with no role mount keeps the
- * mounts exactly as the request gave them.
+ * tools role mounts the host's shared tools volume instead of making a second one. Every engine volume the request names
+ * is checked to be present, because Docker would create a missing named volume again, empty.
  */
 async function mountsForCreate(
   host: HostCtx,
@@ -84,27 +87,50 @@ async function mountsForCreate(
   known: Set<string>,
   changes: VolumeChanges,
 ): Promise<BoxMount[]> {
+  const attached = await attachedMounts(host, requested);
   const roles = rolesToCreate(requested);
-  const created = roles.length === 0 ? [] : await provisionRoleMounts(host, box, roles, known, changes);
-  const made = new Map(created.map((mount) => [mount.path, mount]));
-  const attached: BoxMount[] = [];
-  for (const mount of requested) {
-    if (isRoleMount(mount)) {
-      const built = made.get(mountPointOf(mount).path);
-      if (!built) throw badRequest(msg("mount_create_invalid"));
-      made.delete(mountPointOf(mount).path);
-      attached.push(built);
-      continue;
-    }
-    attached.push({ volume: mount.volume, ...mountPointOf(mount) });
-  }
-  if (made.size > 0) throw badRequest(msg("mount_create_invalid"));
   if (roles.length === 0) return resolveCreateMounts(host, attached, known);
+  // A role volume is new, so its attachment rules are the role's own: no recorded volume can be owned by another box.
+  const created = await provisionRoleMounts(host, box, roles, known, changes);
+  const made = new Map(created.map((mount) => [mount.path, mount]));
+  let next = 0;
+  const mounts = requested.map((mount) => {
+    if (!isRoleMount(mount)) {
+      const kept = attached[next];
+      next += 1;
+      if (!kept) throw badRequest(msg("mount_create_invalid"));
+      return kept;
+    }
+    const path = mountPointOf(mount).path;
+    const built = made.get(path);
+    if (!built) throw badRequest(msg("mount_create_invalid"));
+    made.delete(path);
+    return built;
+  });
+  if (made.size > 0) throw badRequest(msg("mount_create_invalid"));
   await assertVolumesPresent(
     host,
-    attached.map((mount) => mount.volume),
+    mounts.map((mount) => mount.volume),
   );
-  return attached;
+  return mounts;
+}
+
+/** The mounts of the volumes a create list names, in the list's order, with each name mapped to its engine volume. */
+async function attachedMounts(host: HostCtx, requested: readonly CreateMount[]): Promise<BoxMount[]> {
+  const named = requested.flatMap((mount) =>
+    isRoleMount(mount) ? [] : [{ volume: mount.volume, ...mountPointOf(mount) }],
+  );
+  if (named.length === 0) return [];
+  assertMountList(named);
+  const resolved = named.map((mount) => {
+    const volume = host.volumes.resolve(mount.volume, host.host.id);
+    if (!volume || volume.hostId !== host.host.id) throw notFound(msg("volume_not_found", { volume: mount.volume }));
+    return { volume: volume.engineName, path: mount.path, mode: mount.mode };
+  });
+  for (const mount of resolved) {
+    assertMountAllowed(host, null, mount.volume, await mountTarget(host, mount.volume));
+  }
+  return resolved;
 }
 
 function engineMounts(mounts: BoxMount[]): { source: string; target: string; mode: MountMode }[] {

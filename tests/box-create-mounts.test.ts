@@ -163,6 +163,32 @@ describe("creating a box from role mounts", () => {
     ]);
   });
 
+  test("a volume mount in a mixed list still passes the attachment rules a new box is held to", async () => {
+    await createdMounts("beta", [{ role: "workspace" }]);
+    const betaWorkspace = host()
+      .volumes.list()
+      .find((volume) => volume.name === "beta-workspace");
+    if (!betaWorkspace) throw new Error("beta has no workspace record");
+    const reply = await call(harness.base, "/api/boxes", {
+      body: {
+        name: "alpha",
+        cpus: 1,
+        memoryMb: 256,
+        mounts: [{ role: "cache" }, { volume: betaWorkspace.id, path: "/workspace", mode: "rw" }],
+      },
+    });
+    // The workspace volume belongs to a live box, so attaching it is refused even beside a role mount.
+    expect(reply.status).toBe(403);
+    expect(reply.json.error).toMatchObject({ code: "forbidden", key: "volume_in_use" });
+    expect(host().specs.findByName("alpha")).toBeNull();
+    // The cache volume the create made is taken back, so a refused create leaves nothing behind.
+    expect(
+      host()
+        .volumes.list()
+        .map((volume) => volume.name),
+    ).toEqual(["beta-workspace"]);
+  });
+
   test("a mount that names both a volume and a role is refused, and nothing is created", async () => {
     const reply = await call(harness.base, "/api/boxes", {
       body: {
