@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 
 import type { App } from "../src/app";
+import type { Config } from "../src/config";
 import type { EventInput, EventTarget, PrincipalRef } from "../src/events/types";
 import { ulid } from "../src/events/ulid";
 import type { HostMetrics } from "../src/host/metrics";
@@ -17,7 +18,10 @@ const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
 const GB = 1024 ** 3;
 const MB = 1024 ** 2;
+/** A machine with room to spare, so the local host reports nothing it needs attention for. */
 const ROOMY_HOST = { cpu: { cores: 64 }, memory: { total: 64 * GB } } as unknown as HostMetrics;
+/** A machine of 2 CPUs and 4 GiB, which the boxes of a test can fill past what the default overcommit ratio allows. */
+const TIGHT_HOST = { cpu: { cores: 2 }, memory: { total: 4 * GB } } as unknown as HostMetrics;
 
 interface Progress {
   box: { id: string; name: string; hostId: string };
@@ -64,8 +68,8 @@ afterEach(() => {
 });
 
 /** An app on an ephemeral port. Its fake engine keeps every exec running until the test ends it. */
-function start(): Running {
-  const { app, runtime, checkpoints } = createTestApp({ labelPrefix: "mbtest" });
+function start(overrides: Partial<Config> = {}): Running {
+  const { app, runtime, checkpoints } = createTestApp({ labelPrefix: "mbtest", ...overrides });
   app.monitor.snapshot = async () => ROOMY_HOST;
   const keys = app.hosts.get().keys;
   runtime.seedImage(app.cfg.baseTemplateTag, { [keys.template]: "true", [keys.templateName]: "base" });
@@ -560,6 +564,88 @@ describe("what needs attention", () => {
     ]);
   });
 
+  test("boxes that reserve more CPU than the host allows are a warning, with the booked and allowed cores", async () => {
+    const h = start();
+    h.app.monitor.snapshot = async () => TIGHT_HOST;
+    await makeBox(h.base, "alpha", undefined, { cpus: 2 });
+    await makeBox(h.base, "beta", undefined, { cpus: 2 });
+
+    expect((await overview(h.base)).attention).toEqual([
+      expect.objectContaining({
+        kind: "host.cpu_overcommit",
+        severity: "warning",
+        hostId: "local",
+        at: null,
+        subject: h.app.hosts.get().host.name,
+        box: null,
+        params: { booked: 4, limit: 2 },
+      }),
+    ]);
+  });
+
+  test("boxes that reserve more memory than the host allows are a warning, with the booked and allowed bytes", async () => {
+    const h = start();
+    h.app.monitor.snapshot = async () => TIGHT_HOST;
+    await makeBox(h.base, "alpha", undefined, { memoryMb: 3 * 1024 });
+    await makeBox(h.base, "beta", undefined, { memoryMb: 3 * 1024 });
+
+    expect((await overview(h.base)).attention).toEqual([
+      expect.objectContaining({
+        kind: "host.memory_overcommit",
+        severity: "warning",
+        hostId: "local",
+        subject: h.app.hosts.get().host.name,
+        box: null,
+        params: { booked: 6 * 1024 * MB, limit: 4 * GB },
+      }),
+    ]);
+  });
+
+  test("a total that only equals what the host allows is not over it", async () => {
+    const h = start();
+    h.app.monitor.snapshot = async () => TIGHT_HOST;
+    await makeBox(h.base, "alpha", undefined, { cpus: 1, memoryMb: 2048 });
+    await makeBox(h.base, "beta", undefined, { cpus: 1, memoryMb: 2048 });
+
+    expect((await overview(h.base)).attention).toEqual([]);
+  });
+
+  test("the overcommit ratio raises the limit the booked total is held to", async () => {
+    const h = start({ hostOvercommit: 2 });
+    h.app.monitor.snapshot = async () => TIGHT_HOST;
+    await makeBox(h.base, "alpha", undefined, { cpus: 2 });
+    await makeBox(h.base, "beta", undefined, { cpus: 2 });
+    expect((await overview(h.base)).attention).toEqual([]);
+
+    await makeBox(h.base, "gamma", undefined, { cpus: 1 });
+    expect((await overview(h.base)).attention).toEqual([
+      expect.objectContaining({ kind: "host.cpu_overcommit", params: { booked: 5, limit: 4 } }),
+    ]);
+  });
+
+  test("a capacity the host does not report is not checked", async () => {
+    const h = start();
+    const host = h.app.hosts.get();
+    host.capacity = async () => ({ cpus: null, memoryBytes: null });
+    await makeBox(h.base, "alpha", undefined, { cpus: 2, memoryMb: 2048 });
+    await makeBox(h.base, "beta", undefined, { cpus: 2, memoryMb: 2048 });
+
+    expect((await overview(h.base)).attention).toEqual([]);
+  });
+
+  test("a host that is offline reports no overcommit, since its boxes cannot be read", async () => {
+    const h = start();
+    h.app.monitor.snapshot = async () => TIGHT_HOST;
+    await makeBox(h.base, "alpha", undefined, { cpus: 2 });
+    await makeBox(h.base, "beta", undefined, { cpus: 2 });
+    expect((await overview(h.base)).attention).toEqual([expect.objectContaining({ kind: "host.cpu_overcommit" })]);
+
+    h.app.hosts.get().host.status = "offline";
+    expect((await overview(h.base)).attention).toEqual([
+      expect.objectContaining({ kind: "host.offline", severity: "error" }),
+    ]);
+  });
+
   test("a condition that clears is no longer listed", async () => {
     const h = start();
     await makeBox(h.base, "alpha");
@@ -652,6 +738,38 @@ describe("across hosts", () => {
       expect(view.attention.map((item) => [item.kind, item.hostId, item.subject]).toSorted()).toEqual([
         ["host.disk_low", "small", "small"],
         ["host.offline", "large", "large"],
+      ]);
+    } finally {
+      cluster.close();
+    }
+  }, 20_000);
+
+  test("only the host whose boxes reserve past its capacity is listed, with that host's own totals", async () => {
+    const cluster = await bootCluster();
+    try {
+      const create = (name: string, host: string, cpus: number) =>
+        call(cluster.base, "/api/boxes", { body: { name, host, cpus, memoryMb: 256, mounts: [] } });
+      expect((await create("fits", "large", 1)).status).toBe(201);
+      expect((await create("over", "small", 2)).status).toBe(201);
+
+      // The engine of `small` now reports fewer cores than the boxes it holds already reserve.
+      cluster.engines.small.engine = { cpus: 1, memoryBytes: 4 * GB };
+
+      const view = await waitFor(
+        async () => (await call(cluster.base, "/api/overview")).json as unknown as Overview,
+        (value) => value.attention.length > 0,
+        "the overcommitted host to be listed",
+      );
+      expect(view.attention).toEqual([
+        expect.objectContaining({
+          kind: "host.cpu_overcommit",
+          severity: "warning",
+          hostId: "small",
+          at: null,
+          subject: "small",
+          box: null,
+          params: { booked: 2, limit: 1 },
+        }),
       ]);
     } finally {
       cluster.close();

@@ -37428,7 +37428,9 @@
                               "volume.over_limit",
                               "pool.unreachable",
                               "host.offline",
-                              "host.disk_low"
+                              "host.disk_low",
+                              "host.cpu_overcommit",
+                              "host.memory_overcommit"
                             ]
                           },
                           "severity": {
@@ -37488,7 +37490,7 @@
                                 "number"
                               ]
                             },
-                            "description": "Values the console words the condition with. `used` and `limit` are bytes for a volume, `action` is `warn` or `stop`, `fields` lists the drifted settings, `checkpoint` names the rolled-back checkpoint, `free` and `min` are percentages of a host's disk, and `detail` is the message the engine or the pool reported."
+                            "description": "Values the console words the condition with. `used` and `limit` are bytes for a volume, `action` is `warn` or `stop`, `fields` lists the drifted settings, `checkpoint` names the rolled-back checkpoint, `free` and `min` are percentages of a host's disk, `booked` and `limit` are CPU cores for a host's overcommitted CPU and bytes for its overcommitted memory, and `detail` is the message the engine or the pool reported."
                           }
                         },
                         "required": [

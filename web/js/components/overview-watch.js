@@ -1,7 +1,7 @@
 import { stripAnsi } from "../lib/ansi.js";
 import { enc } from "../lib/api.js";
 import { esc } from "../lib/dom.js";
-import { bytes, relTime } from "../lib/format.js";
+import { bytes, cpus, relTime } from "../lib/format.js";
 import { hostFilter, hostName, multiHost } from "../lib/hosts.js";
 import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
@@ -79,7 +79,7 @@ function progressRow(row, open) {
 function attentionRow(item) {
   const error = item.severity === "error";
   const label = ATTENTION_LABEL[item.kind] ? t(ATTENTION_LABEL[item.kind]) : item.kind;
-  const text = attentionText(item, { bytes });
+  const text = attentionText(item, { bytes, cpus });
   const said = text ? t(text.key, text.params) : "";
   return `<li class="watch-row${error ? " is-error" : ""}">
     <span class="watch-ico${error ? " fail" : ""}">${icon(error ? "alertCircle" : "alert")}</span>

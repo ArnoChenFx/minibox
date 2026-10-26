@@ -72,7 +72,7 @@ The **Create checkpoint** button in the title bar takes a checkpoint from any ta
 The **Overview** page is the first screen. It has two lists:
 
 - **In progress** shows the boxes an agent is working on. See [Watch an agent on the overview](terminal-and-sessions.md#watch-an-agent-on-the-overview).
-- **Needs attention** shows the problems MiniBox has recorded: a box that ran out of memory, a failed checkpoint, a box whose live settings differ from its spec, a rollback waiting for you to confirm or undo it, a volume over its hard limit, a storage pool that did not answer, an offline host, and a host whose disk is below its free-space minimum. Out-of-memory kills and failed checkpoints stay listed for a day. The other items stay listed while their condition lasts. **View** opens the box tab, the volumes or the host settings where the problem shows.
+- **Needs attention** shows the problems MiniBox has recorded: a box that ran out of memory, a failed checkpoint, a box whose live settings differ from its spec, a rollback waiting for you to confirm or undo it, a volume over its hard limit, a storage pool that did not answer, an offline host, a host whose disk is below its free-space minimum, and a host whose boxes reserve more CPU or memory than its capacity times `HOST_OVERCOMMIT` allows. Out-of-memory kills and failed checkpoints stay listed for a day. The other items stay listed while their condition lasts. **View** opens the box tab, the volumes or the host settings where the problem shows.
 
 **Recent activity** at the foot of the overview shows the last six operations MiniBox recorded, without routine reads and without the start of an operation that has its own finish. **View all** opens the **Activity** page.
 

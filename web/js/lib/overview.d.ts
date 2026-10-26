@@ -39,7 +39,10 @@ export declare function attentionHref(item: AttentionItem): string;
 
 export declare function attentionText(
   item: AttentionItem,
-  options?: { bytes?: (count: number) => string },
+  options?: {
+    bytes?: (count: number) => string;
+    cpus?: (count: number) => string;
+  },
 ): AttentionText | null;
 
 export declare function pollDelay(overview: Pick<Overview, "inProgress">): number;
