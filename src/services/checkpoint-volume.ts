@@ -2,6 +2,7 @@ import type { HostCtx } from "../host/registry";
 import { badRequest, conflict } from "../lib/errors";
 import { log } from "../lib/logger";
 import { msg } from "../lib/messages";
+import { reserveVolumeSnapshot } from "../volumes/activity";
 import { inspectVolumeOrNull } from "../volumes/engine";
 import type { VolumeRecord } from "../volumes/types";
 import type { PlannedLayer } from "./checkpoint-layers";
@@ -52,7 +53,7 @@ function labelOf(volume: VolumeRecord, label: string | undefined): string {
 }
 
 /**
- * Takes a snapshot of one volume, without a box. The record has no box (`boxId`, `boxName`, `specRevision` and `spec`
+ * Takes a snapshot of one volume, without a box. The record has no box (`boxId`, `specRevision` and `spec`
  * are null) and holds that one volume as its only layer, read live. Its recorded box name is the volume's name, so a
  * list that groups a record with no box shows the volume it holds instead of a dash.
  *
@@ -67,22 +68,35 @@ export async function takeVolumeCheckpoint(
   createdBy: string | null,
   progress?: Progress,
 ): Promise<CheckpointView> {
-  const view = await backupLayers(
-    host,
-    null,
-    [volumeLayer(volume)],
-    {
-      ...input,
-      label: labelOf(volume, input.label),
-      // A snapshot of one volume has no box to commit, so the system layer is never taken, and no other volume is read.
-      include: { system: false, volumes: [] },
-      consistency: "live",
-    },
-    createdBy,
-    progress,
-    false,
-    { sourceName: volume.name },
-  );
-  log.info("checkpoint.volume_snapshot", { id: view.id, volume: volume.name, host: host.host.id });
-  return view;
+  const release = reserveVolumeSnapshot(host, volume.engineName);
+  if (!release) throw conflict(msg("volume_busy", { volume: volume.name }));
+  try {
+    // Repeat the admission checks after reserving: a queued task may outlive the volume it was accepted for.
+    const current = host.volumes.read(volume.id);
+    if (!current || current.hostId !== host.host.id || current.engineName !== volume.engineName) {
+      throw conflict(msg("volume_missing", { volume: volume.name }));
+    }
+    await assertVolumeReadable(host, current);
+    volume = current;
+    const view = await backupLayers(
+      host,
+      null,
+      [volumeLayer(volume)],
+      {
+        ...input,
+        label: labelOf(volume, input.label),
+        // A snapshot of one volume has no box to commit, so the system layer is never taken, and no other volume is read.
+        include: { system: false, volumes: [] },
+        consistency: "live",
+      },
+      createdBy,
+      progress,
+      false,
+      { sourceName: volume.name },
+    );
+    log.info("checkpoint.volume_snapshot", { id: view.id, volume: volume.name, host: host.host.id });
+    return view;
+  } finally {
+    release();
+  }
 }

@@ -115,6 +115,22 @@ describe.skipIf(!executablePath)("the terminal's key row (real browser)", () => 
 
   async function signedIn(options: BrowserContextOptions = {}): Promise<BrowserContext> {
     const fresh = await browser!.newContext(options);
+    // Keep the real panel's xterm instance so a test can feed the output sequence a curses program sends.
+    await fresh.addInitScript(`
+      let constructor;
+      Object.defineProperty(window, "Terminal", {
+        configurable: true,
+        get() { return constructor; },
+        set(value) {
+          const open = value.prototype.open;
+          value.prototype.open = function (...args) {
+            window.testTerminal = this;
+            return open.apply(this, args);
+          };
+          constructor = value;
+        },
+      });
+    `);
     const login = await fresh.request.post(`${consoleUrl}/api/auth/login`, {
       data: { key: TEST_KEY },
       headers: { origin: consoleUrl },
@@ -239,6 +255,39 @@ describe.skipIf(!executablePath)("the terminal's key row (real browser)", () => 
         const typed = (await typedInto(consoleBoxId, session)).slice(before);
         // ESC, TAB, then ESC[A, ESC[B, ESC[C, ESC[D: exactly what a keyboard would have sent.
         expect(typed).toEqual([27, 9, 27, 91, 65, 27, 91, 66, 27, 91, 67, 27, 91, 68]);
+      },
+      TIMEOUT_MS,
+    );
+
+    test(
+      "auxiliary arrows match physical arrows when application cursor mode is entered and left",
+      async () => {
+        await openTerminal(page);
+        for (const application of [true, false]) {
+          await page.evaluate(async (enabled) => {
+            const view = globalThis as unknown as {
+              testTerminal: { write(data: string, callback: () => void): void; focus(): void };
+            };
+            await new Promise<void>((resolve) =>
+              view.testTerminal.write(enabled ? "\u001b[?1h" : "\u001b[?1l", resolve),
+            );
+            view.testTerminal.focus();
+          }, application);
+          const before = (await typedInto(consoleBoxId, "console")).length;
+          for (const [key, physical] of [
+            ["up", "ArrowUp"],
+            ["down", "ArrowDown"],
+            ["right", "ArrowRight"],
+            ["left", "ArrowLeft"],
+          ]) {
+            await page.keyboard.press(physical!);
+            await page.locator(`#tKeys [data-key="${key}"]`).click();
+          }
+          const prefix = application ? 79 : 91;
+          expect((await typedInto(consoleBoxId, "console")).slice(before)).toEqual(
+            [65, 66, 67, 68].flatMap((suffix) => [27, prefix, suffix, 27, prefix, suffix]),
+          );
+        }
       },
       TIMEOUT_MS,
     );

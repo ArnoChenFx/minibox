@@ -1,6 +1,7 @@
 import type { TrashRef } from "../checkpoints/types";
 import type { HostCtx } from "../host/registry";
 import { msg } from "../lib/messages";
+import { volumeSnapshotting } from "../volumes/activity";
 import { inspectVolumeOrNull } from "../volumes/engine";
 import { removeEngine } from "../volumes/provision";
 import type { VolumeRecord } from "../volumes/types";
@@ -50,7 +51,7 @@ export async function removeGuarded(
   volume: VolumeRecord,
   opts: GuardedRemoval,
 ): Promise<GuardedOutcome> {
-  const early = protectedReason(host, volume, opts.teardown === true);
+  const early = protectedReason(host, volume, opts.teardown === true) ?? snapshotReason(host, volume);
   if (early) return { status: "refused", trash: null, error: early };
   let trash: TrashRef | null = null;
   let settled: GuardedOutcome;
@@ -70,7 +71,7 @@ async function removeIfAllowed(host: HostCtx, volume: VolumeRecord, opts: Guarde
   if (!current || !sameVolume(current, volume)) {
     return refuse(messageOutcome(msg("volume_prune_changed", { volume: volume.name })));
   }
-  const shielded = protectedReason(host, current, opts.teardown === true);
+  const shielded = protectedReason(host, current, opts.teardown === true) ?? snapshotReason(host, current);
   if (shielded) return refuse(shielded);
   const info = await inspectVolumeOrNull(host, current.engineName);
   if (info && info.labels[host.keys.internal] === "true") {
@@ -93,6 +94,12 @@ async function removeIfAllowed(host: HostCtx, volume: VolumeRecord, opts: Guarde
 
 function refuse(error: OutcomeError): GuardedOutcome {
   return { status: "refused", trash: null, error };
+}
+
+function snapshotReason(host: HostCtx, volume: VolumeRecord): OutcomeError | null {
+  return volumeSnapshotting(host, volume.engineName)
+    ? messageOutcome(msg("volume_busy", { volume: volume.name }))
+    : null;
 }
 
 /** Whether a volume still has the record it had when it was listed. Its data and sample may change; its owner may not. */
