@@ -57,10 +57,17 @@ const problemOf = (e: unknown): string => (e instanceof Error ? e.message : Stri
  * The staged fields that a rebuild would still change. A field that now matches the box, because it was changed back or
  * applied some other way, drops out. A moved tag or a rotated secret is a change of its own and does not keep a field.
  */
-async function stillPending(host: HostCtx, spec: BoxSpec, fields: StagedFields): Promise<StagedField[]> {
+async function stillPending(
+  host: HostCtx,
+  spec: BoxSpec,
+  fields: StagedFields,
+  signal?: AbortSignal,
+): Promise<StagedField[]> {
   const pending: StagedField[] = [];
   for (const field of stagedFieldsOf(fields)) {
+    signal?.throwIfAborted();
     const planned = await planChange(host, spec, { [field]: fields[field] });
+    signal?.throwIfAborted();
     if (planned.changes.some((change) => STAGED_OF[change.field] === field && !isSideChange(change, fields))) {
       pending.push(field);
     }
@@ -91,15 +98,19 @@ export async function readStaged(host: HostCtx, box: Box): Promise<StagedView | 
  * The staged changes of one box spec, for a list that reads every box. The spec names the box, so a box that has been
  * deleted since it was listed is not read again here.
  */
-export async function stagedOfSpec(host: HostCtx, spec: BoxSpec): Promise<StagedView | null> {
+export async function stagedOfSpec(host: HostCtx, spec: BoxSpec, signal?: AbortSignal): Promise<StagedView | null> {
+  signal?.throwIfAborted();
   const record = host.specs.staged.read(spec.id);
   if (!record) return null;
   let pending: StagedField[];
   try {
-    pending = await stillPending(host, spec, record.fields);
+    pending = await stillPending(host, spec, record.fields, signal);
   } catch (e) {
+    signal?.throwIfAborted();
     return viewOf(record, stagedFieldsOf(record.fields), [], problemOf(e));
   }
+  // A timed-out list may still have an engine call completing; it must not prune the stored record afterwards.
+  signal?.throwIfAborted();
   if (pending.length === 0) {
     host.specs.staged.remove(spec.id);
     return null;
@@ -111,8 +122,10 @@ export async function stagedOfSpec(host: HostCtx, spec: BoxSpec): Promise<Staged
   }
   try {
     const planned = await planChange(host, spec, requestOf(current.fields));
+    signal?.throwIfAborted();
     return viewOf(current, pending, planned.changes, null);
   } catch (e) {
+    signal?.throwIfAborted();
     return viewOf(current, pending, [], problemOf(e));
   }
 }

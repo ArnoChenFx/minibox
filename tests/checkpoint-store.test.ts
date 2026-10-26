@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -190,6 +190,55 @@ describe("CheckpointStore", () => {
       restore();
     }
     expect(existsSync(path)).toBe(true);
+  });
+
+  for (const [field, value] of [
+    ["replaced", [null]],
+    ["restored", [null]],
+    ["replaced", [{ volumeId: "vol_bad", name: "incomplete", path: "/workspace" }]],
+    ["restored", [{ volumeId: "vol_bad", name: "bad-path", engineName: "bad", path: null }]],
+    ["boxName", null],
+    ["checkpointLabel", 123],
+    ["createdAt", null],
+    ["createdBy", {}],
+  ] as const) {
+    test(`a malformed ${field} is skipped without hiding a valid rollback or rewriting either file`, () => {
+      const { store } = freshStore();
+      const good = pendingOf(newBoxId(), { createdBy: null });
+      const bad = pendingOf(newBoxId());
+      store.writePendingRollback(good);
+      store.writePendingRollback(bad);
+      const path = join(store.rollbackDir(), `${bad.boxId}.json`);
+      const saved = JSON.stringify({ ...bad, [field]: value });
+      writeFileSync(path, saved);
+      const restore = silenceLogs();
+      try {
+        expect(store.pendingRollback(bad.boxId)).toBeNull();
+        expect(store.pendingRollbacks()).toEqual([good]);
+        expect(readFileSync(path, "utf8")).toBe(saved);
+      } finally {
+        restore();
+      }
+    });
+  }
+
+  test("a rollback record that cannot be read does not fail the other records", () => {
+    const { store } = freshStore();
+    const good = pendingOf(newBoxId());
+    const bad = pendingOf(newBoxId());
+    store.writePendingRollback(good);
+    store.writePendingRollback(bad);
+    const path = join(store.rollbackDir(), `${bad.boxId}.json`);
+    unlinkSync(path);
+    mkdirSync(path);
+    const restore = silenceLogs();
+    try {
+      expect(store.pendingRollback(bad.boxId)).toBeNull();
+      expect(store.pendingRollbacks()).toEqual([good]);
+      expect(statSync(path).isDirectory()).toBe(true);
+    } finally {
+      restore();
+    }
   });
 
   test("a box id that is not a box id never reaches the filesystem, and a missing rollback lists nothing", () => {

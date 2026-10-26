@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { existsSync, statSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 import type { HostMetrics } from "../src/host/metrics";
@@ -399,6 +399,90 @@ describe("every box's staged changes in one read", () => {
 
     const none = mint(harness.app, { name: "none", preset: "readonly" });
     expect(entriesOf(await listStaged(none.secret))).toEqual([]);
+  });
+
+  test("a stalled box times out while healthy boxes still appear in the batch", async () => {
+    const slowTemplate = "mbtest-template:slow";
+    harness.runtime.seedImage(slowTemplate);
+    const slow = await call(harness.base, "/api/boxes", {
+      body: { name: "slow", template: slowTemplate, cpus: 1, memoryMb: 256 },
+    });
+    const healthy = await makeBox("healthy");
+    const slowId = slow.json.box?.boxId ?? "";
+    expect(slow.status).toBe(201);
+    await stage(slowId, { profile: "strict" });
+    await stage(healthy.boxId, { profile: "strict" });
+    const release = Promise.withResolvers<void>();
+    const inspect = harness.runtime.inspectImage.bind(harness.runtime);
+    harness.runtime.inspectImage = async (ref) => {
+      if (ref === slowTemplate) await release.promise;
+      return inspect(ref);
+    };
+    harness.app.hosts.get().readTimeoutMs = 40;
+    const request = listStaged();
+    try {
+      const response = await Promise.race([request, Bun.sleep(1000).then(() => null)]);
+      expect(response).not.toBeNull();
+      if (!response) throw new Error("the batch did not respect the read timeout");
+      expect(response.status).toBe(200);
+      expect(entriesOf(response).map((entry) => entry.box.name)).toEqual(["healthy"]);
+      expect(harness.app.hosts.get().specs.staged.read(slowId)).not.toBeNull();
+    } finally {
+      release.resolve();
+      await request;
+    }
+  });
+
+  test("a timed-out read cannot prune a staged record after its engine call eventually returns", async () => {
+    const box = await makeBox("slow");
+    const host = harness.app.hosts.get();
+    await stage(box.boxId, { profile: "strict" });
+    const record = host.specs.staged.read(box.boxId);
+    if (!record) throw new Error("no staged record");
+    // This obsolete field would normally be removed when read. A timed-out read must leave it untouched.
+    host.specs.staged.write({ ...record, fields: { profile: "standard" } });
+    const path = join(harness.app.cfg.dataDir, "boxes", "staged", `${box.boxId}.json`);
+    const saved = readFileSync(path, "utf8");
+    const release = Promise.withResolvers<void>();
+    const settled = Promise.withResolvers<void>();
+    const inspect = harness.runtime.inspectImage.bind(harness.runtime);
+    harness.runtime.inspectImage = async (ref) => {
+      await release.promise;
+      try {
+        return await inspect(ref);
+      } finally {
+        settled.resolve();
+      }
+    };
+    host.readTimeoutMs = 40;
+    const request = listStaged();
+    try {
+      const response = await Promise.race([request, Bun.sleep(1000).then(() => null)]);
+      expect(response?.status).toBe(200);
+      expect(response && entriesOf(response)).toEqual([]);
+    } finally {
+      release.resolve();
+      await request;
+      await settled.promise;
+    }
+    await Bun.sleep(20);
+    expect(readFileSync(path, "utf8")).toBe(saved);
+  });
+
+  test("an offline host contributes no entries and is never asked to plan staged changes", async () => {
+    const box = await makeBox("offline");
+    await stage(box.boxId, { profile: "strict" });
+    const host = harness.app.hosts.get();
+    host.host.status = "offline";
+    let reads = 0;
+    const inspect = harness.runtime.inspectImage.bind(harness.runtime);
+    harness.runtime.inspectImage = async (ref) => {
+      reads += 1;
+      return inspect(ref);
+    };
+    expect(entriesOf(await listStaged())).toEqual([]);
+    expect(reads).toBe(0);
+    expect(host.specs.staged.read(box.boxId)).not.toBeNull();
   });
 
   test("a token with no scope for boxes is refused, and so is one whose host is not granted", async () => {

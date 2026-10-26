@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import type { App } from "../src/app";
@@ -624,6 +624,48 @@ describe("every waiting rollback in one read", () => {
     expect((await call(harness.base, `/api/boxes/${gamma}?skipTrash=true`, { method: "DELETE" })).status).toBe(200);
     if (record) checkpoints.writePendingRollback(record);
     expect(entriesOf(await list()).map((entry) => entry.box.name)).toEqual(["beta"]);
+  });
+
+  test("a malformed volume entry is skipped while healthy rollbacks remain visible", async () => {
+    const alpha = await makeBoxOver("alpha");
+    const beta = await makeBoxOver("beta");
+    await rollBackOver(alpha);
+    await rollBackOver(beta);
+    const path = join(harness.app.hosts.get().checkpoints.rollbackDir(), `${alpha}.json`);
+    const original = JSON.parse(readFileSync(path, "utf8"));
+    for (const field of ["replaced", "restored"]) {
+      const damaged = JSON.stringify({ ...original, [field]: [null] });
+      writeFileSync(path, damaged);
+      const response = await list();
+      expect(response.status).toBe(200);
+      expect(entriesOf(response).map((entry) => entry.box.name)).toEqual(["beta"]);
+      expect(readFileSync(path, "utf8")).toBe(damaged);
+      expect((await call(harness.base, "/api/checkpoints")).status).toBe(200);
+    }
+  });
+
+  test("a box spec that cannot be read does not hide another waiting rollback", async () => {
+    const alpha = await makeBoxOver("alpha");
+    const beta = await makeBoxOver("beta");
+    await rollBackOver(alpha);
+    await rollBackOver(beta);
+    const path = harness.app.hosts.get().specs.pathFor(alpha);
+    const saved = readFileSync(path, "utf8");
+    unlinkSync(path);
+    mkdirSync(path);
+    try {
+      const response = await list();
+      expect(response.status).toBe(200);
+      expect(entriesOf(response).map((entry) => entry.box.name)).toEqual(["beta"]);
+    } finally {
+      rmSync(path, { recursive: true });
+      writeFileSync(path, saved);
+    }
+    expect(
+      entriesOf(await list())
+        .map((entry) => entry.box.name)
+        .toSorted(),
+    ).toEqual(["alpha", "beta"]);
   });
 
   test("a token sees the rollbacks of the boxes its grants cover, and only those", async () => {

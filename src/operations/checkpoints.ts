@@ -1,8 +1,9 @@
 import { z } from "zod";
 
-import { CONSISTENCY_MODES } from "../checkpoints/types";
+import { CONSISTENCY_MODES, type PendingRollback } from "../checkpoints/types";
 import type { EventTarget } from "../events/types";
 import { conflict } from "../lib/errors";
+import { log } from "../lib/logger";
 import { msg } from "../lib/messages";
 import { getBox } from "../services/boxes";
 import { assertNewBox } from "../services/capacity";
@@ -409,16 +410,26 @@ export const boxRollbackList = defineOperation({
     const hosts = allHosts?.() ?? [requestHost];
     const entries: { box: z.input<typeof RollbackBoxRefSchema>; rollback: PendingRollbackView }[] = [];
     for (const host of hosts) {
-      for (const record of host.checkpoints.pendingRollbacks()) {
+      let records: PendingRollback[];
+      try {
+        records = host.checkpoints.pendingRollbacks();
+      } catch (e) {
+        log.warn("checkpoint.rollbacks_unreadable", { host: host.host.id, error: String(e) });
+        continue;
+      }
+      for (const record of records) {
         if (record.hostId !== host.host.id) continue;
-        // A rollback of a box that is gone has nothing to confirm or undo, so it is left out as the box read would be.
-        const spec = host.specs.read(record.boxId);
-        if (!spec) continue;
-        if (principal.type !== "owner" && !boxVisible(principal, viewOfSpec(spec))) continue;
-        entries.push({
-          box: { id: spec.containerId, boxId: spec.id, name: spec.name, hostId: spec.hostId },
-          rollback: pendingRollbackOf(record),
-        });
+        try {
+          // A rollback of a box that is gone has nothing to confirm or undo.
+          const spec = host.specs.read(record.boxId);
+          if (!spec || !boxVisible(principal, viewOfSpec(spec))) continue;
+          entries.push({
+            box: { id: spec.containerId, boxId: spec.id, name: spec.name, hostId: spec.hostId },
+            rollback: pendingRollbackOf(record),
+          });
+        } catch (e) {
+          log.warn("checkpoint.rollback_unreadable", { box: record.boxId, host: host.host.id, error: String(e) });
+        }
       }
     }
     return { rollbacks: entries };
