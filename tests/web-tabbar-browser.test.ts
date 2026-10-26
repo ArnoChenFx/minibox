@@ -1,5 +1,4 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { existsSync } from "node:fs";
 
 import {
   type Browser,
@@ -14,24 +13,9 @@ import type { App } from "../src/app";
 import { startServer } from "../src/server";
 import * as boxes from "../src/services/boxes";
 import { createTestApp, silenceLogs, TEST_KEY } from "./support/app";
+import { chromiumFor } from "./support/chromium";
 
-/**
- * Chromium comes from PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH or from Playwright's own install. Locally the suite is skipped
- * without one; in CI a missing browser fails the run.
- */
-function chromiumPath(): string | null {
-  const configured = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH;
-  if (configured) return configured;
-  const bundled = chromium.executablePath();
-  return existsSync(bundled) ? bundled : null;
-}
-
-const executablePath = chromiumPath();
-if (!executablePath && process.env.CI) {
-  throw new Error(
-    "The bottom tab bar test needs Chromium: run `bunx playwright install --install-deps chromium`, or set PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH.",
-  );
-}
+const executablePath = chromiumFor("The bottom tab bar test");
 
 const restoreLogs = silenceLogs();
 afterAll(restoreLogs);

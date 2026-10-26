@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test";
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 
 import { type ChromiumLookup, chromiumFor, resolveChromiumPath } from "./support/chromium";
 
@@ -280,5 +282,26 @@ describe("chromiumFor", () => {
       }),
     );
     expect(found).toBe("/usr/bin/chromium");
+  });
+});
+
+describe("the browser test files", () => {
+  /** Every test file that drives a browser: it imports Playwright's `chromium` and launches it. */
+  const browserTests = readdirSync(join(import.meta.dir))
+    .filter((name) => name.endsWith(".test.ts"))
+    .map((name) => ({ name, source: readFileSync(join(import.meta.dir, name), "utf8") }))
+    .filter((file) => file.source.includes('from "@playwright/test"') && /chromium\.launch\s*\(/.test(file.source));
+
+  test("there are browser tests, so this guard cannot pass by covering nothing", () => {
+    expect(browserTests.length).toBeGreaterThanOrEqual(11);
+  });
+
+  test("each one asks the shared resolver for a browser, rather than copying a lookup of its own", () => {
+    // A file that keeps its own resolution skips silently on a machine whose cached build is older than the installed
+    // Playwright, which is exactly the gap the shared resolver closes.
+    const strays = browserTests
+      .filter((file) => !file.source.includes('from "./support/chromium"') || !file.source.includes("chromiumFor("))
+      .map((file) => file.name);
+    expect(strays).toEqual([]);
   });
 });
