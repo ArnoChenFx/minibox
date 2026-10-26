@@ -1,5 +1,4 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { existsSync } from "node:fs";
 import { createServer, type Server as HttpServer } from "node:http";
 
 import { type Browser, type BrowserContext, chromium } from "@playwright/test";
@@ -8,27 +7,10 @@ import type { App } from "../src/app";
 import { PREVIEW_COOKIE, TICKET_PARAM } from "../src/preview/grants";
 import { startServer } from "../src/server";
 import { createTestApp, silenceLogs, TEST_KEY } from "./support/app";
+import { chromiumFor } from "./support/chromium";
 import { relayOnLoopback } from "./support/relay";
 
-/**
- * Chromium comes from PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH or from Playwright's own install (`bunx playwright install
- * chromium`). Locally the suite is skipped without one. In CI a missing browser fails the run, so the isolation check
- * cannot pass by being skipped.
- */
-function chromiumPath(): string | null {
-  const configured = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH;
-  if (configured) return configured;
-  const bundled = chromium.executablePath();
-  return existsSync(bundled) ? bundled : null;
-}
-
-const executablePath = chromiumPath();
-if (!executablePath && process.env.CI) {
-  throw new Error(
-    "The preview isolation test needs Chromium: run `bunx playwright install --with-deps chromium`, or set PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH.",
-  );
-}
-
+const executablePath = chromiumFor("The preview isolation test");
 const restoreLogs = silenceLogs();
 afterAll(restoreLogs);
 

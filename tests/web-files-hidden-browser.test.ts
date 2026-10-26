@@ -1,5 +1,4 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { existsSync } from "node:fs";
 
 import { type Browser, type BrowserContext, chromium, type Page } from "@playwright/test";
 
@@ -7,20 +6,9 @@ import type { App } from "../src/app";
 import { startServer } from "../src/server";
 import { listVolumes } from "../src/services/volumes";
 import { createTestApp, silenceLogs, TEST_KEY } from "./support/app";
+import { chromiumFor } from "./support/chromium";
 
-/** Chromium comes from PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH or Playwright's own install; locally the suite is skipped without one. */
-function chromiumPath(): string | null {
-  const configured = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH;
-  if (configured) return configured;
-  const bundled = chromium.executablePath();
-  return existsSync(bundled) ? bundled : null;
-}
-
-const executablePath = chromiumPath();
-if (!executablePath && process.env.CI) {
-  throw new Error("The hidden files test needs Chromium: run `bunx playwright install --with-deps chromium`.");
-}
-
+const executablePath = chromiumFor("The hidden files test");
 const restoreLogs = silenceLogs();
 afterAll(restoreLogs);
 
