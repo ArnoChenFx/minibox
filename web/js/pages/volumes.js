@@ -14,6 +14,7 @@ import { hostName, multiHost } from "../lib/hosts.js";
 import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
 import { validMountPath } from "../lib/mounts.js";
+import { applyPoolDraft, poolChanges, poolDraft, poolForm, renameRole } from "../lib/pool-form.js";
 import { filterBySearch } from "../lib/search.js";
 import {
   checkboxField,
@@ -249,26 +250,37 @@ function field(label, inner, help = "") {
 const limitInput = (id, value) =>
   `<input class="input" id="${id}" type="number" min="0" step="any" inputmode="decimal" value="${esc(value)}" placeholder="${esc(t("vol.noLimit"))}" />`;
 
-/** What saving the pools would change. `t()` does not escape, so the whole sentence is escaped once here. */
-function poolPreviewHtml(preview) {
+/**
+ * What saving the pools would change. `t()` does not escape, so the whole sentence is escaped once here. `changed` is
+ * what `poolChanges` reads from the pools the page holds and the pools the preview returns: the server's preview names
+ * a pool's backend but not the server, export, options, root or marker an edit changes.
+ */
+function poolPreviewHtml(preview, changed = []) {
   const pools = preview.pools
     .map((pool) => `${pool.name} · ${pool.backend}${pool.default ? ` · ${t("vol.defaultYes")}` : ""}`)
     .join("\n");
+  const lines = changed
+    .map(
+      (change) =>
+        `<p class="help">${esc(t("vol.savePreviewChanged", { name: change.name }))}</p><pre class="mono">${esc(`${change.from}\n→ ${change.to}`)}</pre>`,
+    )
+    .join("");
   return `<p class="help">${esc(t("vol.savePreviewNote"))}</p>
     <div class="field"><span class="label">${esc(t("vol.savePreviewPools"))}</span><pre class="mono">${esc(pools)}</pre></div>
+    ${lines}
     ${preview.added.length ? `<p>${esc(t("vol.savePreviewAdded", { names: preview.added.join(", ") }))}</p>` : ""}
     ${preview.removed.length ? `<p>${esc(t("vol.savePreviewRemoved", { names: preview.removed.join(", ") }))}</p>` : ""}`;
 }
 
 /** Saves the pools. A replacement that would change the pool list is first refused with its preview, and sent again once the user confirms. */
-async function putPools(body) {
+async function putPools(body, changed = []) {
   try {
     return await api("/api/pools", { method: "PUT", body });
   } catch (err) {
     if (err.code !== "confirmation_required" || !err.details?.preview) throw err;
     const ok = await confirmDialog({
       title: t("vol.savePreviewTitle"),
-      body: poolPreviewHtml(err.details.preview),
+      body: poolPreviewHtml(err.details.preview, changed),
       confirmText: t("vol.save"),
     });
     if (!ok) return null;
@@ -276,9 +288,15 @@ async function putPools(body) {
   }
 }
 
-function formDialog(title, body) {
+/**
+ * A dialog with the fields of a form. `submit(root)` runs when its confirm button is pressed, and may return a promise:
+ * returning `false` keeps the dialog open, which is how a refused save leaves its reason beside the field it is about.
+ * The promise resolves to the dialog's root once it closes after a submit, and to null when it is closed another way.
+ */
+function formDialog(title, body, submit) {
   return new Promise((resolve) => {
     let settled = false;
+    let accepted = false;
     const finish = (value) => {
       if (settled) return;
       settled = true;
@@ -287,11 +305,12 @@ function formDialog(title, body) {
     const { root, close } = openDialog({
       title,
       body: `<div class="stack form-stack">${body}</div>`,
-      onClose: () => finish(null),
+      onClose: () => finish(accepted ? root : null),
       footer: `<button class="btn" data-close>${t("common.cancel")}</button><button class="btn btn-primary" id="vol-ok">${t("common.confirm")}</button>`,
     });
-    root.querySelector("#vol-ok").addEventListener("click", () => {
-      finish(root);
+    root.querySelector("#vol-ok").addEventListener("click", async () => {
+      if (submit && (await submit(root)) === false) return;
+      accepted = true;
       close();
     });
   });
@@ -378,8 +397,44 @@ async function previewDelete(ids) {
   }
 }
 
+/**
+ * The form of one pool, prefilled with what it holds. The backend is shown but not offered: changing it is what the
+ * server refuses for a pool that still has volumes, so the row's backend stays as it is.
+ */
+const poolFormHtml = (pool) => {
+  const form = poolForm(pool);
+  const body =
+    pool.backend === "nfs"
+      ? `${field(t("vol.poolName"), `<input class="input" id="p-name" value="${esc(form.name)}" />`)}
+        ${field(t("vol.server"), `<input class="input" id="p-server" value="${esc(form.server)}" placeholder="192.168.1.10" />`)}
+        ${field(t("vol.exportPath"), `<input class="input" id="p-export" value="${esc(form.export)}" placeholder="/volume1/minibox" />`)}
+        ${field(t("vol.options"), `<input class="input" id="p-options" value="${esc(form.options)}" placeholder="nfsvers=4.1, hard" />`, t("vol.optionsHelp"))}`
+      : `${field(t("vol.poolName"), `<input class="input" id="p-name" value="${esc(form.name)}" />`)}
+        ${field(t("vol.root"), `<input class="input" id="p-root" value="${esc(form.root)}" placeholder="/mnt/disk" />`)}
+        ${field(t("vol.marker"), `<input class="input" id="p-marker" value="${esc(form.marker)}" />`, t("vol.markerHelp"))}`;
+  return `${body}
+    ${field(t("vol.colBackend"), `<input class="input" id="p-backend" value="${esc(pool.backend)}" readonly />`, t("vol.backendFixed"))}
+    <label class="checkbox"><input type="checkbox" id="p-default" ${form.default ? "checked" : ""} /> ${esc(t("vol.makeDefault"))}</label>
+    <p class="help" id="p-rename-help">${esc(t("vol.editRenameHelp"))}</p>
+    <p class="help" id="p-mounts-help">${esc(t("vol.editMountsHelp"))}</p>
+    <div class="error-text" id="p-error" role="alert"></div>`;
+};
+
+const readPoolForm = (root, pool) => ({
+  ...poolForm(pool),
+  name: root.querySelector("#p-name").value,
+  server: root.querySelector("#p-server")?.value ?? "",
+  export: root.querySelector("#p-export")?.value ?? "",
+  options: root.querySelector("#p-options")?.value ?? "",
+  root: root.querySelector("#p-root")?.value ?? "",
+  marker: root.querySelector("#p-marker")?.value ?? "",
+  default: root.querySelector("#p-default").checked,
+});
+
 export function render(view) {
   let pools = [];
+  /** The pools as the server last gave them, so a save's preview can name what an edit changes. */
+  let savedPools = [];
   let roles = { workspace: null, home: null, tools: null, cache: null };
   let health = [];
   let volumes = null;
@@ -438,6 +493,11 @@ export function render(view) {
           pool.name === "local"
             ? ""
             : `<button class="btn btn-sm" data-action="remove-pool" data-name="${esc(pool.name)}">${t("vol.removePool")}</button>`;
+        // The local pool is the built-in one, so it is neither edited nor removed. Every other pool can be.
+        const edit =
+          pool.name === "local"
+            ? ""
+            : `<button class="btn btn-sm" data-action="edit-pool" data-name="${esc(pool.name)}">${t("vol.editPool")}</button>`;
         // A pool with no note draws nothing there, so its card does not hold a line for a dash.
         const noteClass = item?.message ? "pool-note" : "pool-note pool-empty";
         // `pool-table` and the data-labels give the row its card layout on a phone, as the volumes table has.
@@ -447,7 +507,7 @@ export function render(view) {
           <td class="pool-health" data-label="${esc(t("vol.colHealth"))}">${healthBadge(item?.status ?? "unknown", item?.lowSpace)}</td>
           <td class="pool-free num" data-label="${esc(t("vol.colFree"))}">${esc(free)}</td>
           <td class="${noteClass}" data-label="${esc(t("vol.colMessage"))}">${item?.message ? `<span class="subtle">${esc(item.message)}</span>` : "—"}</td>
-          <td class="pool-actions"><div class="actions"><button class="btn btn-sm" data-action="make-default" data-name="${esc(pool.name)}">${t("vol.defaultYes")}</button>${remove}</div></td>
+          <td class="pool-actions"><div class="actions"><button class="btn btn-sm" data-action="make-default" data-name="${esc(pool.name)}">${t("vol.defaultYes")}</button>${edit}${remove}</div></td>
         </tr>`;
       })
       .join("");
@@ -588,6 +648,7 @@ export function render(view) {
       api("/api/checkpoints").catch(() => ({ checkpoints: [] })),
     ]);
     pools = poolBody.pools;
+    savedPools = poolBody.pools;
     roles = { ...roles, ...poolBody.roles };
     health = poolBody.health;
     volumes = volumeBody.volumes;
@@ -702,26 +763,83 @@ export function render(view) {
     return next;
   };
 
+  /** The `PUT /api/pools` body for the pools the page holds, and the role defaults it shows. */
+  const poolsBody = () => ({
+    pools: pools.map((pool) => ({
+      name: pool.name,
+      backend: pool.backend,
+      default: pool.default,
+      server: pool.server ?? undefined,
+      export: pool.export ?? undefined,
+      options: pool.options,
+      root: pool.root ?? undefined,
+      marker: pool.marker ?? undefined,
+    })),
+    roles: readRoles(),
+  });
+
   const save = async () => {
-    const saved = await putPools({
-      pools: pools.map((pool) => ({
-        name: pool.name,
-        backend: pool.backend,
-        default: pool.default,
-        server: pool.server ?? undefined,
-        export: pool.export ?? undefined,
-        options: pool.options,
-        root: pool.root ?? undefined,
-        marker: pool.marker ?? undefined,
-      })),
-      roles: readRoles(),
-    });
+    const saved = await putPools(poolsBody(), poolChanges(savedPools, pools));
     if (!saved) return;
     pools = saved.pools;
+    savedPools = saved.pools;
     roles = saved.roles;
     health = saved.health;
     toast(t("vol.saved"));
     draw();
+  };
+
+  /**
+   * Edits one pool: its fields are written back into the page's list, and the same save the card's button runs sends the
+   * whole list, with the same confirmation preview. The page's own Save button is behind the dialog, so the dialog's
+   * confirm does the save, and a refusal keeps the dialog open with its reason beside the field.
+   */
+  const editPool = async (name) => {
+    const pool = pools.find((item) => item.name === name);
+    if (!pool || pool.name === "local") return;
+    await formDialog(t("vol.editPoolTitle", { name: pool.name }), poolFormHtml(pool), async (dialog) => {
+      const fail = (text, field) => {
+        dialog.querySelector("#p-error").textContent = text;
+        if (field) dialog.querySelector(`#${field}`)?.focus();
+      };
+      const checked = poolDraft(readPoolForm(dialog, pool), { pool, pools });
+      if (checked.error) {
+        fail(checked.error, checked.field);
+        return false;
+      }
+      const previous = pools;
+      const rolesBefore = roles;
+      const renamed = checked.pool.name !== pool.name;
+      pools = applyPoolDraft(pools, pool.name, checked.pool);
+      // The role selects still name the pool as it was, so a rename carries the roles it is chosen for along with it.
+      const body = poolsBody();
+      if (renamed) {
+        body.roles = renameRole(body.roles, pool.name, checked.pool.name);
+        roles = renameRole(roles, pool.name, checked.pool.name);
+      }
+      let saved;
+      try {
+        saved = await putPools(body, poolChanges(savedPools, pools));
+      } catch (err) {
+        // The server refused it, such as a rename of a pool that still has volumes: say so, and keep the dialog.
+        pools = previous;
+        roles = rolesBefore;
+        fail(err.message, renamed ? "p-name" : "");
+        return false;
+      }
+      if (!saved) {
+        // The confirmation was cancelled: the dialog stays as it was, and nothing is saved.
+        pools = previous;
+        roles = rolesBefore;
+        return false;
+      }
+      pools = saved.pools;
+      savedPools = saved.pools;
+      roles = saved.roles;
+      health = saved.health;
+      toast(t("vol.saved"));
+      draw();
+    });
   };
 
   const addPool = (pool) => {
@@ -864,6 +982,8 @@ export function render(view) {
       } else if (action === "make-default") {
         pools = pools.map((pool) => ({ ...pool, default: pool.name === target.dataset.name }));
         draw();
+      } else if (action === "edit-pool") {
+        await editPool(target.dataset.name);
       } else if (action === "remove-pool") {
         pools = pools.filter((pool) => pool.name !== target.dataset.name);
         if (!pools.some((pool) => pool.default)) {
@@ -879,24 +999,10 @@ export function render(view) {
           <label class="checkbox"><input type="checkbox" id="p-default" /> ${esc(t("vol.makeDefault"))}</label>`;
         const root = await formDialog(t("vol.addNfs"), body);
         if (!root) return;
-        const name = root.querySelector("#p-name").value.trim();
-        const invalid = nameError(name, "name");
-        if (invalid) return toastError(t("vol.saveFailed"), { message: invalid });
-        addPool({
-          name,
-          backend: "nfs",
-          default: root.querySelector("#p-default").checked,
-          server: root.querySelector("#p-server").value.trim(),
-          export: root.querySelector("#p-export").value.trim(),
-          options: root
-            .querySelector("#p-options")
-            .value.split(",")
-            .map((part) => part.trim())
-            .filter(Boolean),
-          root: null,
-          marker: null,
-          capabilities: { shareable: true, snapshots: false, quota: false, clone: false, crossHost: true },
-        });
+        const form = readPoolForm(root, { backend: "nfs" });
+        const checked = poolDraft(form, { pools });
+        if (checked.error) return toastError(t("vol.saveFailed"), { message: checked.error });
+        addPool(checked.pool);
       } else if (action === "add-path") {
         const body = `
           ${field(t("vol.poolName"), `<input class="input" id="p-name" />`)}
@@ -905,20 +1011,10 @@ export function render(view) {
           <label class="checkbox"><input type="checkbox" id="p-default" /> ${esc(t("vol.makeDefault"))}</label>`;
         const root = await formDialog(t("vol.addPath"), body);
         if (!root) return;
-        const name = root.querySelector("#p-name").value.trim();
-        const invalid = nameError(name, "name");
-        if (invalid) return toastError(t("vol.saveFailed"), { message: invalid });
-        addPool({
-          name,
-          backend: "path",
-          default: root.querySelector("#p-default").checked,
-          server: null,
-          export: null,
-          options: [],
-          root: root.querySelector("#p-root").value.trim(),
-          marker: root.querySelector("#p-marker").value.trim() || ".minibox-mounted",
-          capabilities: { shareable: true, snapshots: false, quota: false, clone: false, crossHost: false },
-        });
+        const form = readPoolForm(root, { backend: "path" });
+        const checked = poolDraft(form, { pools });
+        if (checked.error) return toastError(t("vol.saveFailed"), { message: checked.error });
+        addPool(checked.pool);
       } else if (action === "create") {
         const options = pools.map((pool) => `<option value="${esc(pool.name)}">${esc(pool.name)}</option>`).join("");
         const roleOptions = [`<option value="">—</option>`]

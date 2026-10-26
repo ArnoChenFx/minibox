@@ -4,6 +4,9 @@
 
 ## [Unreleased]
 
+### 新增
+- **存储池可以编辑，参数填错不必再删掉重配**（用户反馈：「发现 minibox 添加的存储池没有编辑功能，我加了个错的存储池，只能删除重新配置参数。」）：存储页「存储池与角色」区块里，每个非 `local` 的池在其行上新增 **编辑** 按钮（与 **移除** 同样的条件，本地池两个都没有）。点开的是与「添加 NFS」「添加路径」同一套表单，按该池的 backend 预填：NFS 为池名称、服务器、导出目录、选项与「设为默认池」，路径池为池名称、根目录、标记文件与「设为默认池」。保存时把改动写回页面里的 `pools` 数组（按原名替换那一条），再走既有的 `save()` → `PUT /api/pools` 路径，因此 `confirmation_required` 的预览与确认、以及服务端返回的错误文案都与新增完全一致，没有第二条提交路径。语义上写明两件事：改名允许，但仍有卷的池改名会被服务端以 `pool_in_use` 拒绝，对话框里如实显示这条中文/英文错误并把焦点放回名字输入框，页面里的池列表回滚到保存前；改后端同样被拒，所以表单只把后端作为只读字段展示并附说明，不提供别的选择；改服务器、导出目录、选项、根目录或标记文件服务端允许，但**已存在的卷仍沿用创建时的挂载参数**（Docker 无法就地重挂），表单里有帮助文案说明这一点，保存预览里也列出该池修改前后的参数摘要（`vol.savePreviewChanged`）。纯逻辑抽在 `web/js/lib/pool-form.js`（附 `.d.ts`）：`poolForm` 给出表单初值，`poolDraft` 把表单变成 `PoolDraft` 并复用既有 `nameError()` 与服务端错误 key（`err.pool_duplicate`、`err.nfs_pool_invalid`、`err.nfs_options_invalid`、`err.path_pool_invalid`、`err.pool_local_backend`）做校验，`applyPoolDraft` 按原名写回，`renameRole` 让改名时指向该池的角色跟着改，`poolChanges` 供预览用；新增与编辑共用这几个函数，所以两条路径的校验只有一份。文案 `vol.editPool`、`vol.editPoolTitle`、`vol.backendFixed`、`vol.editRenameHelp`、`vol.editMountsHelp`、`vol.optionsRequired`、`vol.savePreviewChanged` 进了中英文词典，`vol.savePreviewNote` 补上「改名」。中英文《卷与存储》新增「编辑存储池」一节，《NFS 与 NAS 存储》补一句指向它。服务端行为未改（`PUT /api/pools` 仍是整份替换），因此未重新生成 `docs/openapi.json`。
+
 ## [0.6.7] - 2026-10-26
 
 ### 新增
