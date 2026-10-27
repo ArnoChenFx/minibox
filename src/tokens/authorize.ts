@@ -552,6 +552,15 @@ const RULES: ReadonlyMap<string, Rule> = new Map<string, Rule>([
     },
   ],
   [
+    "template.fork",
+    async ({ principal, host, input }) => {
+      // The source must be a template the token may use, and the name it forks into must be free: a fork would otherwise
+      // move a tag another principal holds.
+      await assertImageUsable(principal, host, String(input.ref), "template");
+      await assertTemplateNameFree(host, String(input.name));
+    },
+  ],
+  [
     "template.delete",
     async ({ principal, host, input }) => assertOwnedImage(principal, host, String(input.ref), "template"),
   ],

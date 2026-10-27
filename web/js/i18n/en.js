@@ -122,6 +122,16 @@ export default {
   "tp.rebuildStarted": "Rebuilding template",
   "tp.rebuildStartedText": "Watch the build log in the Tasks panel.",
   "tp.rebuildFailed": "Couldn't rebuild template",
+  "tp.fork": "Fork",
+  "tp.forkTitle": "Fork “{name}”",
+  "tp.forkDesc":
+    "Copy the image and build recipe of <code>{ref}</code> into a new template. The template it comes from stays as it is.",
+  "tp.forkWhat":
+    "The copy keeps the build source and the setup command, so you can change its name and description and then rebuild it from the same source. A template saved from a box has no build source, so its copy cannot be rebuilt.",
+  "tp.forkConfirm": "Fork template",
+  "tp.forking": "Forking…",
+  "tp.forked": "Template forked",
+  "tp.forkFailed": "Couldn't fork template",
   "tp.hosts": "Hosts",
   "tp.present": "Present",
   "tp.absent": "Missing",

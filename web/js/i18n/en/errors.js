@@ -477,6 +477,17 @@ export default {
   "err.mount_path_invalid": "Mount path {path} must be an absolute path without empty, . or .. segments.",
   "err.mount_duplicate": "Mount path {path} is listed more than once.",
   "err.mount_not_found": "No mount at {path}.",
+  "err.mount_create_invalid":
+    "A mount names either an existing volume with volume, path and mode, or a role to create with role. A role mount takes the role's own path and mode, and a volume mount needs both.",
+  "err.mount_create_role_duplicate": "Role {role} is listed more than once, so MiniBox cannot create its volume.",
+  "err.mount_create_role_path":
+    "A mount that creates the {role} volume cannot mount it at {path}. That role is mounted at {expected}.",
+  "err.mount_create_role_mode":
+    "A mount that creates the {role} volume cannot mount it {mode}. That role is mounted {expected}.",
+  "err.mount_create_volume_role":
+    "A mount cannot name both volume {volume} and role {role}. Name the volume to attach it, or the role to create it.",
+  "err.volume_tools_unavailable":
+    "No shared tools volume exists on this host yet, so this box gets none. MiniBox creates one when a box is created with the tools role.",
   "err.storage_confirm_required":
     "This change was not applied. Send the same request with confirm set to true to apply the preview. Nothing has changed.",
   "err.pool_not_found": "Storage pool {pool} was not found.",
@@ -490,7 +501,7 @@ export default {
   "err.pool_path_invalid": "{what} path {path} must be absolute and must not contain ..",
   "err.pool_duplicate": "Pool names must be unique.",
   "err.pool_default_conflict": "Choose exactly one default storage pool.",
-  "err.pool_in_use": "Pool {pool} still has volumes, so it cannot be removed or change backend.",
+  "err.pool_in_use": "Pool {pool} still has volumes, so it cannot be removed, renamed or change backend.",
   "err.role_pool_unknown": "Role {role} points at pool {pool}, which does not exist.",
   "err.exec_command_required": "Provide exactly one of cmd or argv.",
   "err.exec_command_hint": "cmd runs through /bin/sh -c. argv is the program and its arguments, with no shell.",

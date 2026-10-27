@@ -45,7 +45,7 @@ MCP 端点将其工具分组为工具集。默认为 `core,meta`。要使用更�
 - 用 `session_start`、`session_send` 和 `session_read` **驱动终端会话**。Agent 断开后会话仍继续运行。见 [终端与会话](terminal-and-sessions.md)。
 - 用 `read_file`、`write_file`、`list_files` 和 `copy_files` **读写卷中的文件**。即使没有 Box 在运行也能使用。
 - 用 `tools` 工具集**安装和管理工具**。
-- 用 `tools` 工具集**构建模板并拉取镜像**，仅限所有者。见 [模板](templates.md)。
+- 用 `tools` 工具集**构建模板、派生模板并拉取镜像**，仅限所有者。见 [模板](templates.md)。
 - 用 `storage` 工具集**管理卷和存储池**。需要确认的更改会返回预览，直到 Agent 发送 `confirm: true`。
 
 Agent 不能查看或使用其令牌未允许的 Box、卷或宿主机。

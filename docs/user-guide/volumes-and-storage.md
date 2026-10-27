@@ -15,7 +15,13 @@ A new box gets four volumes by default:
 | **Tools** | Default pool | `/opt/minibox/tools` | Read-only. One shared volume per pool holds the installed tools. |
 | **Cache** | Local pool | `/home/dev/.cache` | Read-write. Left out of checkpoints and the recycle bin. |
 
-To use different volumes, click **Customize** in the create dialog. The box mounts only the volumes you list. To add a volume to a box that already exists, attach it on the box's page.
+To use different volumes, click **Customize** in the create dialog. Each row there mounts a volume that already exists, or has MiniBox create one of the box's role volumes for it. The dialog starts with one row per role, so the box gets the same four volumes as the default mode, and a row you remove means that role's volume is not created. That is how a box gets the shared tools volume without the other three, or only a workspace.
+
+The tools row mounts the host's shared tools volume, and creates it when the host has none. One tools volume serves every box on the host.
+
+A role mount creates a new volume, so it needs the `volume:write` scope, and so does mounting an existing volume read-write. The tools row also needs `volume:attach` when the shared tools volume already exists.
+
+To add a volume to a box that already exists, attach it on the box's page.
 
 ## Storage pools
 
@@ -33,15 +39,29 @@ One pool is the default. To change the default, click **Make this the default po
 
 A pool that still has volumes cannot be removed.
 
+### Edit a storage pool
+
+Click **Edit** on a pool's row to change the pool you already have, instead of removing it and adding it again. The form is the one that adds a pool, filled in with the pool's values:
+
+- An **NFS** pool has **Pool name**, **Server**, **Export**, **Options** and **Make this the default pool**.
+- A **Path** pool has **Pool name**, **Root**, **Marker file** and **Make this the default pool**.
+
+The local pool has no **Edit** button: it is the built-in pool and cannot be changed.
+
+Saving an edit works like adding a pool: the dialog's **Confirm** sends the change, the preview lists what changes, and the pools are saved once you confirm the preview. Two things the server decides:
+
+- **Renaming is allowed, but a pool that still has volumes keeps its name.** Volumes record the pool they were created on, so the server refuses the rename with `pool_in_use` and nothing is saved. The dialog shows that reason, and the form stays open so you can correct the name. The same goes for **Backend**: the form shows the pool's backend but does not offer another one, because a pool that still has volumes cannot change it.
+- **Changing the server, export, options, root or marker does not change volumes that already exist.** Each Docker volume keeps the mount parameters it was created with, because Docker cannot remount a volume in place. New volumes use the new parameters. The dialog says so, and the preview shows the parameters before and after, so you can see what an edit changes. To move an existing volume to new parameters, copy its data into a new volume.
+
 ## Create and attach volumes
 
 - To create a volume, click **Create volume**, and choose a pool. The volume is independent, which means it is not tied to a box.
-- To attach a volume to a box, open the box's page, and use **Attach**. Attaching a volume rebuilds the box, so MiniBox shows a preview first.
-- To detach a volume, click **Detach**. Detaching also rebuilds the box.
+- To attach a volume to a box, open the box's page, and use **Attach**. Attaching a volume is a change of the box's mounts, so it is staged, and the box is rebuilt when the staged changes are applied.
+- To detach a volume, click **Detach**. Detaching is staged the same way, and the row is marked **To detach** until you apply the change or click **Undo**.
 
-Both take a [safety checkpoint](checkpoints.md#safety-checkpoints) of the box first, unless you clear **Take a safety checkpoint first** in the confirmation.
+Applying the staged changes takes a [safety checkpoint](checkpoints.md#safety-checkpoints) of the box first, unless you clear **Take a safety checkpoint first** in the confirmation.
 
-Changing the mounts of a box rebuilds it. The box keeps its name and its volumes. The writable layer and the running processes are lost.
+Changing the mounts of a box rebuilds it. The box keeps its name and its volumes. The writable layer and the running processes are lost. See [Stage a change and rebuild](boxes.md#stage-a-change-and-rebuild).
 
 ## Read-write and read-only
 
