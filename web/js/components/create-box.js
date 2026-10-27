@@ -20,9 +20,13 @@ import {
   DEFAULT_MOUNTS,
   isVolumeErrorKey,
   MOUNT_MAX,
+  namesOnHost,
+  previewNoteLines,
   roleOfValue,
   roleValue,
+  roleVolumeNames,
   sharedToolsChoice,
+  sharedToolsOnHost,
   volumeChoices,
 } from "../lib/mounts.js";
 import { filterBySearch, searchTerms } from "../lib/search.js";
@@ -43,7 +47,7 @@ import { emptyState, nameError, openDialog, toast } from "../lib/ui.js";
 import { bindEnvRows, envProblemText, envRow, readEnvRows, secretChoicesHtml, secretNames } from "./env-editor.js";
 import { bindFoldSections, foldSectionHtml, setFoldOpen } from "./fold-section.js";
 import { bindToggles, isToggled, limitList, listToggleHtml } from "./list-toggle.js";
-import { mountRow, readMountRows, roleLabel } from "./mount-editor.js";
+import { mountRow, readMountRows, roleLabel, updateMountRowChoices } from "./mount-editor.js";
 import { bindSearchBox, searchBoxHtml } from "./search-box.js";
 import { openTasks, taskErrorText, waitTask } from "./tasks.js";
 
@@ -108,14 +112,6 @@ function templateOptionHtml(template, selectedRef) {
 async function loadChoices() {
   const [volumeBody, boxBody] = await Promise.all([api("/api/volumes"), api("/api/boxes?stats=false")]);
   return volumeChoices(volumeBody.volumes, new Set(boxBody.boxes.map((box) => box.boxId)));
-}
-
-/**
- * The volume list a custom row offers: the roles MiniBox can create, then the volumes that exist. `sharedTools` is the
- * host's shared tools volume, which the tools role mounts instead of making a second one.
- */
-function mountChoicesOf(choices) {
-  return createMountChoices(choices, sharedToolsChoice(choices) !== null);
 }
 
 /**
@@ -205,6 +201,11 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
   let choices = null;
   let seeded = false;
   /**
+   * The label prefix new volumes are named with, from `GET /api/system`. It is the prefix the shared tools volume of a
+   * host starts with, so the dialog predicts that name too. Null when the server did not say, which hides the prediction.
+   */
+  const labelPrefix = system?.config?.labelPrefix ?? null;
+  /**
    * The shared tools volume the host has, as the volume list holds it. Null when the host has none yet, which the default
    * mode's help says; undefined when the list could not be read, so the help stays the usual one. The list is read when
    * the dialog opens, so that help is right before Customize is picked.
@@ -289,6 +290,7 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
           <div class="help" id="cbVolHelp">${t(toolsShared === null ? "cb.volumesDefaultHelpNoTools" : "cb.volumesDefaultHelp")}</div></div>
         <div class="row-editor" id="cbVolCustom" hidden>
           <div class="callout warn">${icon("alert")}<span>${t("cb.volumesReplace")}</span></div>
+          <div class="callout info">${icon("info")}<div id="cbVolPreviewNote">${t("cb.volumesPreview")}</div></div>
           <div class="rebuild-mounts" id="cbMountRows"></div>
           <button type="button" class="btn" id="cbAddMount">${t("mount.add")}</button>
           <div class="help" id="cbMountsNote" hidden></div>
@@ -514,6 +516,8 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
     q("#cbHostHelp").textContent = t(q("#cbHost").value === AUTO_HOST ? "cb.hostAutoHelp" : "cb.hostHelp");
     validateRes();
     syncNote();
+    // The shared tools volume, and so the names the tools row would create, belong to the host.
+    if (state.volumesMode === "custom") refreshMounts();
   });
   q("#cbProfiles").addEventListener("click", (e) => {
     const b = e.target.closest(".seg");
@@ -536,6 +540,8 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
   q("#cbName").addEventListener("input", () => {
     q("#cbName").classList.remove("invalid");
     q("#cbNameErr").textContent = "";
+    // Role volumes are named after the box, so the names the rows preview follow what is typed.
+    if (state.volumesMode === "custom") refreshMounts();
   });
 
   const showVolumeError = (message) => {
@@ -571,6 +577,72 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
     q("#cbRepoErr").textContent = message;
   };
 
+  /**
+   * The host a create would go to, as the preview reads it. `auto` picks the host inside the create, so the shared tools
+   * volume of that host has no name yet. Without a host picker the box goes on the local host.
+   */
+  const previewHost = () => {
+    const pick = q("#cbHost")?.value ?? "local";
+    return pick === AUTO_HOST ? { hostId: null, hostKnown: false } : { hostId: pick, hostKnown: true };
+  };
+
+  /**
+   * The names MiniBox would give this box's role volumes right now, from the box name, the host and the volumes in use.
+   * Null when the server did not say the label prefix, so the dialog names the roles instead of guessing a name.
+   */
+  const roleNames = () => {
+    if (!labelPrefix) return null;
+    const { hostId, hostKnown } = previewHost();
+    const list = choices ?? [];
+    return roleVolumeNames({
+      boxName: q("#cbName").value,
+      hostId: hostId ?? "",
+      labelPrefix,
+      hostKnown,
+      sharedTools: hostKnown ? sharedToolsOnHost(list, hostId) : null,
+      taken: hostKnown ? namesOnHost(list, hostId) : [],
+    });
+  };
+
+  /**
+   * The volume list a create row offers now, with the names each role volume would get. The tools role follows the host
+   * the box goes to, so a host with a shared tools volume mounts it and one without creates it.
+   */
+  const createChoicesNow = () => {
+    const { hostId, hostKnown } = previewHost();
+    const list = choices ?? [];
+    const shared = hostKnown ? sharedToolsOnHost(list, hostId) !== null : sharedToolsChoice(list) !== null;
+    return createMountChoices(list, shared, roleNames());
+  };
+
+  /**
+   * Repaints the names every role row would create, and the lines that say they are a preview. Nothing here creates
+   * anything: the server makes these volumes when the box is created, and only for the roles the rows still name.
+   */
+  let previewKey = null;
+  const refreshPreviews = () => {
+    if (!choices) return;
+    const preview = roleNames();
+    const options = createChoicesNow();
+    // A row's select is only rewritten when its options really change, so a click that opens it is not cut short.
+    const key = JSON.stringify([
+      preview,
+      options.map((choice) => [choice.value, choice.role, choice.shared, choice.noShared, choice.volume?.name]),
+    ]);
+    if (key !== previewKey) {
+      previewKey = key;
+      for (const row of $$("#cbMountRows [data-mount]", root)) updateMountRowChoices(row, options);
+    }
+    const note = q("#cbVolPreviewNote");
+    if (!note) return;
+    const lines = [t("cb.volumesPreview")];
+    for (const line of previewNoteLines(readMountRows(q("#cbMountRows")), preview)) {
+      const role = line.params.role;
+      lines.push(t(line.key, role ? { ...line.params, role: roleLabel(role) } : line.params));
+    }
+    note.innerHTML = lines.map((line) => `<div>${esc(line)}</div>`).join("");
+  };
+
   /** The row list's note: what MiniBox creates for the roles it names, and the volumes it mounts as they are. */
   const refreshMounts = () => {
     if (!choices) return;
@@ -598,6 +670,7 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
     q("#cbSharedNote").innerHTML = shared.length
       ? `<div class="callout warn">${icon("alert")}<div>${shared.join("")}</div></div>`
       : "";
+    refreshPreviews();
   };
 
   const chooseVolumesMode = async (mode) => {
@@ -623,7 +696,7 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
         q("#cbMountRows").append(
           mountRow(
             { volume: roleValue(m.role), path: m.path, mode: m.mode },
-            { volumes: choices, create: true, choices: mountChoicesOf(choices) },
+            { volumes: choices, create: true, choices: createChoicesNow() },
           ),
         );
       }
@@ -650,7 +723,7 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
       q("#cbMountRows").append(
         mountRow(
           { volume: "", path: "/data", mode: "rw" },
-          { volumes: choices, create: true, choices: mountChoicesOf(choices) },
+          { volumes: choices, create: true, choices: createChoicesNow() },
         ),
       );
       refreshMounts();

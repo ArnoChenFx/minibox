@@ -240,6 +240,15 @@ export default {
   "cb.mountRoleRequired": "A mount that creates a role volume must keep that role's own path and mode.",
   "cb.mountsCreated": "MiniBox creates: {roles}.",
   "cb.mountsExisting": "Mounts existing volumes: {names}.",
+  "cb.volumesPreview":
+    "Nothing here is created yet. MiniBox makes these volumes when you create the box, and only for the roles a row still names: replace a role row with a volume that exists and that role's volume is not created.",
+  "cb.previewCreate": "Will create {name} when the box is created (preview).",
+  "cb.previewCreateInexact":
+    "Will create {name} when the box is created (preview). This host already uses that name, so MiniBox adds a suffix to it.",
+  "cb.previewShared": "Mounts the shared tools volume {name}, which already exists. Nothing is created for it.",
+  "cb.previewUnnamed": "Will create the {role} volume when the box is created (preview).",
+  "cb.previewHostUnknown":
+    "Will create the {role} volume on the host the create picks (preview). Its name follows that host.",
   "rb.desc":
     "Volumes, the stable id and the name stay. The writable layer, running processes and the container IP do not.",
   "rb.help":
@@ -259,8 +268,12 @@ export default {
   "mount.choose": "Choose a volume",
   "mount.existing": "Volumes that exist",
   "mount.roleCreate": "Create the {role} volume",
+  "mount.roleCreateUnnamed": "Create the {role} volume (preview)",
   "mount.roleShared": "Shared tools volume",
   "mount.roleSharedNone": "Create the shared tools volume",
+  "mount.roleSharedNoneAuto": "Create the shared tools volume on the host the create picks (preview)",
+  "mount.roleWillCreate": "Will create on box creation: {name} (preview)",
+  "mount.roleSharedExists": "Shared tools volume: {name} (already exists)",
   "rb.preview": "Preview",
   "rb.apply": "Apply rebuild",
   "rb.previewTitle": "This rebuild is not applied yet",
