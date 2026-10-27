@@ -4,6 +4,9 @@
 
 ## [Unreleased]
 
+### 新增
+- **文件浏览器可以一键复制 Box 内绝对路径**：Box 页面的 **文件** 标签页每一行新增一个复制图标（在预览与下载之间），点一下就把该条目在 Box 里看到的绝对路径复制到剪贴板——卷的挂载路径加上卷内路径，例如工作区挂载在 `/workspace` 时，`src/main.ts` 复制为 `/workspace/src/main.ts`，文件夹复制为它自身的路径，卷根目录复制为挂载路径本身（挂载在 `/` 时不会写成 `//`）。复制的是可以直接粘进终端或 SSH 命令的原样路径，不必自己拼挂载前缀；路径换算抽在 `web/js/lib/files.js` 的 `absolutePath(rootPath, path)`（附 `.d.ts`），单测覆盖根目录、`/` 挂载、带尾斜杠的挂载与嵌套路径。按钮沿用既有 `copyText`（非安全上下文回退到 `execCommand("copy")`），成功给 `fl.pathCopied` 提示条并显示复制到的路径，失败给 `fl.pathCopyFailed`。按钮只显示图标，文字作为 tooltip 与可访问名称（与工具行复制 JSON 的按钮一致）。手机上为了让名称仍然可读，操作列收成 28px 图标按钮、宽度 180px，并在 640px 及以下隐藏 **大小** 列——否则 320px 宽度下名称列会被挤到 0，一行只剩图标没有名字；桌面表格仍是五列（名称/大小/修改时间/操作）。文案 `fl.copyPath`、`fl.pathCopied`、`fl.pathCopyFailed` 进了中英文词典，中英文《文件》文档新增「复制路径」一节。测试：`tests/web-files.test.ts` 补了 `absolutePath` 的各边界与「每行都有复制按钮且按钮只有图标」，新增真实浏览器测试 `tests/web-files-copy-path-browser.test.ts`（点复制后读回剪贴板断言是 `/workspace/README.md`、文件夹与其中的文件各自复制自己的路径、1280 与 640/480/390/320 下按钮都是 28×28、五颗按钮互不重叠、操作列不越出窗口、页面不横向溢出）。
+
 ## [0.6.8] - 2026-10-27
 
 ### 新增
