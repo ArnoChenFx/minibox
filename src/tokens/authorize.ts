@@ -8,6 +8,7 @@ import type { Box } from "../services/boxes";
 import { getBox } from "../services/boxes";
 import { type CheckpointView, getCheckpoint } from "../services/checkpoints";
 import type { ExecTarget } from "../services/exec";
+import type { TemplateSourceImage } from "../services/templates";
 import type { BoxEnv } from "../specs/types";
 import { INIT_SESSION } from "../startup/command";
 import { inspectVolumeOrNull } from "../volumes/engine";
@@ -553,10 +554,13 @@ const RULES: ReadonlyMap<string, Rule> = new Map<string, Rule>([
   ],
   [
     "template.fork",
-    async ({ principal, host, input }) => {
+    async ({ principal, host, input, resolved }) => {
       // The source must be a template the token may use, and the name it forks into must be free: a fork would otherwise
       // move a tag another principal holds.
-      await assertImageUsable(principal, host, String(input.ref), "template");
+      // Authorize the exact image the fork copies; the input tag may already point at a different image.
+      const source = resolved as TemplateSourceImage | undefined;
+      if (!source?.image?.id) throw refusal("template_out_of_scope");
+      await assertImageUsable(principal, host, source.image.id, "template");
       await assertTemplateNameFree(host, String(input.name));
     },
   ],

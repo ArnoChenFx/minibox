@@ -370,9 +370,9 @@ describe("a settings list expands and collapses without asking the API again", (
   for (const page of PAGES) {
     test(`${page.name}: the toggle redraws the card from the data it already has`, () => {
       const run = pageRun(page.component, page.loader, page.card, page.bodies);
-      // Loading the page asks the API; expanding and collapsing the list ask for nothing.
+      // Lists reuse their metadata. Newly revealed hosts read their disk once; collapsing reuses those readings too.
       expect(run.requestsWhileLoading).toBeGreaterThan(0);
-      expect(run.requestsOnExpand).toBe(0);
+      expect(run.requestsOnExpand).toBe(page.name === "hosts" ? 2 : 0);
       expect(run.requestsOnCollapse).toBe(0);
       // A long list shows its limit first, every item when expanded, and the limit again when collapsed.
       expect(run.toggles).toBe(page.toggles);

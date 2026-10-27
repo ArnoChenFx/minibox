@@ -41,10 +41,10 @@ describe("the engine's own disk accounting (docker system df)", () => {
 
   test("an older engine lists what it holds and gives no totals, which are summed here", () => {
     const breakdown = toDiskBreakdown({
-      LayersSize: 999,
+      LayersSize: 1000,
       Images: [
-        { Size: 600, Containers: 1 },
-        { Size: 400, Containers: 0 },
+        { Size: 600, SharedSize: 0, Containers: 1 },
+        { Size: 400, SharedSize: 0, Containers: 0 },
       ],
       Containers: [
         { SizeRw: 10, State: "running" },
@@ -71,6 +71,28 @@ describe("the engine's own disk accounting (docker system df)", () => {
       volumes: { count: 4, activeCount: 1, totalBytes: 150, reclaimableBytes: 50 },
       buildCache: { count: 3, activeCount: 1, totalBytes: 100, reclaimableBytes: 30 },
     });
+  });
+
+  test("legacy image totals count shared layers once, using the same formula as docker system df", () => {
+    const images = [
+      { Size: 600, SharedSize: 300, Containers: 1 },
+      { Size: 400, SharedSize: 300, Containers: 0 },
+    ];
+    expect(toDiskBreakdown({ LayersSize: 700, Images: images }).images).toEqual({
+      count: 2,
+      activeCount: 1,
+      totalBytes: 700,
+      reclaimableBytes: 400,
+    });
+    expect(
+      toDiskBreakdown({ LayersSize: 700, Images: images.map((image) => ({ ...image, Containers: 0 })) }).images,
+    ).toEqual({
+      count: 2,
+      activeCount: 0,
+      totalBytes: 700,
+      reclaimableBytes: 700,
+    });
+    expect(toDiskBreakdown({ Images: images }).images).toMatchObject({ totalBytes: null, reclaimableBytes: null });
   });
 
   test("a class the engine does not report is null, not an error and not zero", () => {

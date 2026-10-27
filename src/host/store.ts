@@ -48,7 +48,7 @@ export function hostLabelsProblem(labels: unknown): string | null {
   return null;
 }
 
-/** What `hosts.json` records about one remote host. The credentials are not in it. */
+/** What `hosts.json` records about one host. The local entry keeps labels only; credentials are never in this file. */
 export interface StoredHost {
   readonly id: string;
   readonly name: string;
@@ -129,7 +129,7 @@ export class HostStore {
     }
     const seen = new Set<string>();
     for (const host of parsed.data.hosts) {
-      if (host.id === LOCAL_HOST_ID || host.id === AUTO_HOST || seen.has(host.id)) {
+      if (host.id === AUTO_HOST || seen.has(host.id)) {
         throw new HostsFileError(
           `${path} lists host ${host.id} more than once or uses a reserved id. Fix or remove it.`,
         );
@@ -138,6 +138,9 @@ export class HostStore {
       const endpoint = endpointOrNull(host.endpoint);
       if (endpoint === null)
         throw new HostsFileError(`${path} has an endpoint for ${host.id} that is not valid. Fix or remove it.`);
+      if (host.id === LOCAL_HOST_ID && endpoint.kind !== "unix") {
+        throw new HostsFileError(`${path} must use a unix endpoint for local host metadata. Fix or remove it.`);
+      }
       if ((endpoint.kind === "ssh") !== (host.hostKeyFingerprint !== null)) {
         throw new HostsFileError(
           `${path} has a host key for ${host.id} that does not match its endpoint. Fix or remove it.`,

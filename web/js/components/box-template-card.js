@@ -21,7 +21,7 @@ export function templateCardHtml({ box, staged = null, editing = false, error = 
       <div class="card-body stack">
         <p class="help">${esc(t("bd.templateEditHelp"))}</p>
         <div class="field"><label class="label" for="bsTemplateRef">${esc(t("bd.template"))}</label>
-          <input class="input mono" id="bsTemplateRef" value="${esc(box.template ?? "")}" autocomplete="off" autocapitalize="off" spellcheck="false" />
+          <input class="input mono" id="bsTemplateRef" value="${esc(ref)}" autocomplete="off" autocapitalize="off" spellcheck="false" />
         </div>
         <div class="error-text" data-template-error>${esc(error)}</div>
       </div>
@@ -80,7 +80,7 @@ export function mountTemplateCard(container, { box }) {
   const save = async (button) => {
     const input = container.querySelector("#bsTemplateRef");
     const value = input?.value ?? "";
-    if (sameTemplate(box(), value)) {
+    if (sameTemplate({ template: staged ?? box().template }, value)) {
       editing = false;
       error = "";
       draw();

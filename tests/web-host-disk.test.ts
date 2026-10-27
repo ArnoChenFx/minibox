@@ -147,12 +147,12 @@ describe("reading every host at once", () => {
 
 describe("the console asks for a reading once per host, and never for the whole page", () => {
   test("the settings card reads each host's engine storage after drawing, one request per host", () => {
-    expect(HOSTS).toContain("/api/hosts/${enc(host.id)}/disk");
+    expect(HOSTS).toContain("/api/hosts/${enc(id)}/disk");
     // The read happens after the table is drawn, so a slow engine does not hold up the card, and only the rows the card
     // shows are asked for: the card is drawn first, then its rows are read.
-    expect(HOSTS).toContain("void loadDisk(drawn, shown);");
+    expect(HOSTS).toContain("void loadDisk(lines, shown, readDisk);");
     // A failed read leaves the line empty instead of failing the card.
-    expect(HOSTS).toContain("disk = null;");
+    expect(HOSTS).toContain(".catch(() => null)");
   });
 
   test("the overview reads every host's storage in parallel, so one host cannot hold up the cards", () => {

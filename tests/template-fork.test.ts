@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 
 import type { App } from "../src/app";
 import type { HostCtx } from "../src/host/registry";
@@ -111,7 +113,7 @@ describe("forking a template that was built from a source", () => {
     expect(readRecipe(l.host, "tool")?.imageId).not.toBe(recipe?.imageId);
   });
 
-  test("a fork with no description copies the source's, and its recipe keeps null so a rebuild makes the default", async () => {
+  test("a fork with no description copies the source's into both the image and the recipe", async () => {
     const l = lab();
     await declared(l);
 
@@ -123,7 +125,44 @@ describe("forking a template that was built from a source", () => {
     expect((await l.runtime.inspectImage("mbtest-template:tool-copy")).labels[l.keys.templateDesc]).toBe(
       "Built from a Dockerfile",
     );
-    expect(readRecipe(l.host, "tool-copy")?.description).toBeNull();
+    expect(readRecipe(l.host, "tool-copy")?.description).toBe("Built from a Dockerfile");
+  });
+
+  test("a fork uses its resolved image even when the source tag moves before its container is created", async () => {
+    const l = lab();
+    await declared(l);
+    const source = await templateSourceImage(l.host, "mbtest-template:tool");
+    l.runtime.moveTag(source.ref, { [l.keys.template]: "true", [l.keys.templateName]: "tool", marker: "replacement" });
+    await forkTemplate(l.host, source, { name: "copy", createdBy: "owner" });
+    const image = await l.runtime.inspectImage("mbtest-template:copy");
+    expect(image.labels.marker).toBeUndefined();
+    expect(l.runtime.callsTo("createContainer").at(-1)?.args[0]).toMatchObject({ image: source.image.id });
+    expect(readRecipe(l.host, "copy")?.source).toEqual(source.recipe?.source);
+  });
+
+  test("a source rebuilt while the fork commits cannot replace the recipe the fork captured", async () => {
+    const l = lab();
+    await declared(l);
+    const source = await templateSourceImage(l.host, "mbtest-template:tool");
+    const entered = Promise.withResolvers<void>();
+    const gate = Promise.withResolvers<void>();
+    const commit = l.runtime.commitContainer.bind(l.runtime);
+    l.runtime.commitContainer = async (id, spec) => {
+      entered.resolve();
+      await gate.promise;
+      return commit(id, spec);
+    };
+    const pending = forkTemplate(l.host, source, { name: "copy", createdBy: "owner" });
+    try {
+      await entered.promise;
+      await rebuildDeclaredTemplate(l.host, await declaredTemplate(l.host, source.ref), progressOf(l));
+    } finally {
+      gate.resolve();
+    }
+    await pending;
+    expect(readRecipe(l.host, "tool")?.imageId).not.toBe(source.image.id);
+    expect(readRecipe(l.host, "copy")?.source).toEqual(source.recipe?.source);
+    expect((await listTemplates(l.host)).find((image) => image.name === "copy")?.buildKind).toBe("dockerfile");
   });
 
   test("a devcontainer template's setup is copied, so a box created from the fork gets it too", async () => {
@@ -299,6 +338,54 @@ describe("template.fork over REST and tokens", () => {
     expect((await finishedTask(harness.base, started.json.taskId ?? "")).status).toBe("succeeded");
   }
 
+  test("rebuilding a token's fork keeps its ownership, visibility and copied description", async () => {
+    const maker = mint(harness.app, { name: "maker", preset: "operator" });
+    const other = mint(harness.app, { name: "other", preset: "operator" });
+    const host = harness.app.hosts.get();
+    await createDeclaredTemplate(
+      host,
+      {
+        name: "shared",
+        source: { kind: "dockerfile", text: FROM_ALPINE },
+        description: "Our source description",
+        createdBy: "owner",
+      },
+      {},
+    );
+    expect(
+      (await call(harness.base, forkPath("mbtest-template:shared"), { token: maker.secret, body: { name: "mine" } }))
+        .status,
+    ).toBe(201);
+    expect(namesOf(await call(harness.base, "/api/templates", { token: other.secret }))).not.toContain("mine");
+    const rebuilt = await call(harness.base, "/api/templates/mbtest-template%3Amine/rebuild", { body: {} });
+    expect(rebuilt.status).toBe(202);
+    expect((await finishedTask(harness.base, rebuilt.json.taskId ?? "")).status).toBe("succeeded");
+    const image = await harness.runtime.inspectImage("mbtest-template:mine");
+    expect(image.labels[host.keys.createdBy]).toBe(maker.id);
+    expect(image.labels[host.keys.templateDesc]).toBe("Our source description");
+    expect(namesOf(await call(harness.base, "/api/templates", { token: maker.secret }))).toContain("mine");
+    expect(namesOf(await call(harness.base, "/api/templates", { token: other.secret }))).not.toContain("mine");
+  });
+
+  test("rebuilding an older fork repairs the copied recipe creator from the image's own owner", async () => {
+    const maker = mint(harness.app, { name: "maker", preset: "operator" });
+    const host = harness.app.hosts.get();
+    await declaredOverRest("shared");
+    expect(
+      (await call(harness.base, forkPath("mbtest-template:shared"), { token: maker.secret, body: { name: "mine" } }))
+        .status,
+    ).toBe(201);
+    const recipe = readRecipe(host, "mine")!;
+    // The record an earlier version wrote: correct fork image ID, but the source template's creator.
+    writeFileSync(
+      join(dirname(host.specs.dir()), "template-recipes", host.host.id, "mine.json"),
+      JSON.stringify({ ...recipe, createdBy: "owner" }),
+    );
+    await rebuildDeclaredTemplate(host, await declaredTemplate(host, "mbtest-template:mine"), {});
+    expect((await harness.runtime.inspectImage("mbtest-template:mine")).labels[host.keys.createdBy]).toBe(maker.id);
+    expect(readRecipe(host, "mine")?.createdBy).toBe(maker.id);
+  });
+
   test("answers 201 with the new template, which lists with its own name and description", async () => {
     await declaredOverRest("tool");
 
@@ -408,6 +495,38 @@ describe("template.fork over REST and tokens", () => {
       body: { name: "stolen" },
     });
     expect(refused(stolen)).toEqual({ status: 403, key: "template_out_of_scope" });
+  });
+
+  test("moving a private source tag to a public image during resolution does not authorize the private image", async () => {
+    const maker = mint(harness.app, { name: "maker", preset: "operator" });
+    const other = mint(harness.app, { name: "other", preset: "operator" });
+    const keys = harness.app.hosts.get().keys;
+    const ref = "mbtest-template:private";
+    harness.runtime.seedImage(ref, {
+      [keys.template]: "true",
+      [keys.templateName]: "private",
+      [keys.createdBy]: maker.id,
+    });
+    const inspect = harness.runtime.inspectImage.bind(harness.runtime);
+    let moved = false;
+    harness.runtime.inspectImage = async (name) => {
+      const image = await inspect(name);
+      if (name === ref && !moved) {
+        moved = true;
+        harness.runtime.moveTag(ref, {
+          [keys.template]: "true",
+          [keys.templateName]: "private",
+          [keys.createdBy]: "owner",
+        });
+      }
+      return image;
+    };
+    const reply = await call(harness.base, forkPath(ref), {
+      token: other.secret,
+      body: { name: "stolen", host: "local" },
+    });
+    expect(refused(reply)).toEqual({ status: 403, key: "template_out_of_scope" });
+    expect(harness.runtime.callsTo("commitContainer")).toHaveLength(0);
   });
 
   test("a token may not fork into a name another principal holds", async () => {

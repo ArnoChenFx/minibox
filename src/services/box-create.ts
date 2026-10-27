@@ -90,6 +90,11 @@ async function mountsForCreate(
   const attached = await attachedMounts(host, requested);
   const roles = rolesToCreate(requested);
   if (roles.length === 0) return resolveCreateMounts(host, attached, known);
+  await healSharedToolsMounts(
+    host,
+    attached.map((mount) => mount.volume),
+    known,
+  );
   // A role volume is new, so its attachment rules are the role's own: no recorded volume can be owned by another box.
   const created = await provisionRoleMounts(host, box, roles, known, changes);
   const made = new Map(created.map((mount) => [mount.path, mount]));

@@ -137,23 +137,18 @@ export function copyRecipe(from: HostCtx, to: HostCtx, ref: string, imageId: str
 }
 
 /**
- * Gives the name `to` the recipe that built the template `from`, pointed at the image the fork has. The source and the
- * setup stay as they were, so the fork rebuilds from the same source, and the description is the fork's own, so a
- * rebuild keeps what the fork was called. Nothing is written when the source has no recipe, or when its recipe built
- * another image than `sourceImageId`: a template saved from a box is forked without one, and cannot be rebuilt, as it
- * could not before.
+ * Gives `to` the recipe captured with the source image, pointed at the fork's image. A source rebuilt while the fork
+ * runs cannot replace this recipe. The fork's description and creator belong to the fork and survive its rebuilds.
  */
 export function forkRecipe(
   host: HostCtx,
-  from: string,
   to: string,
-  sourceImageId: string,
+  recipe: TemplateRecipe,
   imageId: string,
-  description: string | null,
+  description: string,
+  createdBy: string,
 ): void {
-  const recipe = readRecipe(host, from);
-  if (!recipe || recipe.imageId !== sourceImageId) return;
-  writeRecipe(host, to, { ...recipe, imageId, description, created: new Date().toISOString() });
+  writeRecipe(host, to, { ...recipe, imageId, description, createdBy, created: new Date().toISOString() });
 }
 
 /** How a template was built, when its image still matches the recipe that built it. */
@@ -178,7 +173,9 @@ export async function declaredTemplate(host: HostCtx, ref: string): Promise<Decl
   if (image.labels[host.keys.template] !== "true") throw notFound(msg("template_not_found"));
   const recipe = readRecipe(host, name);
   if (!recipe || recipe.imageId !== image.id) throw badRequest(msg("template_not_declared", { name }));
-  return { name, imageId: image.id, recipe };
+  // Older forks copied the source's creator into the recipe. The image's label is the ownership authority.
+  const createdBy = image.labels[host.keys.createdBy] || recipe.createdBy;
+  return { name, imageId: image.id, recipe: { ...recipe, createdBy } };
 }
 
 /**

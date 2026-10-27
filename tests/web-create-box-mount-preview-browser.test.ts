@@ -309,7 +309,11 @@ describe.skipIf(!executablePath)("the create box dialog's preview volume names (
             }));
         });
 
-      // The dialog is 1280px wide here, where the four columns leave the volume select enough room for the name.
+      // The desktop column wraps the label when its font needs more room, instead of cutting it off.
+      expect(await clipped()).toEqual([]);
+      const longName = "a".repeat(63);
+      await dialog().locator("#cbName").fill(longName);
+      await webExpect(page.locator("#cbMountRows .dropdown-current").first()).toContainText(`${longName}-workspace`);
       expect(await clipped()).toEqual([]);
 
       // Narrowed to a tablet width, the volume control takes a line of its own instead of squeezing the name.
