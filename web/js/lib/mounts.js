@@ -38,15 +38,95 @@ export function roleMount(role) {
  * The choices a create row offers: one per role, which MiniBox creates for the box, then the volumes that exist. The
  * tools role mounts the host's shared tools volume when there is one, so its label says so, and its own volume when
  * there is none.
+ *
+ * `preview` is what `roleVolumeNames` predicted for the box being created. Without it the roles carry no name, and the
+ * dialog falls back to naming the role.
  */
-export function createMountChoices(volumes, sharedTools) {
-  const roles = DEFAULT_MOUNTS.map((mount) => ({
-    value: roleValue(mount.role),
-    role: mount.role,
-    shared: mount.role === "tools" && sharedTools,
-    noShared: mount.role === "tools" && !sharedTools,
-  }));
-  return [...roles, ...volumes.map((volume) => ({ value: volume.id, role: null, shared: false, volume }))];
+export function createMountChoices(volumes, sharedTools, preview = null) {
+  const roles = DEFAULT_MOUNTS.map((mount) => {
+    const shared = mount.role === "tools" && sharedTools;
+    return {
+      value: roleValue(mount.role),
+      role: mount.role,
+      shared,
+      noShared: mount.role === "tools" && !sharedTools,
+      preview: preview?.[mount.role] ?? null,
+    };
+  });
+  return [
+    ...roles,
+    ...volumes.map((volume) => ({
+      value: volume.id,
+      role: null,
+      shared: false,
+      noShared: false,
+      preview: null,
+      volume,
+    })),
+  ];
+}
+
+/**
+ * The names MiniBox would give this box's role volumes, as the create dialog shows them before anything exists. Mirrors
+ * `defaultRolePlans` in src/volumes/engine.ts: a role volume is `<box>-<role>`, and the tools role is the host's one
+ * shared volume, `<prefix>-tools-<host>`. Nothing is created here, and nothing is written.
+ *
+ * `taken` is the display names the host already uses. A name among them is marked `exact: false`, because the server
+ * makes a free name with `freeName` (`-<pool>`, then `-2`, `-3`…) and the dialog cannot know which suffix applies
+ * without reading the host's pools. `hostKnown` is false for automatic placement, which picks the host inside the
+ * create, so the shared tools volume cannot be named at all.
+ */
+export function roleVolumeNames({ boxName, hostId, labelPrefix, sharedTools, taken = [], hostKnown = true }) {
+  const names = {};
+  const box = typeof boxName === "string" ? boxName.trim() : "";
+  const takenSet = new Set(taken);
+  for (const mount of DEFAULT_MOUNTS) {
+    if (mount.role === "tools") {
+      if (sharedTools) {
+        names.tools = { name: sharedTools.name, exists: true, exact: true, hostKnown };
+        continue;
+      }
+      if (!hostKnown) {
+        names.tools = { name: null, exists: false, exact: false, hostKnown: false };
+        continue;
+      }
+      const name = `${labelPrefix}-tools-${hostId}`;
+      names.tools = { name, exists: false, exact: !takenSet.has(name), hostKnown: true };
+      continue;
+    }
+    // Without a box name the server has nothing to name the volume after, and the dialog says so instead of guessing.
+    const name = box ? `${box}-${mount.role}` : null;
+    names[mount.role] = { name, exists: false, exact: name !== null && !takenSet.has(name), hostKnown };
+  }
+  return names;
+}
+
+/**
+ * The names a create would give the role volumes its rows still name, in row order. A row that mounts a volume that
+ * exists, or that was removed, contributes nothing: MiniBox creates no volume for it.
+ */
+export function previewRoleNames(rows, names) {
+  const out = [];
+  for (const row of rows) {
+    const role = roleOfValue(row.volume);
+    if (!role) continue;
+    out.push({ role, ...(names?.[role] ?? { name: null, exists: false, exact: false, hostKnown: true }) });
+  }
+  return out;
+}
+
+/**
+ * The lines the Volumes section says under its rows: what the create would make, one line per role a row still names.
+ * Each line is an i18n key and its parameters. A volume that is already there (the shared tools volume) says so, and a
+ * name the host already uses says the server may add a suffix, so the dialog never promises a name it cannot know.
+ */
+export function previewNoteLines(rows, names) {
+  return previewRoleNames(rows, names).map(({ role, name, exists, exact, hostKnown }) => {
+    if (exists) return { key: "cb.previewShared", params: { name } };
+    if (name === null && !hostKnown) return { key: "cb.previewHostUnknown", params: { role } };
+    if (name === null) return { key: "cb.previewUnnamed", params: { role } };
+    return { key: exact ? "cb.previewCreate" : "cb.previewCreateInexact", params: { name } };
+  });
 }
 
 /** Mirrors `validMountPath` in src/volumes/mounts.ts, the rule the server applies to every mount path. */
@@ -78,10 +158,30 @@ export function volumeChoices(volumes, liveBoxIds) {
   return volumes.map((volume) => ({
     id: volume.id,
     name: volume.name,
+    hostId: volume.hostId ?? null,
     role: volume.role ?? null,
+    ownership: volume.ownership,
     rwMounts: volume.rwMounts,
     disabled: volume.ownership === "owned" && volume.ownerBoxId !== null && liveBoxIds.has(volume.ownerBoxId),
   }));
+}
+
+/** The names the volumes of one host already use. A create on that host has to avoid them. */
+export function namesOnHost(choices, hostId) {
+  return choices.filter((choice) => choice.hostId === hostId).map((choice) => choice.name);
+}
+
+/**
+ * The host's shared tools volume, the one its boxes mount. Mirrors `isSharedTools` in src/volumes/engine.ts: a tools
+ * volume that is independent, so an owned tools volume of another box is not the host's shared one and the create makes
+ * a new one. Null when the host has none yet, or when the host is not known.
+ */
+export function sharedToolsOnHost(choices, hostId) {
+  return (
+    choices.find(
+      (choice) => choice.role === "tools" && choice.hostId === hostId && choice.ownership === "independent",
+    ) ?? null
+  );
 }
 
 /**

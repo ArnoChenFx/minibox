@@ -104,16 +104,16 @@ describe.skipIf(!executablePath)("the create box dialog's custom volumes (real b
         .evaluateAll((selects) => selects.map((select) => (select as unknown as { value: string }).value));
       expect(volumes).toEqual(["role:workspace", "role:home", "role:tools", "role:cache"]);
 
-      // The roles a row can pick are labelled, and the tools row is the shared tools volume of this host.
+      // The roles a row can pick are labelled with the name the create would give the volume, and say it is a preview.
       const choices = await rows
         .first()
         .locator("[data-volume] option")
         .evaluateAll((options) =>
           options.map((option) => (option as unknown as { textContent: string }).textContent?.trim() ?? ""),
         );
-      expect(choices).toContain(english("mount.roleCreate", { role: english("vol.roleWorkspace") }));
-      // This host has no shared tools volume yet, so the tools row says the create makes one.
-      expect(choices).toContain(english("mount.roleSharedNone"));
+      expect(choices).toContain(english("mount.roleWillCreate", { name: "rolebox-workspace" }));
+      // This host has no shared tools volume yet, so the tools row says the create makes one, named after the host.
+      expect(choices).toContain(english("mount.roleWillCreate", { name: `${app?.cfg.labelPrefix}-tools-local` }));
       await webExpect(rows.nth(2).locator("[data-volume]")).toHaveValue("role:tools");
 
       // Removing the home row means that volume is not created, and the note names what MiniBox will create.

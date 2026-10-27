@@ -20,18 +20,31 @@ export function roleLabel(role) {
   return t(ROLE_LABEL_KEY[role] ?? "mount.volume");
 }
 
-/** The label of the choice that creates a role's volume for a new box, and of the shared tools volume it reuses. */
-function roleChoiceLabel(role, shared, noShared) {
-  if (noShared) return t("mount.roleSharedNone");
-  return t(shared ? "mount.roleShared" : "mount.roleCreate", { role: roleLabel(role) });
+/**
+ * The label of the choice that creates a role's volume for a new box, and of the shared tools volume it reuses. With a
+ * prediction the label names the volume the create would make, and says it is only a preview: nothing exists yet.
+ */
+function roleChoiceLabel(role, shared, noShared, preview) {
+  if (shared) return preview?.name ? t("mount.roleSharedExists", { name: preview.name }) : t("mount.roleShared");
+  if (noShared) {
+    if (preview?.name) return t("mount.roleWillCreate", { name: preview.name });
+    if (preview && !preview.hostKnown) return t("mount.roleSharedNoneAuto");
+    return t("mount.roleSharedNone");
+  }
+  if (!preview) return t("mount.roleCreate", { role: roleLabel(role) });
+  if (!preview.name) return t("mount.roleCreateUnnamed", { role: roleLabel(role) });
+  return t("mount.roleWillCreate", { name: preview.name });
 }
 
-/** The options of a create row's volume select: the roles to create, then the volumes that already exist. */
+/**
+ * The options of a create row's volume select: the roles to create, then the volumes that already exist. A role shows the
+ * name MiniBox would give its volume, and says it is a preview: nothing is created until the box is.
+ */
 function createVolumeOptions(choices, selected) {
   const options = [`<option value="">${esc(t("mount.choose"))}</option>`];
   for (const choice of choices.filter((item) => item.role)) {
     options.push(
-      `<option value="${esc(choice.value)}" ${choice.value === selected ? "selected" : ""}>${esc(roleChoiceLabel(choice.role, choice.shared, choice.noShared))}</option>`,
+      `<option value="${esc(choice.value)}" ${choice.value === selected ? "selected" : ""}>${esc(roleChoiceLabel(choice.role, choice.shared, choice.noShared, choice.preview))}</option>`,
     );
   }
   const group = choices
@@ -44,6 +57,18 @@ function createVolumeOptions(choices, selected) {
     options.push(`<optgroup label="${esc(t("mount.existing"))}">${group.join("")}</optgroup>`);
   }
   return options.join("");
+}
+
+/**
+ * Replaces the role options of one row's select with new predictions, keeping the volume the row picked. The volumes that
+ * exist stay as they were, so a row that names one keeps it.
+ */
+export function updateMountRowChoices(row, choices) {
+  const select = row.querySelector("[data-volume]");
+  if (!select) return;
+  const chosen = select.value;
+  select.innerHTML = createVolumeOptions(choices, chosen);
+  select.value = chosen;
 }
 
 /**
