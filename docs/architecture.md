@@ -142,7 +142,7 @@ Every path is under `DATA_DIR`.
 | `backups/` | `src/backup/store.ts` | Stored backups: sealed archives, each with a record written last |
 | `targets.json` | `src/targets/store.ts` | Off-site targets: where each one is and its last sync. Their credentials are secrets named `target.<id>.<field>` |
 | `exec/` | `src/events/outputs.ts` | Saved output of commands |
-| `hosts.json`, `hosts/<id>/` | `src/host/store.ts` | Remote host records and their credential files |
+| `hosts.json`, `hosts/<id>/` | `src/host/store.ts` | Host records, with their labels, and their credential files |
 | `agents.json` | `src/host/agent/store.ts` | Paired host agents: ids, public keys and revocation. The private key stays in the agent's own volume |
 | `tools.d/` | `src/tools/custom.ts` | Custom tool catalog entries |
 | `ssh_host_ed25519_key` | `src/ssh/host-key.ts` | The SSH gateway's host key |

@@ -86,6 +86,7 @@ describe("host usage for the overview", () => {
         "error",
         "boxes",
         "createdAt",
+        "labels",
       ].toSorted(),
     );
     expect(Object.keys(await usageRows(cluster))).toEqual(["local"]);

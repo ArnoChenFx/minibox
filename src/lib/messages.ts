@@ -387,6 +387,10 @@ export const MESSAGES = {
   host_auto_offline: "No host is online to place the box on.",
   host_auto_no_room:
     "No online host that holds the template, or can build it, has room for a box of {cpus} CPUs and {memoryMb} MB.",
+  host_auto_no_label_match: "No online host carries every label this create asks for ({labels}). Nothing was placed.",
+  host_labels_invalid: "The host labels are not valid: {reason}",
+  host_labels_need_auto:
+    "hostLabels selects a host for host: auto. Either set host to auto and let the labels choose, or name one host and leave hostLabels out.",
   host_exists: "A host with the id “{host}” already exists.",
   host_not_found: "Host “{host}” was not found.",
   host_is_local: "The local host cannot be removed.",
