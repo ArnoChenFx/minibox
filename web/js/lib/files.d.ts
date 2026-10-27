@@ -51,6 +51,7 @@ export declare function pickRoot(roots: readonly Root[], path: string | null): R
 export declare function joinPath(dir: string, name: string): string;
 export declare function parentOf(path: string): string;
 export declare function baseOf(path: string): string;
+export declare function absolutePath(rootPath: string, path: string): string;
 export declare function crumbsOf(dir: string): { name: string; path: string }[];
 export declare function childrenOf(entries: readonly Entry[], dir: string): Child[];
 export declare function visibleEntries(children: readonly Child[], options?: VisibleOptions): Child[];

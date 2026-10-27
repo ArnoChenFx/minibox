@@ -91,7 +91,8 @@ button.fb-crumb:hover {
   width: 200px;
 }
 .fb-col-actions {
-  width: 176px;
+  /* Preview, copy path, download, rename and delete: five 32px buttons with a 2px gap, in the 16px padding of a cell. */
+  width: 208px;
 }
 th.num,
 td.num {
@@ -224,6 +225,32 @@ button.fb-name:hover span {
 }
 @media (max-width: 720px) {
   .fb-col-modified {
+    display: none;
+  }
+}
+/* A phone keeps the name readable next to five actions: the buttons shrink to 28px and the action column takes only what
+   they need, so the name loses nothing to the buttons it did not have before the copy button arrived. */
+@media (max-width: 640px) {
+  /* Five 28px buttons and their gaps need 148px of content, and the cell's padding adds 32px. */
+  .fb-col-actions {
+    width: 180px;
+  }
+  .fb-actions {
+    gap: 2px;
+  }
+  /* Without this the download link, an anchor among buttons, is the one flex item that gives up width and shrinks. */
+  .fb-actions .icon-btn {
+    flex: none;
+    width: 28px;
+    height: 28px;
+  }
+  .fb-actions .icon-btn svg {
+    width: 15px;
+    height: 15px;
+  }
+  /* The size column is the one that can go without losing the job: at 320px it took the whole name column with it, so a
+     row showed four icons and no name. The size stays in the desktop table. */
+  .fb-table .fb-col-size {
     display: none;
   }
 }

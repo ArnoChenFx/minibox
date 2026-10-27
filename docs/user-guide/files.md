@@ -14,6 +14,12 @@ The tab shows volumes only. Files that a box writes outside a volume, such as th
 - Names that start with a dot (hidden files) are shown by default. Turn off **Show hidden files** to hide them. The setting is not saved, so it is back on the next time you open the page.
 - A folder lists up to 2,000 entries. When a folder has more, the list says that some entries are missing. Open a subfolder to see the rest.
 
+## Copy a path
+
+- Click the copy icon on a row to copy the path the box sees: the volume's mount path followed by the path inside it. A file `src/main.ts` in the workspace mounted at `/workspace` copies as `/workspace/src/main.ts`, a folder as its own path, and the volume's root as the mount path.
+- The copy takes the path as it is, so it can be pasted into the box's [terminal](terminal-and-sessions.md) or into a command run over [SSH and the CLI](ssh-and-cli.md) without adding the mount path by hand.
+- The icon is the button's whole label; the words are its tooltip and its accessible name. On a phone the row keeps the name readable by dropping the size column instead of the actions.
+
 ## Preview and download
 
 - Click a file's name, or its eye icon, to preview it. A preview shows the start of a file of up to 256 KiB as text. A file that is not UTF-8 text cannot be previewed, so download it instead.

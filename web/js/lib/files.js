@@ -24,6 +24,15 @@ export function baseOf(path) {
   return path.slice(path.lastIndexOf("/") + 1);
 }
 
+/**
+ * The path a person types in the box: the mount path of the volume, then the path inside it. A volume mounted at `/data`
+ * holds `src/a.ts` at `/data/src/a.ts`, and its root is the mount path itself. A root of `/` is not doubled.
+ */
+export function absolutePath(rootPath, path) {
+  const root = rootPath === "/" ? "" : rootPath.replace(/\/+$/, "");
+  return path === "" ? root || "/" : `${root}/${path}`;
+}
+
 /** The folders on the way to `dir`, each with its own path, for the breadcrumbs. */
 export function crumbsOf(dir) {
   const parts = dir === "" ? [] : dir.split("/");
