@@ -268,6 +268,8 @@ describe("the custom-tool dialog's paste box", () => {
   test("a paste never claims the built-in override, so it adds a tool rather than replacing one", () => {
     const apply = DIALOG.slice(DIALOG.indexOf("const applyPaste = () =>"));
     expect(apply).toContain('read("overrideBuiltin").checked = false;');
+    // Only a new entry decides its id and override from the paste; an edit keeps the file it is editing.
+    expect(apply).toMatch(/if \(!editing\) \{\n\s*read\("id"\)\.value = values\.id;/);
   });
 
   test("the strings the box shows are in the dictionary, in both languages", () => {

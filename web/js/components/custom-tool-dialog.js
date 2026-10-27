@@ -180,14 +180,17 @@ export function openCustomToolDialog({ entry = null, catalogIds, customById, onS
     box.classList.remove("invalid");
     box.removeAttribute("aria-invalid");
     const { values } = parsed;
-    // The id is the one field an edit keeps: the file it names is the entry being edited, so a paste only fills the rest.
-    if (!editing) read("id").value = values.id;
+    // The id and the built-in override are the two a new entry decides for itself. An edit keeps them: the id names the
+    // file being edited, which cannot be renamed, and the override is what that entry already declared.
+    if (!editing) {
+      read("id").value = values.id;
+      read("overrideBuiltin").checked = false;
+    }
     for (const name of ["name", "description", "category", "source", "package", "bin", "requires", "estimatedMb"]) {
       read(name).value = values[name];
     }
     for (const name of COMMAND_FIELDS) read(name).value = values[name];
     read("needsRoot").checked = values.needsRoot;
-    read("overrideBuiltin").checked = false;
     source = values.source;
     root.querySelector("#ct-source-help").textContent = t(SOURCE_HELP[values.source]);
     refreshId();
