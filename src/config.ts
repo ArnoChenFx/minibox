@@ -4,6 +4,7 @@ import { join } from "node:path";
 
 import { BOX_PROFILES, type BoxProfile, DEFAULT_BOX_PROFILE, DEFAULT_PIDS_LIMIT, isBoxProfile } from "./box-profile";
 import { accessKeyPath, createSecretFile, ensureDataDir, readSecretFile, resolveDataDir } from "./data-dir";
+import { hostLabelsProblem } from "./host/store";
 import { log } from "./lib/logger";
 import { parsePreviewBaseDomain } from "./preview/domain";
 
@@ -77,6 +78,11 @@ export interface Config {
    * more than the host has. Checked only on a control plane with more than one host.
    */
   hostOvercommit: number;
+  /**
+   * Labels of the local host, from `HOST_LABELS`, such as `{ gpu: "", arch: "amd64" }`. They are read once at startup and
+   * written into `hosts.json` under the id `local`, which is where a change through the API is kept too.
+   */
+  localHostLabels: Record<string, string>;
   /**
    * Base domain of subdomain previews, such as `minibox-preview.net`. Each preview then runs on `<port>-<box>.<base>`, with
    * its own origin. Null keeps the path-mode previews under `/box/`.
@@ -215,6 +221,25 @@ function parseHostOvercommit(value: string | undefined): number {
 
 const RUNTIME_NAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/;
 
+/**
+ * Labels of the local host, as `key` or `key=value` entries separated by commas. A key with no `=` carries an empty value.
+ * A label key or value that does not follow the rules stops startup, so a typo cannot silently select no host.
+ */
+function parseHostLabels(value: string | undefined): Record<string, string> {
+  const labels: Record<string, string> = {};
+  for (const raw of (value ?? "").split(",")) {
+    const entry = raw.trim();
+    if (entry === "") continue;
+    const eq = entry.indexOf("=");
+    const key = (eq === -1 ? entry : entry.slice(0, eq)).trim();
+    const label = eq === -1 ? "" : entry.slice(eq + 1).trim();
+    const problem = hostLabelsProblem({ [key]: label });
+    if (problem !== null) throw new Error(`HOST_LABELS: “${entry}” is not a label: ${problem}`);
+    labels[key] = label;
+  }
+  return labels;
+}
+
 function parseContainerRuntime(value: string | undefined): string | null {
   const v = nonBlank(value);
   if (v === undefined) return null;
@@ -300,6 +325,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     checkpointPackageMaxMb: intInRange(get("CHECKPOINT_PACKAGE_MAX_MB"), 2048, 1, 65536),
     fileUploadMaxMb: intInRange(get("FILE_UPLOAD_MAX_MB"), 1024, 1, 65536),
     hostOvercommit: parseHostOvercommit(get("HOST_OVERCOMMIT")),
+    localHostLabels: parseHostLabels(get("HOST_LABELS")),
     previewBaseDomain: parsePreviewBaseDomain(get("PREVIEW_BASE_DOMAIN")),
     notifyAllowPrivate: isTruthy(get("NOTIFY_ALLOW_PRIVATE")),
     volumeUsageIntervalSec: intInRange(get("VOLUME_USAGE_INTERVAL_SEC"), 600, 60, 86400),

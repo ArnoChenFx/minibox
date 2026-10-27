@@ -2037,7 +2037,7 @@
     "path": "/api/hosts",
     "status": 200,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"hosts\":[{\"id\":\"local\",\"name\":\"Local\",\"transport\":\"local\",\"endpoint\":\"unix:///nonexistent-minibox-test.sock\",\"status\":\"online\",\"latencyMs\":null,\"capacity\":null,\"dockerVersion\":null,\"error\":null,\"boxes\":3,\"createdAt\":null}]}"
+    "body": "{\"hosts\":[{\"id\":\"local\",\"name\":\"Local\",\"transport\":\"local\",\"endpoint\":\"unix:///nonexistent-minibox-test.sock\",\"status\":\"online\",\"latencyMs\":null,\"capacity\":null,\"dockerVersion\":null,\"error\":null,\"boxes\":3,\"createdAt\":null,\"labels\":{}}]}"
   },
   {
     "step": "test a tcp host without credentials",
@@ -2077,7 +2077,7 @@
     "path": "/api/hosts",
     "status": 201,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"host\":{\"id\":\"lab\",\"name\":\"Lab\",\"transport\":\"unix\",\"endpoint\":\"unix:///var/run/lab.sock\",\"status\":\"online\",\"latencyMs\":0,\"capacity\":{\"cpus\":8,\"memoryBytes\":17179869184},\"dockerVersion\":\"fake\",\"error\":null,\"boxes\":0,\"createdAt\":\"<time>\"}}"
+    "body": "{\"host\":{\"id\":\"lab\",\"name\":\"Lab\",\"transport\":\"unix\",\"endpoint\":\"unix:///var/run/lab.sock\",\"status\":\"online\",\"latencyMs\":0,\"capacity\":{\"cpus\":8,\"memoryBytes\":17179869184},\"dockerVersion\":\"fake\",\"error\":null,\"boxes\":0,\"createdAt\":\"<time>\",\"labels\":{}}}"
   },
   {
     "step": "add the lab host again",
@@ -2101,7 +2101,7 @@
     "path": "/api/hosts",
     "status": 200,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"hosts\":[{\"id\":\"local\",\"name\":\"Local\",\"transport\":\"local\",\"endpoint\":\"unix:///nonexistent-minibox-test.sock\",\"status\":\"online\",\"latencyMs\":null,\"capacity\":null,\"dockerVersion\":null,\"error\":null,\"boxes\":3,\"createdAt\":null},{\"id\":\"lab\",\"name\":\"Lab\",\"transport\":\"unix\",\"endpoint\":\"unix:///var/run/lab.sock\",\"status\":\"online\",\"latencyMs\":0,\"capacity\":{\"cpus\":8,\"memoryBytes\":17179869184},\"dockerVersion\":\"fake\",\"error\":null,\"boxes\":0,\"createdAt\":\"<time>\"}]}"
+    "body": "{\"hosts\":[{\"id\":\"local\",\"name\":\"Local\",\"transport\":\"local\",\"endpoint\":\"unix:///nonexistent-minibox-test.sock\",\"status\":\"online\",\"latencyMs\":null,\"capacity\":null,\"dockerVersion\":null,\"error\":null,\"boxes\":3,\"createdAt\":null,\"labels\":{}},{\"id\":\"lab\",\"name\":\"Lab\",\"transport\":\"unix\",\"endpoint\":\"unix:///var/run/lab.sock\",\"status\":\"online\",\"latencyMs\":0,\"capacity\":{\"cpus\":8,\"memoryBytes\":17179869184},\"dockerVersion\":\"fake\",\"error\":null,\"boxes\":0,\"createdAt\":\"<time>\",\"labels\":{}}]}"
   },
   {
     "step": "remove the local host",
@@ -2117,7 +2117,7 @@
     "path": "/api/hosts/lab",
     "status": 200,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"host\":{\"id\":\"lab\",\"name\":\"Lab\",\"transport\":\"unix\",\"endpoint\":\"unix:///var/run/lab.sock\",\"status\":\"online\",\"latencyMs\":0,\"capacity\":{\"cpus\":8,\"memoryBytes\":17179869184},\"dockerVersion\":\"fake\",\"error\":null,\"boxes\":0,\"createdAt\":\"<time>\"}}"
+    "body": "{\"host\":{\"id\":\"lab\",\"name\":\"Lab\",\"transport\":\"unix\",\"endpoint\":\"unix:///var/run/lab.sock\",\"status\":\"online\",\"latencyMs\":0,\"capacity\":{\"cpus\":8,\"memoryBytes\":17179869184},\"dockerVersion\":\"fake\",\"error\":null,\"boxes\":0,\"createdAt\":\"<time>\",\"labels\":{}}}"
   },
   {
     "step": "remove a missing host",
@@ -2133,7 +2133,7 @@
     "path": "/api/hosts",
     "status": 200,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"hosts\":[{\"id\":\"local\",\"name\":\"Local\",\"transport\":\"local\",\"endpoint\":\"unix:///nonexistent-minibox-test.sock\",\"status\":\"online\",\"latencyMs\":null,\"capacity\":null,\"dockerVersion\":null,\"error\":null,\"boxes\":3,\"createdAt\":null}]}"
+    "body": "{\"hosts\":[{\"id\":\"local\",\"name\":\"Local\",\"transport\":\"local\",\"endpoint\":\"unix:///nonexistent-minibox-test.sock\",\"status\":\"online\",\"latencyMs\":null,\"capacity\":null,\"dockerVersion\":null,\"error\":null,\"boxes\":3,\"createdAt\":null,\"labels\":{}}]}"
   },
   {
     "step": "read the engine storage of the local host",
@@ -2573,7 +2573,7 @@
     "path": "/api/hosts",
     "status": 200,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"hosts\":[{\"id\":\"local\",\"name\":\"Local\",\"transport\":\"local\",\"endpoint\":\"unix:///nonexistent-minibox-test.sock\",\"status\":\"online\",\"latencyMs\":null,\"capacity\":null,\"dockerVersion\":null,\"error\":null,\"boxes\":6,\"createdAt\":null},{\"id\":\"edge\",\"name\":\"edge\",\"transport\":\"agent\",\"endpoint\":\"agent://<agentId>\",\"status\":\"offline\",\"latencyMs\":null,\"capacity\":null,\"dockerVersion\":null,\"error\":\"the agent is not connected\",\"boxes\":0,\"createdAt\":\"<time>\",\"agent\":{\"connected\":false,\"version\":\"0.4.0\",\"protocol\":1,\"lastSeenAt\":null,\"upgradeRequired\":false,\"revoked\":false}}]}"
+    "body": "{\"hosts\":[{\"id\":\"local\",\"name\":\"Local\",\"transport\":\"local\",\"endpoint\":\"unix:///nonexistent-minibox-test.sock\",\"status\":\"online\",\"latencyMs\":null,\"capacity\":null,\"dockerVersion\":null,\"error\":null,\"boxes\":6,\"createdAt\":null,\"labels\":{}},{\"id\":\"edge\",\"name\":\"edge\",\"transport\":\"agent\",\"endpoint\":\"agent://<agentId>\",\"status\":\"offline\",\"latencyMs\":null,\"capacity\":null,\"dockerVersion\":null,\"error\":\"the agent is not connected\",\"boxes\":0,\"createdAt\":\"<time>\",\"labels\":{},\"agent\":{\"connected\":false,\"version\":\"0.4.0\",\"protocol\":1,\"lastSeenAt\":null,\"upgradeRequired\":false,\"revoked\":false}}]}"
   },
   {
     "step": "revoke the agent host",
@@ -2581,7 +2581,7 @@
     "path": "/api/hosts/edge/revoke",
     "status": 200,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"host\":{\"id\":\"edge\",\"name\":\"edge\",\"transport\":\"agent\",\"endpoint\":\"agent://<agentId>\",\"status\":\"offline\",\"latencyMs\":null,\"capacity\":null,\"dockerVersion\":null,\"error\":\"the agent is not connected\",\"boxes\":0,\"createdAt\":\"<time>\",\"agent\":{\"connected\":false,\"version\":\"0.4.0\",\"protocol\":1,\"lastSeenAt\":null,\"upgradeRequired\":false,\"revoked\":true}}}"
+    "body": "{\"host\":{\"id\":\"edge\",\"name\":\"edge\",\"transport\":\"agent\",\"endpoint\":\"agent://<agentId>\",\"status\":\"offline\",\"latencyMs\":null,\"capacity\":null,\"dockerVersion\":null,\"error\":\"the agent is not connected\",\"boxes\":0,\"createdAt\":\"<time>\",\"labels\":{},\"agent\":{\"connected\":false,\"version\":\"0.4.0\",\"protocol\":1,\"lastSeenAt\":null,\"upgradeRequired\":false,\"revoked\":true}}}"
   },
   {
     "step": "remove the revoked agent host",
@@ -2589,7 +2589,7 @@
     "path": "/api/hosts/edge",
     "status": 200,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"host\":{\"id\":\"edge\",\"name\":\"edge\",\"transport\":\"agent\",\"endpoint\":\"agent://<agentId>\",\"status\":\"offline\",\"latencyMs\":null,\"capacity\":null,\"dockerVersion\":null,\"error\":\"the agent is not connected\",\"boxes\":0,\"createdAt\":\"<time>\",\"agent\":{\"connected\":false,\"version\":\"0.4.0\",\"protocol\":1,\"lastSeenAt\":null,\"upgradeRequired\":false,\"revoked\":true}}}"
+    "body": "{\"host\":{\"id\":\"edge\",\"name\":\"edge\",\"transport\":\"agent\",\"endpoint\":\"agent://<agentId>\",\"status\":\"offline\",\"latencyMs\":null,\"capacity\":null,\"dockerVersion\":null,\"error\":\"the agent is not connected\",\"boxes\":0,\"createdAt\":\"<time>\",\"labels\":{},\"agent\":{\"connected\":false,\"version\":\"0.4.0\",\"protocol\":1,\"lastSeenAt\":null,\"upgradeRequired\":false,\"revoked\":true}}}"
   },
   {
     "step": "create the files volume",
@@ -3814,5 +3814,77 @@
     "status": 404,
     "contentType": "application/json; charset=utf-8",
     "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Volume nowhere was not found.\",\"retryable\":false,\"key\":\"volume_not_found\",\"params\":{\"volume\":\"nowhere\"}}}"
+  },
+  {
+    "step": "set the local host's labels",
+    "method": "POST",
+    "path": "/api/hosts/local",
+    "status": 405,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"method_not_allowed\",\"message\":\"Method not allowed.\",\"retryable\":false,\"key\":\"method_not_allowed\"}}"
+  },
+  {
+    "step": "replace the local host's labels",
+    "method": "PATCH",
+    "path": "/api/hosts/local",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"host\":{\"id\":\"local\",\"name\":\"Local\",\"transport\":\"local\",\"endpoint\":\"unix:///nonexistent-minibox-test.sock\",\"status\":\"online\",\"latencyMs\":null,\"capacity\":null,\"dockerVersion\":null,\"error\":null,\"boxes\":9,\"createdAt\":\"<time>\",\"labels\":{\"gpu\":\"true\"}}}"
+  },
+  {
+    "step": "set a label that is not valid",
+    "method": "PATCH",
+    "path": "/api/hosts/local",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"The host labels are not valid: “Bad Key” is not a label key: use a lowercase name such as gpu, or a namespaced one such as org/arch\",\"retryable\":false,\"key\":\"host_labels_invalid\",\"params\":{\"reason\":\"“Bad Key” is not a label key: use a lowercase name such as gpu, or a namespaced one such as org/arch\"},\"details\":{\"field\":\"labels\"}}}"
+  },
+  {
+    "step": "set labels on a host that is not added",
+    "method": "PATCH",
+    "path": "/api/hosts/nowhere",
+    "status": 404,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Host “nowhere” was not found.\",\"retryable\":false,\"key\":\"host_not_found\",\"params\":{\"host\":\"nowhere\"}}}"
+  },
+  {
+    "step": "list hosts after setting labels",
+    "method": "GET",
+    "path": "/api/hosts",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"hosts\":[{\"id\":\"local\",\"name\":\"Local\",\"transport\":\"local\",\"endpoint\":\"unix:///nonexistent-minibox-test.sock\",\"status\":\"online\",\"latencyMs\":null,\"capacity\":null,\"dockerVersion\":null,\"error\":null,\"boxes\":9,\"createdAt\":\"<time>\",\"labels\":{\"gpu\":\"true\"}}]}"
+  },
+  {
+    "step": "create with labels but no auto host",
+    "method": "POST",
+    "path": "/api/boxes",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"hostLabels selects a host for host: auto. Either set host to auto and let the labels choose, or name one host and leave hostLabels out.\",\"retryable\":false,\"key\":\"host_labels_need_auto\",\"details\":{\"field\":\"hostLabels\"}}}"
+  },
+  {
+    "step": "create with a label key that is not valid",
+    "method": "POST",
+    "path": "/api/boxes",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"The host labels are not valid: “Bad Key” is not a label key: use a lowercase name such as gpu, or a namespaced one such as org/arch\",\"retryable\":false,\"key\":\"host_labels_invalid\",\"params\":{\"reason\":\"“Bad Key” is not a label key: use a lowercase name such as gpu, or a namespaced one such as org/arch\"},\"details\":{\"field\":\"hostLabels\"}}}"
+  },
+  {
+    "step": "create on auto with labels no host carries",
+    "method": "POST",
+    "path": "/api/boxes",
+    "status": 422,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"insufficient_capacity\",\"message\":\"No online host carries every label this create asks for (gpu=true, zone=eu). Nothing was placed.\",\"retryable\":false,\"key\":\"host_auto_no_label_match\",\"params\":{\"labels\":\"gpu=true, zone=eu\"},\"details\":{\"field\":\"hostLabels\"}}}"
+  },
+  {
+    "step": "create on auto with the local host's label",
+    "method": "POST",
+    "path": "/api/boxes",
+    "status": 422,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"insufficient_capacity\",\"message\":\"No online host that holds the template, or can build it, has room for a box of 1 CPUs and 256 MB.\",\"retryable\":false,\"key\":\"host_auto_no_room\",\"params\":{\"cpus\":1,\"memoryMb\":256}}}"
   }
 ]

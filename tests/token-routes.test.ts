@@ -70,6 +70,7 @@ const OWNER_ONLY_ROUTES = [
   "POST /api/hosts/:id/revoke",
   "POST /api/hosts/pairing",
   "POST /api/hosts/test",
+  "PATCH /api/hosts/:id",
   "POST /api/images/pull",
   "POST /api/notify/channels/:id/test",
   "POST /api/packages",
@@ -271,6 +272,8 @@ describe("fail-closed authorization", () => {
       "checkpoint.usage",
       "host.add",
       "host.disk",
+
+      "host.labels.set",
       "host.list",
       "host.pairing.create",
       "host.remove",

@@ -21,7 +21,7 @@ The default location is `./data` in a source checkout, and `/data` in the releas
 | `exec/` | `700` | Saved output of `exec` commands, one JSON file per command. |
 | `secrets/` | `700` | Host secrets in `env/<name>`, mode `600`, each created when you set a secret. The credentials of off-site targets are among them, as `env/target.<id>.<field>`. Notification channel secrets in `notify/<channel id>`, and webhook URLs in `notify/<channel id>.url`, mode `600`. Also `checkpoint-repo.key`, mode `600`, created when the checkpoint repository is first initialized. |
 | `tools.d/` | `700` | Custom tool catalog entries, one `<id>.json` file each, mode `600`, created when you save a custom tool |
-| `hosts.json` | `600` | Remote hosts: ID, name, endpoint without any credential, the SSH host key fingerprint, and when each host was added. Written when you add the first remote host. |
+| `hosts.json` | `600` | Hosts: ID, name, endpoint without any credential, the SSH host key fingerprint, when each host was added, and the labels an `auto` create may select it by. Written when you add the first remote host, when a host's labels change, and when `HOST_LABELS` gives the local host labels. The local host's own record holds only its labels. |
 | `hosts/<id>/` | `700` | Credential files for each remote host, mode `600`: `ca.pem`, `cert.pem` and `key.pem` for `tcp://`, or `ssh_key` for `ssh://`. The API never returns them. |
 | `agents.json` | `600` | Paired host agents: ID, public key, version, pairing and revocation times. Written when an agent pairs. It never holds a private key, which stays in the agent's own data volume. See [Agent](../reference/agent.md). |
 | `volumes/` | `700` | One volume record per file, `vol_….json`, mode `600`. |

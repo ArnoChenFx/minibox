@@ -146,12 +146,19 @@ export interface HostIdentity {
   readonly name: string;
   readonly transport: Host["transport"];
   readonly endpoint: string;
+  /** Labels an `auto` create may select the host by. Absent for a host that carries none. */
+  readonly labels?: Record<string, string>;
 }
 
 export interface LocalHostOptions {
   /** Host id. Defaults to `local`; a second host needs its own id. */
   readonly id?: string;
   readonly name?: string;
+  /**
+   * Labels of the local host, which `HOST_LABELS` sets at startup and a `PATCH /api/hosts/local` changes. They live in
+   * `hosts.json` under the reserved id `local`, so the store is the one place a host's labels come from.
+   */
+  readonly labels?: Record<string, string>;
   /** Defaults to a store under `DATA_DIR/checkpoints`. */
   readonly checkpoints?: CheckpointStore;
   /** Defaults to the restic engine. */
@@ -177,7 +184,7 @@ export function createHost(cfg: Config, runtime: Runtime, shared: SharedStores, 
       name: identity.name,
       kind: "docker",
       endpoint: identity.endpoint,
-      labels: {},
+      labels: { ...identity.labels },
       status: "unknown",
       transport: identity.transport,
     },
@@ -275,6 +282,7 @@ export function createLocalHost(
       name: options.name ?? "Local",
       transport: "local",
       endpoint: `unix://${cfg.dockerSocket}`,
+      labels: options.labels,
     },
   );
 }

@@ -30,7 +30,7 @@ import {
   unreachableRuntime,
 } from "./registry";
 import { checkSshKey, HostKeyMismatchError, HostKeyUnconfirmedError, probeHostKey, SshKeyError } from "./ssh";
-import { AUTO_HOST, HOST_ID_RE, type HostStore, type StoredHost } from "./store";
+import { AUTO_HOST, HOST_ID_RE, type HostStore, hostLabelsProblem, type StoredHost } from "./store";
 
 export const PROBE_INTERVAL_MS = 30_000;
 /** The most ticks an offline host sits out between two checks. At the interval above, that is about five minutes. */
@@ -59,6 +59,8 @@ export interface HostInput {
   readonly privateKey?: string;
   /** The SSH host key the operator confirmed, as `SHA256:…`. Required before an SSH host is added. */
   readonly hostKeyFingerprint?: string;
+  /** Labels an `auto` create may select this host by. */
+  readonly labels?: Record<string, string>;
 }
 
 /** A host as the API shows it. It never carries a credential: only where the host is and what it reported. */
@@ -75,6 +77,8 @@ export interface HostView {
   readonly error: string | null;
   readonly boxes: number;
   readonly createdAt: string | null;
+  /** Labels an `auto` create may select this host by. */
+  readonly labels: Record<string, string>;
   /** The agent's connection and version. Present on an agent host only. */
   readonly agent?: AgentStatus;
 }
@@ -153,6 +157,11 @@ export interface HostManagerOptions {
   readonly onLive?: (host: HostCtx) => void;
   /** The agents that dial in. An agent host's engine is reached through its connection here. */
   readonly agents: AgentHub;
+  /**
+   * Labels of the local host from the configuration, such as `HOST_LABELS`. They are written into `hosts.json` under the
+   * reserved id `local` when the host loads, so one record holds them and a change through the API is kept there.
+   */
+  readonly localLabels?: Record<string, string>;
   readonly now?: () => Date;
 }
 
@@ -225,6 +234,23 @@ async function diskView(ctx: HostCtx, checkedAt: string): Promise<HostDiskView> 
   }
 }
 
+/**
+ * A checked copy of the labels a caller sends. The rules are the ones the hosts file enforces, and a set that breaks one
+ * is a 400 that names the problem, so a label that would never match is refused here instead of on the next start.
+ */
+function labelsOf(raw: Record<string, string> | undefined): Record<string, string> {
+  const labels = raw ?? {};
+  const problem = hostLabelsProblem(labels);
+  if (problem !== null) throw badRequest(msg("host_labels_invalid", { reason: problem }), { field: "labels" });
+  return { ...labels };
+}
+
+/** Whether two label sets hold the same entries, so a file that already says what the configuration says is not rewritten. */
+function sameLabels(a: Record<string, string>, b: Record<string, string>): boolean {
+  const keys = Object.keys(a);
+  return keys.length === Object.keys(b).length && keys.every((key) => b[key] === a[key]);
+}
+
 function pemOf(value: string | undefined, field: "ca" | "cert" | "key" | "privateKey", pattern: RegExp): string {
   const text = value?.trim() ?? "";
   if (text === "") throw badRequest(msg("host_credentials_missing", { field }), { field });
@@ -278,10 +304,51 @@ export class HostManager {
 
   /** Registers every stored host. Opening a link never touches the network, so this returns at once. */
   load(): void {
-    for (const host of this.options.store.load()) {
+    const stored = this.options.store.load();
+    for (const host of stored) {
       this.stored.set(host.id, host);
       this.register(host);
     }
+    this.adoptConfiguredLocalLabels(stored);
+  }
+
+  /**
+   * Records the labels the configuration gives the local host. `HOST_LABELS` is a startup default, so it is written into
+   * `hosts.json` under the reserved id `local` and the registry's copy of the local host is updated to match. A host that
+   * already carries labels keeps them: the file is the place a change through the API is kept, and an operator who has
+   * set labels there must not lose them to an old `.env`.
+   */
+  private adoptConfiguredLocalLabels(stored: readonly StoredHost[]): void {
+    const configured = this.options.localLabels ?? {};
+    const existing = stored.find((host) => host.id === LOCAL_HOST_ID);
+    const labels =
+      existing?.labels !== undefined && Object.keys(existing.labels).length > 0 ? existing.labels : configured;
+    if (Object.keys(labels).length === 0) return;
+    if (this.options.registry.has(LOCAL_HOST_ID)) this.options.registry.get(LOCAL_HOST_ID).host.labels = { ...labels };
+    if (existing === undefined || !sameLabels(existing.labels ?? {}, labels)) {
+      const record: StoredHost = {
+        id: LOCAL_HOST_ID,
+        name: existing?.name ?? "Local",
+        endpoint: existing?.endpoint ?? `unix://${this.options.cfg.dockerSocket}`,
+        hostKeyFingerprint: existing?.hostKeyFingerprint ?? null,
+        createdAt: existing?.createdAt ?? this.now().toISOString(),
+        labels: { ...labels },
+      };
+      this.persistRecord(record);
+    }
+  }
+
+  /**
+   * Writes one host's record and keeps the rest, in the order the hosts are registered. That order is the order a
+   * placement breaks a tie in, and it is the order the file had, so a rewritten file never reorders the hosts. A record
+   * for a host that is not registered yet, such as the local host on the first write, goes at the end.
+   */
+  private persistRecord(record: StoredHost): void {
+    this.stored.set(record.id, record);
+    const registered = this.options.registry.list().map((ctx) => this.stored.get(ctx.host.id));
+    const known = new Set(registered.map((host) => host?.id));
+    const rest = [...this.stored.values()].filter((host) => !known.has(host.id));
+    this.options.store.save([...registered, ...rest].filter((host): host is StoredHost => host !== undefined));
   }
 
   /** Starts the periodic check of every host's latency and capacity, and runs the first check of each now. Tests call `probeDue`. */
@@ -348,6 +415,7 @@ export class HostManager {
       const prepared = await this.prepare(input);
       const problem = keyProblem(prepared.presented, input.hostKeyFingerprint);
       if (problem) throw new AppError(409, "conflict", problem, { fingerprint: prepared.presented });
+      const labels = labelsOf(input.labels);
       await this.check(prepared);
       const host: StoredHost = {
         id,
@@ -355,6 +423,7 @@ export class HostManager {
         endpoint: endpointLabel(prepared.endpoint),
         hostKeyFingerprint: prepared.presented,
         createdAt: this.now().toISOString(),
+        labels,
       };
       this.persist(host, prepared.credentials);
       this.register(host);
@@ -454,6 +523,7 @@ export class HostManager {
         endpoint: `agent://${record.agentId}`,
         hostKeyFingerprint: null,
         createdAt: now,
+        labels: {},
       };
       try {
         this.persist(host, {});
@@ -476,6 +546,32 @@ export class HostManager {
       const ctx = this.options.registry.get(id);
       ctx.host.status = "offline";
       log.info("agent.revoked", { host: id });
+      return this.view(ctx);
+    });
+  }
+
+  /**
+   * Replaces the labels of one host, the local host included. An `auto` create selects a host by these labels, so the
+   * change reaches the registry's copy of the host at once and the file keeps it across a restart. An empty set clears
+   * them. A label that is not acceptable is refused before anything is written.
+   */
+  setLabels(id: string, labels: Record<string, string>): Promise<HostView> {
+    return this.exclusive(async () => {
+      if (!this.options.registry.has(id)) throw notFound(msg("host_not_found", { host: id }));
+      const next = labelsOf(labels);
+      const ctx = this.options.registry.get(id);
+      const stored = this.stored.get(id);
+      const record: StoredHost = {
+        id,
+        name: stored?.name ?? ctx.host.name,
+        endpoint: stored?.endpoint ?? ctx.host.endpoint,
+        hostKeyFingerprint: stored?.hostKeyFingerprint ?? null,
+        createdAt: stored?.createdAt ?? this.now().toISOString(),
+        labels: next,
+      };
+      this.persistRecord(record);
+      ctx.host.labels = { ...next };
+      log.info("host.labels_set", { host: id, count: Object.keys(next).length });
       return this.view(ctx);
     });
   }
@@ -637,6 +733,7 @@ export class HostManager {
       name: stored.name,
       transport: endpoint.kind,
       endpoint: stored.endpoint,
+      labels: stored.labels ?? {},
     };
     let runtime: Runtime;
     if (endpoint.kind === "agent") {
@@ -750,6 +847,7 @@ export class HostManager {
       error: probe?.error ?? null,
       boxes: ctx.specs.list().filter((spec) => spec.hostId === id).length,
       createdAt: this.stored.get(id)?.createdAt ?? null,
+      labels: { ...ctx.host.labels },
       ...this.agentFieldOf(id),
     };
   }

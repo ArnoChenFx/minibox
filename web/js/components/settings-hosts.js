@@ -102,8 +102,9 @@ function hostRow(host) {
     ? `<span class="subtle">${esc(t("st.agentEndpoint"))}</span> <span class="badge">${esc(t("st.transport.agent"))}</span>`
     : `<span class="mono">${esc(host.endpoint)}</span> <span class="badge">${esc(t(`st.transport.${host.transport}`))}</span>`;
   const agent = host.agent ? agentDetails(host.agent) : "";
+  const labels = hostLabelsLine(host.labels);
   return `<tr>
-    <td><strong>${esc(host.name)}</strong> <span class="subtle mono">${esc(host.id)}</span></td>
+    <td><strong>${esc(host.name)}</strong> <span class="subtle mono">${esc(host.id)}</span>${labels}</td>
     <td class="hide-sm">${endpoint}</td>
     <td class="${host.agent ? "" : "nowrap"}"><span class="badge ${HOST_BADGE[host.status] ?? ""}"><span class="dot"></span>${esc(t(`st.hostStatus.${host.status}`))}</span>${latency}${error}${agent}</td>
     <td class="hide-sm nowrap">${capacity}</td>
@@ -134,6 +135,16 @@ function diskLines(disk) {
     )
     .join("");
   return `<div class="host-disk" aria-label="${esc(t("st.disk.title"))}">${rows}</div>`;
+}
+
+/** The labels a host carries, under its name. A host with none shows nothing, so the table keeps its old shape. */
+function hostLabelsLine(labels) {
+  const entries = Object.entries(labels ?? {});
+  if (entries.length === 0) return "";
+  const badges = entries
+    .map(([key, value]) => `<span class="badge">${esc(value === "" ? key : `${key}=${value}`)}</span>`)
+    .join(" ");
+  return `<div class="help mono">${badges}</div>`;
 }
 
 function hostActions(host) {

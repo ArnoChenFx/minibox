@@ -6,7 +6,9 @@ import {
   type Options,
   parseOptions,
   numberOption,
+  labelEntries,
   readStdinText,
+  repeatedValues,
 } from "./shared";
 import { followTask } from "./task";
 
@@ -31,6 +33,8 @@ export async function boxLs(argv: string[], env: Record<string, string | undefin
 
 const BOX_CREATE_VALUE_FLAGS = [
   "--template",
+  "--host",
+  "--host-label",
   "--cpus",
   "--memory",
   "--profile",
@@ -44,11 +48,6 @@ const BOX_CREATE_VALUE_FLAGS = [
 ];
 
 const BOX_CREATE_SWITCHES = [...OUTPUT_SWITCHES, "--startup-command-stdin", "--self-token"];
-
-/** Every value a repeatable flag names, in the order given. `parseOptions` keeps only the last one. */
-function repeatedValues(argv: string[], flag: string): string[] {
-  return argv.flatMap((token, index) => (token === flag ? [argv[index + 1] ?? ""] : []));
-}
 
 /** `--egress` names the tier. The presets and domains of `proxy-only` may repeat, and mean nothing without a tier. */
 function egressOption(argv: string[], options: Options): Record<string, unknown> | undefined {
@@ -107,6 +106,15 @@ export async function boxCreateCommand(
   if (inline !== undefined) body.startupCommand = inline;
   if (fromStdin) body.startupCommand = await readStdinText(io);
   if (options.switches.has("--self-token")) body.selfToken = true;
+  const host = options.values.get("--host");
+  if (host !== undefined) body.host = host;
+  const hostLabels = repeatedValues(argv, "--host-label");
+  if (hostLabels.length > 0) {
+    if (host !== "auto") {
+      throw new Error("minibox box create takes --host-label only with --host auto");
+    }
+    body.hostLabels = labelEntries(hostLabels, "--host-label");
+  }
 
   const res = await request(env, "POST", "/api/boxes", body);
   if (res.status >= 400) return fail(io, res.status, res.json, res.text);
