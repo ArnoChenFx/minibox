@@ -427,7 +427,7 @@ export default {
   "err.pool_path_invalid": "{what} 路径 {path} 必须是绝对路径，且不能包含 ..",
   "err.pool_duplicate": "存储池名称不能重复。",
   "err.pool_default_conflict": "请只指定一个默认存储池。",
-  "err.pool_in_use": "池 {pool} 上仍有卷，不能删除或更换后端。",
+  "err.pool_in_use": "池 {pool} 上仍有卷，不能删除、重命名或更换后端。",
   "err.role_pool_unknown": "角色 {role} 指向不存在的池 {pool}。",
   "err.exec_command_required": "请只提供 cmd 或 argv 其中之一。",
   "err.exec_command_hint": "cmd 经 /bin/sh -c 执行。argv 是程序及其参数，不经过 shell。",

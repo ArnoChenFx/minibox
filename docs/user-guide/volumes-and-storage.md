@@ -39,6 +39,20 @@ One pool is the default. To change the default, click **Make this the default po
 
 A pool that still has volumes cannot be removed.
 
+### Edit a storage pool
+
+Click **Edit** on a pool's row to change the pool you already have, instead of removing it and adding it again. The form is the one that adds a pool, filled in with the pool's values:
+
+- An **NFS** pool has **Pool name**, **Server**, **Export**, **Options** and **Make this the default pool**.
+- A **Path** pool has **Pool name**, **Root**, **Marker file** and **Make this the default pool**.
+
+The local pool has no **Edit** button: it is the built-in pool and cannot be changed.
+
+Saving an edit works like adding a pool: the dialog's **Confirm** sends the change, the preview lists what changes, and the pools are saved once you confirm the preview. Two things the server decides:
+
+- **Renaming is allowed, but a pool that still has volumes keeps its name.** Volumes record the pool they were created on, so the server refuses the rename with `pool_in_use` and nothing is saved. The dialog shows that reason, and the form stays open so you can correct the name. The same goes for **Backend**: the form shows the pool's backend but does not offer another one, because a pool that still has volumes cannot change it.
+- **Changing the server, export, options, root or marker does not change volumes that already exist.** Each Docker volume keeps the mount parameters it was created with, because Docker cannot remount a volume in place. New volumes use the new parameters. The dialog says so, and the preview shows the parameters before and after, so you can see what an edit changes. To move an existing volume to new parameters, copy its data into a new volume.
+
 ## Create and attach volumes
 
 - To create a volume, click **Create volume**, and choose a pool. The volume is independent, which means it is not tied to a box.
