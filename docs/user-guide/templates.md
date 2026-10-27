@@ -162,7 +162,7 @@ Saving changes the recipe only. The template keeps the image it has, so boxes cr
 - **The setup.** **Setup command** runs once in each box created from the template, as `/bin/sh -c`, and **Forwarded ports** are the TCP ports such a box opens. Leave both empty to remove the setup. They are not part of the image, so changing them takes effect for the next box created, with no rebuild.
 - **The description.** A new description is written onto the template's image, so its card shows it at once. MiniBox commits the same image under the same tag with the new label; the system layer is unchanged.
 
-Only the owner can edit a template. A template saved from a box, and a template built by MiniBox itself, have no source of their own to edit: the base template is rebuilt from `templates/base`, and an official template from the Dockerfile that ships with MiniBox.
+A template write needs the `tool:install` scope, so the owner can edit any template and a token can edit one it may use; a sandboxed agent token, which has no `tool:install`, cannot. A template saved from a box, and a template built by MiniBox itself, have no source of their own to edit: the base template is rebuilt from `templates/base`, and an official template from the Dockerfile that ships with MiniBox.
 
 On the command line, the same change is:
 
