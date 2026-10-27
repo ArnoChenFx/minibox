@@ -192,6 +192,10 @@ function pageRun(component: string, loader: string, cardId: string, bodies: Reco
       unboundBefore: unbound(node),
       unboundAfterExpand: 0,
     };
+    // The loader may read on after it returns, as the hosts card does for each host's engine storage. Those reads are
+    // part of loading the page, not of expanding a list.
+    for (let turn = 0; turn < 200; turn += 1) await settle();
+    run.requestsWhileLoading = requests.length;
     // A list that is not long draws no toggle, so there is nothing to press.
     if (run.toggles === 0) return run;
     let mark = requests.length;
@@ -304,14 +308,16 @@ const PAGES = [
     expanded: 7,
   },
   {
+    // The hosts card draws one detail row per host under its own row, for the engine's storage reading, so a list of
+    // five hosts is ten rows and a list of seven is fourteen.
     name: "hosts",
     component: "settings-hosts.js",
     loader: "loadHosts",
     card: "stHosts",
     bodies: { "/api/hosts": { hosts: hostList } },
     toggles: 1,
-    collapsed: 5,
-    expanded: 7,
+    collapsed: 10,
+    expanded: 14,
   },
   {
     name: "secrets",

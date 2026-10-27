@@ -122,6 +122,16 @@ The **Settings** page lists each host with its **Status**, its **Capacity**, and
 - A host that is offline shows its boxes as unreachable, and the rest of the list still loads. MiniBox checks an offline host again in the background. Each failed check waits longer than the one before, up to about five minutes.
 - An agent host shows the agent's version and when it was last seen. If the agent speaks another protocol than this MiniBox, the host shows **Agent needs an upgrade**. Pull the latest `minibox-agent` image and recreate the container with the same data volume.
 
+## Engine storage
+
+Each host's row on the **Settings → Hosts** page also says what its engine holds, as `docker system df` counts it: the bytes taken by images, containers, volumes and build cache, how many of each the engine has and how many are in use, and how much of each a removal would free. The reading is taken when the page opens, one request per host, and it never holds up the table: the rows draw first and the storage line fills in.
+
+This is the engine's own accounting, not the host filesystem's. The free-space floor that MiniBox enforces on volumes and checkpoints is the filesystem figure, and the two can disagree: a host can have plenty of free space while Docker's own objects take most of the disk.
+
+A class, or a figure, that the engine does not report is shown as unknown rather than as zero. Engines of different versions report different fields, and an engine that never measured a volume's size reports no size for it.
+
+An **agent host has no such reading.** The agent carries the operations a box needs, and reading the engine's own storage is not one of them, so its row says so. A host that is offline, whose engine does not answer within the read timeout, or whose engine refuses the read says why in its own row, and every other host still shows its figures. MiniBox never prunes images, containers or build cache itself: the reading only tells you what is there.
+
 ## Remove a host
 
 Click **Remove** next to the host, and confirm. A host that still has boxes, volumes or checkpoints cannot be removed. The **local** host cannot be removed.

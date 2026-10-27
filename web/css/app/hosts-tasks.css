@@ -464,3 +464,45 @@
     min-height: 160px;
   }
 }
+
+/* ---------- Engine storage, docker system df ---------- */
+/* One line per class under a host's row, and the whole reading under a host's overview card. The classes are a grid so
+   the byte figures line up down the column, and each line wraps on a phone instead of pushing the table sideways. */
+.host-disk-row > td {
+  padding-top: 0;
+  border-top: 0;
+}
+.host-disk {
+  display: grid;
+  gap: 2px 16px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.host-disk-class {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 12px;
+  align-items: baseline;
+}
+.host-disk-label {
+  min-width: 9em;
+  color: var(--text-2);
+}
+.host-disk-note,
+.host-storage-note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.host-storage {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.host-disk .icon,
+.host-storage .icon,
+.host-disk-note .icon,
+.host-storage-note .icon {
+  width: 14px;
+  height: 14px;
+}

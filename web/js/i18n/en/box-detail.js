@@ -30,6 +30,7 @@ export default {
   "ov.hostBoxes": "{n} boxes",
   "ov.hostContainers": "{running} of {total} containers running",
   "ov.hostUsing": "Using about {cpu} cores and {mem} now",
+  "ov.hostDisk": "Engine holds {total} · {reclaimable} reclaimable",
   "ov.os": "OS",
   "ov.kernel": "Kernel",
   "ov.cpu": "Processor",

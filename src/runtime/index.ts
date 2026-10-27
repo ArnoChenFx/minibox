@@ -224,6 +224,29 @@ export interface DiskUsage {
   freeBytes: number;
 }
 
+/**
+ * One class of what an engine holds, as `docker system df` counts it. Every figure is null when the engine did not
+ * report it, which engines of different versions do: a missing field is null, never an error.
+ */
+export interface DiskBreakdownEntry {
+  /** Entries of this class the engine holds. */
+  count: number | null;
+  /** Entries in use: images a container uses, running containers, volumes a container mounts, build cache in use. */
+  activeCount: number | null;
+  /** Bytes this class takes. */
+  totalBytes: number | null;
+  /** Bytes that removing everything unused would free. */
+  reclaimableBytes: number | null;
+}
+
+/** The engine's own accounting of what it holds (`docker system df`). A class the engine did not report is null. */
+export interface DiskBreakdown {
+  images: DiskBreakdownEntry | null;
+  containers: DiskBreakdownEntry | null;
+  volumes: DiskBreakdownEntry | null;
+  buildCache: DiskBreakdownEntry | null;
+}
+
 /** Numeric owner of a file or directory. */
 /** Metadata of one path in a container, without its contents (`HEAD /containers/{id}/archive`). */
 export interface PathStat {
@@ -511,6 +534,13 @@ export interface Runtime {
   runHelper(spec: HelperSpec): Promise<HelperResult>;
   /** Bytes on the filesystem that holds `path`, as seen by this runtime's host. */
   diskUsage(path: string): Promise<DiskUsage>;
+  /**
+   * What the engine itself holds, the way `docker system df` reports it: images, containers, volumes and build cache,
+   * each with the bytes it takes and the bytes removing what is unused would free. This is the engine's accounting, not
+   * the host filesystem's (`diskUsage`): a class or a figure the engine does not report is null, so an older or newer
+   * engine yields nulls instead of an error. An aborted `signal` rejects with `AbortError`.
+   */
+  diskBreakdown(opts?: { signal?: AbortSignal }): Promise<DiskBreakdown>;
 
   /**
    * Creates a bridge network named `name` if it does not exist. An existing network must be a bridge whose

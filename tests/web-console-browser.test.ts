@@ -530,6 +530,58 @@ describe.skipIf(!executablePath)("the console's top navigation (real browser)", 
     );
   });
 
+  describe("the engine storage line on the hosts settings card", () => {
+    test(
+      "lists the four classes with their totals and reclaimable bytes",
+      async () => {
+        await page.goto(`${consoleUrl}/#/settings/hosts`);
+        const local = page.locator('#stHosts tbody tr.host-disk-row td[data-disk-host="local"]');
+        // The reading is filled in after the table is drawn, so the line arrives once the API answers.
+        await webExpect(local.locator(".host-disk-class")).toHaveCount(4);
+        await webExpect(local.locator(".host-disk-label")).toContainText([
+          "Images",
+          "Containers",
+          "Volumes",
+          "Build cache",
+        ]);
+        await webExpect(local).toContainText("reclaimable");
+      },
+      TIMEOUT_MS,
+    );
+
+    test(
+      "a host the console cannot read says why, and its own row still draws",
+      async () => {
+        const offline = await signedIn({ viewport: VIEWPORT });
+        try {
+          await offline.route("**/api/hosts/local/disk", (route) =>
+            route.fulfill({
+              contentType: "application/json",
+              json: {
+                id: "local",
+                status: "online",
+                checkedAt: new Date().toISOString(),
+                supported: false,
+                reason: "agent_host",
+                detail: null,
+                breakdown: null,
+              },
+            }),
+          );
+          const hostsPage = await offline.newPage();
+          await hostsPage.goto(`${consoleUrl}/#/settings/hosts`);
+          const note = hostsPage.locator('#stHosts [data-disk-host="local"] .host-disk-note');
+          await webExpect(note).toContainText("No reading on an agent host");
+          // The host's own row is still there, with its status badge.
+          await webExpect(hostsPage.locator("#stHosts tbody tr").first()).toContainText("local");
+        } finally {
+          await offline.close();
+        }
+      },
+      TIMEOUT_MS,
+    );
+  });
+
   describe("the Chinese console", () => {
     test(
       "names the entries 概览, Box, 存储, 库, 活动 and 设置",

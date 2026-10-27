@@ -3,11 +3,12 @@ import { openCreateBox } from "../components/create-box.js";
 import { bindToggles, limitList } from "../components/list-toggle.js";
 import { followOverview } from "../components/overview-feed.js";
 import { drawWatch } from "../components/overview-watch.js";
-import { api } from "../lib/api.js";
+import { api, enc } from "../lib/api.js";
 import { applyBoxFrame, boxesOfSync } from "../lib/box-state.js";
 import { delegate, esc } from "../lib/dom.js";
 import { isRoutine } from "../lib/event-view.js";
 import { bytes, cpus, duration, gbOrMb, mem, pct } from "../lib/format.js";
+import { diskReading, diskReadings } from "../lib/host-disk.js";
 import { boxesOnHost, HOST_BADGE, isUnreachable } from "../lib/host-list.js";
 import { hostFilter, hostName, hostsNow, onHosts } from "../lib/hosts.js";
 import { t } from "../lib/i18n.js";
@@ -23,6 +24,11 @@ function metricSkeleton() {
 
 /** How often the host cards re-read what each host runs and uses. The sampler keeps its figures current between reads. */
 const HOST_USAGE_MS = 10_000;
+/**
+ * How often the host cards re-read what each engine holds. It is a heavier read than a usage figure, and what it counts
+ * changes only when images, volumes or build cache are added or removed, so it is read once a minute.
+ */
+const HOST_DISK_MS = 60_000;
 
 /** How many recent events the overview summarises. It skips starts, whose finish has its own row; the Activity page has the whole log. */
 export const RECENT_EVENTS = 6;
@@ -99,7 +105,14 @@ export function render(view) {
 
   let hostList = hostsNow();
   let usageById = new Map();
-  const drawHosts = () => renderHostCards(view, hostList, usageById);
+  const diskById = new Map();
+  /**
+   * When each host's storage was last read, so a tick of the usage timer does not ask again. `docker system df` walks
+   * the engine's images, volumes and build cache, so it is read when the cards first draw and after a host changes, not
+   * on every tick of the figures that change by the second.
+   */
+  const diskAt = new Map();
+  const drawHosts = () => renderHostCards(view, hostList, usageById, diskById);
   const loadUsage = async () => {
     if (hostList.length < 2) return;
     try {
@@ -109,13 +122,34 @@ export function render(view) {
       /* the cards keep the figures they have */
     }
   };
-  const usageTimer = setInterval(loadUsage, HOST_USAGE_MS);
+  /**
+   * What each host's engine holds. Every host is asked at once, so a host that does not answer cannot hold up the
+   * others, and its own card keeps the figures it had.
+   */
+  const loadDisk = async (staleMs = 0) => {
+    if (hostList.length < 2) return;
+    const now = Date.now();
+    const due = hostList.filter((host) => now - (diskAt.get(host.id) ?? 0) >= staleMs);
+    if (due.length === 0) return;
+    const readings = await diskReadings(due, (id) => api(`/api/hosts/${enc(id)}/disk`));
+    for (const reading of readings) {
+      diskAt.set(reading.id, now);
+      if (reading.disk) diskById.set(reading.id, reading.disk);
+    }
+    drawHosts();
+  };
+  const usageTimer = setInterval(() => {
+    void loadUsage();
+    void loadDisk(HOST_DISK_MS);
+  }, HOST_USAGE_MS);
 
   const offs = [
     onHosts((list) => {
       hostList = list;
       drawHosts();
       void loadUsage();
+      // A host that was added, removed or came back online gets its storage read at once.
+      void loadDisk();
       if (loaded) renderBoxes(view, boxes);
       if (latest) drawWatch(view, latest);
     }),
@@ -246,13 +280,15 @@ function renderBoxes(view, boxes) {
   bindToggles(view, root, () => renderBoxes(view, boxes));
 }
 
-function renderHostCards(view, hosts, usageById) {
+function renderHostCards(view, hosts, usageById, diskById = new Map()) {
   const root = view.querySelector("#ovHosts");
   root.hidden = hosts.length < 2;
-  root.innerHTML = root.hidden ? "" : hosts.map((host) => hostCard(host, usageById.get(host.id))).join("");
+  root.innerHTML = root.hidden
+    ? ""
+    : hosts.map((host) => hostCard(host, usageById.get(host.id), diskById.get(host.id))).join("");
 }
 
-function hostCard(host, usage) {
+function hostCard(host, usage, disk) {
   const capacity = host.capacity
     ? `${cpus(host.capacity.cpus)} · ${mem(host.capacity.memoryBytes)}`
     : t("common.unknown");
@@ -266,8 +302,24 @@ function hostCard(host, usage) {
     <div class="metric-sub">${esc(t(`st.transport.${host.transport}`))} · ${capacity}${latency}</div>
     ${containers}
     ${hostAllocation(host, usage)}
+    ${hostStorage(disk)}
     <div style="margin-top:auto"><span class="badge ${HOST_BADGE[host.status] ?? ""}"><span class="dot"></span>${esc(t(`st.hostStatus.${host.status}`))}</span></div>
   </div>`;
+}
+
+/**
+ * What the engine of a host holds, as `docker system df` counts it: the bytes of every class the engine reported and
+ * how much of that a removal would free. A host with no reading, an agent host above all, says why instead.
+ */
+function hostStorage(disk) {
+  const reading = diskReading(disk, bytes);
+  if (reading.reason) {
+    return `<div class="metric-sub host-storage-note">${icon("disk")}${esc(t(reading.reason.key, reading.reason.params))}</div>`;
+  }
+  const total = reading.rows.reduce((sum, row) => sum + (row.totalBytes ?? 0), 0);
+  const reclaimable = reading.rows.reduce((sum, row) => sum + (row.reclaimableBytes ?? 0), 0);
+  const line = t("ov.hostDisk", { total: bytes(total), reclaimable: bytes(reclaimable) });
+  return `<div class="metric-sub host-storage" title="${esc(reading.rows.map((row) => `${t(row.label)}: ${row.total}`).join("\n"))}">${icon("disk")}${esc(line)}</div>`;
 }
 
 const barLevel = (p) => (p > 100 ? "crit" : p > 75 ? "warn" : "");

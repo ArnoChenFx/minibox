@@ -4,7 +4,7 @@ import { untilAborted } from "../lib/abort";
 import { AppError, badRequest, conflict, notFound } from "../lib/errors";
 import { log } from "../lib/logger";
 import { type Msg, type Params, msg } from "../lib/messages";
-import { type EngineTarget, type Runtime, RuntimeError } from "../runtime";
+import { type EngineTarget, type DiskBreakdown, type Runtime, RuntimeError } from "../runtime";
 import { bookedOn, type Booking } from "../services/capacity";
 import type { AgentEvent, AgentHub, AgentStatus } from "./agent/hub";
 import { type Endpoint, endpointLabel, parseEndpoint } from "./endpoint";
@@ -103,6 +103,26 @@ export interface HostUsage {
   readonly usage: { readonly cpus: number; readonly memoryBytes: number } | null;
 }
 
+/** Why a host has no `docker system df` reading. Null when it has one. */
+export type DiskBreakdownReason = "agent_host" | "offline" | "timeout" | "engine";
+
+/**
+ * What one host's engine holds, as `docker system df` reports it. An agent host cannot answer, and an engine that is
+ * offline, too slow or refusing answers null: the console then says so instead of failing the page.
+ */
+export interface HostDiskView {
+  readonly id: string;
+  readonly status: Host["status"];
+  /** When this reading was taken. */
+  readonly checkedAt: string;
+  /** Whether the host's engine can report this at all. False on an agent host. */
+  readonly supported: boolean;
+  readonly reason: DiskBreakdownReason | null;
+  /** The engine's own message, when `reason` is `engine`. */
+  readonly detail: string | null;
+  readonly breakdown: DiskBreakdown | null;
+}
+
 export interface HostError {
   readonly key: string;
   readonly params?: Params;
@@ -184,6 +204,34 @@ async function within<T>(promise: Promise<T>, ms: number): Promise<T> {
 
 function reasonOf(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
+}
+
+/**
+ * One host's `docker system df` reading, with every way of not having one reported instead of thrown. An agent host is
+ * never asked: its engine is behind the agent's own connection, which does not carry this read.
+ */
+async function diskView(ctx: HostCtx, checkedAt: string): Promise<HostDiskView> {
+  const base = { id: ctx.host.id, status: ctx.host.status, checkedAt };
+  if (ctx.host.transport === "agent") {
+    return { ...base, supported: false, reason: "agent_host", detail: null, breakdown: null };
+  }
+  if (ctx.host.status === "offline") {
+    return { ...base, supported: true, reason: "offline", detail: null, breakdown: null };
+  }
+  const signal = AbortSignal.timeout(ctx.readTimeoutMs);
+  try {
+    const breakdown = await untilAborted(ctx.runtime.diskBreakdown({ signal }), signal);
+    return { ...base, supported: true, reason: null, detail: null, breakdown };
+  } catch (e) {
+    const detail = e instanceof RuntimeError ? e.detail : reasonOf(e);
+    log.warn("host.disk_failed", { host: ctx.host.id, error: detail });
+    const reason: DiskBreakdownReason = signal.aborted
+      ? "timeout"
+      : e instanceof RuntimeError && e.kind === "unavailable"
+        ? "offline"
+        : "engine";
+    return { ...base, supported: true, reason, detail, breakdown: null };
+  }
 }
 
 /**
@@ -329,6 +377,16 @@ export class HostManager {
   /** What each host runs and uses now. Each online host is asked once, in parallel. */
   usage(): Promise<HostUsage[]> {
     return Promise.all(this.options.registry.list().map((ctx) => this.usageView(ctx)));
+  }
+
+  /**
+   * What one host's engine holds (`docker system df`). The read is bounded by the host's read timeout, so a host that
+   * does not answer cannot hold up the caller, and every way of having no reading is reported rather than thrown: an
+   * agent host, an offline host, a timeout and an engine failure all answer `breakdown: null` with a reason.
+   */
+  disk(id: string): Promise<HostDiskView> {
+    if (!this.options.registry.has(id)) throw notFound(msg("host_not_found", { host: id }));
+    return diskView(this.options.registry.get(id), this.now().toISOString());
   }
 
   /** Probes each host's engine now, whatever its backoff. A failed probe marks the host offline and records why. */
