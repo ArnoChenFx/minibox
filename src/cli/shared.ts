@@ -90,6 +90,26 @@ export function parseOptions(argv: string[], valueFlags: readonly string[], swit
   return options;
 }
 
+/**
+ * `key` or `key=value` entries as a label object. An entry with no `=`, such as `gpu`, carries an empty value, which is how
+ * a label with no value is written. A repeated key keeps the last value, as a repeated flag does everywhere else.
+ */
+export function labelEntries(entries: readonly string[], flag: string): Record<string, string> {
+  const labels: Record<string, string> = {};
+  for (const raw of entries) {
+    const entry = raw.trim();
+    if (entry === "") throw new Error(`${flag} needs a key, or key=value`);
+    const eq = entry.indexOf("=");
+    labels[(eq === -1 ? entry : entry.slice(0, eq)).trim()] = eq === -1 ? "" : entry.slice(eq + 1).trim();
+  }
+  return labels;
+}
+
+/** Every value a repeatable flag names, in the order given. `parseOptions` keeps only the last one. */
+export function repeatedValues(argv: string[], flag: string): string[] {
+  return argv.flatMap((token, index) => (token === flag ? [argv[index + 1] ?? ""] : []));
+}
+
 export function numberOption(options: Options, flag: string): number | undefined {
   const raw = options.values.get(flag);
   if (raw === undefined) return undefined;

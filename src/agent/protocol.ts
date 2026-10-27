@@ -70,7 +70,8 @@ export const SESSION_OPERATIONS = ["execResize", "execInspect", "execKill"] as c
 /**
  * Runtime methods an agent never runs. A control plane that asks for one gets `unsupported`, and so does an agent that
  * is sent one. They read or write archives or files in a box, build or save images, run arbitrary helper containers,
- * or measure the disk.
+ * or measure the disk. An agent host has no `docker system df` read either: the agent's engine is not the control
+ * plane's to measure.
  */
 export const REFUSED_OPERATIONS = [
   "commitContainer",
@@ -85,6 +86,7 @@ export const REFUSED_OPERATIONS = [
   "buildImage",
   "runHelper",
   "diskUsage",
+  "diskBreakdown",
 ] as const;
 
 export const ERROR_KINDS = [

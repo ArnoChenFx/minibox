@@ -4,6 +4,7 @@ import { endpointLabel, parseEndpoint } from "../host/endpoint";
 import type { HostManager, HostView } from "../host/manager";
 import { defineOperation } from "./define";
 import type { OperationContext } from "./types";
+import { hostLabelsInput } from "./validation";
 
 const HostStatusSchema = z.enum(["online", "offline", "unknown"]);
 
@@ -41,6 +42,10 @@ export const HostViewSchema = z.object({
   error: z.string().nullable().meta({ description: "The last failed check, as text. Null once a check succeeds." }),
   boxes: z.number().int().meta({ description: "Boxes whose spec names this host." }),
   createdAt: z.string().nullable(),
+  labels: z.record(z.string(), z.string()).meta({
+    description:
+      'Labels the host carries, such as { "gpu": "true" }. An auto box create selects a host by them with its hostLabels field. Empty when the host carries none.',
+  }),
   agent: AgentViewSchema.optional().meta({ description: "The agent connection. Present on an agent host only." }),
 });
 
@@ -94,6 +99,7 @@ const hostFieldsInput = z.object({
   hostKeyFingerprint: z.string().optional().meta({
     description: "The SSH host key confirmed for an ssh host, as SHA256:…, from host.test. A different key is refused.",
   }),
+  labels: hostLabelsInput().optional(),
 });
 
 /** Credentials never reach the audit log: only the id, the name, the endpoint and the host key fingerprint are recorded. */
@@ -103,6 +109,7 @@ function hostDetail(input: z.output<typeof hostFieldsInput>) {
     name: input.name ?? null,
     endpoint: auditedEndpoint(input.endpoint),
     hostKeyFingerprint: input.hostKeyFingerprint ?? null,
+    labels: input.labels ?? {},
   };
 }
 
@@ -184,6 +191,65 @@ export const hostUsage = defineOperation({
   run: async (ctx) => ({ hosts: await hostsOf(ctx).usage() }),
 });
 
+/** One class of what an engine holds, as `docker system df` counts it. A figure the engine omits is null. */
+const DiskEntrySchema = z.object({
+  count: z.number().int().nullable().meta({ description: "Entries of this class the engine holds." }),
+  activeCount: z
+    .number()
+    .int()
+    .nullable()
+    .meta({ description: "Entries in use: images a container uses, running containers, mounted volumes." }),
+  totalBytes: z.number().nullable().meta({ description: "Bytes this class takes." }),
+  reclaimableBytes: z.number().nullable().meta({ description: "Bytes removing everything unused would free." }),
+});
+
+const DiskBreakdownSchema = z.object({
+  images: DiskEntrySchema.nullable(),
+  containers: DiskEntrySchema.nullable(),
+  volumes: DiskEntrySchema.nullable(),
+  buildCache: DiskEntrySchema.nullable(),
+});
+
+const DiskUnsupportedSchema = z.enum(["agent_host", "offline", "timeout", "engine"]);
+
+export const hostDisk = defineOperation({
+  name: "host.disk",
+  tag: "hosts",
+  summary: "Show what a host's engine holds",
+  kind: "read",
+  scope: "host:manage",
+  async: false,
+  input: z.object({
+    id: z.string().min(1).max(32).meta({ description: "Host id, as host.list reports it." }),
+  }),
+  output: z.object({
+    id: z.string().meta({ description: "The host id." }),
+    status: HostStatusSchema,
+    checkedAt: z.string().meta({ description: "When this reading was taken, as ISO time." }),
+    supported: z.boolean().meta({
+      description:
+        "Whether the host's engine can report this at all. An agent host cannot: its engine is not reachable for this read.",
+    }),
+    reason: DiskUnsupportedSchema.nullable().meta({
+      description:
+        "Why breakdown is null: agent_host for an agent host, offline for a host whose last check failed, timeout when the engine did not answer within the host's read timeout, engine when the engine refused the read. Null when the breakdown is there.",
+    }),
+    detail: z.string().nullable().meta({ description: "The engine's own message when reason is engine." }),
+    breakdown: DiskBreakdownSchema.nullable().meta({
+      description:
+        "Images, containers, volumes and build cache as `docker system df` reports them, or null when the host has no reading. A class, or a figure within one, that the engine does not report is null rather than zero.",
+    }),
+  }),
+  rest: [{ method: "GET", path: "/api/hosts/:id/disk" }],
+  mcp: {
+    toolset: "meta",
+    name: "get_host_disk",
+    description:
+      "What one host's engine holds, as docker system df reports it: images, containers, volumes and build cache, each with its total and reclaimable bytes. Owner only. An agent host reports supported false, and an engine that does not answer reports null figures with a reason, instead of failing.",
+  },
+  run: (ctx, input) => hostsOf(ctx).disk(input.id),
+});
+
 export const hostAdd = defineOperation({
   name: "host.add",
   tag: "hosts",
@@ -233,6 +299,36 @@ export const hostTest = defineOperation({
     detail: (input) => hostDetail(input),
   },
   run: async (ctx, input) => hostsOf(ctx).test(input),
+});
+
+export const hostLabelsSet = defineOperation({
+  name: "host.labels.set",
+  tag: "hosts",
+  summary: "Set the labels of a host",
+  kind: "write",
+  scope: "host:manage",
+  async: false,
+  conflicts: true,
+  input: z.object({
+    id: z.string().min(1).max(32).meta({ description: "Host id, local included. A host that is not held is a 404." }),
+    labels: hostLabelsInput(),
+  }),
+  output: z.object({ host: HostViewSchema }),
+  rest: [{ method: "PATCH", path: "/api/hosts/:id", body: true }],
+  mcp: {
+    toolset: "meta",
+    name: "set_host_labels",
+    description:
+      "Replace the labels of a host, the local host included, so an auto box create can select it with hostLabels. An empty object clears them. Owner only.",
+  },
+  activity: { action: () => "host.labels.set", target: (input) => input.id },
+  audit: {
+    target: ({ id }, _resolved, result) => ({ kind: "host", id, name: result?.host.name ?? id }),
+    detail: ({ id, labels }) => ({ id, labels }),
+  },
+  run: async (ctx, input): Promise<{ host: HostView }> => ({
+    host: await hostsOf(ctx).setLabels(input.id, input.labels ?? {}),
+  }),
 });
 
 export const hostRemove = defineOperation({
@@ -307,4 +403,14 @@ export const hostRevoke = defineOperation({
   run: async (ctx, input): Promise<{ host: HostView }> => ({ host: await hostsOf(ctx).revoke(input.id) }),
 });
 
-export const hostOperations = [hostList, hostUsage, hostAdd, hostTest, hostRemove, hostPairingCreate, hostRevoke];
+export const hostOperations = [
+  hostList,
+  hostUsage,
+  hostDisk,
+  hostAdd,
+  hostTest,
+  hostLabelsSet,
+  hostRemove,
+  hostPairingCreate,
+  hostRevoke,
+];

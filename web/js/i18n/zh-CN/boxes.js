@@ -83,6 +83,7 @@ export default {
   "act.host.add": "添加宿主机",
   "act.host.pairing.create": "生成配对码",
   "act.host.test": "测试宿主机连接",
+  "act.host.labels.set": "设置宿主机标签",
   "act.host.revoke": "吊销宿主机 Agent",
   "act.host.remove": "移除宿主机",
   "act.notify.channel.set": "保存通知渠道",
@@ -188,7 +189,7 @@ export default {
   "cb.buildStillRunning": "构建仍在进行，完成后再创建 Box。",
   "cb.hostAuto": "自动：剩余空间最多的宿主机",
   "cb.hostAutoHelp":
-    "Box 会放到持有其模板、在线且剩余空间最多的宿主机上，剩余空间按运行中 Box 占用的 CPU 与内存计算。若这样的宿主机都没有余量，官方模板会在尚未持有它的在线宿主机中，由剩余空间最多的一台构建。",
+    "Box 会放到持有其模板、在线且剩余空间最多的宿主机上，剩余空间按运行中 Box 占用的 CPU 与内存计算。若这样的宿主机都没有余量，官方模板会在尚未持有它的在线宿主机中，由剩余空间最多的一台构建。通过 API 或命令行传 hostLabels 时，只在带有这些标签的宿主机中选择。",
   "cb.overHost": "超出宿主机容量",
   "cb.memory": "内存",
   "cb.profile": "安全配置",

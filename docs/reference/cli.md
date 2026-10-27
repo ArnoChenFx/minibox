@@ -51,6 +51,8 @@ Creates and starts a box. It starts from the base template unless you choose ano
 | Option | Meaning |
 |---|---|
 | `--template IMAGE` | The template to start from. Default: the base template. |
+| `--host ID` | Creates the box on host `ID`, or with `auto` lets MiniBox pick. Default: `local` |
+| `--host-label KEY=VALUE` | With `--host auto`: the box goes only to an online host that carries every label given. Repeat it for more labels. `--host-label gpu` asks for a label whose value is empty. See [Choose a host by labels](../user-guide/hosts.md#choose-a-host-by-labels) |
 | `--cpus N` | CPU cores for the box |
 | `--memory MB` | Memory limit, in MB |
 | `--profile P` | Security profile: `standard`, `strict` or `relaxed`. Default: the `BOX_PROFILE` setting, `standard` unless changed. |
@@ -69,6 +71,7 @@ Creates and starts a box. It starts from the base template unless you choose ano
 The command waits for the box's setup task: its clone with `--repo`, and the `postCreateCommand` of a template that sets one. A startup command set with `--startup-command` runs only after that setup has ended. If the setup fails, the box is kept, and the command reports the reason and exits with `1`. `--startup-command` and `--startup-command-stdin` cannot be used together.
 
 ```bash
+minibox box create trainer --host auto --host-label gpu=true --host-label org/arch=amd64
 minibox box create my-app --template node-tools --repo https://github.com/example/app.git --branch main --secret GITHUB_TOKEN
 minibox box create my-box --cpus 2 --memory 4096 --startup-command "python3 -m http.server 8000"
 minibox box create offline --egress none
@@ -299,6 +302,17 @@ See [SSH access and the command-line tool](../user-guide/ssh-and-cli.md) for the
 | `minibox token prune [--json]` | Deletes the records of every revoked and expired token, and prints each one. Live tokens are never touched. |
 
 See [Access, sessions and tokens](../user-guide/access-and-tokens.md) for the presets and scopes.
+
+## Hosts
+
+Only labels are reachable from the command line. Adding, removing and revoking a host is done in the console or through the [REST API](api.md).
+
+| Command | Meaning |
+|---|---|
+| `minibox host labels get <id> [--json]` | Prints the labels of one host, as a JSON object. `--json` prints the same. |
+| `minibox host labels set <id> [--label KEY=VALUE]...` | Replaces the labels of one host, the local host included, so an `auto` box create can select it with `--host-label`. With no `--label`, the host carries none afterwards. Prints the id and the labels as JSON, or the response with `--json`. |
+
+See [Choose a host by labels](../user-guide/hosts.md#choose-a-host-by-labels).
 
 ## MCP
 

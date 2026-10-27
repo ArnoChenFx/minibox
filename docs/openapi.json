@@ -903,6 +903,19 @@
                       }
                     ]
                   },
+                  "hostLabels": {
+                    "type": "object",
+                    "maxProperties": 32,
+                    "propertyNames": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9._-]{0,62}(?:\\/[a-z][a-z0-9._-]{0,62})?$"
+                    },
+                    "additionalProperties": {
+                      "type": "string",
+                      "maxLength": 256
+                    },
+                    "description": "Labels every candidate host must carry, as an object of key and value pairs, such as { \"gpu\": \"true\", \"arch\": \"amd64\" }. Only with host: auto, which then considers only the online hosts that carry all of them. A key is lowercase, optionally namespaced with one slash, and a value is a single line of at most 256 characters. Omitted, auto picks among every online host as it always has."
+                  },
                   "tools": {
                     "description": "Catalog tool ids to record on the box spec (version latest). After create, call reconcile_tools (or install_tool) to install them onto the shared tools volume.",
                     "maxItems": 32,
@@ -40482,6 +40495,16 @@
                               "null"
                             ]
                           },
+                          "labels": {
+                            "type": "object",
+                            "propertyNames": {
+                              "type": "string"
+                            },
+                            "additionalProperties": {
+                              "type": "string"
+                            },
+                            "description": "Labels the host carries, such as { \"gpu\": \"true\" }. An auto box create selects a host by them with its hostLabels field. Empty when the host carries none."
+                          },
                           "agent": {
                             "description": "The agent connection. Present on an agent host only.",
                             "type": "object",
@@ -40537,7 +40560,8 @@
                           "dockerVersion",
                           "error",
                           "boxes",
-                          "createdAt"
+                          "createdAt",
+                          "labels"
                         ],
                         "additionalProperties": false
                       }
@@ -40684,6 +40708,19 @@
                   "hostKeyFingerprint": {
                     "description": "The SSH host key confirmed for an ssh host, as SHA256:…, from host.test. A different key is refused.",
                     "type": "string"
+                  },
+                  "labels": {
+                    "type": "object",
+                    "maxProperties": 32,
+                    "propertyNames": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9._-]{0,62}(?:\\/[a-z][a-z0-9._-]{0,62})?$"
+                    },
+                    "additionalProperties": {
+                      "type": "string",
+                      "maxLength": 256
+                    },
+                    "description": "Labels the host carries, as an object of key and value pairs, such as { \"gpu\": \"true\" }. An auto create selects hosts by them. At most 32 entries; a key is lowercase, optionally namespaced with one slash, and a value is a single line of at most 256 characters. An empty object clears them."
                   }
                 },
                 "required": [
@@ -40798,6 +40835,16 @@
                             "null"
                           ]
                         },
+                        "labels": {
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "additionalProperties": {
+                            "type": "string"
+                          },
+                          "description": "Labels the host carries, such as { \"gpu\": \"true\" }. An auto box create selects a host by them with its hostLabels field. Empty when the host carries none."
+                        },
                         "agent": {
                           "description": "The agent connection. Present on an agent host only.",
                           "type": "object",
@@ -40853,7 +40900,8 @@
                         "dockerVersion",
                         "error",
                         "boxes",
-                        "createdAt"
+                        "createdAt",
+                        "labels"
                       ],
                       "additionalProperties": false
                     }
@@ -41171,6 +41219,441 @@
         }
       }
     },
+    "/api/hosts/{id}/disk": {
+      "get": {
+        "operationId": "host.disk",
+        "tags": [
+          "hosts"
+        ],
+        "summary": "Show what a host's engine holds",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 32,
+              "description": "Host id, as host.list reports it."
+            }
+          },
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "description": "The host id."
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "online",
+                        "offline",
+                        "unknown"
+                      ]
+                    },
+                    "checkedAt": {
+                      "type": "string",
+                      "description": "When this reading was taken, as ISO time."
+                    },
+                    "supported": {
+                      "type": "boolean",
+                      "description": "Whether the host's engine can report this at all. An agent host cannot: its engine is not reachable for this read."
+                    },
+                    "reason": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "agent_host",
+                            "offline",
+                            "timeout",
+                            "engine"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "Why breakdown is null: agent_host for an agent host, offline for a host whose last check failed, timeout when the engine did not answer within the host's read timeout, engine when the engine refused the read. Null when the breakdown is there."
+                    },
+                    "detail": {
+                      "description": "The engine's own message when reason is engine.",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "breakdown": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "images": {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "count": {
+                                      "anyOf": [
+                                        {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ],
+                                      "description": "Entries of this class the engine holds."
+                                    },
+                                    "activeCount": {
+                                      "anyOf": [
+                                        {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ],
+                                      "description": "Entries in use: images a container uses, running containers, mounted volumes."
+                                    },
+                                    "totalBytes": {
+                                      "description": "Bytes this class takes.",
+                                      "type": [
+                                        "number",
+                                        "null"
+                                      ]
+                                    },
+                                    "reclaimableBytes": {
+                                      "description": "Bytes removing everything unused would free.",
+                                      "type": [
+                                        "number",
+                                        "null"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "count",
+                                    "activeCount",
+                                    "totalBytes",
+                                    "reclaimableBytes"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "containers": {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "count": {
+                                      "anyOf": [
+                                        {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ],
+                                      "description": "Entries of this class the engine holds."
+                                    },
+                                    "activeCount": {
+                                      "anyOf": [
+                                        {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ],
+                                      "description": "Entries in use: images a container uses, running containers, mounted volumes."
+                                    },
+                                    "totalBytes": {
+                                      "description": "Bytes this class takes.",
+                                      "type": [
+                                        "number",
+                                        "null"
+                                      ]
+                                    },
+                                    "reclaimableBytes": {
+                                      "description": "Bytes removing everything unused would free.",
+                                      "type": [
+                                        "number",
+                                        "null"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "count",
+                                    "activeCount",
+                                    "totalBytes",
+                                    "reclaimableBytes"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "volumes": {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "count": {
+                                      "anyOf": [
+                                        {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ],
+                                      "description": "Entries of this class the engine holds."
+                                    },
+                                    "activeCount": {
+                                      "anyOf": [
+                                        {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ],
+                                      "description": "Entries in use: images a container uses, running containers, mounted volumes."
+                                    },
+                                    "totalBytes": {
+                                      "description": "Bytes this class takes.",
+                                      "type": [
+                                        "number",
+                                        "null"
+                                      ]
+                                    },
+                                    "reclaimableBytes": {
+                                      "description": "Bytes removing everything unused would free.",
+                                      "type": [
+                                        "number",
+                                        "null"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "count",
+                                    "activeCount",
+                                    "totalBytes",
+                                    "reclaimableBytes"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "buildCache": {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "count": {
+                                      "anyOf": [
+                                        {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ],
+                                      "description": "Entries of this class the engine holds."
+                                    },
+                                    "activeCount": {
+                                      "anyOf": [
+                                        {
+                                          "type": "integer",
+                                          "minimum": -9007199254740991,
+                                          "maximum": 9007199254740991
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ],
+                                      "description": "Entries in use: images a container uses, running containers, mounted volumes."
+                                    },
+                                    "totalBytes": {
+                                      "description": "Bytes this class takes.",
+                                      "type": [
+                                        "number",
+                                        "null"
+                                      ]
+                                    },
+                                    "reclaimableBytes": {
+                                      "description": "Bytes removing everything unused would free.",
+                                      "type": [
+                                        "number",
+                                        "null"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "count",
+                                    "activeCount",
+                                    "totalBytes",
+                                    "reclaimableBytes"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "images",
+                            "containers",
+                            "volumes",
+                            "buildCache"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "Images, containers, volumes and build cache as `docker system df` reports them, or null when the host has no reading. A class, or a figure within one, that the engine does not report is null rather than zero."
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "status",
+                    "checkedAt",
+                    "supported",
+                    "reason",
+                    "detail",
+                    "breakdown"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable, or a storage pool backing the request cannot be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "read",
+        "x-scope": "host:manage",
+        "x-async": false,
+        "x-mcp": {
+          "name": "get_host_disk",
+          "toolset": "meta"
+        }
+      }
+    },
     "/api/hosts/test": {
       "post": {
         "operationId": "host.test",
@@ -41235,6 +41718,19 @@
                   "hostKeyFingerprint": {
                     "description": "The SSH host key confirmed for an ssh host, as SHA256:…, from host.test. A different key is refused.",
                     "type": "string"
+                  },
+                  "labels": {
+                    "type": "object",
+                    "maxProperties": 32,
+                    "propertyNames": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9._-]{0,62}(?:\\/[a-z][a-z0-9._-]{0,62})?$"
+                    },
+                    "additionalProperties": {
+                      "type": "string",
+                      "maxLength": 256
+                    },
+                    "description": "Labels the host carries, as an object of key and value pairs, such as { \"gpu\": \"true\" }. An auto create selects hosts by them. At most 32 entries; a key is lowercase, optionally namespaced with one slash, and a value is a single line of at most 256 characters. An empty object clears them."
                   }
                 },
                 "required": [
@@ -41446,6 +41942,347 @@
       }
     },
     "/api/hosts/{id}": {
+      "patch": {
+        "operationId": "host.labels.set",
+        "tags": [
+          "hosts"
+        ],
+        "summary": "Set the labels of a host",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 32,
+              "description": "Host id, local included. A host that is not held is a 404."
+            }
+          },
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "labels": {
+                    "type": "object",
+                    "maxProperties": 32,
+                    "propertyNames": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9._-]{0,62}(?:\\/[a-z][a-z0-9._-]{0,62})?$"
+                    },
+                    "additionalProperties": {
+                      "type": "string",
+                      "maxLength": 256
+                    },
+                    "description": "Labels the host carries, as an object of key and value pairs, such as { \"gpu\": \"true\" }. An auto create selects hosts by them. At most 32 entries; a key is lowercase, optionally namespaced with one slash, and a value is a single line of at most 256 characters. An empty object clears them."
+                  }
+                },
+                "required": [
+                  "labels"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "host": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "description": "Host id, such as local or lab. A box names its host in box.host."
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "transport": {
+                          "type": "string",
+                          "enum": [
+                            "local",
+                            "unix",
+                            "tcp",
+                            "ssh",
+                            "agent"
+                          ],
+                          "description": "local is the machine MiniBox runs on. unix is another socket, tcp is mutual TLS, ssh tunnels to the socket, and agent is a MiniBox agent that dials in."
+                        },
+                        "endpoint": {
+                          "type": "string",
+                          "description": "The endpoint, without any credential."
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "online",
+                            "offline",
+                            "unknown"
+                          ]
+                        },
+                        "latencyMs": {
+                          "description": "Round trip of the last successful ping, in milliseconds.",
+                          "type": [
+                            "number",
+                            "null"
+                          ]
+                        },
+                        "capacity": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "cpus": {
+                                  "description": "CPUs boxes on this host may take. Null when the engine does not say.",
+                                  "type": [
+                                    "number",
+                                    "null"
+                                  ]
+                                },
+                                "memoryBytes": {
+                                  "description": "Memory boxes on this host may take, in bytes.",
+                                  "type": [
+                                    "number",
+                                    "null"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "cpus",
+                                "memoryBytes"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "dockerVersion": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "error": {
+                          "description": "The last failed check, as text. Null once a check succeeds.",
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "boxes": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991,
+                          "description": "Boxes whose spec names this host."
+                        },
+                        "createdAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "labels": {
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "additionalProperties": {
+                            "type": "string"
+                          },
+                          "description": "Labels the host carries, such as { \"gpu\": \"true\" }. An auto box create selects a host by them with its hostLabels field. Empty when the host carries none."
+                        },
+                        "agent": {
+                          "description": "The agent connection. Present on an agent host only.",
+                          "type": "object",
+                          "properties": {
+                            "connected": {
+                              "type": "boolean",
+                              "description": "Whether the agent is connected to this control plane now."
+                            },
+                            "version": {
+                              "type": "string",
+                              "description": "The agent's version, as it last said hello."
+                            },
+                            "protocol": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991,
+                              "description": "The agent protocol the agent speaks."
+                            },
+                            "lastSeenAt": {
+                              "description": "When the agent last sent a frame, as ISO time.",
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "upgradeRequired": {
+                              "type": "boolean",
+                              "description": "The agent speaks another protocol than this control plane, so it is refused until it is upgraded."
+                            },
+                            "revoked": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "connected",
+                            "version",
+                            "protocol",
+                            "lastSeenAt",
+                            "upgradeRequired",
+                            "revoked"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "name",
+                        "transport",
+                        "endpoint",
+                        "status",
+                        "latencyMs",
+                        "capacity",
+                        "dockerVersion",
+                        "error",
+                        "boxes",
+                        "createdAt",
+                        "labels"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "host"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The name is already taken, this operation is already running, a volume is in use, an exec is not running, a checkpoint is pinned or cannot change, a change was requested without confirm set to true, or a terminal session is under a person's control (code taken_over). A refusal for a confirmation includes a preview of the change, and a rebuild preview includes the docker diff and the planned changes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request declares a body that is not JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable, or a storage pool backing the request cannot be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "write",
+        "x-scope": "host:manage",
+        "x-async": false,
+        "x-mcp": {
+          "name": "set_host_labels",
+          "toolset": "meta"
+        }
+      },
       "delete": {
         "operationId": "host.remove",
         "tags": [
@@ -41581,6 +42418,16 @@
                             "null"
                           ]
                         },
+                        "labels": {
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "additionalProperties": {
+                            "type": "string"
+                          },
+                          "description": "Labels the host carries, such as { \"gpu\": \"true\" }. An auto box create selects a host by them with its hostLabels field. Empty when the host carries none."
+                        },
                         "agent": {
                           "description": "The agent connection. Present on an agent host only.",
                           "type": "object",
@@ -41636,7 +42483,8 @@
                         "dockerVersion",
                         "error",
                         "boxes",
-                        "createdAt"
+                        "createdAt",
+                        "labels"
                       ],
                       "additionalProperties": false
                     }
@@ -42053,6 +42901,16 @@
                             "null"
                           ]
                         },
+                        "labels": {
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "additionalProperties": {
+                            "type": "string"
+                          },
+                          "description": "Labels the host carries, such as { \"gpu\": \"true\" }. An auto box create selects a host by them with its hostLabels field. Empty when the host carries none."
+                        },
                         "agent": {
                           "description": "The agent connection. Present on an agent host only.",
                           "type": "object",
@@ -42108,7 +42966,8 @@
                         "dockerVersion",
                         "error",
                         "boxes",
-                        "createdAt"
+                        "createdAt",
+                        "labels"
                       ],
                       "additionalProperties": false
                     }

@@ -53,6 +53,43 @@ A box on another host needs its template image on that host's Docker engine. If 
 
 A copy sends the image the same way a move does, so the target engine must keep image IDs. See [Limits](#limits).
 
+## Choose a host by labels
+
+A host can carry labels, and a create can ask `auto` to place the box only on hosts that carry them. That is how a control plane with machines of different kinds says where a box belongs: one host has a GPU, another has more disk, a third runs on another architecture.
+
+Give a host its labels in **Settings**, under **Hosts**, or through the API or the command-line tool:
+
+```bash
+minibox host labels set lab --label gpu=true --label org/arch=amd64
+minibox host labels get lab
+```
+
+`PATCH /api/hosts/{id}` with `{ "labels": { "gpu": "true" } }` does the same, and an empty object clears the labels. `POST /api/hosts` takes `labels` when a host is added. A key is lowercase, and may name a namespace with one slash, as in `org/arch`; a value is a single line of at most 256 characters and may be empty. A host carries at most 32 labels.
+
+The local host takes labels too, from two places:
+
+- `HOST_LABELS` in `.env`, such as `HOST_LABELS=gpu,arch=amd64`, sets them at startup. MiniBox writes them into `hosts.json` under the id `local`, so the file is where they live.
+- `PATCH /api/hosts/local`, or `minibox host labels set local`, changes them at any time. A local host that already carries labels keeps them at the next start, so an old `.env` never undoes a change you made in the console.
+
+To place a box by labels, choose **Auto** as the host and name the labels. Through the API that is `hostLabels`, and on the command line it is one `--host-label` per entry:
+
+```bash
+minibox box create trainer --host auto --host-label gpu=true --host-label org/arch=amd64
+```
+
+```json
+{ "name": "trainer", "cpus": 4, "memoryMb": 8192, "host": "auto", "hostLabels": { "gpu": "true" } }
+```
+
+The rules:
+
+- Only the online hosts that carry **every** label are considered, and each value has to match exactly. `--host-label gpu` asks for a label named `gpu` whose value is empty.
+- Everything else about **Auto** stays the same. Among the hosts that carry the labels, one that holds the template comes before one that does not, the roomiest of them wins, and only an owner's official template may be built on a host that lacks it.
+- A host without the labels is never a candidate, however much room it has. A create that would otherwise have gone to it is refused instead.
+- A create whose labels no online host carries is refused with `422` and the key `host_auto_no_label_match`, which names the labels. Nothing is created.
+- Labels go with **Auto** only. A create that names a host and also sends labels is refused with `host_labels_need_auto`, since a named host is not filtered.
+- Without `hostLabels` the placement is exactly what it was before labels existed.
+
 ## Capacity
 
 With more than one host, MiniBox counts the CPU and memory that running boxes reserve on each host. A new box, a resize or a move that would reserve more than the host has is refused. `HOST_OVERCOMMIT` allows more, up to 10 times the host's capacity (see [Configuration](../reference/configuration.md)). A stopped box reserves nothing.
@@ -85,6 +122,16 @@ The **Settings** page lists each host with its **Status**, its **Capacity**, and
 - A host that is offline shows its boxes as unreachable, and the rest of the list still loads. MiniBox checks an offline host again in the background. Each failed check waits longer than the one before, up to about five minutes.
 - An agent host shows the agent's version and when it was last seen. If the agent speaks another protocol than this MiniBox, the host shows **Agent needs an upgrade**. Pull the latest `minibox-agent` image and recreate the container with the same data volume.
 
+## Engine storage
+
+Each host's row on the **Settings → Hosts** page also says what its engine holds, as `docker system df` counts it: the bytes taken by images, containers, volumes and build cache, how many of each the engine has and how many are in use, and how much of each a removal would free. The reading is taken when the page opens, one request per host, and it never holds up the table: the rows draw first and the storage line fills in.
+
+This is the engine's own accounting, not the host filesystem's. The free-space floor that MiniBox enforces on volumes and checkpoints is the filesystem figure, and the two can disagree: a host can have plenty of free space while Docker's own objects take most of the disk.
+
+A class, or a figure, that the engine does not report is shown as unknown rather than as zero. Engines of different versions report different fields, and an engine that never measured a volume's size reports no size for it.
+
+An **agent host has no such reading.** The agent carries the operations a box needs, and reading the engine's own storage is not one of them, so its row says so. A host that is offline, whose engine does not answer within the read timeout, or whose engine refuses the read says why in its own row, and every other host still shows its figures. MiniBox never prunes images, containers or build cache itself: the reading only tells you what is there.
+
 ## Remove a host
 
 Click **Remove** next to the host, and confirm. A host that still has boxes, volumes or checkpoints cannot be removed. The **local** host cannot be removed.
@@ -95,8 +142,8 @@ To stop an agent at once, click **Revoke** on its host first. Revoking disconnec
 
 - A copy or a move needs the target engine to keep image IDs. Docker's classic image store does. The containerd image store changes an image's ID when the image loads, so MiniBox refuses the copy with a `docker_error` that names both IDs. An engine on the containerd image store shows `driver-type io.containerd.snapshotter.v1` in `docker info`.
 - Each host keeps its own checkpoints. To make one available on another host, [copy it](checkpoints.md#copy-to-another-host). The copy is a new checkpoint, and the original stays where it is. A checkpoint with a system layer cannot be copied yet.
-- **Auto** only considers hosts that already hold the template, and it does not match labels such as `arch` or `gpu` yet. Copy the template to a host first, or name the host.
+- **Auto** only considers hosts that already hold the template, unless an owner's official template may be built on one. To say which hosts it may use, give them labels and pass `hostLabels`; without them it considers every online host.
 - A box cannot move to or from an agent host yet, because an agent does not copy images or volumes. Create the box on the agent host instead. An agent host does not support templates, snapshots or port preview yet, and a box with a self token cannot be created on one, because an agent cannot write the token file.
 - Host-level CPU and memory use is shown for the local host only. A remote host shows the cores and memory that its engine reports, and the use of its own boxes.
-- The command-line tool has no host commands. Use the console, or the [REST API](../reference/api.md).
+- The command-line tool's host commands read and set labels only: `minibox host labels get` and `minibox host labels set`. Adding, removing and revoking a host is done in the console or through the [REST API](../reference/api.md).
 - An [agent token](access-and-tokens.md) can be limited to specific hosts.

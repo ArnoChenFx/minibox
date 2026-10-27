@@ -1,4 +1,4 @@
-FROM golang:1.26-bookworm
+FROM golang:1.27-bookworm
 
 # Box user convention, the same as templates/base. Change these only together with the volumes that already use them.
 ARG DEV_UID=1000
@@ -6,7 +6,7 @@ ARG DEV_GID=1000
 
 LABEL minibox.template=true \
       minibox.template.name=go \
-      minibox.template.description="Debian 12 · Go 1.26 · gopls · git · tmux · build-essential · non-root dev user" \
+      minibox.template.description="Debian 12 · Go 1.27 · gopls · git · tmux · build-essential · non-root dev user" \
       minibox.template.user=dev \
       minibox.template.uid="${DEV_UID}" \
       minibox.template.gid="${DEV_GID}"
