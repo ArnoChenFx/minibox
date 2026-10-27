@@ -148,35 +148,50 @@ describe("a row of choices on a phone", () => {
 });
 
 describe("a create row's volume name in the Customize dialog", () => {
-  test("a name that cannot fit beside the path, the mode and the remove button gets a line of its own", () => {
-    // Below 700px the four columns leave the volume select less room than a role volume's name needs, so the row
-    // stacks: the volume control takes the first line, the path, mode and remove button share the second.
+  test("the volume name gets a line of its own, and the controls share the line below it", () => {
+    // Five cells in one line do not fit the dialog: measured at 1280px, adding the storage pool took the volume name to
+    // 80px and it read one letter per line. So the volume control spans the row and the path, mode, pool and remove
+    // button sit under it — at every width above the phone, not only on a narrow one.
+    const modal = readFileSync(join(WEB, "css", "app", "modal.css"), "utf8");
+    const wide = mediaBlockFrom(modal, 561, "#cbMountRows .rebuild-mount {");
+    expect(block(wide, "#cbMountRows .rebuild-mount")).toContain(
+      '"volume volume volume volume"\n"path   mode   pool   remove";',
+    );
+    expect(block(wide, "#cbMountRows .rebuild-mount > [data-volume] + .dropdown-trigger")).toContain(
+      "grid-area: volume;",
+    );
+    // The dropdown component keeps the native select out of the flow and draws a trigger beside it, so each control's
+    // area goes on the trigger that follows it.
+    expect(block(wide, "#cbMountRows .rebuild-mount > [data-mode] + .dropdown-trigger")).toContain("grid-area: mode;");
+    expect(block(wide, "#cbMountRows .rebuild-mount > [data-pool] + .dropdown-trigger")).toContain("grid-area: pool;");
+    // A row that mounts a volume that exists has no pool control, so its button takes that place instead of leaving a
+    // gap: measured, the row keeps the same height as its neighbours.
+    expect(block(wide, "#cbMountRows .rebuild-mount:not(:has([data-pool]))")).toContain(
+      '"path   mode   remove remove";',
+    );
+  });
+
+  test("a rebuild row keeps its one-line columns, because it types its volume in a plain input", () => {
+    const modal = readFileSync(join(WEB, "css", "app", "modal.css"), "utf8");
+    expect(block(modal, ".rebuild-mount")).toContain(
+      "grid-template-columns: minmax(0, 1.8fr) minmax(0, 1fr) 132px auto;",
+    );
+  });
+
+  test("between the phone and the desktop the row takes three lines rather than squeezing the path", () => {
+    // At 561px the dialog is 513px wide: the path, mode, pool and button on one line leave the path under the ~140px
+    // `/home/dev/.cache` needs. So the path and mode take the second line and the pool and button the third.
     const stacked = mediaBlockBetween(RESPONSIVE, 561, 700, "#cbMountRows .rebuild-mount {");
     expect(block(stacked, "#cbMountRows .rebuild-mount")).toContain(
       "grid-template-columns: minmax(0, 1fr) 132px auto;",
     );
-    expect(block(stacked, "#cbMountRows .rebuild-mount > [data-volume] + .dropdown-trigger")).toContain(
-      "grid-column: 1 / -1;",
-    );
-    // The rule names the create dialog only: a rebuild row types a volume in a plain input and keeps the desktop grid.
-    expect(stacked).toContain("#cbMountRows");
-  });
-
-  test("the volume column is the widest on a desktop row, so the name is readable without opening the menu", () => {
+    expect(block(stacked, "#cbMountRows .rebuild-mount")).toContain('"path   mode   mode"');
+    expect(block(stacked, "#cbMountRows .rebuild-mount")).toContain('"pool   remove remove"');
+    // The path column keeps a 140px floor on the desktop grid, so a path never truncates where there is room for it.
     const modal = readFileSync(join(WEB, "css", "app", "modal.css"), "utf8");
-    // A rebuild row types its volume in a plain input, so its columns stay as they were.
-    expect(block(modal, ".rebuild-mount")).toContain(
-      "grid-template-columns: minmax(0, 1.8fr) minmax(0, 1fr) 132px auto;",
-    );
-    // A create row names the volume the create would make, which is the longest text in it, so its volume column takes a
-    // wider share than the path column does. Both shrink, so nothing is pushed past the dialog. The rule is scoped above
-    // the phone breakpoint: an id outranks the phone's own `.rebuild-mount { grid-template-columns: 1fr }`.
     const wide = mediaBlockFrom(modal, 561, "#cbMountRows .rebuild-mount {");
-    // The path column keeps a 140px floor: `/home/dev/.cache` is 137px wide at 14px, and a path that cannot show its
-    // text is as unreadable as a name that cannot show its own. The pool column a role row picks with is bounded, so it
-    // cannot grow past a pool name and take the share the volume name needs.
     expect(block(wide, "#cbMountRows .rebuild-mount")).toContain(
-      "grid-template-columns: minmax(0, 3fr) minmax(140px, 1fr) 132px minmax(96px, 128px) auto;",
+      "grid-template-columns: minmax(140px, 1fr) 132px minmax(96px, 140px) auto;",
     );
     expect(block(wide, "#cbMountRows .rebuild-mount")).not.toContain("overflow-x");
   });
