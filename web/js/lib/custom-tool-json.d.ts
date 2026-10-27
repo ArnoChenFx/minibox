@@ -44,8 +44,18 @@ export interface ToolStatusLike {
   detect: string;
 }
 
-/** The catalog entry a tool's row describes, as the JSON carries it. */
-export declare function toolJsonEntry(tool: ToolStatusLike): ToolJsonEntry;
+/** A custom entry as `GET /api/tools/custom` reports it: the catalog fields, the flag, and null optionals. */
+export interface CustomEntryStatusLike extends Omit<ToolStatusLike, "requires" | "stop"> {
+  requires?: string | null;
+  stop?: string | null;
+  overridesBuiltin?: boolean;
+}
+
+/** The catalog entry a tool's row describes, as the JSON carries it. A custom entry for the id is used as it is. */
+export declare function toolJsonEntry(
+  tool: ToolStatusLike,
+  customById?: ReadonlyMap<string, CustomEntryStatusLike>,
+): ToolJsonEntry;
 
 /** The JSON text a row copies: catalog field order, two spaces of indent, and the optional fields only when set. */
 export declare function toolJsonText(entry: Partial<ToolJsonEntry>): string;

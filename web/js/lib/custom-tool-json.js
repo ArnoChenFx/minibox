@@ -42,10 +42,13 @@ const TEXT_LIMITS = {
 };
 
 /**
- * The catalog entry a tool's row describes, as the JSON carries it. The box's tools list already reports the merged
- * catalog's entry, commands included, so a built-in tool and a custom one are described the same way.
+ * The catalog entry a tool's row describes, as the JSON carries it. The box's tools list reports the merged catalog's
+ * entry, commands included, so a built-in tool and a custom one are described the same way. A custom entry the page holds
+ * is used as it is, so the copy is the entry tools.d holds rather than the status the list derives from it.
  */
-export function toolJsonEntry(tool) {
+export function toolJsonEntry(tool, customById = new Map()) {
+  const custom = customById.get(tool.id);
+  if (custom) return { ...custom };
   return {
     id: tool.id,
     name: tool.name,

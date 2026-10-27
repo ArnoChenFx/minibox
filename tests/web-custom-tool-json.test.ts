@@ -84,6 +84,31 @@ describe("the JSON a tool row copies", () => {
     expect(text).toContain("npm install -g --prefix {{prefix}} {{package_spec}}");
   });
 
+  test("a custom entry the page holds is copied as tools.d has it, not as the status derives it", () => {
+    const entry = {
+      id: "bun",
+      name: "My Bun",
+      description: "A replacement entry.",
+      category: "languages",
+      source: "script",
+      package: "bun.dev",
+      bin: "mybun",
+      needsRoot: false,
+      estimatedMb: 90,
+      requires: null,
+      install: "my install",
+      upgrade: "my upgrade",
+      uninstall: "my uninstall",
+      stop: "my stop",
+      detect: "my detect",
+      overridesBuiltin: true,
+    };
+    const copied = JSON.parse(toolJsonText(toolJsonEntry(BUN, new Map([["bun", entry]]))));
+    expect(copied).toMatchObject({ name: "My Bun", source: "script", install: "my install", stop: "my stop" });
+    // The flag that says it replaces a built-in entry is the list's, not the file's, so it is not copied.
+    expect(Object.keys(copied)).not.toContain("overridesBuiltin");
+  });
+
   test("the fields a copy writes are the ones a paste reads, so a copy always goes back in", () => {
     expect(TOOL_JSON_FIELDS).toEqual([
       "id",
