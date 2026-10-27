@@ -172,10 +172,14 @@ export default {
   "bd.sessions": "会话",
   "bd.newSession": "新建会话",
   "bd.newSessionTitle": "新建终端会话",
-  "bd.newSessionText": "关闭此页面后会话仍会继续运行。给它起个名字，方便之后找到。",
+  "bd.newSessionText":
+    "关闭此页面后会话仍会继续运行。会话打开时已经带有一个名称，你可以直接用，也可以自己改，方便之后找到。",
   "bd.sessionName": "会话名称",
-  "bd.sessionNameHelp": "字母、数字、短横线和下划线，最多 32 个字符。",
+  "bd.sessionNameHelp":
+    "字母、数字、短横线和下划线，最多 32 个字符。Box 已有的名称会在这里直接拒绝，不会等到创建时才失败。",
   "bd.sessionNameInvalid": "以字母或数字开头，只能使用字母、数字、- 和 _，总长最多 32 个字符。",
+  "bd.sessionNameRequired": "请输入会话名称，或保留已经填好的名称。",
+  "bd.sessionNameTaken": "此 Box 已有名为“{name}”的会话，请换一个名称。",
   "bd.sessionStartFailed": "无法创建会话",
   "bd.closeSession": "关闭会话",
   "bd.closeSessionText": "关闭会话“{name}”？其中正在运行的程序会随之停止。",

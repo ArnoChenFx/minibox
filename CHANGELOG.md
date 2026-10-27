@@ -4,6 +4,9 @@
 
 ## [Unreleased]
 
+### 变更
+- **新建终端会话不再强制手写名字**：终端标签页的 **新建会话** 对话框打开时输入框里已经填好一个名称（是 `value` 而不是灰色 placeholder），直接按回车或点 **新建会话** 即可创建。默认名规则抽到可单测的 `web/js/lib/session-name.js`（附 `.d.ts`）：`console` 未被占用就用 `console`，否则依次 `console-2`、`console-3`……，跳过列表里已有的名字；比较时不区分大小写（tmux 本身区分，但 `Console` 与 `console` 摆在一起容易误选），后缀让整个名字始终不超过服务端要求的 32 个字符（`console-99` 之后是 `console-100`，接近上限的基名会截短基名以保留后缀），所以连点两次一定得到两个不同名字。命名沿用现有 `console` 的风格而不是随机后缀，会话列表读起来是一组编号。对话框内的校验也换到同一个模块（`sessionNameProblem()`）：Box 已有的名字（含 Agent 启动的会话、含大小写不同的同形名）在输入框下方内联提示，非法名（规则与服务端 `SESSION_NAME_RE` 完全一致，测试直接读服务端源码比对）同样内联提示，**输入框清空则拒绝并提示**，空名不会发给服务端；`promptDialog` 的 `validate` 现在在对话框打开时、每次输入时与每次点确定时都会跑，错误行加 `role="alert"`，回车改为 `preventDefault` 后提交，避免对话框把焦点还给触发按钮后回车又把它按一次（此前输入框里按回车会重新打开对话框）。服务端语义未变：`POST /api/boxes/{id}/sessions` 仍要求 `name`，服务端报错仍以提示条显示可读文案；Box 首次打开终端自动创建的 `console` 会话名（`DEFAULT_NAME`）也不变，新逻辑只影响点 **新建会话**。文案 `bd.newSessionText`、`bd.sessionNameHelp` 调整，新增 `bd.sessionNameRequired`、`bd.sessionNameTaken`（中英文）。中英文《终端与会话》的「新建会话」一节改写为「打开就有一个默认名字，可以直接确定，也可以自己改」，并说明默认名的序列与内联校验。测试：`tests/web-session-name.test.ts`（默认名生成、大小写、32 字符边界、`console-99`、内联校验分支、i18n key、组件接线静态断言）与真机浏览器测试 `tests/web-session-default-browser.test.ts`（默认名已填、直接确定即可创建并被选中、连点两次得到不同名字、非法/重名/空输入时内联报错且不创建、中文界面）。
+
 ## [0.6.7] - 2026-10-26
 
 ### 新增
