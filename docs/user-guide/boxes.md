@@ -63,7 +63,9 @@ Click a box in the list to open it. The box page has these tabs:
 | **Activity** | Recent commands, container events and terminal sessions. Below them, **Container output (docker logs)** shows the box's log, with **Auto-refresh**. |
 | **Settings** | The box's settings, in seven sections: **Resources**, **Storage and mounts**, **Tools**, **Environment variables**, **Lifecycle**, **Security** and **Checkpoints** |
 
-The **Resources** section shows the CPU and memory limits, the current use, and the **Adjust quota** button. The **Lifecycle** section holds the startup command, and the idle timeout and the TTL, which **Edit** changes in place. The **Security** section shows the network egress and the security profile. The **Checkpoints** section lists the box's copies of its data. See [Checkpoints](checkpoints.md).
+The **Resources** section shows the CPU and memory limits, the current use, and the **Adjust quota** button. The **Lifecycle** section holds the startup command, and the idle timeout and the TTL, which **Edit** changes in place. The **Security** section holds the template, the network egress and the security profile. The **Checkpoints** section lists the box's copies of its data. See [Checkpoints](checkpoints.md).
+
+Changes that only a rebuild can apply are **staged**: the card keeps them, marks them **Pending**, and a banner above the section counts them. Nothing on the box changes until you click **Apply and rebuild** in that banner, and the banner offers **View diff** and **Discard** too. A staged change survives a MiniBox restart, and one box has one set of staged changes. These settings are staged: the template, the network egress, the security profile, the environment variables and the mounts. See [Stage a change and rebuild](boxes.md#stage-a-change-and-rebuild).
 
 The **Create checkpoint** button in the title bar takes a checkpoint from any tab, and the title bar also has the **Rebuild** button.
 
@@ -153,9 +155,22 @@ The [REST API](../reference/api.md) and the MCP tools `get_startup_command`, `se
 
 Lowering the memory below the current use can fail, or stop the box with the out-of-memory killer.
 
+## Stage a change and rebuild
+
+Rebuilding replaces the box's container with a new one. Six settings only take effect through a rebuild: the template, the mounts, the environment variables, the network, the network egress and the security profile. The box's **Settings** tab stages a change of any of them instead of rebuilding at once.
+
+1. Open the box, click **Settings**, and open the section that holds the setting: **Storage and mounts**, **Environment variables** or **Security**.
+2. Change the setting and click **Save**. The card marks the value **Pending**, and a banner above the section counts the staged changes and lists them by name.
+3. Click **View diff** to read every change before you commit to it, or **Discard** to drop them all.
+4. Click **Apply and rebuild**, then confirm. The box is rebuilt once, with every staged field together.
+
+Nothing on the box changes until you apply: a staged change leaves the running container, its processes and its writable layer alone. A staged change is kept in the data directory, so it survives a MiniBox restart, and a box has one staged record. A field you stage back to the value the box already has drops out of that record, and the banner stops counting it. Applying refuses a box that changed since the preview, and the record is cleared only once the rebuild has succeeded.
+
+The **Rebuild** button in the title bar is the direct route: it previews and rebuilds a box in one dialog, with no staging.
+
 ## Rebuild a box
 
-Rebuilding replaces the box's container with a new one. Use it when you change the template, the environment variables, the mounts or the security profile.
+Rebuilding replaces the box's container with a new one. Use it when you change the template, the environment variables, the mounts, the network, the network egress or the security profile.
 
 1. Open the box, and click **Rebuild** in the title bar.
 2. Read the preview. It lists what changes.

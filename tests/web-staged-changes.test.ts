@@ -8,6 +8,8 @@ interface Change {
 
 let mountLines: (change: Change) => string[] | null;
 let envLines: (change: Change) => string[] | null;
+let changesHtml: (changes: Change[]) => string;
+let stagedBannerHtml: (staged: unknown, boxId?: string | null) => string;
 const restores: (() => void)[] = [];
 
 function stubGlobal(name: string, value: unknown): void {
@@ -27,7 +29,7 @@ beforeAll(async () => {
   });
   stubGlobal("document", { documentElement: {} });
   // @ts-expect-error The web modules are plain JavaScript without declarations.
-  ({ mountLines, envLines } = await import("../web/js/components/staged-changes.js"));
+  ({ mountLines, envLines, changesHtml, stagedBannerHtml } = await import("../web/js/components/staged-changes.js"));
 });
 
 afterAll(() => {
@@ -88,5 +90,62 @@ describe("the staged environment change", () => {
 
   test("is null for the note about a rotated secret", () => {
     expect(envLines({ field: "env", from: "secret A: value in use", to: "secret A: new value" })).toBeNull();
+  });
+});
+
+/** The text inside the dialog's pre, without the markup around it. */
+const diffText = (changes: Change[]) =>
+  changesHtml(changes)
+    .replace(/^<pre class="mono staged-changes">/, "")
+    .replace(/<\/pre>$/, "")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'");
+
+describe("the staged changes dialog", () => {
+  test("names each field a card can stage, so template, egress and profile read in the reader's language", () => {
+    const text = diffText([
+      { field: "template", from: "mbtest-template:base", to: "node:24-bookworm-slim" },
+      { field: "egress", from: "open", to: "proxy-only: api.anthropic.com, example.org" },
+      { field: "profile", from: "standard", to: "strict" },
+    ]);
+    expect(text.split("\n")).toEqual([
+      "Template: mbtest-template:base → node:24-bookworm-slim",
+      "Network egress: open → proxy-only: api.anthropic.com, example.org",
+      "Security profile: standard → strict",
+    ]);
+  });
+
+  test("mounts and the environment keep their own lines under the field's name", () => {
+    const text = diffText([
+      { field: "env", from: env([{ name: "OLD", value: "1" }]), to: env([{ name: "NEW", value: "2" }]) },
+    ]);
+    expect(text.split("\n")).toEqual(["Environment:", "  + NEW=2", "  − OLD"]);
+  });
+
+  test("a field with no change at all reads as an em dash rather than an empty pre", () => {
+    expect(diffText([])).toBe("—");
+  });
+});
+
+const staged = (pending: string[]) => ({ pending, fields: {}, changes: [], problem: null });
+
+describe("the staged banner's count", () => {
+  test("counts the fields that still differ and lists them by name, in the API's order", () => {
+    const html = stagedBannerHtml(staged(["template", "egress", "profile"]), "bx_1");
+    expect(html).toContain("3 changes waiting to apply");
+    expect(html).toContain("Template, Network egress, Security profile");
+  });
+
+  test("is empty while nothing is pending, so the settings page can hide it", () => {
+    expect(stagedBannerHtml(null, "bx_1")).toBe("");
+    expect(stagedBannerHtml(staged([]), "bx_1")).toBe("");
+  });
+
+  test("the box the banner belongs to is on its apply button, so one box's apply leaves another's alone", () => {
+    const html = stagedBannerHtml(staged(["profile"]), "bx_1");
+    expect(html).toContain('data-staged="apply" data-staged-box="bx_1"');
   });
 });

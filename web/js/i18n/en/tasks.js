@@ -27,6 +27,7 @@ export default {
   "task.op.template.build": "Build base template",
   "task.op.template.save": "Save box as template",
   "task.op.template.create": "Build template",
+  "task.op.template.fork": "Fork template",
   "task.op.template.rebuild": "Rebuild template",
   "task.op.template.sync": "Sync template",
   "task.op.template.official.build": "Build official template",

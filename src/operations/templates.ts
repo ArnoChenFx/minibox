@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { HostCtx } from "../host/registry";
 import { type ErrorCode, AppError, notFound } from "../lib/errors";
 import { type MessageKey, msg } from "../lib/messages";
+import { NAME_RE } from "../lib/validation";
 import { assertNoSecretInImage } from "../secrets/env";
 import { getBox } from "../services/boxes";
 import { OFFICIAL_TEMPLATES, officialOfRef } from "../services/official-templates";
@@ -12,10 +13,12 @@ import {
   assertTemplateNameAvailable,
   buildBaseTemplate,
   deleteTemplate,
+  forkTemplate,
   holdingTemplateName,
   listTemplates,
   promoteSnapshot,
   saveBoxAsTemplate,
+  templateSourceImage,
 } from "../services/templates";
 import type { TaskError, TaskReader } from "../tasks/types";
 import { templateVisible } from "../tokens/model";
@@ -175,6 +178,54 @@ export const templateCreate = defineOperation({
         { name: input.name, description: input.description, source: input.source, createdBy: principal.id },
         { log: (text) => task?.log(text), signal: task?.signal },
       ),
+    ),
+  }),
+});
+
+export const templateFork = defineOperation({
+  name: "template.fork",
+  tag: "templates",
+  summary: "Fork a template into a new one that can be changed on its own",
+  kind: "write",
+  scope: "template:write",
+  async: false,
+  conflicts: true,
+  input: z.object({
+    ref: templateRef(),
+    name: templateName(),
+    description: templateDescription(),
+    host: hostId()
+      .optional()
+      .meta({ description: "Host that holds the template to fork. Omitted, the first host that holds it." }),
+  }),
+  output: z.object({ template: PromotedTemplateSchema }),
+  rest: [{ method: "POST", path: "/api/templates/:ref/fork", body: true, query: ["host"], status: 201 }],
+  cli: "template fork",
+  mcp: {
+    toolset: "tools",
+    name: "fork_template",
+    description:
+      "Fork a template: copy its image and its description under a new name, so the copy can be changed on its own while the original stays as it is. A template built from a Dockerfile, a repository, a build context or a devcontainer.json brings its recipe along, pointed at the new image, so rebuild_template rebuilds the fork from the same source and the fork's boxes keep the fork's postCreateCommand and forwardPorts. A template saved from a box forks too, and its fork cannot be rebuilt. Optional description replaces the one copied. Optional host names the host that holds the template; without it the first host that holds it. Owner only. Returns the new template's ref and name.",
+  },
+  hostFor: async (ctx, input) => {
+    // A bare name is a template on a host, so the host that holds it is looked for under its tag too.
+    if (input.host === undefined && NAME_RE.test(input.ref) && !input.ref.includes(":")) {
+      const found = await hostOfImage(ctx, `${ctx.host.prefix}-template:${input.ref}`);
+      if (found.host.id !== ctx.host.host.id) return found;
+    }
+    return hostOfImage(ctx, input.ref, input.host);
+  },
+  precondition: async ({ host }) => refuseAgent(host, "templates"),
+  resolve: ({ host }, input) => templateSourceImage(host, input.ref),
+  beforeTask: async ({ host }, input) => assertTemplateNameAvailable(host, input.name),
+  activity: { action: () => "template.fork", target: (input) => input.name },
+  audit: {
+    target: (input) => ({ kind: "template", name: input.name }),
+    detail: (input, source) => ({ name: input.name, from: source?.ref }),
+  },
+  run: async ({ host, principal }, input, source) => ({
+    template: await holdingTemplateName(host, input.name, () =>
+      forkTemplate(host, source, { name: input.name, description: input.description, createdBy: principal.id }),
     ),
   }),
 });
@@ -439,6 +490,7 @@ export const templateOperations = [
   templatePromote,
   templateSave,
   templateCreate,
+  templateFork,
   templateRebuild,
   templateBuild,
   templateSync,
