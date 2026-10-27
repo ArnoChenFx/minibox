@@ -189,6 +189,7 @@ describe("OpenAPI document", () => {
       "template.build",
       "template.create",
       "template.delete",
+      "template.fork",
       "template.list",
       "template.official.build",
       "template.official.list",

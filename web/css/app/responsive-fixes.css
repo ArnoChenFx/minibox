@@ -54,6 +54,14 @@
   .segmented {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+  /* A row of choices that names three or four options keeps the count the caller asked for, and shrinks each one instead
+     of letting a long hint push the row past the window: `minmax(0, 1fr)` is the floor a bare `1fr` does not have. */
+  .segmented.segmented-3 {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .segmented.segmented-4 {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
   .hide-sm {
     display: none !important;
   }

@@ -1,5 +1,9 @@
 export default {
   "egress.section": "网络出站",
+  "egress.edit": "编辑",
+  "egress.editHelp": "档位决定 Box 能访问宿主机之外的哪些地址。保存会暂存更改，设置上方的横幅会按它重建 Box。",
+  "egress.pendingHelp": "该策略已暂存，应用待应用变更后生效。运行中的 Box 仍使用旧策略。",
+  "egress.saveNote": "保存会暂存策略而不是立即重建。请在设置上方的横幅中与其他待应用变更一起应用。",
   "egress.tier.open": "开放",
   "egress.tierHint.open": "与普通容器一样可以访问互联网。",
   "egress.tier.none": "无",

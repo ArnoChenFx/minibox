@@ -25,7 +25,7 @@ Every box runs as the user `dev`, user ID 1000. Inside a box, `sudo` works witho
 7. To change the security profile, open **Advanced** and choose a profile. The default is `standard`. The same section takes an optional **Network egress**, which limits what the box can reach outside the host, and an optional **Startup command**. See [Network egress](../admin/network-egress.md) and [Startup command](#startup-command).
 8. To clone a Git repository into `/workspace`, open **Clone a repository into /workspace**. See [Clone a repository](#clone-a-repository).
 9. To install agent CLIs or other tools with the box, tick them under **Tools**. See [Tools](tools.md).
-10. Open **Volumes: defaults**, then choose **Defaults** to mount the workspace, home, cache and tools volumes, or **Customize** to pick the volumes yourself. See [Volumes and storage](volumes-and-storage.md).
+10. Open **Volumes: defaults**, then choose **Defaults** to mount the workspace, home, cache and tools volumes, or **Customize** to pick the volumes yourself. In **Customize**, each row mounts a volume that already exists, or has MiniBox create one of the box's role volumes (workspace, home, tools or cache) for it, and a role you remove is not created. See [Volumes and storage](volumes-and-storage.md#volume-roles).
 11. To set environment variables, open **Environment variables**. See [Environment variables and secrets](environment-and-secrets.md).
 12. Click **Create and start**.
 
@@ -46,7 +46,7 @@ The clone runs once, when the box is created:
 - It is shallow. The workspace gets the latest commit of the branch, without the history.
 - The box is created first, then its setup runs as its own task, **Set up box**. The setup clones the repository, then forwards the ports and runs the `postCreateCommand` that the template sets, if it sets them. Follow it in the **Tasks** panel. If the clone fails, the box stays, and the task shows why.
 - Starting, stopping, restarting and rebuilding a box never clone again, and never run the setup again. See [The setup of a box](templates.md#the-setup-of-a-box).
-- `/workspace` must be writable. The default volumes give a new box an empty workspace. If you choose **Customize** and mount a volume that already has files at `/workspace`, the clone fails.
+- `/workspace` must be writable. The default volumes give a new box an empty workspace, and so does the workspace row of **Customize**. If you mount a volume that already has files at `/workspace`, the clone fails.
 
 The secret's value is read for the clone only. It is never written into the box or its image, and the task log shows the clone output with the value replaced. A secret that is not set stops the create before anything is created. For what a clone can reach and how SSH host keys are checked, see [Security](../admin/security.md#template-builds-and-repository-clones).
 
@@ -63,7 +63,9 @@ Click a box in the list to open it. The box page has these tabs:
 | **Activity** | Recent commands, container events and terminal sessions. Below them, **Container output (docker logs)** shows the box's log, with **Auto-refresh**. |
 | **Settings** | The box's settings, in seven sections: **Resources**, **Storage and mounts**, **Tools**, **Environment variables**, **Lifecycle**, **Security** and **Checkpoints** |
 
-The **Resources** section shows the CPU and memory limits, the current use, and the **Adjust quota** button. The **Lifecycle** section holds the startup command, and the idle timeout and the TTL, which **Edit** changes in place. The **Security** section shows the network egress and the security profile. The **Checkpoints** section lists the box's copies of its data. See [Checkpoints](checkpoints.md).
+The **Resources** section shows the CPU and memory limits, the current use, and the **Adjust quota** button. The **Lifecycle** section holds the startup command, and the idle timeout and the TTL, which **Edit** changes in place. The **Security** section holds the template, the network egress and the security profile. The **Checkpoints** section lists the box's copies of its data. See [Checkpoints](checkpoints.md).
+
+Changes that only a rebuild can apply are **staged**: the card keeps them, marks them **Pending**, and a banner above the section counts them. Nothing on the box changes until you click **Apply and rebuild** in that banner, and the banner offers **View diff** and **Discard** too. A staged change survives a MiniBox restart, and one box has one set of staged changes. These settings are staged: the template, the network egress, the security profile, the environment variables and the mounts. See [Stage a change and rebuild](boxes.md#stage-a-change-and-rebuild).
 
 The **Create checkpoint** button in the title bar takes a checkpoint from any tab, and the title bar also has the **Rebuild** button.
 
@@ -153,9 +155,22 @@ The [REST API](../reference/api.md) and the MCP tools `get_startup_command`, `se
 
 Lowering the memory below the current use can fail, or stop the box with the out-of-memory killer.
 
+## Stage a change and rebuild
+
+Rebuilding replaces the box's container with a new one. Six settings only take effect through a rebuild: the template, the mounts, the environment variables, the network, the network egress and the security profile. The box's **Settings** tab stages a change of any of them instead of rebuilding at once.
+
+1. Open the box, click **Settings**, and open the section that holds the setting: **Storage and mounts**, **Environment variables** or **Security**.
+2. Change the setting and click **Save**. The card marks the value **Pending**, and a banner above the section counts the staged changes and lists them by name.
+3. Click **View diff** to read every change before you commit to it, or **Discard** to drop them all.
+4. Click **Apply and rebuild**, then confirm. The box is rebuilt once, with every staged field together.
+
+Nothing on the box changes until you apply: a staged change leaves the running container, its processes and its writable layer alone. A staged change is kept in the data directory, so it survives a MiniBox restart, and a box has one staged record. A field you stage back to the value the box already has drops out of that record, and the banner stops counting it. Applying refuses a box that changed since the preview, and the record is cleared only once the rebuild has succeeded.
+
+The **Rebuild** button in the title bar is the direct route: it previews and rebuilds a box in one dialog, with no staging.
+
 ## Rebuild a box
 
-Rebuilding replaces the box's container with a new one. Use it when you change the template, the environment variables, the mounts or the security profile.
+Rebuilding replaces the box's container with a new one. Use it when you change the template, the environment variables, the mounts, the network, the network egress or the security profile.
 
 1. Open the box, and click **Rebuild** in the title bar.
 2. Read the preview. It lists what changes.

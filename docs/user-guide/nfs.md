@@ -155,6 +155,8 @@ Until you save, the pool exists only in the page. After saving, the pool row sho
 
 The **Default** setting and the **Role defaults** (**Workspace**, **Home**, **Tools**, **Cache**) also take effect only when you save. Leave the roles on **Use the rule** unless you need an exception. The rule puts the cache on the local pool and everything else on the default pool.
 
+To correct a pool you already added, click **Edit** on its row: see [Edit a storage pool](volumes-and-storage.md#edit-a-storage-pool). Changing a pool's server, export or options does not change volumes that already exist, and a pool that still has volumes cannot be renamed or change backend.
+
 ### The same through the API
 
 ```bash
@@ -169,7 +171,7 @@ curl -s -H "Authorization: Bearer $KEY" -H 'content-type: application/json' \
 
 `PUT /api/pools` replaces the whole list, so send every pool that you want to keep. See the [API reference](../reference/api.md).
 
-A pool that still has volumes cannot be removed or change its backend. Changing a pool's server, export or options does not change volumes that already exist. Each Docker volume keeps the options it was created with.
+A pool that still has volumes cannot be removed, renamed or change its backend. Changing a pool's server, export or options does not change volumes that already exist: each Docker volume keeps the options it was created with.
 
 ### Mount options
 

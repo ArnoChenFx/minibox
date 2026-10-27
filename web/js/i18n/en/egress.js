@@ -1,5 +1,12 @@
 export default {
   "egress.section": "Network egress",
+  "egress.edit": "Edit",
+  "egress.editHelp":
+    "The tier decides what the box reaches outside the host. Saving stages the change; the banner above the settings rebuilds the box with it.",
+  "egress.pendingHelp":
+    "This policy is staged and takes effect when the staged changes are applied. The running box still has the old one.",
+  "egress.saveNote":
+    "Saving stages the policy instead of rebuilding. Apply it from the banner above the settings, together with any other staged changes.",
   "egress.tier.open": "Open",
   "egress.tierHint.open": "Reaches the internet like any container.",
   "egress.tier.none": "None",

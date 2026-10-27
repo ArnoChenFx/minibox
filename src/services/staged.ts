@@ -2,7 +2,7 @@ import type { HostCtx } from "../host/registry";
 import { AppError, notFound } from "../lib/errors";
 import { msg } from "../lib/messages";
 import type { RebuildChange, RebuildPreview, RebuildRequest } from "../specs/plan";
-import { type StagedField, type StagedFields, type StagedRecord, stagedFieldsOf } from "../specs/staged";
+import { type StagedField, type StagedFields, type StagedRecord, mergeStaged, stagedFieldsOf } from "../specs/staged";
 import type { BoxSpec } from "../specs/types";
 import type { Box } from "./boxes";
 import { planChange, type RebuildResult, rebuildBox, rebuildWithSafety } from "./rebuild";
@@ -160,8 +160,7 @@ export async function stageChanges(
 ): Promise<StagedView | null> {
   const spec = specOf(host, box);
   const before = host.specs.staged.read(box.boxId);
-  const merged: StagedFields = { ...before?.fields };
-  for (const field of stagedFieldsOf(fields)) Object.assign(merged, { [field]: fields[field] });
+  const merged = mergeStaged(before?.fields ?? null, fields);
   await planChange(host, spec, requestOf(merged));
   host.specs.staged.write({
     version: 1,

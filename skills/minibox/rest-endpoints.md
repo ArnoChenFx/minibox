@@ -2,7 +2,7 @@
 
 Base URL: `http://127.0.0.1:3920` (the server's `HOST` and `PORT`). Every request carries `Authorization: Bearer <agent token>`, and every write carries `Content-Type: application/json`.
 
-The complete machine-readable list is [`docs/openapi.json`](https://github.com/ArnoChenFx/minibox/blob/main/docs/openapi.json) (122 paths), and [`docs/reference/api.md`](https://github.com/ArnoChenFx/minibox/blob/main/docs/reference/api.md) describes them by group. Each operation has an `x-scope` (the operation's own scope) and, for the ones MCP also exposes, an `x-mcp` entry.
+The complete machine-readable list is [`docs/openapi.json`](https://github.com/ArnoChenFx/minibox/blob/main/docs/openapi.json) (124 paths), and [`docs/reference/api.md`](https://github.com/ArnoChenFx/minibox/blob/main/docs/reference/api.md) describes them by group. Each operation has an `x-scope` (the operation's own scope) and, for the ones MCP also exposes, an `x-mcp` entry.
 
 Conventions in the tables below:
 
@@ -16,7 +16,7 @@ Conventions in the tables below:
 | Method | Path | Scope | Notes |
 |---|---|---|---|
 | `GET` | `/api/boxes` | `box:read` | `?stats=false` skips usage, `?host=local` |
-| `POST` | `/api/boxes` | `box:write` | `name`, `template`, `cpus`, `memoryMb`, `profile`, `egress`, `mounts`, `env`, `idleTimeoutSec`, `ttlSec`, `host`, `tools`, `startupCommand`, `selfToken`, `repo`. `201`; `setup.taskId`, `clone.taskId` |
+| `POST` | `/api/boxes` | `box:write` | `name`, `template`, `cpus`, `memoryMb`, `profile`, `egress`, `mounts`, `env`, `idleTimeoutSec`, `ttlSec`, `host`, `tools`, `startupCommand`, `selfToken`, `repo`. A `mounts` entry is `{ volume, path, mode }` for a volume that exists, or `{ role }` (`workspace`, `home`, `tools`, `cache`) for one MiniBox creates for the box; a role the list omits is not created, and `tools` mounts the shared tools volume. `201`; `setup.taskId`, `clone.taskId` |
 | `GET` | `/api/boxes/{id}` | `box:read` | The `ETag` is the revision |
 | `PATCH` | `/api/boxes/{id}` | `box:write` | If-Match. In place: `name`, `cpus`, `memoryMb`, `pids`, `labels`, `idleTimeoutSec`, `ttlSec` |
 | `DELETE` | `/api/boxes/{id}` | `box:delete` | `?deleteVolume=true`, `?skipTrash=true` |
@@ -144,6 +144,7 @@ All paths are jailed inside the volume. `{id}` is a `vol_…` or a volume name; 
 | `GET` | `/api/templates` | `box:read` (`template:read`) | |
 | `POST` | `/api/boxes/{id}/template` | `tool:install` | Save the box as a template. `202` |
 | `POST` | `/api/templates` | owner | `name`, `description`, `source`. `202` |
+| `POST` | `/api/templates/{ref}/fork` | owner | `name`, `description`, `?host=`. `201`; `template.ref`, `template.name` |
 | `POST` | `/api/templates/{ref}/rebuild` | owner | `?host=`. `202` |
 | `POST` | `/api/images/pull` | owner | `ref`. `202` |
 | `GET` | `/api/tools/custom` | owner | Custom catalog entries |

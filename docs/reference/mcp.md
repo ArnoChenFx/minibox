@@ -36,7 +36,7 @@ The default is `core,meta`. The `minibox mcp` command takes the same list with `
 | `rebuild` | Rebuilding a box. Not on by default. Enable it with `toolsets=rebuild`. |
 | `move` | Moving a box to another host. Not on by default. Enable it with `toolsets=move`. |
 | `storage` | Volumes, storage pools, the owner's recycle bin, the owner's checkpoint export, import, copy and schedules, and the owner's backups and off-site targets |
-| `tools` | Installing tools, custom tools, saving templates, building and rebuilding templates, building official templates, pulling images, and copying templates to another host |
+| `tools` | Installing tools, custom tools, saving templates, building templates, forking templates, rebuilding templates, building official templates, pulling images, and copying templates to another host |
 | `network` | Preview ports |
 | `self` | A box's own agent, with its self token. Only that agent is offered it, and it is its default. See [Connecting AI agents](../user-guide/agents.md#a-boxs-own-agent). |
 
@@ -157,6 +157,7 @@ The tables below list each tool and the operation it calls, taken from the `x-mc
 | `delete_custom_tool` | `DELETE /api/tools/custom/{id}` |
 | `save_template` | `POST /api/boxes/{id}/template` |
 | `create_template` | `POST /api/templates`. Owner only |
+| `fork_template` | `POST /api/templates/{ref}/fork`. Owner only |
 | `rebuild_template` | `POST /api/templates/{ref}/rebuild`. Owner only |
 | `sync_template` | `POST /api/templates/{ref}/sync`. Owner only |
 | `list_official_templates` | `GET /api/templates/official`. Owner only |
@@ -236,7 +237,7 @@ Pass other secrets, such as API keys, in `env`, not in `argv` or `cmd`. The audi
 - `context`, with `url` of a `.tar` or `.tar.gz` archive, and optional `dockerfile`.
 - `devcontainer`, with `url`, and optional `branch`, `path` and `secretRef`. It reads `image`, `build`, `containerEnv`, `remoteEnv`, `postCreateCommand` and `forwardPorts` from the `devcontainer.json` file, and lists any other setting as a warning in the build log without applying it.
 
-`rebuild_template` takes the template's `ref`, and `pull_image` takes an image `ref`, such as `node:24-bookworm-slim`. `sync_template` takes the template's `ref` and the `host` to copy it to. `build_official_template` takes `name`, one of `node`, `python`, `go` or `minimal`, and an optional `host`. `list_official_templates` takes no arguments and lists the four with their base images. Building, rebuilding and pulling are owner only. Each returns a task, and its log shows the build or the layers. A `create_box` on a host that lacks an official template copies it from a host that holds it, or builds it there, and its result holds `sync.taskId`. See [Templates](../user-guide/templates.md#official-templates).
+`rebuild_template` takes the template's `ref`, and `pull_image` takes an image `ref`, such as `node:24-bookworm-slim`. `fork_template` takes the template's `ref`, the new `name`, an optional `description` and an optional `host`, and returns the new template's `ref` and `name` at once: the copy keeps the build source and the setup command, so `rebuild_template` rebuilds it from the same source. `sync_template` takes the template's `ref` and the `host` to copy it to. `build_official_template` takes `name`, one of `node`, `python`, `go` or `minimal`, and an optional `host`. `list_official_templates` takes no arguments and lists the four with their base images. Building, forking, rebuilding and pulling are owner only. Each build returns a task, and its log shows the build or the layers. A `create_box` on a host that lacks an official template copies it from a host that holds it, or builds it there, and its result holds `sync.taskId`. See [Templates](../user-guide/templates.md#official-templates).
 
 ## Notification tools
 

@@ -4,6 +4,7 @@ import type { EgressPolicy } from "../egress/policy";
 import type { AuditNote } from "../events/types";
 import type { ContainerStats } from "../runtime";
 import type { BoxMount, BoxEnv, DesiredState, StopReason, BoxRecovery } from "../specs/types";
+import type { CreateMount } from "../volumes/create-mounts";
 import type { VolumeRole } from "../volumes/types";
 
 export interface CreateBoxInput {
@@ -18,10 +19,11 @@ export interface CreateBoxInput {
   /** Id of the principal that created the box: `owner`, or a token id. Defaults to `owner`. */
   createdBy?: string;
   /**
-   * Engine mounts to use instead of the four role volumes. `volume` is a volume id or name.
-   * An empty list creates a box with no mounts.
+   * The mounts this box gets, instead of the four role volumes. An entry is a mount of a recorded volume
+   * (`volume`, with `path` and `mode`), or a role whose volume MiniBox creates for this box (`role`). An empty list
+   * creates a box with no mounts.
    */
-  mounts?: BoxMount[];
+  mounts?: CreateMount[];
   /** Env entries stored on the spec. A secret's value is read into the container when it is created. */
   env?: BoxEnv[];
   /** `null` inherits the global default. `0` disables idle sleep for this box. */
