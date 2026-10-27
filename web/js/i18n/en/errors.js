@@ -490,7 +490,7 @@ export default {
   "err.pool_path_invalid": "{what} path {path} must be absolute and must not contain ..",
   "err.pool_duplicate": "Pool names must be unique.",
   "err.pool_default_conflict": "Choose exactly one default storage pool.",
-  "err.pool_in_use": "Pool {pool} still has volumes, so it cannot be removed or change backend.",
+  "err.pool_in_use": "Pool {pool} still has volumes, so it cannot be removed, renamed or change backend.",
   "err.role_pool_unknown": "Role {role} points at pool {pool}, which does not exist.",
   "err.exec_command_required": "Provide exactly one of cmd or argv.",
   "err.exec_command_hint": "cmd runs through /bin/sh -c. argv is the program and its arguments, with no shell.",

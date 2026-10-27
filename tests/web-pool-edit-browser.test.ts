@@ -183,7 +183,7 @@ describe.skipIf(!executablePath)("editing a storage pool from the storage page (
       // rather than in a toast that hides it.
       const edit = editDialog(page, "nas");
       await webExpect(edit.locator("#p-error")).toHaveText(
-        "Pool nas still has volumes, so it cannot be removed or change backend.",
+        "Pool nas still has volumes, so it cannot be removed, renamed or change backend.",
       );
       // The form is still open, with the name field focused so it can be corrected.
       await webExpect(edit.locator("#p-name")).toBeFocused();
