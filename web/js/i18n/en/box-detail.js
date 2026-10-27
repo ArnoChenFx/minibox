@@ -177,11 +177,15 @@ export default {
   "bd.sessions": "Sessions",
   "bd.newSession": "New session",
   "bd.newSessionTitle": "New terminal session",
-  "bd.newSessionText": "The session keeps running after you close this page. Give it a name so you can find it again.",
+  "bd.newSessionText":
+    "The session keeps running after you close this page. It starts with a name you can keep or change, so you can find it again.",
   "bd.sessionName": "Session name",
-  "bd.sessionNameHelp": "Letters, digits, dashes and underscores; up to 32 characters.",
+  "bd.sessionNameHelp":
+    "Letters, digits, dashes and underscores; up to 32 characters. A name the box already uses is refused here, before the session starts.",
   "bd.sessionNameInvalid":
     "Start with a letter or digit. Use only letters, digits, - and _, up to 32 characters in all.",
+  "bd.sessionNameRequired": "Enter a session name, or keep the one already filled in.",
+  "bd.sessionNameTaken": "This box already has a session named “{name}”. Choose another name.",
   "bd.sessionStartFailed": "Couldn't start the session",
   "bd.closeSession": "Close session",
   "bd.closeSessionText": "Close the session “{name}”? Programs running in it stop.",
