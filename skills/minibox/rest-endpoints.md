@@ -162,7 +162,10 @@ All paths are jailed inside the volume. `{id}` is a `vol_…` or a volume name; 
 | `GET` | `/api/events/stream` | `events:read` | Server-sent events; send `Last-Event-ID` to resume |
 | `GET` | `/api/boxes/{id}/logs/stream` | `box:read` | Server-sent events; `?tail=` |
 | `GET` | `/api/overview` | owner | What agents are doing and what needs attention |
-| `GET` | `/api/hosts`, `/api/hosts/usage` | owner | Hosts |
+| `GET` | `/api/hosts`, `/api/hosts/usage`, `/api/hosts/{id}/disk` | owner | Hosts, and what a host's engine holds (`docker system df`) |
+
+| `GET` | `/api/hosts`, `/api/hosts/usage` | owner | Hosts, with the labels each one carries |
+| `PATCH` | `/api/hosts/{id}` | owner | `labels`. The local host included |
 | `GET` | `/api/secrets` | owner | Secret names, never values |
 | `GET` | `/api/trash` | owner | The recycle bin |
 | `POST` | `/api/trash/{id}/restore` | owner | `202` |

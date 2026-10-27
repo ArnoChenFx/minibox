@@ -1,6 +1,7 @@
 import { api, enc } from "../lib/api.js";
 import { esc, copyText } from "../lib/dom.js";
-import { cpus, mem, relTime } from "../lib/format.js";
+import { bytes, cpus, mem, relTime } from "../lib/format.js";
+import { diskReading } from "../lib/host-disk.js";
 import { HOST_BADGE, accessWarningShown, agentState } from "../lib/host-list.js";
 import { refreshHosts } from "../lib/hosts.js";
 import { t } from "../lib/i18n.js";
@@ -32,7 +33,32 @@ export async function loadHosts(view) {
       <div class="card-body"><div class="callout danger">${icon("alert")}<span>${esc(e.message)}</span></div></div>`;
     return;
   }
-  drawHosts(view, card, { hosts });
+  const shown = drawHosts(view, card, { hosts });
+  // A redraw that happens while a read is in flight draws its own "not read yet" lines, and this read does not touch
+  // them: each line it fills is the one the card drew for it.
+  const drawn = shown.map((host) => card.querySelector(`[data-disk-host="${host.id}"]`));
+  void loadDisk(drawn, shown);
+}
+
+/**
+ * What each host's engine holds, read after the card is drawn so the table never waits on it. Only the rows the card
+ * shows are asked for, each at once, and each answer stands on its own: one host that does not answer leaves its own
+ * line empty and the others shown. Each line is the one the drawing made, so a redraw that happens while a read is in
+ * flight is not written into by the older answer.
+ */
+async function loadDisk(lines, hosts) {
+  await Promise.all(
+    hosts.map(async (host, index) => {
+      let disk = null;
+      try {
+        disk = await api(`/api/hosts/${enc(host.id)}/disk`);
+      } catch {
+        disk = null;
+      }
+      const line = lines[index];
+      if (line) line.innerHTML = diskLines(disk);
+    }),
+  );
 }
 
 /**
@@ -63,6 +89,7 @@ function drawHosts(view, card, { hosts }) {
     btn.addEventListener("click", () => revokeAgent(view, btn.dataset.revokeHost, btn.dataset.hostName));
   });
   bindToggles(view, card, () => drawHosts(view, card, { hosts }));
+  return shown;
 }
 
 function hostRow(host) {
@@ -75,14 +102,49 @@ function hostRow(host) {
     ? `<span class="subtle">${esc(t("st.agentEndpoint"))}</span> <span class="badge">${esc(t("st.transport.agent"))}</span>`
     : `<span class="mono">${esc(host.endpoint)}</span> <span class="badge">${esc(t(`st.transport.${host.transport}`))}</span>`;
   const agent = host.agent ? agentDetails(host.agent) : "";
+  const labels = hostLabelsLine(host.labels);
   return `<tr>
-    <td><strong>${esc(host.name)}</strong> <span class="subtle mono">${esc(host.id)}</span></td>
+    <td><strong>${esc(host.name)}</strong> <span class="subtle mono">${esc(host.id)}</span>${labels}</td>
     <td class="hide-sm">${endpoint}</td>
     <td class="${host.agent ? "" : "nowrap"}"><span class="badge ${HOST_BADGE[host.status] ?? ""}"><span class="dot"></span>${esc(t(`st.hostStatus.${host.status}`))}</span>${latency}${error}${agent}</td>
     <td class="hide-sm nowrap">${capacity}</td>
     <td class="hide-sm">${host.boxes}</td>
     <td class="nowrap"><div class="actions">${hostActions(host)}</div></td>
+  </tr>
+  <tr class="host-disk-row">
+    <td colspan="6" data-disk-host="${esc(host.id)}">${diskLines(null)}</td>
   </tr>`;
+}
+
+/**
+ * One host's engine storage, under its row: the bytes each class `docker system df` counts takes, with the share a
+ * removal would free. A host with no reading, which is every host until its answer arrives, says why in one line.
+ */
+function diskLines(disk) {
+  const reading = diskReading(disk, bytes);
+  if (reading.reason) {
+    return `<div class="help host-disk-note">${icon("disk")}<span>${esc(t(reading.reason.key, reading.reason.params))}</span></div>`;
+  }
+  const rows = reading.rows
+    .map(
+      (row) => `<div class="host-disk-class">
+        <span class="host-disk-label">${esc(t(row.label))}${row.count == null ? "" : ` <span class="subtle">${esc(t("st.disk.count", { n: row.count, active: row.activeCount ?? "?" }))}</span>`}</span>
+        <span class="mono">${esc(row.total)}</span>
+        <span class="subtle">${row.reclaimable == null ? t("st.disk.reclaimableUnknown") : esc(t("st.disk.reclaimable", { n: row.reclaimable, pct: row.reclaimablePercent }))}</span>
+      </div>`,
+    )
+    .join("");
+  return `<div class="host-disk" aria-label="${esc(t("st.disk.title"))}">${rows}</div>`;
+}
+
+/** The labels a host carries, under its name. A host with none shows nothing, so the table keeps its old shape. */
+function hostLabelsLine(labels) {
+  const entries = Object.entries(labels ?? {});
+  if (entries.length === 0) return "";
+  const badges = entries
+    .map(([key, value]) => `<span class="badge">${esc(value === "" ? key : `${key}=${value}`)}</span>`)
+    .join(" ");
+  return `<div class="help mono">${badges}</div>`;
 }
 
 function hostActions(host) {

@@ -39,6 +39,20 @@ One pool is the default. To change the default, click **Make this the default po
 
 A pool that still has volumes cannot be removed.
 
+### Edit a storage pool
+
+Click **Edit** on a pool's row to change the pool you already have, instead of removing it and adding it again. The form is the one that adds a pool, filled in with the pool's values:
+
+- An **NFS** pool has **Pool name**, **Server**, **Export**, **Options** and **Make this the default pool**.
+- A **Path** pool has **Pool name**, **Root**, **Marker file** and **Make this the default pool**.
+
+The local pool has no **Edit** button: it is the built-in pool and cannot be changed.
+
+Saving an edit works like adding a pool: the dialog's **Confirm** sends the change, the preview lists what changes, and the pools are saved once you confirm the preview. Two things the server decides:
+
+- **Renaming is allowed, but a pool that still has volumes keeps its name.** Volumes record the pool they were created on, so the server refuses the rename with `pool_in_use` and nothing is saved. The dialog shows that reason, and the form stays open so you can correct the name. The same goes for **Backend**: the form shows the pool's backend but does not offer another one, because a pool that still has volumes cannot change it.
+- **Changing the server, export, options, root or marker does not change volumes that already exist.** Each Docker volume keeps the mount parameters it was created with, because Docker cannot remount a volume in place. New volumes use the new parameters. The dialog says so, and the preview shows the parameters before and after, so you can see what an edit changes. To move an existing volume to new parameters, copy its data into a new volume.
+
 ## Create and attach volumes
 
 - To create a volume, click **Create volume**, and choose a pool. The volume is independent, which means it is not tied to a box.
@@ -136,6 +150,16 @@ MiniBox checks the free space on the disk that the engine uses. When it falls be
 The refusal ends when free space is back above the floor. Set `HOST_DISK_MIN_FREE_PERCENT=0` to turn the floor off. If MiniBox cannot read the disk, it refuses nothing.
 
 The floor only stops new volumes and checkpoints. It does not stop a box that is already writing to the disk.
+
+### What the engine itself holds
+
+The floor reads the filesystem the engine's root directory is on. It says nothing about how much of that space Docker's own objects take. **Settings → Hosts** shows that too, one line under each host's row: the bytes the engine's images, containers, volumes and build cache take, and how much of each a removal would free. The figures are what `docker system df` reports, and they refresh whenever you open the page. The overview's host cards carry the same total, and each card's tooltip breaks it down by class.
+
+A class, or a figure, that a host's engine does not report is left out or shown as unknown rather than as zero. Engines of different versions report different fields, and an engine that never measured a volume's size, for example, reports no size for it.
+
+An **agent host has no such reading.** `docker system df` is read over the engine's own API, and an agent carries only the operations a box needs. The host's row says so, and the rest of the page works as usual. The same holds for a host that is offline, whose engine does not answer in time, or whose engine refuses the read: the line says why, and no other host is affected.
+
+This reading is informational. Nothing in MiniBox prunes images, containers or build cache on its own, and the host free-space floor above is what refuses new volumes and checkpoints.
 
 ### Quotas
 

@@ -14,11 +14,12 @@ import {
   type ContainerStats,
   type ContainerUpdate,
   type CreateContainerSpec,
+  type DiskBreakdown,
+  type DiskUsage,
   type ExecSession,
   type ExecSpec,
   type ExecStatus,
   type ImageDetails,
-  type DiskUsage,
   type HelperResult,
   type HelperSpec,
   type ImageSummary,
@@ -393,6 +394,16 @@ export class FakeRuntime implements Runtime {
   }[] = [];
   /** Bytes reported by `diskUsage`. Tests shrink `freeBytes` to exercise the low-space flag. */
   disk: DiskUsage = { totalBytes: 100_000_000_000, freeBytes: 40_000_000_000 };
+  /**
+   * What `diskBreakdown` reports, as `docker system df` would. Tests set a class to null to model an engine that does
+   * not report it.
+   */
+  breakdown: DiskBreakdown = {
+    images: { count: 3, activeCount: 2, totalBytes: 6_000_000_000, reclaimableBytes: 2_000_000_000 },
+    containers: { count: 2, activeCount: 1, totalBytes: 100_000_000, reclaimableBytes: 50_000_000 },
+    volumes: { count: 4, activeCount: 3, totalBytes: 3_000_000_000, reclaimableBytes: 500_000_000 },
+    buildCache: { count: 5, activeCount: 0, totalBytes: 1_000_000_000, reclaimableBytes: 1_000_000_000 },
+  };
   /** Answers `runHelper`. The default pretends `df`, `du` and `chown` succeeded. */
   helperHandler: (spec: HelperSpec) => HelperResult = defaultHelper;
   /** The sources the last `setHostIngressBlock` installed. Empty when nothing is blocked. */
@@ -1501,6 +1512,12 @@ export class FakeRuntime implements Runtime {
   async diskUsage(path: string): Promise<DiskUsage> {
     this.enter("diskUsage", [path]);
     return { totalBytes: this.disk.totalBytes, freeBytes: this.disk.freeBytes };
+  }
+
+  async diskBreakdown(opts?: { signal?: AbortSignal }): Promise<DiskBreakdown> {
+    this.enter("diskBreakdown", [opts]);
+    await this.gate("diskBreakdown", [opts]);
+    return this.breakdown;
   }
 
   /** Docker refuses a network whose subnet overlaps one another network already holds. */

@@ -884,6 +884,60 @@ describe("CLI box create and startup command", () => {
     }
   });
 
+  test("box create --host-label goes with --host auto only, and the box lands on a host that carries the label", async () => {
+    const env = serve();
+    try {
+      const labelled = io();
+      expect(
+        await runCli(
+          ["host", "labels", "set", "local", "--label", "gpu=true", "--label", "org/arch=amd64"],
+          env.env,
+          labelled,
+          lines([]),
+        ),
+      ).toBe(0);
+      expect(labelled.out).toBe('local {"gpu":"true","org/arch":"amd64"}\n');
+
+      const read = io();
+      expect(await runCli(["host", "labels", "get", "local"], env.env, read, lines([]))).toBe(0);
+      expect(JSON.parse(read.out)).toEqual({ gpu: "true", "org/arch": "amd64" });
+
+      // An auto create considers only online hosts, and the local host's first check runs here.
+      await env.app.hostAdmin.refresh();
+
+      const created = io();
+      expect(
+        await runCli(
+          ["box", "create", "pinned", "--host", "auto", "--host-label", "gpu=true", "--json"],
+          env.env,
+          created,
+          lines([]),
+        ),
+      ).toBe(0);
+      // A control plane with one host names no host on the box, so the container the local engine made is the evidence.
+      expect(JSON.parse(created.out).box.name).toBe("pinned");
+      expect(env.runtime.callsTo("createContainer")).toHaveLength(1);
+
+      // A key with no value asks for a label whose value is empty, and the host does not carry that one.
+      const missing = io();
+      expect(
+        await runCli(
+          ["box", "create", "absent", "--host", "auto", "--host-label", "zone=eu"],
+          env.env,
+          missing,
+          lines([]),
+        ),
+      ).toBe(1);
+      expect(missing.err).toContain("No online host carries every label this create asks for (zone=eu)");
+
+      const cleared = io();
+      expect(await runCli(["host", "labels", "set", "local"], env.env, cleared, lines([]))).toBe(0);
+      expect(cleared.out).toBe("local {}\n");
+    } finally {
+      env.stop();
+    }
+  });
+
   test("box create and startup-command usage errors exit 2 before any request is sent", async () => {
     const env = { MINIBOX_URL: "http://127.0.0.1:9", MINIBOX_ACCESS_KEY: TEST_KEY };
     const cases: [string[], string][] = [
@@ -901,6 +955,14 @@ describe("CLI box create and startup command", () => {
       ],
       [["box", "create", "alpha", "--egress", "none", "--egress-preset"], "--egress-preset needs a value"],
       [["box", "create", "alpha", "--color", "red"], "Unknown option --color"],
+      [
+        ["box", "create", "alpha", "--host-label", "gpu=true"],
+        "minibox box create takes --host-label only with --host auto",
+      ],
+      [["box", "create", "alpha", "--host", "local", "--host-label"], "--host-label needs a value"],
+      [["host", "labels"], "minibox host needs: labels get <id>, or labels set <id> [--label KEY=VALUE]..."],
+      [["host", "labels", "get"], "minibox host labels get needs one host id"],
+      [["host", "labels", "set", "local", "--label"], "--label needs a value"],
       [["box", "startup-command"], "minibox box startup-command needs one of get, set, rm, run"],
       [["box", "startup-command", "frobnicate", "alpha"], "minibox box startup-command needs one of get, set, rm, run"],
       [["box", "startup-command", "get"], "minibox box startup-command get needs one box name or id"],

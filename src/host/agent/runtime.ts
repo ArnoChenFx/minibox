@@ -9,6 +9,7 @@ import {
   type ContainerStats,
   type ContainerUpdate,
   type CreateContainerSpec,
+  type DiskBreakdown,
   type DiskUsage,
   type ExecSession,
   type ExecSpec,
@@ -377,6 +378,10 @@ export class AgentRuntime implements Runtime {
 
   async diskUsage(): Promise<DiskUsage> {
     throw refused("diskUsage");
+  }
+
+  async diskBreakdown(): Promise<DiskBreakdown> {
+    throw refused("diskBreakdown");
   }
 
   ensureBridgeNetwork(

@@ -7,6 +7,7 @@ import { checkpointCommand } from "./cli/checkpoint";
 import { execCommand } from "./cli/exec";
 import { filesCommand } from "./cli/files";
 import { HELP, asksForHelp } from "./cli/help";
+import { hostCommand } from "./cli/host";
 import { imageCommand } from "./cli/image";
 import { mcpProxy } from "./cli/mcp";
 import { sessionCommand } from "./cli/session";
@@ -52,6 +53,7 @@ export async function runCli(
     if (command === "box" && (sub === "ls" || sub === "list")) return await boxLs(rest, env, io);
     if (command === "box" && sub === "create") return await boxCreateCommand(rest, env, io);
     if (command === "box" && sub === "startup-command") return await boxStartupCommand(rest, env, io);
+    if (command === "host") return await hostCommand(sub === undefined ? [] : [sub, ...rest], env, io);
     if (command === "template") return await templateCommand(sub === undefined ? [] : [sub, ...rest], env, io);
     if (command === "checkpoint") return await checkpointCommand(sub === undefined ? [] : [sub, ...rest], env, io);
     if (command === "image") return await imageCommand(sub === undefined ? [] : [sub, ...rest], env, io);

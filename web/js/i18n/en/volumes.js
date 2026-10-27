@@ -56,7 +56,7 @@ export default {
   "vol.savePreviewAdded": "New pools: {names}",
   "vol.savePreviewRemoved": "Pools removed: {names}",
   "vol.savePreviewNote":
-    "Nothing is saved until you confirm. A pool that still has volumes cannot be removed or change backend, and the server refuses that.",
+    "Nothing is saved until you confirm. A pool that still has volumes cannot be removed, renamed or change backend, and the server refuses that.",
   "vol.roleWorkspace": "Workspace",
   "vol.roleHome": "Home",
   "vol.roleTools": "Tools",
@@ -96,6 +96,16 @@ export default {
   "vol.storageUnreachable":
     "Pool {pools} cannot be reached. Starting this box is refused so a hard mount cannot hang it.",
   "vol.removePool": "Remove",
+  "vol.editPool": "Edit",
+  "vol.editPoolTitle": "Edit the storage pool {name}",
+  "vol.backendFixed":
+    "The backend cannot be changed. A pool that still has volumes keeps its backend, and the server refuses the change.",
+  "vol.editRenameHelp":
+    "Renaming is allowed, but a pool that still has volumes keeps its name: the server refuses that rename with pool_in_use.",
+  "vol.editMountsHelp":
+    "Changing the server, export, options, root or marker does not change volumes that already exist. Each volume keeps the mount parameters it was created with; new volumes use the new ones.",
+  "vol.optionsRequired": "Enter at least one NFS option, such as nfsvers=4.1.",
+  "vol.savePreviewChanged": "Pool {name} changes:",
   "vol.poolName": "Pool name",
   "vol.makeDefault": "Make this the default pool",
   "vol.cacheHint":

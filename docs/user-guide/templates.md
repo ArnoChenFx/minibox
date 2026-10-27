@@ -30,7 +30,7 @@ MiniBox ships four official templates. Each comes from a Dockerfile in the MiniB
 |---|---|---|
 | `node` | `node:26-bookworm-slim` | Node.js 26, pnpm and yarn, with `build-essential` |
 | `python` | `python:3.14-slim-bookworm` | Python 3.14 and uv, with `build-essential` |
-| `go` | `golang:1.26-bookworm` | Go 1.26 and gopls, with `build-essential` |
+| `go` | `golang:1.27-bookworm` | Go 1.27 and gopls, with `build-essential` |
 | `minimal` | `debian:bookworm-slim` | No language toolchain |
 
 The common tools are `git`, `curl`, `tmux`, `jq`, `ripgrep`, `bubblewrap`, `openssh-client`, `sudo` and `vim`. Each template has the user `dev`, user ID 1000.

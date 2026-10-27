@@ -6,6 +6,18 @@ import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
 import { terminalHash } from "../lib/routes.js";
 import { DEFAULT_SESSION_NAME, nextSessionName, sessionNameProblem } from "../lib/session-name.js";
+import {
+  availableHeight,
+  ceilingHeight,
+  clampHeight,
+  clearHeight,
+  defaultHeight,
+  heightForKey,
+  MIN_HEIGHT,
+  readHeight,
+  resetsHeight,
+  writeHeight,
+} from "../lib/terminal-height.js";
 import { ctrlChar, keyBytes, keysReveal, TERM_KEYS } from "../lib/terminal-keys.js";
 import { confirmDialog, emptyState, promptDialog, toast, toastError } from "../lib/ui.js";
 
@@ -144,6 +156,35 @@ function keysRowHtml() {
   ).join("")}</div>`;
 }
 
+/** The breakpoint the stylesheet draws a desktop's grabber and window-following height at (`.term-grabber`). */
+const DESKTOP = "(min-width: 901px)";
+
+/** Whether this window is a desktop's, as the stylesheet counts one: a phone and a tablet keep the height they had. */
+const desktopScreen = () => window.matchMedia(DESKTOP).matches;
+
+/**
+ * localStorage, or null when the browser refuses it. A console that cannot remember a height still works: the height
+ * then applies to this page and the default comes back on the next one.
+ */
+function storage() {
+  try {
+    return window.localStorage;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The grabber at the foot of the terminal frame: a desktop drags it to make the screen taller or shorter, and it is
+ * hidden by the stylesheet at 900px and below, where the height is the phone's own. It is a separator, so a screen reader
+ * says what it is and how far it has been moved, and focusable, so the arrow keys and Home/End work on it. It comes
+ * before the screen in the page because xterm keeps Tab for the terminal, so a handle after it could never be reached
+ * from the keyboard; the desktop stylesheet puts it last in the frame on screen (`order` in `.term-grabber`).
+ */
+function grabberHtml() {
+  return `<div class="term-grabber" id="tGrabber" role="separator" aria-orientation="horizontal" tabindex="0" aria-label="${esc(t("bd.termResize"))}" title="${esc(t("bd.termResizeHint"))}"></div>`;
+}
+
 /** Mounts the live terminal for a running box, on `session` when it is listed. Returns the function that tears it down. */
 function mountLive(root, b, session) {
   if (!window.Terminal || !window.FitAddon) {
@@ -160,6 +201,7 @@ function mountLive(root, b, session) {
         <span class="status" id="tStatus"><span class="dot"></span><span id="tStatusText">${t("common.connecting")}</span></span>
         <button class="btn btn-ghost btn-sm" id="tReconnect" style="color:#a1a1aa">${icon("refresh")}${t("bd.reconnect")}</button></div>
       <div class="control-bar" id="tControl" aria-live="polite"></div>
+      ${grabberHtml()}
       <div class="terminal" id="term"></div>
       ${keysRowHtml()}</div>
     <p class="help" style="margin-top:8px">${t("bd.termHelp")}</p>`;
@@ -167,6 +209,8 @@ function mountLive(root, b, session) {
   const list = root.querySelector("#tSessions");
   const control = root.querySelector("#tControl");
   const keys = root.querySelector("#tKeys");
+  const screen = root.querySelector("#term");
+  const grabber = root.querySelector("#tGrabber");
   const status = root.querySelector("#tStatus");
   const statusText = root.querySelector("#tStatusText");
   const xterm = new window.Terminal({
@@ -178,8 +222,80 @@ function mountLive(root, b, session) {
   });
   const fit = new window.FitAddon.FitAddon();
   xterm.loadAddon(fit);
-  xterm.open(root.querySelector("#term"));
-  fit.fit();
+  xterm.open(screen);
+
+  /**
+   * The height the reader asked for, or null while they never have. It is kept as they left it even when the window is
+   * too small for it, so a window that grows back gives the height back; what is drawn is always the clamped value.
+   */
+  let preferred = readHeight(storage());
+  let height = 0;
+
+  /**
+   * The room this page leaves for the screen, measured rather than assumed: the window's height, less where the screen
+   * starts, less what the page draws under it. The last two come from the page itself — the screen's own box and the
+   * content's foot, which is under the grabber, the help line and the content's padding — so a box whose name wraps the
+   * page head onto two lines, a narrower window or a longer help line needs no special case. Measured on every apply,
+   * since the page's furniture changes with the window's width as well as its height.
+   */
+  const room = () => {
+    const content = root.closest(".content") ?? document.body;
+    const screenBox = screen.getBoundingClientRect();
+    // Measured in the page's own coordinates, which `getBoundingClientRect()` is not: it is relative to the window, so a
+    // page the reader has scrolled down would report a smaller top and a larger room, and a drag that scrolled the page
+    // would then hand back a taller "default" than the page really leaves.
+    const scrolled = window.scrollY;
+    return availableHeight({
+      viewportHeight: window.innerHeight,
+      screenTop: screenBox.top + scrolled,
+      screenBottom: screenBox.bottom + scrolled,
+      contentBottom: content.getBoundingClientRect().bottom + scrolled,
+    });
+  };
+
+  /**
+   * Draws the screen `height` pixels tall and refits xterm to it, which is what makes the terminal rework its columns
+   * and rows: `fit.fit()` calls `terminal.resize()`, the panel's `onResize` subscription sends the new `{type:"resize"}`
+   * frame to tmux, and the shell inside redraws to the new size. A height that does not fit the room the page leaves is
+   * clamped, not dropped. The handle tells a screen reader where it sits between its ends.
+   *
+   * By default the screen takes exactly the room there is, so the whole terminal and its grabber are in the window; the
+   * old 460px stays as the floor for a window too short even for that. More lines than the window holds are the reader's
+   * to ask for, by dragging the grabber, which may take the screen past the fold.
+   *
+   * Only a desktop takes a height of its own. At 900px and below the screen keeps the height the stylesheet gives it — a
+   * phone's `min(52vh, 340px)`, a tablet's 460px — so nothing about a phone changes, and the property is taken back off
+   * when a window is narrowed across the breakpoint.
+   */
+  /** The room the last apply measured, so a re-measure can tell whether anything moved. */
+  let lastRoom = -1;
+  const reapply = (refit = true) => {
+    const space = room();
+    lastRoom = space;
+    height = clampHeight(preferred ?? defaultHeight(space), space);
+    if (desktopScreen()) screen.style.setProperty("--term-h", `${height}px`);
+    else screen.style.removeProperty("--term-h");
+    if (refit) fit.fit();
+    if (grabber) {
+      grabber.setAttribute("aria-valuemin", String(MIN_HEIGHT));
+      grabber.setAttribute("aria-valuemax", String(ceilingHeight(space)));
+      grabber.setAttribute("aria-valuenow", String(height));
+    }
+  };
+
+  /** Remembers the height on this machine, so a reload, another box or another session opens the same way. */
+  const rememberHeight = () => writeHeight(storage(), height);
+
+  /**
+   * Measures again and redraws only when the room has moved: the frame is built before the session chips and the control
+   * bar are filled in, and either may wrap onto a second line and push the screen down. What is under the screen is not
+   * affected by the screen's own height, so this is a stable measurement rather than a moving one.
+   */
+  const syncHeight = () => {
+    if (room() !== lastRoom) reapply();
+  };
+
+  reapply();
 
   let sessions = [];
   let current = null;
@@ -197,6 +313,7 @@ function mountLive(root, b, session) {
       ? sessions.map((s) => sessionChipHtml(s, current)).join("")
       : `<span class="subtle">${t("bd.noSessions")}</span>`;
     root.querySelector("#tTitle").textContent = current ? `${b.name}: ${current}` : b.name;
+    syncHeight();
   };
 
   const renderControl = () => {
@@ -204,6 +321,7 @@ function mountLive(root, b, session) {
       control.innerHTML = "";
       xterm.options.disableStdin = true;
       setKeysEnabled(false);
+      syncHeight();
       return;
     }
     const human = view.controller === "human";
@@ -215,6 +333,7 @@ function mountLive(root, b, session) {
       <span class="control-actions">${action}<button class="btn btn-sm btn-ghost" data-control="close">${icon("x")}${t("bd.closeSession")}</button></span>`;
     xterm.options.disableStdin = !view.canType;
     setKeysEnabled(view.canType);
+    syncHeight();
   };
 
   /**
@@ -375,10 +494,10 @@ function mountLive(root, b, session) {
   });
 
   /**
-   * The row sits at the foot of the terminal frame, below a 460px screen. When a phone's keyboard comes up it covers
-   * the bottom of the window, which can leave the row under it. This brings the row into the part of the page the
-   * keyboard leaves visible, and does nothing when the row is already there, when the row is not laid out (a desktop
-   * hides it), or when the page cannot scroll any further.
+   * The row sits at the foot of the terminal frame, below the screen (`min(52vh, 340px)` on a phone). When a phone's
+   * keyboard comes up it covers the bottom of the window, which can leave the row under it. This brings the row into the
+   * part of the page the keyboard leaves visible, and does nothing when the row is already there, when the row is not laid
+   * out (a desktop hides it, and draws the grabber there instead), or when the page cannot scroll any further.
    */
   const revealKeys = () => {
     if (!keys || keys.getBoundingClientRect().height === 0) return;
@@ -397,8 +516,102 @@ function mountLive(root, b, session) {
   };
   root.addEventListener("focusin", onFocusIn);
 
-  const onWin = () => fit.fit();
+  // A shorter window may leave no room for the height the reader picked: it is clamped to what fits, and the window
+  // growing back restores the rest, since the height they asked for is kept as they left it.
+  const onWin = () => reapply();
   window.addEventListener("resize", onWin);
+
+  /**
+   * A drag of the handle: the pointer's own vertical travel, added to the height it started at, so the frame's bottom edge
+   * follows the pointer — down makes the terminal taller, up makes it shorter. The press cancels its default, which is what
+   * stops the page from scrolling and the terminal's text from being selected as the pointer sweeps over it (a browser may
+   * dispatch `pointerdown`, `mousedown`, or both, so both cancel); the moves are drawn once a frame, so a fast drag does
+   * not queue a resize for every pixel it crossed, and the last one is drawn when the pointer is released.
+   */
+  let drag = null;
+  let dragFrame = 0;
+  const onGrabberDown = (event) => {
+    if (!grabber || event.button !== 0) return;
+    // The default is cancelled before anything else, on both the pointer event and the mouse event a browser may send for
+    // the same press, so neither a selection nor the page's own scroll starts under the pointer.
+    event.preventDefault();
+    if (drag) return;
+    // Whether the terminal had the keyboard decides whether it gets it back: a drag must not cost the reader the typing
+    // that a press on the handle would otherwise take away. The handle is reachable from the keyboard with Tab, which is
+    // where the arrow keys and Home/End work; a pointer drag leaves the keyboard where it was.
+    const hadKeyboard = document.activeElement?.closest?.(".xterm") != null;
+    drag = { startY: event.clientY, startHeight: height, next: height, hadKeyboard };
+    grabber.setPointerCapture?.(event.pointerId);
+    document.body.classList.add("term-resizing");
+  };
+  const onGrabberMove = (event) => {
+    if (!drag) return;
+    event.preventDefault();
+    drag.next = drag.startHeight + (event.clientY - drag.startY);
+    if (dragFrame) return;
+    dragFrame = requestAnimationFrame(() => {
+      dragFrame = 0;
+      if (drag) preferred = drag.next;
+      reapply();
+    });
+  };
+  const onGrabberUp = (event) => {
+    if (!drag) return;
+    if (dragFrame) {
+      cancelAnimationFrame(dragFrame);
+      dragFrame = 0;
+    }
+    preferred = drag.next;
+    reapply();
+    rememberHeight();
+    document.body.classList.remove("term-resizing");
+    grabber?.releasePointerCapture?.(event.pointerId);
+    const hadKeyboard = drag.hadKeyboard;
+    drag = null;
+    if (hadKeyboard) xterm.focus();
+  };
+
+  /**
+   * The handle's keys: Up makes the terminal taller and Down shorter, a step at a time, and Home or End (or Enter, which a
+   * separator does not usually take) puts the default height back. Up and Down are the two keys a separator takes by
+   * convention, and the frame moves the way the reader presses: Up grows it. Forgetting the remembered height is what
+   * makes the screen follow the window again, so a reset is also what a double click does.
+   */
+  const onGrabberKey = (event) => {
+    if (event.altKey || event.ctrlKey || event.metaKey) return;
+    const next = heightForKey(event.key, height, room());
+    if (next === null) return;
+    event.preventDefault();
+    if (resetsHeight(event.key)) {
+      preferred = null;
+      clearHeight(storage());
+    } else {
+      preferred = next;
+    }
+    reapply();
+    // Written after the frame is drawn, so what is remembered is the height the reader can see rather than the one
+    // the last step left behind.
+    if (!resetsHeight(event.key)) rememberHeight();
+  };
+
+  /** A double click on the handle is the mouse's way of asking for the default height back. */
+  const onGrabberDoubleClick = () => {
+    preferred = null;
+    clearHeight(storage());
+    reapply();
+  };
+
+  if (grabber) {
+    grabber.addEventListener("pointerdown", onGrabberDown);
+    // A browser may dispatch `pointerdown`, `mousedown` or both for one press; both cancel, so neither a selection drag
+    // nor the page's own scrolling starts under the pointer.
+    grabber.addEventListener("mousedown", onGrabberDown);
+    grabber.addEventListener("pointermove", onGrabberMove);
+    grabber.addEventListener("pointerup", onGrabberUp);
+    grabber.addEventListener("pointercancel", onGrabberUp);
+    grabber.addEventListener("keydown", onGrabberKey);
+    grabber.addEventListener("dblclick", onGrabberDoubleClick);
+  }
 
   if (keys) {
     keys.addEventListener("pointerdown", holdFocus);
@@ -479,6 +692,17 @@ function mountLive(root, b, session) {
   return () => {
     disposed = true;
     clearInterval(timer);
+    if (dragFrame) cancelAnimationFrame(dragFrame);
+    dragFrame = 0;
+    drag = null;
+    document.body.classList.remove("term-resizing");
+    grabber?.removeEventListener("pointerdown", onGrabberDown);
+    grabber?.removeEventListener("mousedown", onGrabberDown);
+    grabber?.removeEventListener("pointermove", onGrabberMove);
+    grabber?.removeEventListener("pointerup", onGrabberUp);
+    grabber?.removeEventListener("pointercancel", onGrabberUp);
+    grabber?.removeEventListener("keydown", onGrabberKey);
+    grabber?.removeEventListener("dblclick", onGrabberDoubleClick);
     window.removeEventListener("resize", onWin);
     window.visualViewport?.removeEventListener("resize", onViewport);
     root.removeEventListener("focusin", onFocusIn);

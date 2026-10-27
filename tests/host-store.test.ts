@@ -83,6 +83,46 @@ describe("hosts.json", () => {
     expect(() => store.load()).toThrow("has an endpoint for lab that is not valid");
   });
 
+  test("a host's labels are read back as written, and a file written before labels existed still reads", () => {
+    const labelled: StoredHost = { ...lab, labels: { gpu: "true", "org/arch": "amd64", bare: "" } };
+    store.save([labelled, edge]);
+    expect(store.load()).toEqual([labelled, edge]);
+
+    // The older format has no `labels` at all, which means the host carries none rather than breaking the file.
+    writeFileSync(
+      hostsPath(dir),
+      JSON.stringify({
+        version: 1,
+        hosts: [
+          {
+            id: "lab",
+            name: "Lab",
+            endpoint: "tcp://lab.example:2376",
+            hostKeyFingerprint: null,
+            createdAt: CREATED_AT,
+          },
+        ],
+      }),
+    );
+    expect(store.load()).toEqual([lab]);
+  });
+
+  test("a label key or value that does not follow the rules is refused, so a typo cannot silently select no host", () => {
+    for (const labels of [
+      { "Bad Key": "x" },
+      { "a/b/c": "x" },
+      { 9: "x" },
+      { gpu: 1 },
+      { gpu: "two\nlines" },
+      { gpu: "x".repeat(257) },
+    ]) {
+      store.save([{ ...lab, labels: labels as unknown as Record<string, string> }]);
+      expect(() => store.load()).toThrow("does not match the hosts format");
+    }
+    store.save([{ ...lab, labels: Object.fromEntries(Array.from({ length: 33 }, (_, index) => [`l${index}`, ""])) }]);
+    expect(() => store.load()).toThrow("does not match the hosts format");
+  });
+
   test("an SSH host must carry the key it was added with, and no other kind may", () => {
     store.save([{ ...edge, hostKeyFingerprint: null }]);
     expect(() => store.load()).toThrow("does not match its endpoint");
