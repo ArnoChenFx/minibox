@@ -28,6 +28,7 @@ export default {
   "ov.hostBoxes": "{n} 个 Box",
   "ov.hostContainers": "{running} / {total} 个容器运行中",
   "ov.hostUsing": "目前约占用 {cpu} 核 CPU 与 {mem} 内存",
+  "ov.hostDisk": "引擎占用 {total}，可回收 {reclaimable}",
   "ov.os": "系统",
   "ov.kernel": "内核",
   "ov.cpu": "处理器",

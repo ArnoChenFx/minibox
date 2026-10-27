@@ -191,6 +191,65 @@ export const hostUsage = defineOperation({
   run: async (ctx) => ({ hosts: await hostsOf(ctx).usage() }),
 });
 
+/** One class of what an engine holds, as `docker system df` counts it. A figure the engine omits is null. */
+const DiskEntrySchema = z.object({
+  count: z.number().int().nullable().meta({ description: "Entries of this class the engine holds." }),
+  activeCount: z
+    .number()
+    .int()
+    .nullable()
+    .meta({ description: "Entries in use: images a container uses, running containers, mounted volumes." }),
+  totalBytes: z.number().nullable().meta({ description: "Bytes this class takes." }),
+  reclaimableBytes: z.number().nullable().meta({ description: "Bytes removing everything unused would free." }),
+});
+
+const DiskBreakdownSchema = z.object({
+  images: DiskEntrySchema.nullable(),
+  containers: DiskEntrySchema.nullable(),
+  volumes: DiskEntrySchema.nullable(),
+  buildCache: DiskEntrySchema.nullable(),
+});
+
+const DiskUnsupportedSchema = z.enum(["agent_host", "offline", "timeout", "engine"]);
+
+export const hostDisk = defineOperation({
+  name: "host.disk",
+  tag: "hosts",
+  summary: "Show what a host's engine holds",
+  kind: "read",
+  scope: "host:manage",
+  async: false,
+  input: z.object({
+    id: z.string().min(1).max(32).meta({ description: "Host id, as host.list reports it." }),
+  }),
+  output: z.object({
+    id: z.string().meta({ description: "The host id." }),
+    status: HostStatusSchema,
+    checkedAt: z.string().meta({ description: "When this reading was taken, as ISO time." }),
+    supported: z.boolean().meta({
+      description:
+        "Whether the host's engine can report this at all. An agent host cannot: its engine is not reachable for this read.",
+    }),
+    reason: DiskUnsupportedSchema.nullable().meta({
+      description:
+        "Why breakdown is null: agent_host for an agent host, offline for a host whose last check failed, timeout when the engine did not answer within the host's read timeout, engine when the engine refused the read. Null when the breakdown is there.",
+    }),
+    detail: z.string().nullable().meta({ description: "The engine's own message when reason is engine." }),
+    breakdown: DiskBreakdownSchema.nullable().meta({
+      description:
+        "Images, containers, volumes and build cache as `docker system df` reports them, or null when the host has no reading. A class, or a figure within one, that the engine does not report is null rather than zero.",
+    }),
+  }),
+  rest: [{ method: "GET", path: "/api/hosts/:id/disk" }],
+  mcp: {
+    toolset: "meta",
+    name: "get_host_disk",
+    description:
+      "What one host's engine holds, as docker system df reports it: images, containers, volumes and build cache, each with its total and reclaimable bytes. Owner only. An agent host reports supported false, and an engine that does not answer reports null figures with a reason, instead of failing.",
+  },
+  run: (ctx, input) => hostsOf(ctx).disk(input.id),
+});
+
 export const hostAdd = defineOperation({
   name: "host.add",
   tag: "hosts",
@@ -347,6 +406,7 @@ export const hostRevoke = defineOperation({
 export const hostOperations = [
   hostList,
   hostUsage,
+  hostDisk,
   hostAdd,
   hostTest,
   hostLabelsSet,

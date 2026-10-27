@@ -151,6 +151,16 @@ The refusal ends when free space is back above the floor. Set `HOST_DISK_MIN_FRE
 
 The floor only stops new volumes and checkpoints. It does not stop a box that is already writing to the disk.
 
+### What the engine itself holds
+
+The floor reads the filesystem the engine's root directory is on. It says nothing about how much of that space Docker's own objects take. **Settings → Hosts** shows that too, one line under each host's row: the bytes the engine's images, containers, volumes and build cache take, and how much of each a removal would free. The figures are what `docker system df` reports, and they refresh whenever you open the page. The overview's host cards carry the same total, and each card's tooltip breaks it down by class.
+
+A class, or a figure, that a host's engine does not report is left out or shown as unknown rather than as zero. Engines of different versions report different fields, and an engine that never measured a volume's size, for example, reports no size for it.
+
+An **agent host has no such reading.** `docker system df` is read over the engine's own API, and an agent carries only the operations a box needs. The host's row says so, and the rest of the page works as usual. The same holds for a host that is offline, whose engine does not answer in time, or whose engine refuses the read: the line says why, and no other host is affected.
+
+This reading is informational. Nothing in MiniBox prunes images, containers or build cache on its own, and the host free-space floor above is what refuses new volumes and checkpoints.
+
 ### Quotas
 
 Limits are not quotas. MiniBox does not set filesystem quotas yet, so a volume can use more space than its limits between two samples. Filesystem quotas, such as XFS project quotas or btrfs and ZFS quotas on a local pool, are later work. For an NFS pool, set the quota on the NAS export. See [NFS and NAS storage](nfs.md#usage-and-quotas).
