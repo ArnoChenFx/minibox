@@ -93,6 +93,16 @@ describe("the single-column grids on a phone", () => {
   });
 });
 
+describe("a row of choices on a phone", () => {
+  test("three or four options keep their count and shrink, instead of running past the window", () => {
+    const phone = mediaBlock(RESPONSIVE, 900, ".segmented.segmented-3 {");
+    // A bare `1fr` is floored at min-content, so the longest hint of a three-option row pushed the page sideways.
+    expect(block(phone, ".segmented.segmented-3")).toContain("grid-template-columns: repeat(3, minmax(0, 1fr));");
+    expect(block(phone, ".segmented.segmented-4")).toContain("grid-template-columns: repeat(4, minmax(0, 1fr));");
+    expect(block(phone, ".segmented")).toContain("grid-template-columns: repeat(2, minmax(0, 1fr));");
+  });
+});
+
 describe("a box's title bar on a phone", () => {
   test("every button keeps its text as the accessible name while its label is hidden", () => {
     const phone = mediaBlock(RESPONSIVE, 560, ".detail-head .page-actions > .btn:not(:first-child)");
