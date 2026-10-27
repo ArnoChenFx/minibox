@@ -87,8 +87,8 @@
   #cbMountRows .rebuild-mount {
     grid-template-columns: minmax(140px, 1fr) 132px minmax(96px, 140px) auto;
     grid-template-areas:
-      "volume volume volume volume"
-      "path   mode   pool   remove";
+      "volume volume volume pool"
+      "path   path   mode   remove";
   }
   /* The volume control is the select the dropdown component turned into a trigger, so the name it shows gets the row. */
   #cbMountRows .rebuild-mount > [data-volume] + .dropdown-trigger {
@@ -108,12 +108,12 @@
   #cbMountRows .rebuild-mount > [data-remove-mount] {
     grid-area: remove;
   }
-  /* A row that mounts a volume that exists has no pool control, so the button moves into its place and the row keeps two
-     lines rather than leaving a gap where the control would be. */
+  /* A row that mounts a volume that exists has no pool control: the volume takes the whole first line, and the second
+     line is the path, the mode and the button. */
   #cbMountRows .rebuild-mount:not(:has([data-pool])) {
     grid-template-areas:
       "volume volume volume volume"
-      "path   mode   remove remove";
+      "path   path   mode   remove";
   }
 }
 /* The selected volume label can outgrow even a desktop column. Wrap it and grow the trigger with it at every width. */

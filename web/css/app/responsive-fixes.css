@@ -91,18 +91,18 @@
    path and the mode take the second line, and the pool control and the button the third. */
 @media (min-width: 561px) and (max-width: 700px) {
   #cbMountRows .rebuild-mount {
-    grid-template-columns: minmax(0, 1fr) 132px auto;
+    grid-template-columns: minmax(0, 1fr) minmax(96px, 140px);
     grid-template-areas:
-      "volume volume volume"
-      "path   mode   mode"
-      "pool   remove remove";
+      "volume pool"
+      "path   mode"
+      "remove remove";
   }
-  /* A row that mounts a volume that exists has no pool control, so its button ends the line the pool would start. */
+  /* A row that mounts a volume that exists has no pool control: the volume takes the whole first line. */
   #cbMountRows .rebuild-mount:not(:has([data-pool])) {
     grid-template-areas:
-      "volume volume volume"
-      "path   mode   mode"
-      "remove remove remove";
+      "volume volume"
+      "path   mode"
+      "remove remove";
   }
 }
 @media (max-width: 560px) {

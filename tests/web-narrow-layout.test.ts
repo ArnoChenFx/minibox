@@ -148,14 +148,14 @@ describe("a row of choices on a phone", () => {
 });
 
 describe("a create row's volume name in the Customize dialog", () => {
-  test("the volume name gets a line of its own, and the controls share the line below it", () => {
+  test("the volume name and the pool share the first line, and the path, mode and button the second", () => {
     // Five cells in one line do not fit the dialog: measured at 1280px, adding the storage pool took the volume name to
-    // 80px and it read one letter per line. So the volume control spans the row and the path, mode, pool and remove
-    // button sit under it — at every width above the phone, not only on a narrow one.
+    // 80px and it read one letter per line. So the volume control and the pool control take the first line together, and
+    // the path, the mode and the remove button the second — at every width above the phone, not only on a narrow one.
     const modal = readFileSync(join(WEB, "css", "app", "modal.css"), "utf8");
     const wide = mediaBlockFrom(modal, 561, "#cbMountRows .rebuild-mount {");
     expect(block(wide, "#cbMountRows .rebuild-mount")).toContain(
-      '"volume volume volume volume"\n"path   mode   pool   remove";',
+      '"volume volume volume pool"\n"path   path   mode   remove";',
     );
     expect(block(wide, "#cbMountRows .rebuild-mount > [data-volume] + .dropdown-trigger")).toContain(
       "grid-area: volume;",
@@ -164,10 +164,10 @@ describe("a create row's volume name in the Customize dialog", () => {
     // area goes on the trigger that follows it.
     expect(block(wide, "#cbMountRows .rebuild-mount > [data-mode] + .dropdown-trigger")).toContain("grid-area: mode;");
     expect(block(wide, "#cbMountRows .rebuild-mount > [data-pool] + .dropdown-trigger")).toContain("grid-area: pool;");
-    // A row that mounts a volume that exists has no pool control, so its button takes that place instead of leaving a
-    // gap: measured, the row keeps the same height as its neighbours.
+    // A row that mounts a volume that exists has no pool control, so its volume takes the whole first line instead of
+    // leaving a gap where the control would be.
     expect(block(wide, "#cbMountRows .rebuild-mount:not(:has([data-pool]))")).toContain(
-      '"path   mode   remove remove";',
+      '"volume volume volume volume"\n"path   path   mode   remove";',
     );
   });
 
@@ -183,10 +183,11 @@ describe("a create row's volume name in the Customize dialog", () => {
     // `/home/dev/.cache` needs. So the path and mode take the second line and the pool and button the third.
     const stacked = mediaBlockBetween(RESPONSIVE, 561, 700, "#cbMountRows .rebuild-mount {");
     expect(block(stacked, "#cbMountRows .rebuild-mount")).toContain(
-      "grid-template-columns: minmax(0, 1fr) 132px auto;",
+      "grid-template-columns: minmax(0, 1fr) minmax(96px, 140px);",
     );
-    expect(block(stacked, "#cbMountRows .rebuild-mount")).toContain('"path   mode   mode"');
-    expect(block(stacked, "#cbMountRows .rebuild-mount")).toContain('"pool   remove remove"');
+    expect(block(stacked, "#cbMountRows .rebuild-mount")).toContain('"volume pool"');
+    expect(block(stacked, "#cbMountRows .rebuild-mount")).toContain('"path   mode"');
+    expect(block(stacked, "#cbMountRows .rebuild-mount")).toContain('"remove remove"');
     // The path column keeps a 140px floor on the desktop grid, so a path never truncates where there is room for it.
     const modal = readFileSync(join(WEB, "css", "app", "modal.css"), "utf8");
     const wide = mediaBlockFrom(modal, 561, "#cbMountRows .rebuild-mount {");
