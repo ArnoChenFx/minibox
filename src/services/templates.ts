@@ -10,7 +10,15 @@ import { getBox } from "./boxes";
 import { type Progress, underBox } from "./checkpoints";
 import { type ImageItem, listImagesByLabel, removeLabeledImage } from "./images";
 import { createSnapshot, deleteSnapshot } from "./snapshots";
-import { type BuildKind, buildKindOf, forkRecipe, removeRecipe, templateInitOf } from "./template-builds";
+import {
+  type BuildKind,
+  buildKindOf,
+  forkRecipe,
+  readRecipe,
+  removeRecipe,
+  templateInitOf,
+  type TemplateRecipe,
+} from "./template-builds";
 
 export type TemplateItem = ImageItem & { buildKind?: BuildKind; postCreate?: string[]; forwardPorts?: number[] };
 
@@ -169,6 +177,8 @@ export interface TemplateSourceImage {
   readonly name: string;
   readonly image: ImageDetails;
   readonly description: string | null;
+  /** The recipe captured with this image, or null for a template without a matching recipe. */
+  readonly recipe: TemplateRecipe | null;
 }
 
 /**
@@ -194,11 +204,13 @@ export async function templateSourceImage(host: HostCtx, ref: string): Promise<T
   const prefix = `${host.prefix}-template:`;
   const tag = image.tags.find((candidate) => candidate.startsWith(prefix));
   const name = image.labels[host.keys.templateName] || (tag === undefined ? "" : tag.slice(prefix.length));
+  const recipe = NAME_RE.test(name) ? readRecipe(host, name) : null;
   return {
     ref: tag ?? ref,
     name: NAME_RE.test(name) ? name : "",
     image,
     description: image.labels[host.keys.templateDesc] || null,
+    recipe: recipe?.imageId === image.id ? recipe : null,
   };
 }
 
@@ -222,7 +234,7 @@ export async function forkTemplate(
   const created = new Date().toISOString();
   const repo = `${prefix}-template`;
   const description = input.description ?? source.description ?? `Forked from template ${source.name || source.ref}`;
-  const tmp = await runtime.createContainer({ image: source.ref, cmd: ["true"] });
+  const tmp = await runtime.createContainer({ image: source.image.id, cmd: ["true"] });
   try {
     await runtime.commitContainer(tmp.id, {
       repo,
@@ -245,8 +257,7 @@ export async function forkTemplate(
   }
   const forked = await runtime.inspectImage(`${repo}:${input.name}`);
   try {
-    if (source.name !== "")
-      forkRecipe(host, source.name, input.name, source.image.id, forked.id, input.description ?? null);
+    if (source.recipe) forkRecipe(host, input.name, source.recipe, forked.id, description, input.createdBy);
   } catch (e) {
     await runtime.removeImage(forked.id, { force: true }).catch(() => {});
     throw e;

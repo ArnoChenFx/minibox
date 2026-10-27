@@ -307,7 +307,8 @@ export class HostManager {
     const stored = this.options.store.load();
     for (const host of stored) {
       this.stored.set(host.id, host);
-      this.register(host);
+      // The local runtime, monitor and sampler already exist. Its record supplies metadata, never another engine.
+      if (host.id !== LOCAL_HOST_ID) this.register(host);
     }
     this.adoptConfiguredLocalLabels(stored);
   }
@@ -315,15 +316,13 @@ export class HostManager {
   /**
    * Records the labels the configuration gives the local host. `HOST_LABELS` is a startup default, so it is written into
    * `hosts.json` under the reserved id `local` and the registry's copy of the local host is updated to match. A host that
-   * already carries labels keeps them: the file is the place a change through the API is kept, and an operator who has
-   * set labels there must not lose them to an old `.env`.
+   * already has a labels field keeps it, including an empty set: an API change or clear must survive an old `.env`.
    */
   private adoptConfiguredLocalLabels(stored: readonly StoredHost[]): void {
     const configured = this.options.localLabels ?? {};
     const existing = stored.find((host) => host.id === LOCAL_HOST_ID);
-    const labels =
-      existing?.labels !== undefined && Object.keys(existing.labels).length > 0 ? existing.labels : configured;
-    if (Object.keys(labels).length === 0) return;
+    const labels = existing?.labels ?? configured;
+    if (existing === undefined && Object.keys(labels).length === 0) return;
     if (this.options.registry.has(LOCAL_HOST_ID)) this.options.registry.get(LOCAL_HOST_ID).host.labels = { ...labels };
     if (existing === undefined || !sameLabels(existing.labels ?? {}, labels)) {
       const record: StoredHost = {

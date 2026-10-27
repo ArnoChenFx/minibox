@@ -216,6 +216,28 @@ describe.skipIf(!executablePath)("staged template, egress and security changes (
   );
 
   test(
+    "editing a staged template starts from it, and saving the running template unstages only that field",
+    async () => {
+      const box = await makeBox("undotemplate");
+      await rest("PUT", `/api/boxes/${encodeURIComponent(box.boxId)}/staged`, {
+        template: OTHER_TEMPLATE,
+        profile: "strict",
+      });
+      await page.goto(settingsUrl(box, "security"));
+      await webExpect(page.locator("[data-template-pending]")).toBeVisible();
+      await page.locator("#bsTemplate [data-template-action='edit']").click();
+      await webExpect(page.locator("#bsTemplateRef")).toHaveValue(OTHER_TEMPLATE);
+      await page.locator("#bsTemplateRef").fill(box.template);
+      await page.locator("#bsTemplate [data-template-action='save']").click();
+      await webExpect(page.locator("#bsTemplateRef")).toHaveCount(0);
+      await webExpect(page.locator("[data-template-pending]")).toHaveCount(0);
+      expect((await stagedNow(box.boxId))?.pending).toEqual(["profile"]);
+      expect(await boxNow(box.boxId)).toMatchObject({ revision: box.revision, template: box.template });
+    },
+    TIMEOUT_MS,
+  );
+
+  test(
     "a staged template the server does not have is refused on apply, and the card and banner say why",
     async () => {
       const box = await makeBox("ghosttemplate");

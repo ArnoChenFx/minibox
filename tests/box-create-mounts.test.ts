@@ -145,6 +145,23 @@ describe("creating a box from role mounts", () => {
     expect(shared[0]?.engineName).toBe(tools.engineName);
   });
 
+  test("a role mixed with an existing shared tools mount heals that shared volume when the engine lost it", async () => {
+    await createdMounts("first", [{ role: "tools" }]);
+    const tools = findSharedTools(host(), poolForRole(host().volumes.readPools(), "tools").name)!;
+    expect(
+      (await call(harness.base, "/api/boxes/first?deleteVolume=true&skipTrash=true", { method: "DELETE" })).status,
+    ).toBe(200);
+    harness.runtime.volumes.delete(tools.engineName);
+    const mounts = await createdMounts("next", [{ role: "workspace" }, { volume: tools.id, ...ROLE_MOUNT.tools }]);
+    expect(harness.runtime.volumes.has(tools.engineName)).toBe(true);
+    expect(mounts).toContainEqual({ volume: tools.engineName, ...ROLE_MOUNT.tools });
+    expect(
+      host()
+        .volumes.list()
+        .filter((volume) => volume.role === "tools"),
+    ).toHaveLength(1);
+  });
+
   test("a list that mixes a role with an existing volume mounts both", async () => {
     const created = await call(harness.base, "/api/volumes", {
       body: { name: "notes", pool: "local", role: null, confirm: true },
