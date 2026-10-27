@@ -128,6 +128,7 @@ describe.skipIf(!executablePath)("the console on a narrow phone (real browser)",
         `/boxes/${running}/files`,
         `/boxes/${running}/ports`,
         `/boxes/${running}/settings/general`,
+        `/boxes/${running}/settings/security`,
         "/boxes",
         "/overview",
         "/activity",
@@ -201,6 +202,53 @@ describe.skipIf(!executablePath)("the console on a narrow phone (real browser)",
       expect(layout.buttonsNamed.every(Boolean)).toBe(true);
       // Below 353px even the first button is an icon, since a labelled one would not fit beside the other six.
       expect(layout.firstButtonLabelShown).toBe(false);
+    },
+    TIMEOUT_MS,
+  );
+
+  test(
+    "the Security section's three editors fit a 320px window, even with a profile's long hint",
+    async () => {
+      await page.goto(`${consoleUrl}/#/boxes/${running}/settings/security`);
+      await page.waitForTimeout(700);
+      const width = await page.evaluate(
+        () =>
+          (globalThis as unknown as { document: { documentElement: { clientWidth: number } } }).document.documentElement
+            .clientWidth,
+      );
+      /** The elements of the section that stick out past the window, and how far. */
+      const spills = () =>
+        page.evaluate((limit) => {
+          interface El {
+            getBoundingClientRect(): { right: number };
+            tagName: string;
+            className: string;
+          }
+          const found: string[] = [];
+          const view = globalThis as unknown as { document: { querySelectorAll(selector: string): unknown } };
+          for (const el of view.document.querySelectorAll("#bsPanel *") as unknown as Iterable<El>) {
+            const right = el.getBoundingClientRect().right;
+            if (right > limit + 0.5) found.push(`${el.tagName}.${el.className} ${Math.round(right)}`);
+          }
+          return found;
+        }, width);
+
+      expect(await spills()).toEqual([]);
+      // The profile row names three profiles with a hint each, the widest thing the section draws.
+      await page.locator("#bsSecurity [data-profile-action='edit']").click();
+      await webExpect(page.locator("#bsSecurity [data-profile-choice='relaxed']")).toBeVisible();
+      expect(await spills()).toEqual([]);
+
+      await page.locator("#bsSecurity [data-profile-action='cancel']").click();
+      await page.locator("#bsEgress [data-egress-action='edit']").click();
+      await page.locator("#bsEgress [data-egress-tier='proxy-only']").click();
+      await webExpect(page.locator("#bsEgress [data-egress-proxy]")).toBeVisible();
+      expect(await spills()).toEqual([]);
+
+      await page.locator("#bsEgress [data-egress-action='cancel']").click();
+      await page.locator("#bsTemplate [data-template-action='edit']").click();
+      await webExpect(page.locator("#bsTemplate #bsTemplateRef")).toBeVisible();
+      expect(await spills()).toEqual([]);
     },
     TIMEOUT_MS,
   );

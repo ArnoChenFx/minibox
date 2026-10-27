@@ -971,6 +971,17 @@ async function recordScenario(): Promise<Exchange[]> {
     await waitTask(base, sampleRebuilt.json);
     await send("read the rebuild task", "GET", `/api/tasks/${String(sampleRebuilt.json?.taskId ?? "")}`);
     await send("rebuild a template that was not declared", "POST", "/api/templates/mbtest-template%3Abase/rebuild");
+    await post("fork the sample template", "/api/templates/mbtest-template%3Asample/fork", {
+      name: "sample-copy",
+    });
+    await send("list templates after the fork", "GET", "/api/templates");
+    await post("fork a template under a name that is taken", "/api/templates/mbtest-template%3Asample/fork", {
+      name: "sample-copy",
+    });
+    await post("fork a template that does not exist", "/api/templates/mbtest-template%3Aghost/fork", {
+      name: "ghost-copy",
+    });
+    await send("delete the forked template", "DELETE", "/api/templates/mbtest-template%3Asample-copy");
 
     const pulled = await post("pull an image", "/api/images/pull", { ref: "alpine:3.20" });
     await waitTask(base, pulled.json);

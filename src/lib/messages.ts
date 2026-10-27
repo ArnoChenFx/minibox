@@ -491,6 +491,17 @@ export const MESSAGES = {
   mount_path_invalid: "Mount path {path} must be an absolute path without empty, . or .. segments.",
   mount_duplicate: "Mount path {path} is listed more than once.",
   mount_not_found: "No mount at {path}.",
+  mount_create_invalid:
+    "A mount names either an existing volume with volume, path and mode, or a role to create with role. A role mount takes the role's own path and mode, and a volume mount needs both.",
+  mount_create_role_duplicate: "Role {role} is listed more than once, so MiniBox cannot create its volume.",
+  mount_create_role_path:
+    "A mount that creates the {role} volume cannot mount it at {path}. That role is mounted at {expected}.",
+  mount_create_role_mode:
+    "A mount that creates the {role} volume cannot mount it {mode}. That role is mounted {expected}.",
+  mount_create_volume_role:
+    "A mount cannot name both volume {volume} and role {role}. Name the volume to attach it, or the role to create it.",
+  volume_tools_unavailable:
+    "No shared tools volume exists on this host yet, so this box gets none. MiniBox creates one when a box is created with the tools role.",
   storage_confirm_required:
     "This change was not applied. Send the same request with confirm set to true to apply the preview. Nothing has changed.",
   pool_not_found: "Storage pool {pool} was not found.",
@@ -504,7 +515,7 @@ export const MESSAGES = {
   pool_path_invalid: "{what} path {path} must be absolute and must not contain ..",
   pool_duplicate: "Pool names must be unique.",
   pool_default_conflict: "Choose exactly one default storage pool.",
-  pool_in_use: "Pool {pool} still has volumes, so it cannot be removed or change backend.",
+  pool_in_use: "Pool {pool} still has volumes, so it cannot be removed, renamed or change backend.",
   role_pool_unknown: "Role {role} points at pool {pool}, which does not exist.",
   exec_command_required: "Provide exactly one of cmd or argv.",
   exec_command_hint: "cmd runs through /bin/sh -c. argv is the program and its arguments, with no shell.",

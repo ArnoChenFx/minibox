@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 
-import { type CliIo, readStdinText, parseOptions, OUTPUT_SWITCHES, request, fail } from "./shared";
+import { type CliIo, readStdinText, parseOptions, OUTPUT_SWITCHES, printJson, request, fail } from "./shared";
 import { awaitStarted } from "./task";
 
 const TEMPLATE_CREATE_VALUE_FLAGS = [
@@ -148,7 +148,30 @@ async function templateBuildOfficialCommand(
   );
 }
 
-/** `template create`, `rebuild`, `sync` and `build-official`. Templates are built or copied as a task. */
+async function templateForkCommand(
+  argv: string[],
+  env: Record<string, string | undefined>,
+  io: CliIo,
+): Promise<number> {
+  const options = parseOptions(argv, ["--description", "--host"], OUTPUT_SWITCHES);
+  const [ref, name, ...more] = options.positional;
+  if (!ref || !name || more.length > 0)
+    throw new Error("minibox template fork needs one template ref and one new name");
+  const body: Record<string, unknown> = { name };
+  const description = options.values.get("--description");
+  if (description !== undefined) body.description = description;
+  const host = options.values.get("--host");
+  if (host !== undefined) body.host = host;
+  const query = host === undefined ? "" : `?host=${encodeURIComponent(host)}`;
+  const made = await request(env, "POST", `/api/templates/${encodeURIComponent(ref)}/fork${query}`, body);
+  if (made.status >= 400) return fail(io, made.status, made.json, made.text);
+  if (options.switches.has("--json")) return printJson(io, made.json);
+  const template = (made.json as { template?: { ref?: string } } | null)?.template;
+  io.stdout(`${template?.ref ?? ""}\n`);
+  return 0;
+}
+
+/** `template create`, `fork`, `rebuild`, `sync` and `build-official`. A build, a rebuild and a copy run as a task; a fork answers at once. */
 export async function templateCommand(
   argv: string[],
   env: Record<string, string | undefined>,
@@ -156,8 +179,9 @@ export async function templateCommand(
 ): Promise<number> {
   const [sub, ...rest] = argv;
   if (sub === "create") return templateCreateCommand(rest, env, io);
+  if (sub === "fork") return templateForkCommand(rest, env, io);
   if (sub === "rebuild") return templateRebuildCommand(rest, env, io);
   if (sub === "sync") return templateSyncCommand(rest, env, io);
   if (sub === "build-official") return templateBuildOfficialCommand(rest, env, io);
-  throw new Error("minibox template needs create, rebuild, sync or build-official");
+  throw new Error("minibox template needs create, fork, rebuild, sync or build-official");
 }

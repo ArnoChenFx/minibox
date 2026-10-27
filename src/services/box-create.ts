@@ -13,11 +13,12 @@ import { newBoxId, isBoxId } from "../specs/revision";
 import type { BoxMount, MountMode, BoxSpec } from "../specs/types";
 import { loadCatalog } from "../tools/catalog";
 import { VolumeChanges } from "../volumes/changes";
+import { type CreateMount, isRoleMount, mountPointOf, rolesToCreate } from "../volumes/create-mounts";
 import { assertVolumesPresent, healSharedToolsMounts, poolsUsed, trackPoolRoots } from "../volumes/engine";
 import { assertPoolsReachable } from "../volumes/health";
 import { assertMountsWithinLimits } from "../volumes/limits";
 import { validMountPath } from "../volumes/mounts";
-import { provisionDefaultMounts } from "../volumes/provision";
+import { provisionDefaultMounts, provisionRoleMounts } from "../volumes/provision";
 import { assertMountAllowed, mountTarget } from "./attachments";
 import { type CreateBoxInput, type Box, MB } from "./box-model";
 import { ensureBoxNetwork } from "./box-network";
@@ -56,7 +57,10 @@ function resolveMounts(host: HostCtx, mounts: BoxMount[]): BoxMount[] {
   });
 }
 
-/** Explicit mounts name recorded volumes, and each one must pass the attachment rules a new box is held to. */
+/**
+ * A create that names only volumes to attach. A shared tools volume among them that the engine lost is recreated first,
+ * so the attachment rules see it present.
+ */
 async function resolveCreateMounts(host: HostCtx, mounts: BoxMount[], known: Set<string>): Promise<BoxMount[]> {
   const resolved = resolveMounts(host, mounts);
   await healSharedToolsMounts(
@@ -64,6 +68,65 @@ async function resolveCreateMounts(host: HostCtx, mounts: BoxMount[], known: Set
     resolved.map((mount) => mount.volume),
     known,
   );
+  for (const mount of resolved) {
+    assertMountAllowed(host, null, mount.volume, await mountTarget(host, mount.volume));
+  }
+  return resolved;
+}
+
+/**
+ * The mounts a create asked for. A mount that names a volume is attached, with the checks a new box is held to. A mount
+ * that names a role has MiniBox create that role's volume for the box, so only the roles the list names exist, and the
+ * tools role mounts the host's shared tools volume instead of making a second one. Every engine volume the request names
+ * is checked to be present, because Docker would create a missing named volume again, empty.
+ */
+async function mountsForCreate(
+  host: HostCtx,
+  requested: readonly CreateMount[],
+  box: { id: string; name: string; createdBy: string | null },
+  known: Set<string>,
+  changes: VolumeChanges,
+): Promise<BoxMount[]> {
+  const attached = await attachedMounts(host, requested);
+  const roles = rolesToCreate(requested);
+  if (roles.length === 0) return resolveCreateMounts(host, attached, known);
+  // A role volume is new, so its attachment rules are the role's own: no recorded volume can be owned by another box.
+  const created = await provisionRoleMounts(host, box, roles, known, changes);
+  const made = new Map(created.map((mount) => [mount.path, mount]));
+  let next = 0;
+  const mounts = requested.map((mount) => {
+    if (!isRoleMount(mount)) {
+      const kept = attached[next];
+      next += 1;
+      if (!kept) throw badRequest(msg("mount_create_invalid"));
+      return kept;
+    }
+    const path = mountPointOf(mount).path;
+    const built = made.get(path);
+    if (!built) throw badRequest(msg("mount_create_invalid"));
+    made.delete(path);
+    return built;
+  });
+  if (made.size > 0) throw badRequest(msg("mount_create_invalid"));
+  await assertVolumesPresent(
+    host,
+    mounts.map((mount) => mount.volume),
+  );
+  return mounts;
+}
+
+/** The mounts of the volumes a create list names, in the list's order, with each name mapped to its engine volume. */
+async function attachedMounts(host: HostCtx, requested: readonly CreateMount[]): Promise<BoxMount[]> {
+  const named = requested.flatMap((mount) =>
+    isRoleMount(mount) ? [] : [{ volume: mount.volume, ...mountPointOf(mount) }],
+  );
+  if (named.length === 0) return [];
+  assertMountList(named);
+  const resolved = named.map((mount) => {
+    const volume = host.volumes.resolve(mount.volume, host.host.id);
+    if (!volume || volume.hostId !== host.host.id) throw notFound(msg("volume_not_found", { volume: mount.volume }));
+    return { volume: volume.engineName, path: mount.path, mode: mount.mode };
+  });
   for (const mount of resolved) {
     assertMountAllowed(host, null, mount.volume, await mountTarget(host, mount.volume));
   }
@@ -186,7 +249,7 @@ async function buildBox(
   const createdBy = input.createdBy ?? "owner";
   const known = new Set<string>([image]);
   const mounts = input.mounts
-    ? await resolveCreateMounts(host, input.mounts, known)
+    ? await mountsForCreate(host, input.mounts, { id, name: input.name, createdBy }, known, attempt.changes)
     : await provisionDefaultMounts(host, { id, name: input.name, createdBy }, known, attempt.changes);
   assertMountsWithinLimits(host, mounts);
   await trackPoolRoots(host, poolsUsed(host, mounts), attempt.changes);

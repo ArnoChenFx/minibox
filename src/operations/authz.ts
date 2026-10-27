@@ -2,6 +2,7 @@ import { AppError } from "../lib/errors";
 import { msg } from "../lib/messages";
 import type { TemplateInit } from "../services/template-builds";
 import type { BoxMount } from "../specs/types";
+import { type CreateMount, isRoleMount, mountPointOf, rolesToCreate } from "../volumes/create-mounts";
 import { findSharedTools, leftoverWorkspace } from "../volumes/engine";
 import { poolForRole } from "../volumes/pools";
 import { AuthorizationDenied } from "./executor";
@@ -118,13 +119,48 @@ export async function assertCanChangeMounts(
  * gets the checks of any such mount. The shared tools volume is mounted read-only and needs `volume:attach`.
  */
 export async function assertCanCreateDefaultMounts(ctx: OperationContext, boxName: string): Promise<void> {
-  const leftover = await leftoverWorkspace(ctx.host, boxName);
-  if (leftover) {
-    const volume: VolumeRef = leftover.record ?? { name: leftover.engineName };
-    await assertCanAttach(ctx, volume);
-    await assertCanWrite(ctx, volume);
+  await assertCanCreateRoleVolumes(ctx, boxName, ["workspace", "home", "tools", "cache"]);
+}
+
+/**
+ * The checks for the role volumes a create asks MiniBox to make. Every role volume is new, so each needs
+ * `volume:write`. A workspace may adopt a leftover `prefix-ws-<name>` volume instead, which is an existing volume
+ * mounted read-write, so it takes the checks of any such mount. The tools role reuses the host's shared tools volume
+ * when it has one, which is mounted read-only and needs `volume:attach`.
+ */
+async function assertCanCreateRoleVolumes(
+  ctx: OperationContext,
+  boxName: string,
+  roles: readonly string[],
+): Promise<void> {
+  if (roles.includes("workspace")) {
+    const leftover = await leftoverWorkspace(ctx.host, boxName);
+    if (leftover) {
+      const volume: VolumeRef = leftover.record ?? { name: leftover.engineName };
+      await assertCanAttach(ctx, volume);
+      await assertCanWrite(ctx, volume);
+    }
   }
-  const tools = findSharedTools(ctx.host, poolForRole(ctx.host.volumes.readPools(), "tools").name);
-  if (tools) await assertCanAttach(ctx, tools);
-  await assertCanWrite(ctx);
+  if (roles.includes("tools")) {
+    const tools = findSharedTools(ctx.host, poolForRole(ctx.host.volumes.readPools(), "tools").name);
+    if (tools) await assertCanAttach(ctx, tools);
+  }
+  if (roles.length > 0) await assertCanWrite(ctx);
+}
+
+/**
+ * Checks the mounts a create asks for. A mount of a recorded volume is an attachment: `volume:attach` on it, and
+ * `volume:write` for a read-write one. A role mount makes a new volume, so it needs `volume:write`, and the tools role
+ * also needs `volume:attach` when the shared tools volume already exists.
+ */
+export async function assertCanCreateMounts(
+  ctx: OperationContext,
+  mounts: readonly CreateMount[],
+  boxName: string,
+): Promise<void> {
+  const attached: BoxMount[] = mounts.flatMap((mount) =>
+    isRoleMount(mount) ? [] : [{ volume: mount.volume, ...mountPointOf(mount) }],
+  );
+  await assertCanChangeMounts(ctx, attached, []);
+  await assertCanCreateRoleVolumes(ctx, boxName, rolesToCreate(mounts));
 }

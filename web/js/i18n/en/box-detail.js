@@ -74,6 +74,22 @@ export default {
   "bd.created": "Created",
   "bd.profile": "Security profile",
   "bd.profileLegacy": "Not set (created before profiles)",
+  "bd.profileInvalid": "Choose a security profile.",
+  "bd.templateCard": "Template",
+  "bd.templateHelp":
+    "The template the box was built from. Changing it stages a new template; the banner above the settings rebuilds the box onto it.",
+  "bd.templatePendingHelp":
+    "This template is staged and takes effect when the staged changes are applied. The running box still runs the old one.",
+  "bd.templateEditHelp":
+    "An image reference, such as node:24-bookworm-slim or a template's name. The image must exist here or in a registry.",
+  "bd.securityHelp":
+    "The security profile the box was created with. Changing it stages a new profile; the banner above the settings rebuilds the box with it.",
+  "bd.profilePendingHelp":
+    "This profile is staged and takes effect when the staged changes are applied. The running box still has the old one.",
+  "bd.profileEditHelp":
+    "The profile decides the box's capabilities. A stricter profile drops more of them, and a change needs a rebuild.",
+  "bd.profileSaveNote":
+    "Saving stages the profile instead of rebuilding. Apply it from the banner above the settings, together with any other staged changes.",
   "bd.network": "Network",
   "bd.selfToken": "Agent token",
   "bd.selfTokenOn": "On, for this box only",
@@ -178,11 +194,15 @@ export default {
   "bd.sessions": "Sessions",
   "bd.newSession": "New session",
   "bd.newSessionTitle": "New terminal session",
-  "bd.newSessionText": "The session keeps running after you close this page. Give it a name so you can find it again.",
+  "bd.newSessionText":
+    "The session keeps running after you close this page. It starts with a name you can keep or change, so you can find it again.",
   "bd.sessionName": "Session name",
-  "bd.sessionNameHelp": "Letters, digits, dashes and underscores; up to 32 characters.",
+  "bd.sessionNameHelp":
+    "Letters, digits, dashes and underscores; up to 32 characters. A name the box already uses is refused here, before the session starts.",
   "bd.sessionNameInvalid":
     "Start with a letter or digit. Use only letters, digits, - and _, up to 32 characters in all.",
+  "bd.sessionNameRequired": "Enter a session name, or keep the one already filled in.",
+  "bd.sessionNameTaken": "This box already has a session named “{name}”. Choose another name.",
   "bd.sessionStartFailed": "Couldn't start the session",
   "bd.closeSession": "Close session",
   "bd.closeSessionText": "Close the session “{name}”? Programs running in it stop.",

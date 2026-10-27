@@ -14,7 +14,7 @@ import {
   stageChanges,
 } from "../services/staged";
 import { requireRevision } from "../specs/revision";
-import type { StagedFields } from "../specs/staged";
+import { STAGED_FIELDS, type StagedFields } from "../specs/staged";
 import { boxVisible, viewOfSpec } from "../tokens/model";
 import { assertCanChangeMounts } from "./authz";
 import { boxTarget } from "./boxes";
@@ -34,8 +34,9 @@ import {
   templateImage,
 } from "./validation";
 
-const STAGED_FIELD_NAMES = ["template", "mounts", "env", "network", "egress", "profile"] as const;
+const STAGED_FIELD_NAMES = STAGED_FIELDS;
 
+/** The staged values a request may name. Every field of `STAGED_FIELDS` has an entry here, and a test pins that. */
 const StagedFieldsSchema = z.object({
   template: z.string().optional(),
   mounts: z.array(z.object({ volume: z.string(), path: z.string(), mode: z.enum(["rw", "ro"]) })).optional(),

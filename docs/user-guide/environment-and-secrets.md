@@ -11,7 +11,7 @@ You can set variables when you create a box, or later in the box's **Settings** 
 
 Each row has a name and a value. Plain values are masked in the box's details until you choose **Show value**.
 
-Saving in **Settings** rebuilds the box, so its writable layer and running processes are lost. MiniBox shows a preview first, and asks you to confirm.
+Saving in **Settings** stages the environment instead of rebuilding at once. The card marks the variables **Pending**, and the banner above the settings applies them with any other staged change; the box is rebuilt then, so its writable layer and running processes are lost at that point. See [Stage a change and rebuild](boxes.md#stage-a-change-and-rebuild).
 
 ## Use a secret
 

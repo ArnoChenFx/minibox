@@ -658,7 +658,7 @@ const poolReplace = defineOperation({
     toolset: "storage",
     name: "replace_pools",
     description:
-      "Replace pool configuration. Send confirm true; without it the call changes nothing and returns confirmation_required with details.preview. A pool that still has volumes cannot be removed or change backend. New volumes use the new defaults; existing engine volumes keep the options they were created with.",
+      "Replace pool configuration. Send confirm true; without it the call changes nothing and returns confirmation_required with details.preview. A pool that still has volumes cannot be removed, renamed or change backend. New volumes use the new defaults; existing engine volumes keep the options they were created with.",
   },
   activity: { action: () => "pool.replace", target: () => "pools" },
   audit: { target: () => ({ kind: "pool", name: "pools" }) },

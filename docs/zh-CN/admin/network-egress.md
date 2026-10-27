@@ -22,9 +22,9 @@
   { "egress": { "mode": "proxy-only", "presets": ["agent-default"], "domains": ["example.com"] } }
   ```
 
-Box 的**设置**标签页中，**安全**一组会显示档位、`proxy-only` Box 的允许主机，以及最近被拒绝的连接。控制台只能在创建 Box 时设置档位。
+Box 的**设置**标签页中，**安全**一组会显示档位、`proxy-only` Box 的允许主机，以及最近被拒绝的连接。其中的**编辑**按钮可以更改档位、预设与额外主机；保存会先暂存，只有你在设置上方的横幅中应用暂存变更时才会重建 Box。见[暂存更改并重建](../user-guide/boxes.md#暂存更改并重建)。
 
-要更改已有 Box 的档位，可向 `POST /api/boxes/{id}/rebuild` 发送带 `egress` 的请求，或调用 `rebuild_box` 工具。更改档位即是重建。未确认时，调用会返回这次更改的预览，只有带上 `confirm: true` 确认后才会执行重建。Box 保留名称、ID 与卷，容器与可写层则是新的。若新档位仍是私有网络，Box 会保留原有的私有子网。
+要通过 API 更改已有 Box 的档位，可向 `POST /api/boxes/{id}/rebuild` 发送带 `egress` 的请求，或调用 `rebuild_box` 工具。更改档位即是重建。未确认时，调用会返回这次更改的预览，只有带上 `confirm: true` 确认后才会执行重建。Box 保留名称、ID 与卷，容器与可写层则是新的。若新档位仍是私有网络，Box 会保留原有的私有子网。若想改为暂存，可向 `PUT /api/boxes/{id}/staged` 发送同样的 `egress` 对象，再用 `POST /api/boxes/{id}/staged/apply` 应用。
 
 ## 仅代理
 
