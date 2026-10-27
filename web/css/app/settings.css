@@ -304,3 +304,23 @@ pre.staged-changes {
 .perm-bar [hidden] {
   display: none;
 }
+
+/* The custom-tool dialog's paste box: the JSON text, then the button that fills the form and the line that says why a
+   description was refused. The error sits beside the button on a wide dialog and under it on a phone. */
+.ct-paste-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-top: 10px;
+}
+.ct-paste-row .error-text {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+#ct-paste {
+  min-height: 120px;
+  margin-top: 8px;
+  font-size: 12.5px;
+}

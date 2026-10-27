@@ -212,7 +212,7 @@ The tables below list every operation in [`openapi.json`](../openapi.json), grou
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/api/tools/catalog` | List the tool catalog without install status |
-| `GET` | `/api/tools` | List tool catalog and install status |
+| `GET` | `/api/tools` | List tool catalog and install status. Each entry also carries its `install`, `upgrade`, `uninstall`, `stop` (null when unset) and `detect` commands, so the console can copy a built-in tool's catalog entry as JSON |
 | `POST` | `/api/boxes/{id}/tools/install` | Install a tool into the shared tools volume |
 | `POST` | `/api/boxes/{id}/tools/upgrade` | Upgrade a tool on the shared tools volume |
 | `POST` | `/api/boxes/{id}/tools/uninstall` | Uninstall a tool from the shared tools volume |

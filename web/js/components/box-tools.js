@@ -1,5 +1,6 @@
 import { api, enc } from "../lib/api.js";
-import { esc } from "../lib/dom.js";
+import { toolJsonEntry, toolJsonText } from "../lib/custom-tool-json.js";
+import { copyText, esc } from "../lib/dom.js";
 import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
 import { subscribe } from "../lib/live.js";
@@ -57,6 +58,15 @@ function customActionCell(tool) {
         <button class="btn btn-sm btn-ghost" data-action="tool-custom-delete" data-tool="${id}">${esc(t("bd.customDelete"))}</button>`;
 }
 
+/**
+ * Every row offers the catalog entry as JSON, built-in or custom, so a fork starts from a copy. The button is its icon
+ * alone at every width: the words are its tooltip, which says what the copy is for, and its accessible name, so the row
+ * keeps the room the actions beside it need on a phone.
+ */
+function copyJsonButton(tool) {
+  return `<button type="button" class="btn btn-sm btn-ghost tool-copy" data-action="tool-copy-json" data-tool="${esc(tool.id)}" aria-label="${esc(t("bd.toolCopyJson"))}" title="${esc(t("bd.toolCopyJsonHelp"))}">${icon("copy")}</button>`;
+}
+
 function toolRow(tool, isCustom, busy) {
   const badge = isCustom
     ? ` <span class="badge badge-accent" title="${esc(t("bd.customBadgeHelp"))}">${esc(t("bd.customBadge"))}</span>`
@@ -66,7 +76,7 @@ function toolRow(tool, isCustom, busy) {
     <td class="mono">${esc(tool.id)}</td>
     <td>${tool.desiredVersion ? esc(tool.desiredVersion) : "—"}</td>
     <td>${toolInstalledCell(tool)}</td>
-    <td class="tool-action-cell"><div class="tool-actions">${toolActionCell(tool, busy)}${isCustom ? customActionCell(tool) : ""}</div></td>
+    <td class="tool-action-cell"><div class="tool-actions">${toolActionCell(tool, busy)}${isCustom ? customActionCell(tool) : ""}${copyJsonButton(tool)}</div></td>
   </tr>`;
 }
 
@@ -141,6 +151,17 @@ export function mountTools(root, { box, refreshBox }) {
       customById: custom,
       onSaved: () => void load(),
     });
+  /** Copies one row's catalog entry as JSON: the same shape a tools.d file holds, so it can be pasted back as a new tool. */
+  const copyJson = async (toolId) => {
+    const tool = (tools ?? []).find((item) => item.id === toolId);
+    if (!tool) return;
+    try {
+      await copyText(toolJsonText(toolJsonEntry(tool, custom)));
+      toast(t("bd.toolCopyJsonDone"));
+    } catch (e) {
+      toastError(t("bd.toolCopyJsonFailed"), e);
+    }
+  };
   const search = bindSearchBox(root.querySelector("#bdToolSearch"), (text) => {
     query = text;
     drawRows();
@@ -203,6 +224,7 @@ export function mountTools(root, { box, refreshBox }) {
     if (btn.dataset.action === "tool-uninstall") void start(`/api/boxes/${enc(b.id)}/tools/uninstall`, tool);
     if (btn.dataset.action === "tool-reconcile") void start(`/api/boxes/${enc(b.id)}/tools/reconcile`);
     if (btn.dataset.action === "tool-custom-add") customDialog(null);
+    if (btn.dataset.action === "tool-copy-json") void copyJson(tool);
     if (btn.dataset.action === "tool-custom-edit" && custom.has(tool)) customDialog(custom.get(tool));
     if (btn.dataset.action === "tool-custom-delete" && custom.has(tool)) {
       void deleteCustomTool(custom.get(tool), { onDeleted: () => void load() });

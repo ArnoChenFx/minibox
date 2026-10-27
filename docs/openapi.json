@@ -19251,6 +19251,29 @@
                             "type": "boolean",
                             "description": "True when the install needs root, which MiniBox never runs. Install, upgrade and uninstall are refused."
                           },
+                          "install": {
+                            "type": "string",
+                            "description": "The entry's install command, so the console can copy the catalog entry as JSON."
+                          },
+                          "upgrade": {
+                            "type": "string",
+                            "description": "The entry's upgrade command."
+                          },
+                          "uninstall": {
+                            "type": "string",
+                            "description": "The entry's uninstall command."
+                          },
+                          "stop": {
+                            "description": "The command run in a running box before an uninstall, or null when the entry has none.",
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "detect": {
+                            "type": "string",
+                            "description": "The entry's detect command."
+                          },
                           "desiredVersion": {
                             "type": [
                               "string",
@@ -19283,6 +19306,11 @@
                           "estimatedMb",
                           "requires",
                           "needsRoot",
+                          "install",
+                          "upgrade",
+                          "uninstall",
+                          "stop",
+                          "detect",
                           "desiredVersion",
                           "installed",
                           "installedVersion",

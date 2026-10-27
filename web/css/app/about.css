@@ -198,3 +198,18 @@
   height: 10px;
   border-width: 1.5px;
 }
+
+/* The copy button of a tool row is its icon alone at every width: the words are its tooltip and its accessible name, so
+   the row keeps the room the action buttons beside it need. Square and unshrinkable, so it lines up with them. */
+.tool-actions .tool-copy {
+  width: 28px;
+  flex: none;
+  padding: 0;
+}
+@media (max-width: 640px) {
+  /* A row's actions wrap onto a second line rather than pushing the table past the window. */
+  .tool-actions {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+}

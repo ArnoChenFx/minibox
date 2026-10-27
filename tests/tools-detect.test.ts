@@ -7,6 +7,7 @@ import type { ExecSpec, HelperSpec } from "../src/runtime";
 import { startServer } from "../src/server";
 import { getBox, stopBox } from "../src/services/boxes";
 import { savePools } from "../src/services/volumes";
+import { loadCatalog } from "../src/tools/catalog";
 import type { VolumeRecord } from "../src/volumes/types";
 import { createTestApp, silenceLogs, TEST_KEY } from "./support/app";
 import type { FakeRuntime } from "./support/fake-runtime";
@@ -185,6 +186,43 @@ describe("installed detection", () => {
     const listed = await call("GET", "/api/tools");
     expect(listed.status).toBe(200);
     expect((listed.json.tools as { installed: boolean }[]).every((tool) => tool.installed === false)).toBe(true);
+  });
+
+  test("each entry carries its commands, so the console can copy a built-in tool as JSON", async () => {
+    answerDetection({});
+    const listed = await call("GET", "/api/tools");
+    const bun = toolRow(listed.json, "bun");
+    expect(bun).toMatchObject({
+      install: "npm install -g --prefix {{prefix}} {{package_spec}}",
+      upgrade: "npm install -g --prefix {{prefix}} {{package_spec}}",
+      uninstall: "npm uninstall -g --prefix {{prefix}} {{package}}",
+      detect: "command -v bun >/dev/null && bun --version 2>/dev/null",
+    });
+    // A tool with a stop command reports it; the others report null rather than leaving the field out.
+    expect(toolRow(listed.json, "tailscale")?.stop).toBe("{{prefix}}/bin/minibox-tailscale stop");
+    expect(bun?.stop).toBeNull();
+    // The commands are the catalog's own text, not the rendered command of this box or the install status.
+    const catalog = loadCatalog(app.cfg.dataDir);
+    for (const entry of catalog) {
+      expect(toolRow(listed.json, entry.id)).toMatchObject({
+        install: entry.install,
+        upgrade: entry.upgrade,
+        uninstall: entry.uninstall,
+        stop: entry.stop ?? null,
+        detect: entry.detect,
+      });
+    }
+  });
+
+  test("a custom entry's own commands are what its status carries, so its copy describes the entry tools.d holds", async () => {
+    expect((await call("PUT", "/api/tools/custom/sample-tool", CUSTOM_TOOL)).status).toBe(200);
+    answerDetection({});
+    const listed = await call("GET", "/api/tools");
+    expect(toolRow(listed.json, "sample-tool")).toMatchObject({
+      install: CUSTOM_TOOL.install,
+      detect: CUSTOM_TOOL.detect,
+      stop: null,
+    });
   });
 });
 
