@@ -24,6 +24,11 @@ import {
   roleMount,
   roleOfValue,
   roleValue,
+  namesOnHost,
+  previewNoteLines,
+  previewRoleNames,
+  roleVolumeNames,
+  sharedToolsOnHost,
   sharedToolsChoice,
   validMountPath,
   volumeChoices,
@@ -681,9 +686,9 @@ describe("mount lists", () => {
       { id: "vol_3", name: "shared", ownership: "independent", ownerBoxId: null, rwMounts: 2 },
     ] as const;
     expect(volumeChoices(volumes, new Set(["bx_live"]))).toEqual([
-      { id: "vol_1", name: "workspace", role: null, rwMounts: 1, disabled: true },
-      { id: "vol_2", name: "orphan", role: null, rwMounts: 0, disabled: false },
-      { id: "vol_3", name: "shared", role: null, rwMounts: 2, disabled: false },
+      { id: "vol_1", name: "workspace", hostId: null, role: null, ownership: "owned", rwMounts: 1, disabled: true },
+      { id: "vol_2", name: "orphan", hostId: null, role: null, ownership: "owned", rwMounts: 0, disabled: false },
+      { id: "vol_3", name: "shared", hostId: null, role: null, ownership: "independent", rwMounts: 2, disabled: false },
     ]);
   });
 
@@ -748,6 +753,209 @@ describe("mount lists", () => {
     });
     expect(sharedToolsChoice(volumes)?.name).toBe("shared-tools");
     expect(sharedToolsChoice(volumeChoices([], new Set()))).toBeNull();
+  });
+
+  test("the predicted role volume names follow the server: <box>-<role>, and the host's one shared tools volume", () => {
+    // Mirrors `defaultRolePlans` in src/volumes/engine.ts. Nothing is created and no pool is read.
+    expect(roleVolumeNames({ boxName: "alpha", hostId: "local", labelPrefix: "mbtest" })).toEqual({
+      workspace: { name: "alpha-workspace", exists: false, exact: true, hostKnown: true },
+      home: { name: "alpha-home", exists: false, exact: true, hostKnown: true },
+      tools: { name: "mbtest-tools-local", exists: false, exact: true, hostKnown: true },
+      cache: { name: "alpha-cache", exists: false, exact: true, hostKnown: true },
+    });
+    // A shared tools volume that exists is what the tools row mounts, so nothing is created for it.
+    expect(
+      roleVolumeNames({
+        boxName: "alpha",
+        hostId: "lab",
+        labelPrefix: "mbtest",
+        sharedTools: { name: "mbtest-tools-lab" },
+      }).tools,
+    ).toEqual({ name: "mbtest-tools-lab", exists: true, exact: true, hostKnown: true });
+  });
+
+  test("a name the host already uses is a preview too: the server adds a suffix the dialog cannot know", () => {
+    const names = roleVolumeNames({
+      boxName: "alpha",
+      hostId: "local",
+      labelPrefix: "mbtest",
+      taken: ["alpha-workspace", "mbtest-tools-local"],
+    });
+    // `freeName` tries `-<pool>`, then `-2`, `-3`…, so neither the suffix nor the length is predictable here.
+    expect(names.workspace).toMatchObject({ name: "alpha-workspace", exact: false });
+    expect(names.tools).toMatchObject({ name: "mbtest-tools-local", exact: false });
+    expect(names.home).toMatchObject({ name: "alpha-home", exact: true });
+  });
+
+  test("automatic placement cannot name the shared tools volume, and an empty box name names nothing", () => {
+    const auto = roleVolumeNames({ boxName: "alpha", hostId: "", labelPrefix: "mbtest", hostKnown: false });
+    expect(auto.tools).toEqual({ name: null, exists: false, exact: false, hostKnown: false });
+    expect(auto.workspace).toMatchObject({ name: "alpha-workspace", exact: true });
+    expect(roleVolumeNames({ boxName: "  ", hostId: "local", labelPrefix: "mbtest" }).workspace).toEqual({
+      name: null,
+      exists: false,
+      exact: false,
+      hostKnown: true,
+    });
+  });
+
+  test("the preview lines name only the roles a row still names, and never promise a name that may change", () => {
+    const names = roleVolumeNames({ boxName: "alpha", hostId: "local", labelPrefix: "mbtest" });
+    // A row that mounts a volume that exists creates nothing, so it contributes no line.
+    const rows = [{ volume: "vol_1" }, { volume: roleValue("workspace") }];
+    expect(previewRoleNames(rows, names)).toEqual([
+      { role: "workspace", name: "alpha-workspace", exists: false, exact: true, hostKnown: true },
+    ]);
+    expect(previewNoteLines(rows, names)).toEqual([{ key: "cb.previewCreate", params: { name: "alpha-workspace" } }]);
+    expect(previewNoteLines([{ volume: roleValue("home") }], names)).toEqual([
+      { key: "cb.previewCreate", params: { name: "alpha-home" } },
+    ]);
+    const taken = roleVolumeNames({ boxName: "alpha", hostId: "local", labelPrefix: "mbtest", taken: ["alpha-home"] });
+    expect(previewNoteLines([{ volume: roleValue("home") }], taken)).toEqual([
+      { key: "cb.previewCreateInexact", params: { name: "alpha-home" } },
+    ]);
+    const shared = roleVolumeNames({
+      boxName: "alpha",
+      hostId: "local",
+      labelPrefix: "mbtest",
+      sharedTools: { name: "mbtest-tools-local" },
+    });
+    expect(previewNoteLines([{ volume: roleValue("tools") }], shared)).toEqual([
+      { key: "cb.previewShared", params: { name: "mbtest-tools-local" } },
+    ]);
+    const auto = roleVolumeNames({ boxName: "alpha", hostId: "", labelPrefix: "mbtest", hostKnown: false });
+    expect(previewNoteLines([{ volume: roleValue("tools") }], auto)).toEqual([
+      { key: "cb.previewHostUnknown", params: { role: "tools" } },
+    ]);
+    expect(
+      previewNoteLines(
+        [{ volume: roleValue("cache") }],
+        roleVolumeNames({ boxName: "", hostId: "local", labelPrefix: "mbtest" }),
+      ),
+    ).toEqual([{ key: "cb.previewUnnamed", params: { role: "cache" } }]);
+    expect(previewNoteLines([], names)).toEqual([]);
+  });
+
+  test("a create row carries the predicted name of its role, and the volumes that exist carry none", () => {
+    const volumes = volumeChoices(
+      [
+        {
+          id: "vol_1",
+          name: "notes",
+          hostId: "local",
+          role: null,
+          ownership: "independent",
+          ownerBoxId: null,
+          rwMounts: 0,
+        },
+        {
+          id: "vol_2",
+          name: "mbtest-tools-local",
+          hostId: "local",
+          role: "tools",
+          ownership: "independent",
+          ownerBoxId: null,
+          rwMounts: 0,
+        },
+      ],
+      new Set(),
+    );
+    const names = roleVolumeNames({
+      boxName: "alpha",
+      hostId: "local",
+      labelPrefix: "mbtest",
+      sharedTools: sharedToolsOnHost(volumes, "local"),
+      taken: namesOnHost(volumes, "local"),
+    });
+    const choices = createMountChoices(volumes, sharedToolsChoice(volumes) !== null, names);
+    expect(choices.filter((choice) => choice.role).map((choice) => choice.preview)).toEqual([
+      { name: "alpha-workspace", exists: false, exact: true, hostKnown: true },
+      { name: "alpha-home", exists: false, exact: true, hostKnown: true },
+      { name: "mbtest-tools-local", exists: true, exact: true, hostKnown: true },
+      { name: "alpha-cache", exists: false, exact: true, hostKnown: true },
+    ]);
+    expect(choices.filter((choice) => !choice.role).map((choice) => choice.preview)).toEqual([null, null]);
+    // Without a prediction, the role choices say so rather than inventing a name.
+    expect(
+      createMountChoices(volumes, true)
+        .filter((choice) => choice.role)
+        .map((choice) => choice.preview),
+    ).toEqual([null, null, null, null]);
+  });
+
+  test("the names of a host are read from the volumes it holds, and its shared tools volume even when it is taken", () => {
+    const volumes = volumeChoices(
+      [
+        {
+          id: "vol_1",
+          name: "alpha-workspace",
+          hostId: "local",
+          role: "workspace",
+          ownership: "owned",
+          ownerBoxId: "bx_live",
+          rwMounts: 1,
+        },
+        {
+          id: "vol_2",
+          name: "mbtest-tools-local",
+          hostId: "local",
+          role: "tools",
+          ownership: "independent",
+          ownerBoxId: null,
+          rwMounts: 0,
+        },
+        {
+          id: "vol_3",
+          name: "mbtest-tools-lab",
+          hostId: "lab",
+          role: "tools",
+          ownership: "independent",
+          ownerBoxId: null,
+          rwMounts: 0,
+        },
+      ],
+      new Set(["bx_live"]),
+    );
+    expect(namesOnHost(volumes, "local")).toEqual(["alpha-workspace", "mbtest-tools-local"]);
+    expect(namesOnHost(volumes, "lab")).toEqual(["mbtest-tools-lab"]);
+    expect(sharedToolsOnHost(volumes, "local")?.name).toBe("mbtest-tools-local");
+    expect(sharedToolsOnHost(volumes, "elsewhere")).toBeNull();
+    // A row cannot pick a volume another live box owns, so `sharedToolsChoice` hides it, but the host still has it.
+    expect(sharedToolsChoice(volumes)?.name).toBe("mbtest-tools-local");
+    // Both readers agree on the host's shared tools volume, which is the one a create reuses instead of making one.
+    expect(sharedToolsChoice(volumes)?.name).toBe(sharedToolsOnHost(volumes, "local")?.name);
+    // An owned tools volume belongs to a box, so it is not the host's shared one: the create makes a new one there.
+    const owned = volumeChoices(
+      [
+        {
+          id: "vol_4",
+          name: "other-tools",
+          hostId: "lab",
+          role: "tools",
+          ownership: "owned",
+          ownerBoxId: "bx_gone",
+          rwMounts: 0,
+        },
+      ],
+      new Set(),
+    );
+    expect(sharedToolsOnHost(owned, "lab")).toBeNull();
+  });
+
+  test("the create dialog repaints the predictions when the box name or the host changes", () => {
+    const source = readFileSync(join(ROOT, "web", "js", "components", "create-box.js"), "utf8");
+    // Both inputs decide a predicted name: the box names its own role volumes, the host owns the shared tools volume.
+    for (const binding of ['q("#cbName").addEventListener("input"', 'q("#cbHost")?.addEventListener("change"']) {
+      const at = source.indexOf(binding);
+      expect(at).toBeGreaterThan(-1);
+      const listener = source.slice(at, source.indexOf("\n  });", at));
+      expect(listener).toContain('if (state.volumesMode === "custom") refreshMounts();');
+    }
+    // The repaint goes through the preview, which reads the name and the host back from the dialog.
+    expect(source).toContain("roleVolumeNames({");
+    expect(source).toContain("namesOnHost(");
+    expect(source).toContain("sharedToolsOnHost(");
+    expect(source).toContain("updateMountRowChoices(");
   });
 
   test("volume and mount errors are the ones the Volumes section shows", () => {
