@@ -16,7 +16,7 @@ Conventions in the tables below:
 | Method | Path | Scope | Notes |
 |---|---|---|---|
 | `GET` | `/api/boxes` | `box:read` | `?stats=false` skips usage, `?host=local` |
-| `POST` | `/api/boxes` | `box:write` | `name`, `template`, `cpus`, `memoryMb`, `profile`, `egress`, `mounts`, `env`, `idleTimeoutSec`, `ttlSec`, `host`, `tools`, `startupCommand`, `selfToken`, `repo`. `201`; `setup.taskId`, `clone.taskId` |
+| `POST` | `/api/boxes` | `box:write` | `name`, `template`, `cpus`, `memoryMb`, `profile`, `egress`, `mounts`, `env`, `idleTimeoutSec`, `ttlSec`, `host`, `tools`, `startupCommand`, `selfToken`, `repo`. A `mounts` entry is `{ volume, path, mode }` for a volume that exists, or `{ role }` (`workspace`, `home`, `tools`, `cache`) for one MiniBox creates for the box; a role the list omits is not created, and `tools` mounts the shared tools volume. `201`; `setup.taskId`, `clone.taskId` |
 | `GET` | `/api/boxes/{id}` | `box:read` | The `ETag` is the revision |
 | `PATCH` | `/api/boxes/{id}` | `box:write` | If-Match. In place: `name`, `cpus`, `memoryMb`, `pids`, `labels`, `idleTimeoutSec`, `ttlSec` |
 | `DELETE` | `/api/boxes/{id}` | `box:delete` | `?deleteVolume=true`, `?skipTrash=true` |
