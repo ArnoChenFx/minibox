@@ -15,7 +15,13 @@ A new box gets four volumes by default:
 | **Tools** | Default pool | `/opt/minibox/tools` | Read-only. One shared volume per pool holds the installed tools. |
 | **Cache** | Local pool | `/home/dev/.cache` | Read-write. Left out of checkpoints and the recycle bin. |
 
-To use different volumes, click **Customize** in the create dialog. The box mounts only the volumes you list. To add a volume to a box that already exists, attach it on the box's page.
+To use different volumes, click **Customize** in the create dialog. Each row there mounts a volume that already exists, or has MiniBox create one of the box's role volumes for it. The dialog starts with one row per role, so the box gets the same four volumes as the default mode, and a row you remove means that role's volume is not created. That is how a box gets the shared tools volume without the other three, or only a workspace.
+
+The tools row mounts the host's shared tools volume, and creates it when the host has none. One tools volume serves every box on the host.
+
+A role mount creates a new volume, so it needs the `volume:write` scope, and so does mounting an existing volume read-write. The tools row also needs `volume:attach` when the shared tools volume already exists.
+
+To add a volume to a box that already exists, attach it on the box's page.
 
 ## Storage pools
 

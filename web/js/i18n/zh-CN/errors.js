@@ -407,6 +407,14 @@ export default {
   "err.mount_path_invalid": "挂载路径 {path} 必须是绝对路径，且不能包含空段、. 或 ..。",
   "err.mount_duplicate": "挂载路径 {path} 重复。",
   "err.mount_not_found": "路径 {path} 上没有挂载。",
+  "err.mount_create_invalid":
+    "每个挂载要么用 volume、path 和 mode 指定已有的卷，要么用 role 指定要新建的角色卷。角色卷使用该角色自己的路径和模式，卷挂载则三者都要给。",
+  "err.mount_create_role_duplicate": "角色 {role} 出现了多次，MiniBox 无法为它新建卷。",
+  "err.mount_create_role_path": "新建 {role} 卷的挂载不能挂在 {path}。该角色固定挂在 {expected}。",
+  "err.mount_create_role_mode": "新建 {role} 卷的挂载不能是 {mode}。该角色固定为 {expected}。",
+  "err.mount_create_volume_role": "一个挂载不能同时指定卷 {volume} 和角色 {role}。要挂载已有卷就写卷，要新建就写角色。",
+  "err.volume_tools_unavailable":
+    "这台宿主机还没有共享 tools 卷，因此此 Box 不会挂载它。使用 tools 角色创建 Box 时会新建一个。",
   "err.storage_confirm_required": "此更改未应用。请在相同请求中带上 confirm 为 true 以应用预览。没有任何改动。",
   "err.pool_not_found": "找不到存储池 {pool}。",
   "err.pool_admin_forbidden": "此凭据不能修改存储池。",

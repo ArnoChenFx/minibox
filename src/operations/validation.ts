@@ -37,10 +37,12 @@ import {
   reject,
 } from "../lib/validation";
 import { OFFICIAL_NAMES } from "../services/official-templates";
-import type { BoxEnv, BoxMount } from "../specs/types";
+import type { BoxEnv, BoxMount, MountMode } from "../specs/types";
 import { STARTUP_COMMAND_MAX_BYTES, startupCommandProblem, startupProblemMessage } from "../startup/command";
 import { isTargetSecretName } from "../targets/types";
 import { AGE_PATTERN, ageMs } from "../volumes/age";
+import { type CreateMount, isVolumeRole } from "../volumes/create-mounts";
+import { ROLE_MOUNT, type VolumeRole } from "../volumes/types";
 
 const IMAGE_REF_RE = /^[a-zA-Z0-9][a-zA-Z0-9_.:/@-]*$/;
 const IMAGE_REF_MAX_LENGTH = 255;
@@ -595,6 +597,75 @@ function checkMounts(value: unknown): Checked<BoxMount[] | undefined> {
   return accept(mounts);
 }
 
+/** How a mount mode reads in a message: "read-write" or "read-only". */
+const modeWord = (mode: MountMode): string => (mode === "ro" ? "read-only" : "read-write");
+
+/** A mount path the engine accepts: absolute, at most 256 characters, no whitespace, no control characters, no `..`. */
+function mountPathOk(path: unknown): path is string {
+  return (
+    typeof path === "string" &&
+    path.startsWith("/") &&
+    path.length <= 256 &&
+    !/\s/u.test(path) &&
+    !/\p{Cc}/u.test(path) &&
+    !path.split("/").includes("..")
+  );
+}
+
+/** A create mount list the server refuses: no volume and no role, or a field a mount of that kind cannot carry. */
+const createMountInvalid = () => reject(msg("mount_create_invalid"), "mounts");
+
+/**
+ * The mounts a create asks for: `{ volume, path, mode }` mounts of recorded volumes, and `{ role }` mounts whose volume
+ * MiniBox creates for the box. A role mount may repeat the role's own path and mode, but not another one, and the same
+ * role may be listed once: one box mounts one volume of each role.
+ */
+function checkCreateMounts(value: unknown): Checked<CreateMount[] | undefined> {
+  if (value === undefined) return accept(undefined);
+  const invalid = createMountInvalid;
+  if (!Array.isArray(value) || value.length > MOUNT_MAX) return invalid();
+  const mounts: CreateMount[] = [];
+  const paths = new Set<string>();
+  const roles = new Set<VolumeRole>();
+  for (const item of value) {
+    if (typeof item !== "object" || item === null) return invalid();
+    const mount = item as { volume?: unknown; role?: unknown; path?: unknown; mode?: unknown };
+    const hasVolume = mount.volume !== undefined && mount.volume !== null && mount.volume !== "";
+    const hasRole = mount.role !== undefined && mount.role !== null && mount.role !== "";
+    if (hasVolume === hasRole) return invalid();
+    if (hasVolume) {
+      if (typeof mount.volume !== "string" || !IDENT_RE.test(mount.volume)) return invalid();
+      if (!mountPathOk(mount.path)) return invalid();
+      if (mount.mode !== "rw" && mount.mode !== "ro") return invalid();
+      if (paths.has(mount.path)) return reject(msg("mount_duplicate", { path: mount.path }), "mounts");
+      paths.add(mount.path);
+      mounts.push({ volume: mount.volume, path: mount.path, mode: mount.mode });
+      continue;
+    }
+    if (!isVolumeRole(mount.role)) return invalid();
+    if (roles.has(mount.role)) return reject(msg("mount_create_role_duplicate", { role: mount.role }), "mounts");
+    roles.add(mount.role);
+    const fixed = ROLE_MOUNT[mount.role];
+    const path = mount.path === undefined || mount.path === null ? fixed.path : mount.path;
+    const mode = mount.mode === undefined || mount.mode === null ? fixed.mode : mount.mode;
+    if (!mountPathOk(path)) return invalid();
+    if (path !== fixed.path) {
+      return reject(msg("mount_create_role_path", { role: mount.role, path, expected: fixed.path }), "mounts");
+    }
+    if (mode !== "rw" && mode !== "ro") return invalid();
+    if (mode !== fixed.mode) {
+      return reject(
+        msg("mount_create_role_mode", { role: mount.role, mode: modeWord(mode), expected: modeWord(fixed.mode) }),
+        "mounts",
+      );
+    }
+    if (paths.has(path)) return reject(msg("mount_duplicate", { path }), "mounts");
+    paths.add(path);
+    mounts.push({ role: mount.role });
+  }
+  return accept(mounts);
+}
+
 function checkEnv(value: unknown): Checked<BoxEnv[] | undefined> {
   if (value === undefined) return accept(undefined);
   const invalid = () => reject(msg("env_invalid", { max: ENV_MAX }), "env");
@@ -774,6 +845,47 @@ export const rebuildMounts = () =>
     maxItems: MOUNT_MAX,
     description:
       "Mounts that replace the box's mount list. Each entry is { volume, path, mode } with mode rw or ro. Omitted, the current mounts stay. Adding or removing a mount rebuilds the box. A recorded volume can be mounted by several boxes unless another box owns it. A new or changed mount needs volume:attach on its volume, and a read-write one also needs volume:write. A name that does not exist yet creates a standalone volume, which needs volume:write. Refused: minibox-data, volumes without the MiniBox label, internal helper volumes, pool roots, volumes another box owns, and names that start with the label prefix followed by -ws- or -pool-.",
+  }).optional();
+
+const CREATE_MOUNT_ITEMS: Meta = {
+  anyOf: [
+    {
+      type: "object",
+      description: "Mount a volume that exists.",
+      properties: {
+        volume: { type: "string", description: "Volume id (vol_…) or volume name." },
+        path: { type: "string", description: "Absolute path inside the box." },
+        mode: { type: "string", enum: ["rw", "ro"] },
+      },
+      required: ["volume", "path", "mode"],
+    },
+    {
+      type: "object",
+      description: "Have MiniBox create this role's volume for the box.",
+      properties: {
+        role: {
+          type: "string",
+          enum: ["workspace", "home", "tools", "cache"],
+          description:
+            "Role volume to create: workspace at /workspace read-write, home at /home/dev read-write, tools at /opt/minibox/tools read-only, cache at /home/dev/.cache read-write. The tools role mounts the host's shared tools volume, creating it when the host has none.",
+        },
+        path: { type: "string", description: "Optional, and only the role's own path." },
+        mode: { type: "string", enum: ["rw", "ro"], description: "Optional, and only the role's own mode." },
+      },
+      required: ["role"],
+    },
+  ],
+};
+
+const CREATE_MOUNTS_HELP =
+  "Mounts this box gets. An entry is { volume, path, mode } to mount a volume that exists, or { role } to have MiniBox create that role's volume for this box: workspace at /workspace read-write, home at /home/dev read-write, tools at /opt/minibox/tools read-only, cache at /home/dev/.cache read-write. A role the list omits is not created. The tools role mounts the host's shared tools volume, and creates it when the host has none. Omitted, MiniBox creates workspace, home, tools and cache. An empty list creates a box with no mounts. Mounting an existing volume needs volume:attach, and a read-write one also needs volume:write. A role volume is new, so every role mount needs volume:write, and the tools role also needs volume:attach when the shared volume already exists.";
+
+export const createMounts = () =>
+  field(checkCreateMounts, {
+    type: "array",
+    maxItems: MOUNT_MAX,
+    items: CREATE_MOUNT_ITEMS,
+    description: CREATE_MOUNTS_HELP,
   }).optional();
 
 export const rebuildEnv = () => boxEnv("change");
