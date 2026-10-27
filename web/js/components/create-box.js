@@ -205,10 +205,11 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
   let choices = null;
   let seeded = false;
   /**
-   * The shared tools volume the host has, as the volume list holds it. Null when the host has none yet, which the
-   * default mode's help says. The list is read when the dialog opens, so that help is right before Customize is picked.
+   * The shared tools volume the host has, as the volume list holds it. Null when the host has none yet, which the default
+   * mode's help says; undefined when the list could not be read, so the help stays the usual one. The list is read when
+   * the dialog opens, so that help is right before Customize is picked.
    */
-  let toolsShared = null;
+  let toolsShared;
   if (!snapshot) {
     try {
       choices = await loadChoices();
@@ -285,7 +286,7 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
             <button type="button" class="seg" data-vol-mode="default" aria-pressed="true"><strong>${t("cb.volumesDefault")}</strong><span>${t("cb.volumesDefaultHint")}</span></button>
             <button type="button" class="seg" data-vol-mode="custom" aria-pressed="false"><strong>${t("cb.volumesCustom")}</strong><span>${t("cb.volumesCustomHint")}</span></button>
           </div>
-          <div class="help" id="cbVolHelp">${t("cb.volumesDefaultHelp")}</div></div>
+          <div class="help" id="cbVolHelp">${t(toolsShared === null ? "cb.volumesDefaultHelpNoTools" : "cb.volumesDefaultHelp")}</div></div>
         <div class="row-editor" id="cbVolCustom" hidden>
           <div class="callout warn">${icon("alert")}<span>${t("cb.volumesReplace")}</span></div>
           <div class="rebuild-mounts" id="cbMountRows"></div>
@@ -631,7 +632,7 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
     $$("#cbVolMode .seg", root).forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.volMode === mode)));
     q("#cbVolCustom").hidden = !custom;
     q("#cbVolHelp").textContent = t(
-      custom ? "cb.volumesCustomHelp" : toolsShared ? "cb.volumesDefaultHelp" : "cb.volumesDefaultHelpNoTools",
+      custom ? "cb.volumesCustomHelp" : toolsShared === null ? "cb.volumesDefaultHelpNoTools" : "cb.volumesDefaultHelp",
     );
     q("#cbVolumesTitle").textContent = t("cb.volumesSummary", {
       mode: t(custom ? "cb.volumesModeCustom" : "cb.volumesModeDefault"),

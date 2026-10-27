@@ -89,6 +89,9 @@ describe.skipIf(!executablePath)("the create box dialog's custom volumes (real b
       const box = dialog();
       await webExpect(box).toBeVisible();
 
+      // This host has no shared tools volume yet, and the dialog says so before Customize is ever picked.
+      await webExpect(box.locator("#cbVolHelp")).toHaveText(english("cb.volumesDefaultHelpNoTools"));
+
       await box.locator("#cbName").fill("rolebox");
       await box.locator("#cbVolumes .fold-toggle").click();
       await box.locator('#cbVolMode [data-vol-mode="custom"]').click();

@@ -189,6 +189,23 @@ describe("creating a box from role mounts", () => {
     ).toEqual(["beta-workspace"]);
   });
 
+  test("a clone needs a writable workspace among the roles, so a list without one is refused", async () => {
+    const repo = { url: "https://github.com/org/app.git" };
+    const refused = await call(harness.base, "/api/boxes", {
+      body: { name: "alpha", cpus: 1, memoryMb: 256, repo, mounts: [{ role: "cache" }] },
+    });
+    expect(refused.status).toBe(400);
+    expect(refused.json.error).toMatchObject({ code: "validation_failed", key: "repo_needs_workspace" });
+    expect(host().specs.findByName("alpha")).toBeNull();
+    expect(await volumesNamed()).toEqual([]);
+
+    const reply = await call(harness.base, "/api/boxes", {
+      body: { name: "beta", cpus: 1, memoryMb: 256, repo, mounts: [{ role: "workspace" }] },
+    });
+    expect(reply.status).toBe(201);
+    expect(reply.json.clone?.taskId).toBeString();
+  });
+
   test("a mount that names both a volume and a role is refused, and nothing is created", async () => {
     const reply = await call(harness.base, "/api/boxes", {
       body: {

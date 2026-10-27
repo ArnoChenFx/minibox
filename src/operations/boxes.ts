@@ -238,12 +238,17 @@ function setupFailureOf(e: unknown): Msg {
     : msg("startup_command_setup_failed");
 }
 
-/** A clone writes into the workspace, so the new box must mount one writable. The default mounts create an empty one. */
+/**
+ * A clone writes into the workspace, so the new box must mount one writable. The default mounts create an empty one, and
+ * so does the workspace role: a custom list that names other roles and no workspace has nowhere for the clone to go, and
+ * is refused here rather than leaving a box whose clone task fails.
+ */
 function assertCloneWorkspace(input: { mounts?: CreateMount[]; repo?: unknown }): void {
   if (input.repo === undefined || input.mounts === undefined) return;
-  if (!input.mounts.some((mount) => isRoleMount(mount) || (mount.path === WORKSPACE && mount.mode === "rw"))) {
-    throw badRequest(msg("repo_needs_workspace"), { field: "repo" });
-  }
+  const workspace = input.mounts.some((mount) =>
+    isRoleMount(mount) ? mount.role === "workspace" : mount.path === WORKSPACE && mount.mode === "rw",
+  );
+  if (!workspace) throw badRequest(msg("repo_needs_workspace"), { field: "repo" });
 }
 
 export const boxCreate = defineOperation({
