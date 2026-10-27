@@ -120,8 +120,9 @@ function writeRecipe(host: HostCtx, name: string, recipe: TemplateRecipe): void 
 /**
  * What a caller may change about a declared template's recipe without building it: where its files come from, the setup a
  * box created from it gets, and the description. A field left out keeps the value the recipe has, so a caller that only
- * edits the Dockerfile does not have to send the rest. `init: null` drops the setup, because an edit that only renames the
- * source should keep it.
+ * edits the Dockerfile does not have to send the rest. `init` merges field by field for the same reason: a caller that only
+ * sets `forwardPorts` keeps the `postCreateCommand` the template has. `init: null`, and an `init` with no field in it, drop
+ * the setup, because that is how a caller asks for none.
  */
 export interface RecipeEdit {
   source?: TemplateSource;
@@ -142,14 +143,24 @@ export function editRecipe(
   imageId = declared.imageId,
 ): TemplateRecipe {
   const init =
-    edit.init === null || edit.init === undefined ? edit.init : Object.keys(edit.init).length === 0 ? null : edit.init;
+    edit.init === null || (edit.init !== undefined && Object.keys(edit.init).length === 0) ? null : edit.init;
   const next: TemplateRecipe = { ...declared.recipe, imageId };
   // A field the caller left out keeps the value the recipe has, so only the ones it named are written.
   if (edit.source !== undefined) next.source = edit.source;
   if (edit.description !== undefined) next.description = edit.description;
-  // An empty setup asks for nothing, which is the same as dropping it.
+  // An empty setup asks for nothing, which is the same as dropping it. A setup that names one field keeps the other, so
+  // `--forward-port 8080` alone does not throw away the command the template runs.
   if (init === null) delete next.init;
-  else if (init !== undefined) next.init = init;
+  else if (init !== undefined) {
+    const merged = {
+      ...(declared.recipe.init?.postCreate === undefined ? {} : { postCreate: declared.recipe.init.postCreate }),
+      ...(init.postCreate === undefined ? {} : { postCreate: init.postCreate }),
+      ...(declared.recipe.init?.forwardPorts === undefined ? {} : { forwardPorts: declared.recipe.init.forwardPorts }),
+      ...(init.forwardPorts === undefined ? {} : { forwardPorts: init.forwardPorts }),
+    };
+    if (Object.keys(merged).length === 0) delete next.init;
+    else next.init = merged;
+  }
   writeRecipe(host, declared.name, next);
   return next;
 }

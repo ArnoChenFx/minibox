@@ -170,12 +170,13 @@ MiniBox 从不拉取它自己的模板、快照和检查点镜像。这些镜像
 minibox template get node-tools                          # 打印它重新构建所用的来源
 minibox template edit node-tools --dockerfile ./Dockerfile
 minibox template edit node-tools --forward-port 3000,8080
+minibox template edit node-tools --post-create "npm ci"
 minibox template edit node-tools --clear-setup
 minibox template edit node-tools --description "我们自己的工具链"
 minibox template rebuild node-tools
 ```
 
-`minibox template edit` 接受与 `minibox template create` 相同的来源选项，`minibox template get` 打印来源，加 `--json` 则打印整份构建记录。参见 [CLI 参考（英文）](../../reference/cli.md)。
+`minibox template edit` 接受与 `minibox template create` 相同的来源选项，`minibox template get` 打印来源，加 `--json` 则打印整份构建记录。`--forward-port` 与 `--post-create` 各设置设置项的一半，另一半保持模板原有的值，因此只设端口不会丢掉它的设置命令；`--clear-setup` 把两者一起清空。参见 [CLI 参考（英文）](../../reference/cli.md)。
 
 ## 把模板复制到其他宿主机
 

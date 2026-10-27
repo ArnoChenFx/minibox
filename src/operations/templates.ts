@@ -242,9 +242,10 @@ export const templateFork = defineOperation({
 });
 
 /**
- * The setup a template edit sets: a `postCreateCommand` and the `forwardPorts` a box created from the template gets. An
- * empty list or an omitted field clears it, and so does `init: null`, so an edit that only changes the source keeps the
- * setup it had. `init` is read from the same body the build takes, so a client sends the shape it already knows.
+ * The setup a template edit sets: a `postCreateCommand` and the `forwardPorts` a box created from the template gets. A
+ * field the edit leaves out keeps the value the template has, so an edit that only sets the ports keeps its command;
+ * `init: null` or an empty object clears both. `init` is read from the same body the build takes, so a client sends the
+ * shape it already knows.
  */
 const templateInitInput = () =>
   z
@@ -262,7 +263,7 @@ const templateInitInput = () =>
     .optional()
     .meta({
       description:
-        "The setup a box created from the template gets. Omitted keeps the setup the template has; null or an empty object clears it. postCreate is the command as argv, forwardPorts the TCP ports to open.",
+        "The setup a box created from the template gets. Omitted keeps the setup the template has, and a field left out keeps that field, so sending only forwardPorts keeps the template's postCreate. null or an empty object clears the whole setup. postCreate is the command as argv, forwardPorts the TCP ports to open.",
     });
 
 /**
@@ -407,8 +408,12 @@ export const templateRebuild = defineOperation({
   subject: (_input, declared) => declared.name,
   activity: { action: () => "template.rebuild", target: (_input, declared) => declared.name },
   audit: { target: (_input, declared) => declared && { kind: "template", name: declared.name } },
+  // A rebuild reads the recipe and writes it back when it ends, so an edit that lands while it runs would be overwritten.
+  // Holding the name for the whole build makes such an edit answer `409 template_busy` instead, as it does beside a save.
   run: async ({ host, task }, _input, declared) => ({
-    template: await rebuildDeclaredTemplate(host, declared, { log: (text) => task?.log(text), signal: task?.signal }),
+    template: await holdingTemplate(host, declared.name, () =>
+      rebuildDeclaredTemplate(host, declared, { log: (text) => task?.log(text), signal: task?.signal }),
+    ),
   }),
 });
 

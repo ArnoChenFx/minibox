@@ -149,7 +149,7 @@ async function templateBuildOfficialCommand(
 }
 
 /** The options `template edit` takes: every source flag `template create` takes, plus the edit's own. */
-const TEMPLATE_EDIT_VALUE_FLAGS = [...TEMPLATE_CREATE_VALUE_FLAGS, "--forward-port"];
+const TEMPLATE_EDIT_VALUE_FLAGS = [...TEMPLATE_CREATE_VALUE_FLAGS, "--forward-port", "--post-create"];
 
 /** Source options that only mean something next to a source flag, so `template edit` refuses them on their own. */
 const TEMPLATE_EDIT_SOURCE_ONLY_FLAGS = [
@@ -210,7 +210,12 @@ async function templateEditCommand(
   const description = options.values.get("--description");
   if (description !== undefined) body.description = description;
   const ports = options.values.get("--forward-port");
-  if (ports !== undefined) body.init = { forwardPorts: ports.split(",").map((port) => Number(port.trim())) };
+  const command = options.values.get("--post-create");
+  // A field the caller names keeps the setup it does not name, which the server merges field by field.
+  const init: Record<string, unknown> = {};
+  if (ports !== undefined) init.forwardPorts = ports.split(",").map((port) => Number(port.trim()));
+  if (command !== undefined) init.postCreate = ["/bin/sh", "-c", command];
+  if (Object.keys(init).length > 0) body.init = init;
   if (options.switches.has("--clear-setup")) body.init = null;
   const host = options.values.get("--host");
   if (host !== undefined) body.host = host;

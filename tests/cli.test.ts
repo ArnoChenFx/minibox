@@ -1177,6 +1177,48 @@ describe("CLI templates, images and box clones", () => {
     }
   });
 
+  test("template edit sets half of the setup without dropping the other half", async () => {
+    const env = serve();
+    try {
+      const dir = mkdtempSync(join(tmpdir(), "mb-cli-setup-"));
+      const first = join(dir, "Dockerfile");
+      writeFileSync(first, "FROM alpine:3.20\n");
+      expect(await runCli(["template", "create", "tool", "--dockerfile", first], env.env, io(), lines([]))).toBe(0);
+      // Both halves, then each one alone, then the clear switch.
+      expect(
+        await runCli(
+          ["template", "edit", "tool", "--forward-port", "3000", "--post-create", "npm ci"],
+          env.env,
+          io(),
+          lines([]),
+        ),
+      ).toBe(0);
+      expect(await runCli(["template", "edit", "tool", "--forward-port", "8080"], env.env, io(), lines([]))).toBe(0);
+      const read = io();
+      expect(await runCli(["template", "get", "tool", "--json"], env.env, read, lines([]))).toBe(0);
+      const recipe = JSON.parse(read.out) as { recipe: Record<string, unknown> };
+      expect(recipe.recipe).toMatchObject({
+        postCreate: ["/bin/sh", "-c", "npm ci"],
+        forwardPorts: [8080],
+      });
+      expect(await runCli(["template", "edit", "tool", "--post-create", "make"], env.env, io(), lines([]))).toBe(0);
+      const again = io();
+      expect(await runCli(["template", "get", "tool", "--json"], env.env, again, lines([]))).toBe(0);
+      expect((JSON.parse(again.out) as { recipe: Record<string, unknown> }).recipe).toMatchObject({
+        postCreate: ["/bin/sh", "-c", "make"],
+        forwardPorts: [8080],
+      });
+      expect(await runCli(["template", "edit", "tool", "--clear-setup"], env.env, io(), lines([]))).toBe(0);
+      const cleared = io();
+      expect(await runCli(["template", "get", "tool", "--json"], env.env, cleared, lines([]))).toBe(0);
+      const final = (JSON.parse(cleared.out) as { recipe: Record<string, unknown> }).recipe;
+      expect(final.postCreate).toBeUndefined();
+      expect(final.forwardPorts).toBeUndefined();
+    } finally {
+      env.stop();
+    }
+  });
+
   test("template edit changes the Dockerfile a template rebuilds from, and template get prints what it reads", async () => {
     const env = serve();
     try {

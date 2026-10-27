@@ -170,12 +170,13 @@ On the command line, the same change is:
 minibox template get node-tools                          # print the source it rebuilds from
 minibox template edit node-tools --dockerfile ./Dockerfile
 minibox template edit node-tools --forward-port 3000,8080
+minibox template edit node-tools --post-create "npm ci"
 minibox template edit node-tools --clear-setup
 minibox template edit node-tools --description "Our own toolchain"
 minibox template rebuild node-tools
 ```
 
-`minibox template edit` takes the same source options as `minibox template create`, and `minibox template get` prints the source, or `--json` for the whole recipe. See the [CLI reference](../reference/cli.md).
+`minibox template edit` takes the same source options as `minibox template create`, and `minibox template get` prints the source, or `--json` for the whole recipe. `--forward-port` and `--post-create` each set one half of the setup and keep the other half the template has, so setting the ports does not drop its command; `--clear-setup` drops both. See the [CLI reference](../reference/cli.md).
 
 ## Copy a template to another host
 

@@ -153,6 +153,28 @@ describe("editing the setup a box created from the template gets", () => {
     expect(readRecipe(l.host, "dev")?.init).toEqual(DEV_SETUP);
   });
 
+  test("an edit that names one field of the setup keeps the field it does not name", async () => {
+    const l = lab();
+    // A devcontainer build gives the template a command and a port, the setup a real template has.
+    serveRepository(l.runtime, new Map([[".devcontainer/devcontainer.json", DEVCONTAINER_WITH_SETUP]]));
+    await createDeclaredTemplate(
+      l.host,
+      { name: "dev", source: { kind: "devcontainer", url: "https://github.com/org/app.git" }, createdBy: "owner" },
+      progressOf(),
+    );
+    const { declared: source, image } = await editable(l, "mbtest-template:dev");
+    expect(readRecipe(l.host, "dev")?.init).toEqual(DEV_SETUP);
+
+    // `minibox template edit --forward-port 8080` sends only the ports, and must not drop the command.
+    await editTemplate(l.host, source, image, { init: { forwardPorts: [8080] } });
+    expect(readRecipe(l.host, "dev")?.init).toEqual({ postCreate: DEV_SETUP.postCreate, forwardPorts: [8080] });
+
+    // The other way round too: a new command keeps the ports the template had.
+    const again = await editable(l, "mbtest-template:dev");
+    await editTemplate(l.host, again.declared, again.image, { init: { postCreate: ["/bin/sh", "-c", "make"] } });
+    expect(readRecipe(l.host, "dev")?.init).toEqual({ postCreate: ["/bin/sh", "-c", "make"], forwardPorts: [8080] });
+  });
+
   test("an empty setup drops the one the template has, the same as init null", async () => {
     const l = lab();
     serveRepository(l.runtime, new Map([[".devcontainer/devcontainer.json", DEVCONTAINER_WITH_SETUP]]));
@@ -305,6 +327,39 @@ describe("two writers to one recipe", () => {
       await holdingTemplate(l.host, "tool", async () => editRecipe(l.host, source, { description: "Later" })),
     ).toMatchObject({ description: "Later" });
     expect(readRecipe(l.host, "tool")?.imageId).toBe(image.id);
+  });
+});
+
+describe("a rebuild and an edit of one template", () => {
+  test("an edit that lands while the rebuild runs is refused as busy, so the rebuild cannot overwrite it", async () => {
+    const harness = startHarness();
+    try {
+      const started = await call(harness.base, "/api/templates", {
+        body: { name: "tool", source: { kind: "dockerfile", text: FROM_ALPINE } },
+      });
+      expect(started.status).toBe(202);
+      expect((await finishedTask(harness.base, started.json.taskId ?? "")).status).toBe("succeeded");
+
+      // Hold the rebuild inside its build, once it already read the recipe it will write back.
+      const held = harness.runtime.hold("buildImage");
+      const rebuilding = await call(harness.base, "/api/templates/mbtest-template:tool/rebuild", { method: "POST" });
+      expect(rebuilding.status).toBe(202);
+      for (let i = 0; i < 200 && harness.runtime.callsTo("buildImage").length === 0; i++) await Bun.sleep(10);
+      expect(harness.runtime.callsTo("buildImage").length).toBe(1);
+
+      const edited = await call(harness.base, editPath("mbtest-template:tool"), {
+        method: "PATCH",
+        body: { source: { kind: "dockerfile", text: FROM_ALPINE_21 } },
+      });
+      expect(refused(edited)).toEqual({ status: 409, key: "template_busy" });
+
+      held.release();
+      expect((await finishedTask(harness.base, rebuilding.json.taskId ?? "")).status).toBe("succeeded");
+      // The rebuild's own source is what the recipe holds: the refused edit wrote nothing to lose.
+      expect(readRecipe(harness.app.hosts.get(), "tool")?.source).toEqual({ kind: "dockerfile", text: FROM_ALPINE });
+    } finally {
+      harness.stop();
+    }
   });
 });
 

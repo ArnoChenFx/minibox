@@ -35949,7 +35949,7 @@
                     }
                   },
                   "init": {
-                    "description": "The setup a box created from the template gets. Omitted keeps the setup the template has; null or an empty object clears it. postCreate is the command as argv, forwardPorts the TCP ports to open.",
+                    "description": "The setup a box created from the template gets. Omitted keeps the setup the template has, and a field left out keeps that field, so sending only forwardPorts keeps the template's postCreate. null or an empty object clears the whole setup. postCreate is the command as argv, forwardPorts the TCP ports to open.",
                     "anyOf": [
                       {
                         "type": "object",

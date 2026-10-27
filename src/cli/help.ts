@@ -34,8 +34,8 @@ Commands:
                                        Build a template in the background, and print its ref. --host builds it on that host
   minibox template get <ref> [--host ID] [--json]
                                        Print the source a template rebuilds from, so you can see what an edit changes
-  minibox template edit <ref> [source options] [--description TEXT] [--forward-port N,...] [--clear-setup]
-                       [--host ID] [--json]
+  minibox template edit <ref> [source options] [--description TEXT] [--forward-port N,...] [--post-create TEXT]
+                       [--clear-setup] [--host ID] [--json]
                                        Change what a template rebuilds from: its Dockerfile, repository, context or
                                        devcontainer.json, its postCreateCommand and ports, or its description. Nothing is
                                        built, so the current image stays until you rebuild
