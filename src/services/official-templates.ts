@@ -21,8 +21,8 @@ export const OFFICIAL_TEMPLATES = [
   },
   {
     name: "go",
-    base: "golang:1.26-bookworm",
-    description: "Debian 12 · Go 1.26 · gopls · git · tmux · build-essential · non-root dev user",
+    base: "golang:1.27-bookworm",
+    description: "Debian 12 · Go 1.27 · gopls · git · tmux · build-essential · non-root dev user",
   },
   {
     name: "minimal",

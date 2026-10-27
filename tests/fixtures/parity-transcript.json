@@ -3301,7 +3301,7 @@
     "path": "/api/templates/official",
     "status": 200,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"templates\":[{\"name\":\"node\",\"ref\":\"mbtest-template:node\",\"description\":\"Debian 12 · Node.js 26 · pnpm · yarn · git · tmux · build-essential · non-root dev user\",\"base\":\"node:26-bookworm-slim\"},{\"name\":\"python\",\"ref\":\"mbtest-template:python\",\"description\":\"Debian 12 · Python 3.14 · uv · git · tmux · build-essential · non-root dev user\",\"base\":\"python:3.14-slim-bookworm\"},{\"name\":\"go\",\"ref\":\"mbtest-template:go\",\"description\":\"Debian 12 · Go 1.26 · gopls · git · tmux · build-essential · non-root dev user\",\"base\":\"golang:1.26-bookworm\"},{\"name\":\"minimal\",\"ref\":\"mbtest-template:minimal\",\"description\":\"Debian 12 · git · tmux · jq · ripgrep · python3 · non-root dev user\",\"base\":\"debian:bookworm-slim\"}]}"
+    "body": "{\"templates\":[{\"name\":\"node\",\"ref\":\"mbtest-template:node\",\"description\":\"Debian 12 · Node.js 26 · pnpm · yarn · git · tmux · build-essential · non-root dev user\",\"base\":\"node:26-bookworm-slim\"},{\"name\":\"python\",\"ref\":\"mbtest-template:python\",\"description\":\"Debian 12 · Python 3.14 · uv · git · tmux · build-essential · non-root dev user\",\"base\":\"python:3.14-slim-bookworm\"},{\"name\":\"go\",\"ref\":\"mbtest-template:go\",\"description\":\"Debian 12 · Go 1.27 · gopls · git · tmux · build-essential · non-root dev user\",\"base\":\"golang:1.27-bookworm\"},{\"name\":\"minimal\",\"ref\":\"mbtest-template:minimal\",\"description\":\"Debian 12 · git · tmux · jq · ripgrep · python3 · non-root dev user\",\"base\":\"debian:bookworm-slim\"}]}"
   },
   {
     "step": "build an official template that does not exist",

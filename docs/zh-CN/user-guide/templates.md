@@ -30,7 +30,7 @@ MiniBox 提供四个官方模板。每个模板都来自 MiniBox 源码中的一
 |---|---|---|
 | `node` | `node:26-bookworm-slim` | Node.js 26、pnpm 与 yarn，并含 `build-essential` |
 | `python` | `python:3.14-slim-bookworm` | Python 3.14 与 uv，并含 `build-essential` |
-| `go` | `golang:1.26-bookworm` | Go 1.26 与 gopls，并含 `build-essential` |
+| `go` | `golang:1.27-bookworm` | Go 1.27 与 gopls，并含 `build-essential` |
 | `minimal` | `debian:bookworm-slim` | 不含语言工具链 |
 
 常用工具包括 `git`、`curl`、`tmux`、`jq`、`ripgrep`、`bubblewrap`、`openssh-client`、`sudo` 与 `vim`。每个模板都有用户 `dev`，用户 ID 1000。
