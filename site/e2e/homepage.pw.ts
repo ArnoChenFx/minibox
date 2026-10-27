@@ -106,3 +106,18 @@ test("has no horizontal overflow at narrow and tablet widths in either language"
     }
   }
 });
+
+test("opens the quick start from every Get started button, in the reader's language", async ({ page }) => {
+  // The button used to jump to the install block on this page, which reads as a dead link to anyone who wants the guide.
+  for (const [language, quickStart] of [
+    ["en", "https://github.com/ArnoChenFx/minibox/blob/main/docs/quick-start.md"],
+    ["zh", "https://github.com/ArnoChenFx/minibox/blob/main/docs/zh-CN/quick-start.md"],
+  ] as const) {
+    await page.goto(`./?lang=${language}`);
+    const buttons = page.getByRole("link", { name: language === "zh" ? "开始使用" : "Get started" });
+    await expect(buttons).toHaveCount(2);
+    for (const button of await buttons.all()) {
+      await expect(button).toHaveAttribute("href", quickStart);
+    }
+  }
+});
