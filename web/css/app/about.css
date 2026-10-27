@@ -198,3 +198,35 @@
   height: 10px;
   border-width: 1.5px;
 }
+
+/* The copy button of a tool row: the icon and its words on a wide table, the icon alone on a phone, where the words
+   would push the row past the window. The label stays the button's accessible name either way, so the table scrolls
+   inside its own card rather than the page scrolling sideways. */
+.tool-actions .tool-copy {
+  gap: 5px;
+}
+.tool-actions .tool-copy .icon {
+  flex: none;
+}
+@media (max-width: 640px) {
+  /* Positioned, so the clipped label below belongs to the row rather than to the page: an absolutely positioned box
+     whose nearest positioned ancestor is the page keeps its static position, which is inside a table wider than the
+     window, and that is what scrolled the page sideways. */
+  .tool-actions {
+    position: relative;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+  .tool-actions .tool-copy {
+    padding: 0 8px;
+  }
+  /* `sr-only` keeps the words for a screen reader: out of the flow, so the button is only as wide as its icon. */
+  .tool-actions .tool-copy .tool-copy-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+}

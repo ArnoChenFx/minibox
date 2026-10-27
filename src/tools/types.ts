@@ -56,6 +56,15 @@ export interface ToolStatus {
   estimatedMb: number;
   requires: string | null;
   needsRoot: boolean;
+  /**
+   * The entry's commands, so the console can copy a tool's catalog entry as JSON. A status carries them, because a built-in
+   * entry is never listed as a custom one and the page has no other way to read them.
+   */
+  install: string;
+  upgrade: string;
+  uninstall: string;
+  stop: string | null;
+  detect: string;
   /** Desired version from the box spec, or null when the tool is only in the catalog. */
   desiredVersion: string | null;
   /** True when the detect command succeeded in the box, whether MiniBox, the image or the home volume put it there. */

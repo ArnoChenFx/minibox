@@ -31,6 +31,15 @@ const ToolStatusSchema = z.object({
     description:
       "True when the install needs root, which MiniBox never runs. Install, upgrade and uninstall are refused.",
   }),
+  install: z.string().meta({
+    description: "The entry's install command, so the console can copy the catalog entry as JSON.",
+  }),
+  upgrade: z.string().meta({ description: "The entry's upgrade command." }),
+  uninstall: z.string().meta({ description: "The entry's uninstall command." }),
+  stop: z.string().nullable().meta({
+    description: "The command run in a running box before an uninstall, or null when the entry has none.",
+  }),
+  detect: z.string().meta({ description: "The entry's detect command." }),
   desiredVersion: z.string().nullable(),
   installed: z.boolean().meta({
     description:

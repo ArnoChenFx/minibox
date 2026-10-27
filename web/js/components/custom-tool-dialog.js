@@ -1,4 +1,5 @@
 import { api, enc } from "../lib/api.js";
+import { parseToolJson } from "../lib/custom-tool-json.js";
 import {
   COMMAND_FIELDS,
   commandsForSource,
@@ -13,11 +14,46 @@ import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
 import { TOOL_CATEGORY_ORDER } from "../lib/tool-list.js";
 import { confirmDialog, openDialog, toast, toastError, withBusy } from "../lib/ui.js";
+import { bindFoldSections, foldSectionHtml } from "./fold-section.js";
 
 const SOURCES = ["npm", "pip", "script"];
 const SOURCE_HELP = { npm: "ct.sourceHelpNpm", pip: "ct.sourceHelpPip", script: "ct.sourceHelpScript" };
 const COMMAND_HELP = { stop: "ct.stopHelp", detect: "ct.detectHelp" };
 const INPUT_FIELDS = ["id", "name", "description", "category", "source", "package", "bin", "requires", "estimatedMb"];
+
+/** The dictionary key of each field's label, so a refused paste names the field the way the form shows it. */
+const FIELD_LABEL = {
+  id: "ct.id",
+  name: "ct.name",
+  description: "ct.summary",
+  category: "ct.category",
+  source: "ct.source",
+  package: "ct.package",
+  bin: "ct.bin",
+  requires: "ct.requires",
+  estimatedMb: "ct.estimatedMb",
+  install: "ct.install",
+  upgrade: "ct.upgrade",
+  uninstall: "ct.uninstall",
+  stop: "ct.stop",
+  detect: "ct.detect",
+};
+
+/** The label a field's refusal names it by, the way the form shows it. */
+const fieldLabel = (field) => t(FIELD_LABEL[field] ?? field);
+
+/** The readable text of a refused paste. A field at fault is named by its label. */
+function pasteProblemText(error) {
+  if (error.code === "json") return t("ct.pasteBadJson", { detail: error.detail });
+  if (error.code === "unknownFields") return t("ct.pasteUnknownFields", { fields: error.fields.join(", ") });
+  if (error.code === "required") return t("ct.pasteRequired", { field: fieldLabel(error.field) });
+  if (error.code === "type") return t("ct.pasteType", { field: fieldLabel(error.field), type: error.expected });
+  if (error.code === "tooLong") return t("ct.pasteTooLong", { field: fieldLabel(error.field), max: error.max });
+  if (error.code === "category") return t("ct.pasteCategory", { value: error.value });
+  if (error.code === "source") return t("ct.pasteSource", { value: error.value });
+  if (error.code === "id") return t("ct.pasteId", { value: error.value });
+  return t("ct.pasteEstimatedMb", { value: error.value });
+}
 
 const categoryOptions = (selected) =>
   TOOL_CATEGORY_ORDER.map(
@@ -33,6 +69,21 @@ const sourceOptions = (selected) =>
 function field(name, label, control, { wide = false, help = "", helpId = "" } = {}) {
   const helpLine = help || helpId ? `<div class="help"${helpId ? ` id="${helpId}"` : ""}>${esc(help)}</div>` : "";
   return `<div class="field${wide ? " field-wide" : ""}"><label class="label" for="ct-${name}">${esc(label)}</label>${control}${helpLine}</div>`;
+}
+
+/** The folded paste box: a JSON description dropped in here fills the form, and the form is still what is saved. */
+function pasteHtml() {
+  return foldSectionHtml({
+    id: "ctPaste",
+    title: t("ct.pasteTitle"),
+    open: false,
+    body: `<div class="help">${esc(t("ct.pasteHelp"))}</div>
+      <textarea class="textarea mono" id="ct-paste" rows="6" spellcheck="false" aria-label="${esc(t("ct.pasteTitle"))}"></textarea>
+      <div class="ct-paste-row">
+        <button type="button" class="btn btn-sm" id="ct-paste-apply">${esc(t("ct.pasteApply"))}</button>
+        <span class="error-text" id="ct-paste-error" role="alert"></span>
+      </div>`,
+  });
 }
 
 function formHtml(values, editing) {
@@ -58,6 +109,7 @@ function formHtml(values, editing) {
     <label class="checkbox field-wide"><input type="checkbox" name="needsRoot" ${values.needsRoot ? "checked" : ""} /><span>${esc(t("ct.needsRoot"))}<div class="help">${esc(t("ct.needsRootHelp"))}</div></span></label>
     <div class="section-intro field-wide"><h3>${esc(t("ct.commands"))}</h3><p class="help">${esc(t("ct.commandsHelp"))}</p></div>
     ${COMMAND_FIELDS.map((name) => field(name, t(`ct.${name}`), command(name), { wide: true, help: COMMAND_HELP[name] ? t(COMMAND_HELP[name]) : "" })).join("")}
+    <div class="field-wide" id="ct-paste-field">${pasteHtml()}</div>
   </form>`;
 }
 
@@ -104,6 +156,48 @@ export function openCustomToolDialog({ entry = null, catalogIds, customById, onS
     for (const name of COMMAND_FIELDS) read(name).value = commands[name];
     source = next;
     root.querySelector("#ct-source-help").textContent = t(SOURCE_HELP[next]);
+  });
+
+  /**
+   * Every id a paste must avoid: the ids the merged catalog lists, which covers the built-in tools and the saved custom
+   * entries. A paste never takes one of them, so it always adds an entry rather than replacing a built-in one.
+   */
+  const takenIds = () => new Set([...catalogIds, ...customById.keys()]);
+
+  /** Fills the form from a pasted JSON description. A refusal names what is wrong and leaves everything typed as it is. */
+  const applyPaste = () => {
+    const box = root.querySelector("#ct-paste");
+    const problem = root.querySelector("#ct-paste-error");
+    const parsed = parseToolJson(box.value, { taken: takenIds() });
+    if (!parsed.ok) {
+      problem.textContent = pasteProblemText(parsed.error);
+      box.classList.add("invalid");
+      box.setAttribute("aria-invalid", "true");
+      box.focus();
+      return;
+    }
+    problem.textContent = "";
+    box.classList.remove("invalid");
+    box.removeAttribute("aria-invalid");
+    const { values } = parsed;
+    // The id is the one field an edit keeps: the file it names is the entry being edited, so a paste only fills the rest.
+    if (!editing) read("id").value = values.id;
+    for (const name of ["name", "description", "category", "source", "package", "bin", "requires", "estimatedMb"]) {
+      read(name).value = values[name];
+    }
+    for (const name of COMMAND_FIELDS) read(name).value = values[name];
+    read("needsRoot").checked = values.needsRoot;
+    read("overrideBuiltin").checked = false;
+    source = values.source;
+    root.querySelector("#ct-source-help").textContent = t(SOURCE_HELP[values.source]);
+    refreshId();
+  };
+
+  bindFoldSections(root);
+  root.querySelector("#ct-paste-apply").addEventListener("click", applyPaste);
+  root.querySelector("#ct-paste").addEventListener("input", () => {
+    root.querySelector("#ct-paste-error").textContent = "";
+    root.querySelector("#ct-paste").classList.remove("invalid");
   });
 
   read("id").addEventListener("input", refreshId);
