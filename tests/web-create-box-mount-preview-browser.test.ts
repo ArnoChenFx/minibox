@@ -276,6 +276,62 @@ describe.skipIf(!executablePath)("the create box dialog's preview volume names (
   );
 
   test(
+    "the volume name a row shows is not cut off: the name comes first, and the row gives it a line of its own when narrow",
+    async () => {
+      await openCustom("alpha");
+      // The label leads with the volume name, so a trigger too narrow for the whole line still shows what it names.
+      expect(english("mount.roleWillCreate", { name: "alpha-workspace" })).toMatch(/^alpha-workspace/);
+      expect(english("mount.roleSharedExists", { name: "mbtest-tools-local" })).toMatch(/^mbtest-tools-local/);
+
+      /** How far the page scrolls sideways, which a row that cannot fit would make it do. */
+      const pageOverflow = () =>
+        page.evaluate(() => {
+          const doc = globalThis as unknown as {
+            document: { documentElement: { scrollWidth: number } };
+            innerWidth: number;
+          };
+          return doc.document.documentElement.scrollWidth - doc.innerWidth;
+        });
+
+      /** The visible labels the trigger is too narrow to show in full, with what each one needs and what it got. */
+      const clipped = () =>
+        page.evaluate(() => {
+          const doc = globalThis as unknown as { document: { querySelectorAll(s: string): ArrayLike<unknown> } };
+          const labels = Array.from(
+            doc.document.querySelectorAll("#cbMountRows [data-mount] .dropdown-current"),
+          ) as unknown as Array<{ scrollWidth: number; clientWidth: number; textContent: string | null }>;
+          return labels
+            .filter((label) => label.scrollWidth > label.clientWidth + 1)
+            .map((label) => ({
+              text: (label.textContent ?? "").trim(),
+              needs: label.scrollWidth,
+              got: label.clientWidth,
+            }));
+        });
+
+      // The dialog is 1280px wide here, where the four columns leave the volume select enough room for the name.
+      expect(await clipped()).toEqual([]);
+
+      // Narrowed to a tablet width, the volume control takes a line of its own instead of squeezing the name.
+      for (const width of [700, 640, 561]) {
+        await page.setViewportSize({ width, height: VIEWPORT.height });
+        await page.waitForTimeout(120);
+        expect(await clipped()).toEqual([]);
+        expect(await pageOverflow()).toBe(0);
+      }
+      // And a phone stacks every control, where the name has the whole row.
+      for (const width of [560, 390, 320]) {
+        await page.setViewportSize({ width, height: VIEWPORT.height });
+        await page.waitForTimeout(120);
+        expect(await clipped()).toEqual([]);
+        expect(await pageOverflow()).toBe(0);
+      }
+      await page.setViewportSize(VIEWPORT);
+    },
+    TIMEOUT_MS,
+  );
+
+  test(
     "a name the host already uses is previewed as inexact, and the shared tools volume is shown as already there",
     async () => {
       // A name this host already uses, so the server's `freeName` adds a suffix the dialog cannot know.

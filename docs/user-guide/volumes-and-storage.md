@@ -26,13 +26,13 @@ The Customize dialog names the volume each role row would create, so you can see
 The names follow the server:
 
 - A role volume is named after the box: `<box name>-<role>`, such as `alpha-workspace`.
-- The tools role is the host's one shared tools volume, named `<label prefix>-tools-<host id>`, such as `minibox-tools-local`. `LABEL_PREFIX` sets the prefix, and the host is the one the box is created on. When the host already has it, the row says it is there already and nothing is created for it.
+- The tools role is the host's one shared tools volume, named `<label prefix>-tools-<host id>`, such as `minibox-tools-local`. `LABEL_PREFIX` sets the prefix, and the host is the one the box is created on. When the host already has it, the row reads `minibox-tools-local (exists)` and nothing is created for it.
 - Typing another box name updates every prediction.
 
 The names are a **preview**, and can differ slightly from what the create makes:
 
 - A name the host already uses cannot be taken again. MiniBox then adds a suffix: `<box>-<role>-<pool>`, then `-2`, `-3` and so on. The dialog says the name may get a suffix instead of promising the plain one.
-- With **Automatic** host placement the host is picked inside the create, so the shared tools volume has no name yet. The row says the volume is created on the host the create picks.
+- With **Automatic** host placement the host is picked inside the create, so the shared tools volume has no name yet: the row reads `Shared tools volume (preview)`, and the note under the rows says it is created on the host the create picks.
 
 A role mount creates a new volume, so it needs the `volume:write` scope, and so does mounting an existing volume read-write. The tools row also needs `volume:attach` when the shared tools volume already exists.
 

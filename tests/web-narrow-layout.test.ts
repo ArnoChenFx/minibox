@@ -57,6 +57,50 @@ function mediaBlock(css: string, width: number, needle: string): string {
   throw new Error(`no @media (max-width: ${width}px) block mentions ${needle}`);
 }
 
+/** The body of a `@media (min-width: Npx)` block that mentions `needle`, braces matched. */
+function mediaBlockFrom(css: string, from: number, needle: string): string {
+  const starts = [...css.matchAll(new RegExp(`@media \\(min-width: ${from}px\\) \\{`, "g"))].map(
+    (match) => match.index ?? 0,
+  );
+  for (const at of starts) {
+    let depth = 0;
+    for (let index = css.indexOf("{", at); index < css.length; index += 1) {
+      if (css[index] === "{") depth += 1;
+      else if (css[index] === "}") {
+        depth -= 1;
+        if (depth === 0) {
+          const body = indentless(css.slice(at, index + 1));
+          if (body.includes(needle)) return body;
+          break;
+        }
+      }
+    }
+  }
+  throw new Error(`no @media (min-width: ${from}px) block mentions ${needle}`);
+}
+
+/** The body of a `@media (min-width: Apx) and (max-width: Bpx)` block that mentions `needle`, braces matched. */
+function mediaBlockBetween(css: string, from: number, to: number, needle: string): string {
+  const starts = [
+    ...css.matchAll(new RegExp(`@media \\(min-width: ${from}px\\) and \\(max-width: ${to}px\\) \\{`, "g")),
+  ].map((match) => match.index ?? 0);
+  for (const at of starts) {
+    let depth = 0;
+    for (let index = css.indexOf("{", at); index < css.length; index += 1) {
+      if (css[index] === "{") depth += 1;
+      else if (css[index] === "}") {
+        depth -= 1;
+        if (depth === 0) {
+          const body = indentless(css.slice(at, index + 1));
+          if (body.includes(needle)) return body;
+          break;
+        }
+      }
+    }
+  }
+  throw new Error(`no @media (min-width: ${from}px) and (max-width: ${to}px) block mentions ${needle}`);
+}
+
 describe("a narrow phone's top bar", () => {
   test("the trail takes what the icons leave, and ends in an ellipsis instead of pushing them off", () => {
     const phone = mediaBlock(RESPONSIVE, 900, ".topbar .crumbs {");
@@ -100,6 +144,40 @@ describe("a row of choices on a phone", () => {
     expect(block(phone, ".segmented.segmented-3")).toContain("grid-template-columns: repeat(3, minmax(0, 1fr));");
     expect(block(phone, ".segmented.segmented-4")).toContain("grid-template-columns: repeat(4, minmax(0, 1fr));");
     expect(block(phone, ".segmented")).toContain("grid-template-columns: repeat(2, minmax(0, 1fr));");
+  });
+});
+
+describe("a create row's volume name in the Customize dialog", () => {
+  test("a name that cannot fit beside the path, the mode and the remove button gets a line of its own", () => {
+    // Below 700px the four columns leave the volume select less room than a role volume's name needs, so the row
+    // stacks: the volume control takes the first line, the path, mode and remove button share the second.
+    const stacked = mediaBlockBetween(RESPONSIVE, 561, 700, "#cbMountRows .rebuild-mount {");
+    expect(block(stacked, "#cbMountRows .rebuild-mount")).toContain(
+      "grid-template-columns: minmax(0, 1fr) 132px auto;",
+    );
+    expect(block(stacked, "#cbMountRows .rebuild-mount > [data-volume] + .dropdown-trigger")).toContain(
+      "grid-column: 1 / -1;",
+    );
+    // The rule names the create dialog only: a rebuild row types a volume in a plain input and keeps the desktop grid.
+    expect(stacked).toContain("#cbMountRows");
+  });
+
+  test("the volume column is the widest on a desktop row, so the name is readable without opening the menu", () => {
+    const modal = readFileSync(join(WEB, "css", "app", "modal.css"), "utf8");
+    // A rebuild row types its volume in a plain input, so its columns stay as they were.
+    expect(block(modal, ".rebuild-mount")).toContain(
+      "grid-template-columns: minmax(0, 1.8fr) minmax(0, 1fr) 132px auto;",
+    );
+    // A create row names the volume the create would make, which is the longest text in it, so its volume column takes a
+    // wider share than the path column does. Both shrink, so nothing is pushed past the dialog. The rule is scoped above
+    // the phone breakpoint: an id outranks the phone's own `.rebuild-mount { grid-template-columns: 1fr }`.
+    const wide = mediaBlockFrom(modal, 561, "#cbMountRows .rebuild-mount {");
+    // The path column keeps a 140px floor: `/home/dev/.cache` is 137px wide at 14px, and a path that cannot show its
+    // text is as unreadable as a name that cannot show its own.
+    expect(block(wide, "#cbMountRows .rebuild-mount")).toContain(
+      "grid-template-columns: minmax(0, 3fr) minmax(140px, 1fr) 132px auto;",
+    );
+    expect(block(wide, "#cbMountRows .rebuild-mount")).not.toContain("overflow-x");
   });
 });
 
