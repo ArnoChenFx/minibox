@@ -37,19 +37,22 @@ export function roleMount(role) {
 /**
  * The choices a create row offers: one per role, which MiniBox creates for the box, then the volumes that exist. The
  * tools role mounts the host's shared tools volume when there is one, so its label says so, and its own volume when
- * there is none.
+ * there is none. `sharedTools` is a boolean for the whole dialog, or a Map of role to whether that role's volume already
+ * exists: the shared tools volume is one per pool, so the answer follows the pool the tools role goes to.
  *
  * `preview` is what `roleVolumeNames` predicted for the box being created. Without it the roles carry no name, and the
  * dialog falls back to naming the role.
  */
 export function createMountChoices(volumes, sharedTools, preview = null) {
+  // A shared tools volume is one per pool, so a create can mount one for each pool it puts a tools volume on.
+  const shared = sharedTools instanceof Map ? sharedTools : new Map([["tools", Boolean(sharedTools)]]);
   const roles = DEFAULT_MOUNTS.map((mount) => {
-    const shared = mount.role === "tools" && sharedTools;
+    const usesShared = mount.role === "tools" && Boolean(shared.get(mount.role) ?? shared.get("tools"));
     return {
       value: roleValue(mount.role),
       role: mount.role,
-      shared,
-      noShared: mount.role === "tools" && !sharedTools,
+      shared: usesShared,
+      noShared: mount.role === "tools" && !usesShared,
       preview: preview?.[mount.role] ?? null,
     };
   });
@@ -69,12 +72,12 @@ export function createMountChoices(volumes, sharedTools, preview = null) {
 /**
  * The names MiniBox would give this box's role volumes, as the create dialog shows them before anything exists. Mirrors
  * `defaultRolePlans` in src/volumes/engine.ts: a role volume is `<box>-<role>`, and the tools role is the host's one
- * shared volume, `<prefix>-tools-<host>`. Nothing is created here, and nothing is written.
+ * shared volume of its pool, `<prefix>-tools-<host>`. Nothing is created here, and nothing is written.
  *
  * `taken` is the display names the host already uses. A name among them is marked `exact: false`, because the server
- * makes a free name with `freeName` (`-<pool>`, then `-2`, `-3`…) and the dialog cannot know which suffix applies
- * without reading the host's pools. `hostKnown` is false for automatic placement, which picks the host inside the
- * create, so the shared tools volume cannot be named at all.
+ * makes a free name with `freeName` (`-<pool>`, then `-2`, `-3`…), and display names are unique per host rather than per
+ * pool: a name another pool uses is still taken, so the suffix applies and the dialog cannot know which one. `hostKnown`
+ * is false for automatic placement, which picks the host inside the create, so the shared tools volume cannot be named.
  */
 export function roleVolumeNames({ boxName, hostId, labelPrefix, sharedTools, taken = [], hostKnown = true }) {
   const names = {};
@@ -117,15 +120,16 @@ export function previewRoleNames(rows, names) {
 
 /**
  * The lines the Volumes section says under its rows: what the create would make, one line per role a row still names.
- * Each line is an i18n key and its parameters. A volume that is already there (the shared tools volume) says so, and a
- * name the host already uses says the server may add a suffix, so the dialog never promises a name it cannot know.
+ * Each line is an i18n key, its parameters, and the role it is about, so the dialog can name the pool the row picked. A
+ * volume that is already there (the shared tools volume) says so, and a name the host already uses says the server may
+ * add a suffix, so the dialog never promises a name it cannot know.
  */
 export function previewNoteLines(rows, names) {
   return previewRoleNames(rows, names).map(({ role, name, exists, exact, hostKnown }) => {
-    if (exists) return { key: "cb.previewShared", params: { name } };
-    if (name === null && !hostKnown) return { key: "cb.previewHostUnknown", params: { role } };
-    if (name === null) return { key: "cb.previewUnnamed", params: { role } };
-    return { key: exact ? "cb.previewCreate" : "cb.previewCreateInexact", params: { name } };
+    if (exists) return { key: "cb.previewShared", params: { name }, role };
+    if (name === null && !hostKnown) return { key: "cb.previewHostUnknown", params: { role }, role };
+    if (name === null) return { key: "cb.previewUnnamed", params: { role }, role };
+    return { key: exact ? "cb.previewCreate" : "cb.previewCreateInexact", params: { name }, role };
   });
 }
 
@@ -159,6 +163,7 @@ export function volumeChoices(volumes, liveBoxIds) {
     id: volume.id,
     name: volume.name,
     hostId: volume.hostId ?? null,
+    pool: volume.pool ?? null,
     role: volume.role ?? null,
     ownership: volume.ownership,
     rwMounts: volume.rwMounts,
@@ -172,14 +177,50 @@ export function namesOnHost(choices, hostId) {
 }
 
 /**
+ * The pool each role volume goes to when the create names none, as the server's rule has it: cache on the local pool,
+ * every other role on the default pool. Mirrors `poolForRole` in src/volumes/pools.ts. `local` is always a pool, even
+ * when the server did not list it, because the local pool is the built-in one.
+ */
+export function rulePoolOf(role, { pools = [], roles = {} } = {}) {
+  const named = roles?.[role];
+  const chosen = named ? pools.find((pool) => pool.name === named) : undefined;
+  if (chosen) return chosen.name;
+  if (role === "cache") {
+    const local = pools.find((pool) => pool.name === "local") ?? pools.find((pool) => pool.backend === "local");
+    if (local) return local.name;
+  }
+  return pools.find((pool) => pool.default)?.name ?? pools[0]?.name ?? "local";
+}
+
+/**
+ * The pool each of the four roles goes to, once the dialog's picks are applied. `picks` is what the operator chose per
+ * role; a role left out of it follows the rule, and so does a role whose pick names no pool the host has. The dialog
+ * offers only the pools it read, so a pick it cannot use is one that disappeared while the dialog was open.
+ */
+export function rolePoolPicks(roles, { picks = {}, pools = [], roleRules = {} } = {}) {
+  const resolved = {};
+  for (const role of roles) {
+    const picked = picks?.[role];
+    const usable = picked && pools.some((pool) => pool.name === picked);
+    resolved[role] = usable ? picked : rulePoolOf(role, { pools, roles: roleRules });
+  }
+  return resolved;
+}
+
+/**
  * The host's shared tools volume, the one its boxes mount. Mirrors `isSharedTools` in src/volumes/engine.ts: a tools
  * volume that is independent, so an owned tools volume of another box is not the host's shared one and the create makes
- * a new one. Null when the host has none yet, or when the host is not known.
+ * a new one. There is one per pool, so `pool` narrows the answer to that pool's shared volume. Null when the host has
+ * none yet, when it has none on that pool, or when the host is not known.
  */
-export function sharedToolsOnHost(choices, hostId) {
+export function sharedToolsOnHost(choices, hostId, pool = null) {
   return (
     choices.find(
-      (choice) => choice.role === "tools" && choice.hostId === hostId && choice.ownership === "independent",
+      (choice) =>
+        choice.role === "tools" &&
+        choice.hostId === hostId &&
+        choice.ownership === "independent" &&
+        (pool === null || choice.pool === pool),
     ) ?? null
   );
 }
@@ -196,7 +237,7 @@ export function sharedToolsChoice(choices) {
  * Checks the rows of a custom mount list before it is sent. Returns the mounts, or the first row the server would
  * refuse: a row with no volume and no role, a role listed twice, or a path that is invalid or repeated. Those use the
  * server's own message keys. A row that creates a role is sent as `{ role }`, because the server takes that role's own
- * path and mode.
+ * path and mode, with the pool the row picked when it picked one.
  */
 export function checkMountRows(rows) {
   const paths = new Set();
@@ -214,7 +255,7 @@ export function checkMountRows(rows) {
       }
       if (paths.has(fixed.path)) return { problem: { code: "mount_duplicate", path: fixed.path } };
       paths.add(fixed.path);
-      mounts.push({ role });
+      mounts.push(row.pool ? { role, pool: row.pool } : { role });
       continue;
     }
     if (!row.volume) return { problem: { code: "volume" } };

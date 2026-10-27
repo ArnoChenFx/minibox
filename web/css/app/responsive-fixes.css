@@ -98,6 +98,10 @@
   #cbMountRows .rebuild-mount > [data-volume] + .dropdown-trigger {
     grid-column: 1 / -1;
   }
+  /* The pool the row picked goes beside the mode, which leaves the name a line of its own above them. */
+  #cbMountRows .rebuild-mount > [data-pool] + .dropdown-trigger {
+    grid-column: 1 / 2;
+  }
 }
 @media (max-width: 560px) {
   .grid-4 {

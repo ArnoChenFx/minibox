@@ -23,7 +23,9 @@ import {
   isVolumeErrorKey,
   roleMount,
   roleOfValue,
+  rolePoolPicks,
   roleValue,
+  rulePoolOf,
   namesOnHost,
   previewNoteLines,
   previewRoleNames,
@@ -686,9 +688,36 @@ describe("mount lists", () => {
       { id: "vol_3", name: "shared", ownership: "independent", ownerBoxId: null, rwMounts: 2 },
     ] as const;
     expect(volumeChoices(volumes, new Set(["bx_live"]))).toEqual([
-      { id: "vol_1", name: "workspace", hostId: null, role: null, ownership: "owned", rwMounts: 1, disabled: true },
-      { id: "vol_2", name: "orphan", hostId: null, role: null, ownership: "owned", rwMounts: 0, disabled: false },
-      { id: "vol_3", name: "shared", hostId: null, role: null, ownership: "independent", rwMounts: 2, disabled: false },
+      {
+        id: "vol_1",
+        name: "workspace",
+        hostId: null,
+        pool: null,
+        role: null,
+        ownership: "owned",
+        rwMounts: 1,
+        disabled: true,
+      },
+      {
+        id: "vol_2",
+        name: "orphan",
+        hostId: null,
+        pool: null,
+        role: null,
+        ownership: "owned",
+        rwMounts: 0,
+        disabled: false,
+      },
+      {
+        id: "vol_3",
+        name: "shared",
+        hostId: null,
+        pool: null,
+        role: null,
+        ownership: "independent",
+        rwMounts: 2,
+        disabled: false,
+      },
     ]);
   });
 
@@ -806,13 +835,16 @@ describe("mount lists", () => {
     expect(previewRoleNames(rows, names)).toEqual([
       { role: "workspace", name: "alpha-workspace", exists: false, exact: true, hostKnown: true },
     ]);
-    expect(previewNoteLines(rows, names)).toEqual([{ key: "cb.previewCreate", params: { name: "alpha-workspace" } }]);
+    // Every line names the role it is about, so the dialog can add the pool that role's row picked.
+    expect(previewNoteLines(rows, names)).toEqual([
+      { key: "cb.previewCreate", params: { name: "alpha-workspace" }, role: "workspace" },
+    ]);
     expect(previewNoteLines([{ volume: roleValue("home") }], names)).toEqual([
-      { key: "cb.previewCreate", params: { name: "alpha-home" } },
+      { key: "cb.previewCreate", params: { name: "alpha-home" }, role: "home" },
     ]);
     const taken = roleVolumeNames({ boxName: "alpha", hostId: "local", labelPrefix: "mbtest", taken: ["alpha-home"] });
     expect(previewNoteLines([{ volume: roleValue("home") }], taken)).toEqual([
-      { key: "cb.previewCreateInexact", params: { name: "alpha-home" } },
+      { key: "cb.previewCreateInexact", params: { name: "alpha-home" }, role: "home" },
     ]);
     const shared = roleVolumeNames({
       boxName: "alpha",
@@ -821,18 +853,18 @@ describe("mount lists", () => {
       sharedTools: { name: "mbtest-tools-local" },
     });
     expect(previewNoteLines([{ volume: roleValue("tools") }], shared)).toEqual([
-      { key: "cb.previewShared", params: { name: "mbtest-tools-local" } },
+      { key: "cb.previewShared", params: { name: "mbtest-tools-local" }, role: "tools" },
     ]);
     const auto = roleVolumeNames({ boxName: "alpha", hostId: "", labelPrefix: "mbtest", hostKnown: false });
     expect(previewNoteLines([{ volume: roleValue("tools") }], auto)).toEqual([
-      { key: "cb.previewHostUnknown", params: { role: "tools" } },
+      { key: "cb.previewHostUnknown", params: { role: "tools" }, role: "tools" },
     ]);
     expect(
       previewNoteLines(
         [{ volume: roleValue("cache") }],
         roleVolumeNames({ boxName: "", hostId: "local", labelPrefix: "mbtest" }),
       ),
-    ).toEqual([{ key: "cb.previewUnnamed", params: { role: "cache" } }]);
+    ).toEqual([{ key: "cb.previewUnnamed", params: { role: "cache" }, role: "cache" }]);
     expect(previewNoteLines([], names)).toEqual([]);
   });
 
@@ -881,6 +913,112 @@ describe("mount lists", () => {
         .filter((choice) => choice.role)
         .map((choice) => choice.preview),
     ).toEqual([null, null, null, null]);
+  });
+
+  test("a role's pool is the one it picked, and the rule's pool when it picked none", () => {
+    const pools = [
+      { name: "local", backend: "local" as const, default: false },
+      { name: "nas", backend: "nfs" as const, default: true },
+      { name: "disk", backend: "path" as const, default: false },
+    ];
+    // Mirrors `poolForRole` in src/volumes/pools.ts: cache goes to the local pool, the others to the default one.
+    expect(rulePoolOf("workspace", { pools })).toBe("nas");
+    expect(rulePoolOf("home", { pools })).toBe("nas");
+    expect(rulePoolOf("tools", { pools })).toBe("nas");
+    expect(rulePoolOf("cache", { pools })).toBe("local");
+    // A role the pools page points at a pool follows that pool instead of the rule.
+    expect(rulePoolOf("cache", { pools, roles: { cache: "disk" } })).toBe("disk");
+    // Without a pool list the local pool is what the rule names, because it is the built-in one.
+    expect(rulePoolOf("workspace", { pools: [] })).toBe("local");
+    // A pick is what the row shows; a role left out follows the rule.
+    expect(rolePoolPicks(["workspace", "home", "tools", "cache"], { picks: { workspace: "disk" }, pools })).toEqual({
+      workspace: "disk",
+      home: "nas",
+      tools: "nas",
+      cache: "local",
+    });
+    // A pick no pool matches is one that went away, so the role falls back to its rule instead of naming nothing.
+    expect(rolePoolPicks(["workspace"], { picks: { workspace: "gone" }, pools }).workspace).toBe("nas");
+  });
+
+  test("a name another pool uses is still taken, because display names are unique per host", () => {
+    const volumes = volumeChoices(
+      [
+        {
+          id: "vol_1",
+          name: "alpha-workspace",
+          hostId: "local",
+          pool: "local",
+          role: "workspace",
+          ownership: "owned",
+          ownerBoxId: "bx_gone",
+          rwMounts: 0,
+        },
+      ],
+      new Set(),
+    );
+    // `nameTaken` in src/volumes/provision.ts compares every name the host uses, whatever pool it was made on, so a
+    // name another pool already holds is a clash wherever the new volume goes.
+    const elsewhere = roleVolumeNames({
+      boxName: "alpha",
+      hostId: "local",
+      labelPrefix: "mbtest",
+      taken: namesOnHost(volumes, "local"),
+    });
+    expect(elsewhere.workspace).toMatchObject({ name: "alpha-workspace", exact: false });
+    expect(elsewhere.home).toMatchObject({ name: "alpha-home", exact: true });
+  });
+
+  test("the shared tools volume is one per pool, so the tools row follows the pool it picks", () => {
+    const volumes = volumeChoices(
+      [
+        {
+          id: "vol_1",
+          name: "mbtest-tools-local",
+          hostId: "local",
+          pool: "local",
+          role: "tools",
+          ownership: "independent",
+          ownerBoxId: null,
+          rwMounts: 0,
+        },
+        {
+          id: "vol_2",
+          name: "mbtest-tools-nas",
+          hostId: "local",
+          pool: "nas",
+          role: "tools",
+          ownership: "independent",
+          ownerBoxId: null,
+          rwMounts: 0,
+        },
+      ],
+      new Set(),
+    );
+    // Without a pool the answer is the first shared tools volume, as it always was; with one it is that pool's.
+    expect(sharedToolsOnHost(volumes, "local")?.name).toBe("mbtest-tools-local");
+    expect(sharedToolsOnHost(volumes, "local", "nas")?.name).toBe("mbtest-tools-nas");
+    expect(sharedToolsOnHost(volumes, "local", "disk")).toBeNull();
+    // The tools row mounts the shared volume of the pool it goes to, and makes one when that pool has none.
+    expect(createMountChoices(volumes, new Map([["tools", true]]))[2]).toMatchObject({ shared: true, noShared: false });
+    expect(createMountChoices(volumes, new Map([["tools", false]]))[2]).toMatchObject({
+      shared: false,
+      noShared: true,
+    });
+  });
+
+  test("a role row is sent with the pool it picked, and without one when it picked none", () => {
+    expect(checkMountRows([{ volume: roleValue("workspace"), path: "/workspace", mode: "rw", pool: "nas" }])).toEqual({
+      mounts: [{ role: "workspace", pool: "nas" }],
+    });
+    // An empty pool control is "use the rule", which the server reads as no pick at all.
+    expect(checkMountRows([{ volume: roleValue("home"), path: "/home/dev", mode: "rw", pool: "" }])).toEqual({
+      mounts: [{ role: "home" }],
+    });
+    // A row that mounts a volume that exists carries no pool: that volume is already on its own.
+    expect(checkMountRows([{ volume: "vol_a", path: "/data", mode: "rw", pool: "nas" }])).toEqual({
+      mounts: [{ volume: "vol_a", path: "/data", mode: "rw" }],
+    });
   });
 
   test("the names of a host are read from the volumes it holds, and its shared tools volume even when it is taken", () => {

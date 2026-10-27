@@ -23,6 +23,7 @@ import {
   namesOnHost,
   previewNoteLines,
   roleOfValue,
+  rolePoolPicks,
   roleValue,
   roleVolumeNames,
   sharedToolsChoice,
@@ -47,7 +48,7 @@ import { emptyState, nameError, openDialog, toast } from "../lib/ui.js";
 import { bindEnvRows, envProblemText, envRow, readEnvRows, secretChoicesHtml, secretNames } from "./env-editor.js";
 import { bindFoldSections, foldSectionHtml, setFoldOpen } from "./fold-section.js";
 import { bindToggles, isToggled, limitList, listToggleHtml } from "./list-toggle.js";
-import { mountRow, readMountRows, roleLabel, updateMountRowChoices } from "./mount-editor.js";
+import { mountRow, poolOptionsHtml, readMountRows, roleLabel, updateMountRowChoices } from "./mount-editor.js";
 import { bindSearchBox, searchBoxHtml } from "./search-box.js";
 import { openTasks, taskErrorText, waitTask } from "./tasks.js";
 
@@ -200,6 +201,12 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
   };
   let choices = null;
   let seeded = false;
+  /**
+   * The storage pools a role row can put its new volume on, and the role defaults the pools page holds. `GET /api/pools`
+   * probes each pool, which can take seconds on a slow or dead share, so it is read beside the dialog rather than before
+   * it: a row's pool control appears once the list lands, and the rule's pool is what a row shows until then.
+   */
+  const poolsState = { pools: [], roles: {} };
   /**
    * The label prefix new volumes are named with, from `GET /api/system`. It is the prefix the shared tools volume of a
    * host starts with, so the dialog predicts that name too. Null when the server did not say, which hides the prediction.
@@ -586,33 +593,85 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
     return pick === AUTO_HOST ? { hostId: null, hostKnown: false } : { hostId: pick, hostKnown: true };
   };
 
+  /** The storage pools of this host, as the dialog read them. Empty until the pool list lands. */
+  const poolsNow = () => poolsState.pools;
+
+  /** The pools the operator picked in the rows' pool controls, by role. A role with no pick follows its rule. */
+  const rolePicks = () => {
+    const picks = {};
+    for (const row of readMountRows(q("#cbMountRows"))) {
+      const role = roleOfValue(row.volume);
+      if (role && row.pool) picks[role] = row.pool;
+    }
+    return picks;
+  };
+
   /**
-   * The names MiniBox would give this box's role volumes right now, from the box name, the host and the volumes in use.
-   * Null when the server did not say the label prefix, so the dialog names the roles instead of guessing a name.
+   * The pool each role's new volume goes to: the row's pick, or the role's rule for a row that has not picked one. A role
+   * with no row still resolves, because its name is predicted whether or not the row is there.
+   */
+  const rolePools = () => {
+    const roles = DEFAULT_MOUNTS.map((mount) => mount.role);
+    return rolePoolPicks(roles, { picks: rolePicks(), pools: poolsNow(), roleRules: poolsState.roles });
+  };
+
+  /**
+   * The names MiniBox would give this box's role volumes right now, from the box name, the host, the pool each role goes
+   * to and the volumes in use. Null when the server did not say the label prefix, so the dialog names the roles instead
+   * of guessing a name.
    */
   const roleNames = () => {
     if (!labelPrefix) return null;
     const { hostId, hostKnown } = previewHost();
     const list = choices ?? [];
+    const pools = rolePools();
+    const shared = {};
+    for (const mount of DEFAULT_MOUNTS) {
+      shared[mount.role] = hostKnown ? sharedToolsOnHost(list, hostId, pools[mount.role]) : null;
+    }
     return roleVolumeNames({
       boxName: q("#cbName").value,
       hostId: hostId ?? "",
       labelPrefix,
       hostKnown,
-      sharedTools: hostKnown ? sharedToolsOnHost(list, hostId) : null,
+      sharedTools: shared.tools,
       taken: hostKnown ? namesOnHost(list, hostId) : [],
     });
   };
 
   /**
    * The volume list a create row offers now, with the names each role volume would get. The tools role follows the host
-   * the box goes to, so a host with a shared tools volume mounts it and one without creates it.
+   * and the pool the row picks, so a host with a shared tools volume of that pool mounts it and one without creates it.
    */
   const createChoicesNow = () => {
     const { hostId, hostKnown } = previewHost();
     const list = choices ?? [];
-    const shared = hostKnown ? sharedToolsOnHost(list, hostId) !== null : sharedToolsChoice(list) !== null;
+    const pools = rolePools();
+    const shared = new Map();
+    for (const mount of DEFAULT_MOUNTS) {
+      shared.set(
+        mount.role,
+        hostKnown ? sharedToolsOnHost(list, hostId, pools[mount.role]) !== null : sharedToolsChoice(list) !== null,
+      );
+    }
     return createMountChoices(list, shared, roleNames());
+  };
+
+  /**
+   * Repaints each role row's pool control with the pools this host has, keeping the pool the row picked. A row that
+   * mounts a volume that exists has no pool control, because that volume is already on a pool.
+   */
+  const paintPoolControls = () => {
+    const pools = poolsNow();
+    const shape = JSON.stringify(pools.map((pool) => pool.name));
+    for (const row of $$("#cbMountRows [data-mount]", root)) {
+      const control = row.querySelector("[data-pool]");
+      if (!control || control.dataset.poolShape === shape) continue;
+      const chosen = control.value;
+      control.innerHTML = poolOptionsHtml(pools, chosen);
+      control.value = chosen;
+      control.dataset.poolShape = shape;
+    }
   };
 
   /**
@@ -628,17 +687,22 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
     const key = JSON.stringify([
       preview,
       options.map((choice) => [choice.value, choice.role, choice.shared, choice.noShared, choice.volume?.name]),
+      poolsNow().map((pool) => pool.name),
     ]);
     if (key !== previewKey) {
       previewKey = key;
       for (const row of $$("#cbMountRows [data-mount]", root)) updateMountRowChoices(row, options);
+      paintPoolControls();
     }
     const note = q("#cbVolPreviewNote");
     if (!note) return;
     const lines = [t("cb.volumesPreview")];
+    // A role the operator moved to another pool says so, which is what makes the pick visible before the create.
+    const picks = rolePicks();
     for (const line of previewNoteLines(readMountRows(q("#cbMountRows")), preview)) {
-      const role = line.params.role;
-      lines.push(t(line.key, role ? { ...line.params, role: roleLabel(role) } : line.params));
+      const pool = picks[line.role] ?? "";
+      const params = line.params.role ? { ...line.params, role: roleLabel(line.params.role) } : { ...line.params };
+      lines.push(t(pool ? `${line.key}Pool` : line.key, pool ? { ...params, pool } : params));
     }
     note.innerHTML = lines.map((line) => `<div>${esc(line)}</div>`).join("");
   };
@@ -696,7 +760,7 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
         q("#cbMountRows").append(
           mountRow(
             { volume: roleValue(m.role), path: m.path, mode: m.mode },
-            { volumes: choices, create: true, choices: createChoicesNow() },
+            { volumes: choices, create: true, choices: createChoicesNow(), pools: poolsNow() },
           ),
         );
       }
@@ -723,11 +787,12 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
       q("#cbMountRows").append(
         mountRow(
           { volume: "", path: "/data", mode: "rw" },
-          { volumes: choices, create: true, choices: createChoicesNow() },
+          { volumes: choices, create: true, choices: createChoicesNow(), pools: poolsNow() },
         ),
       );
       refreshMounts();
     });
+    // A pool pick changes where a role's volume goes, and so the name the row previews for it.
     q("#cbMountRows").addEventListener("change", refreshMounts);
     q("#cbMountRows").addEventListener("click", refreshMounts);
   }
@@ -839,6 +904,19 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
   sync();
   syncNote();
   if (!snapshot) {
+    // The pool list probes every pool, so it is read beside the dialog. A row's pool control appears once it lands, and
+    // the rule's pool is what the preview names until then: the server would make the volume on that pool anyway.
+    api("/api/pools")
+      .then((body) => {
+        poolsState.pools = body.pools ?? [];
+        poolsState.roles = body.roles ?? {};
+        // The pool controls and the predictions both follow the list, so the rows are redrawn when it arrives.
+        previewKey = null;
+        refreshMounts();
+      })
+      .catch(() => {
+        /* without the pool list, every role row keeps "use the rule" and the preview names the rule's pool */
+      });
     const rows = q("#cbEnvRows");
     const refreshEnv = () => {
       q("#cbEnvErr").textContent = "";
@@ -872,6 +950,7 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
     if (!snapshot) q("#cbVolErr").textContent = "";
     let mounts;
     if (!snapshot && state.volumesMode === "custom") {
+      // A role row's pool pick goes with the role, so the server makes the volume on that pool instead of the rule's.
       const checked = checkMountRows(readMountRows(q("#cbMountRows")));
       if ("problem" in checked) {
         showVolumeError(problemText(checked.problem));

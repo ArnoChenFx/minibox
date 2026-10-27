@@ -661,7 +661,8 @@ const createMountInvalid = () => reject(msg("mount_create_invalid"), "mounts");
 /**
  * The mounts a create asks for: `{ volume, path, mode }` mounts of recorded volumes, and `{ role }` mounts whose volume
  * MiniBox creates for the box. A role mount may repeat the role's own path and mode, but not another one, and the same
- * role may be listed once: one box mounts one volume of each role.
+ * role may be listed once: one box mounts one volume of each role. A role mount may also name `pool`, the storage pool
+ * its new volume goes to instead of the pool the role's rule picks.
  */
 function checkCreateMounts(value: unknown): Checked<CreateMount[] | undefined> {
   if (value === undefined) return accept(undefined);
@@ -672,10 +673,14 @@ function checkCreateMounts(value: unknown): Checked<CreateMount[] | undefined> {
   const roles = new Set<VolumeRole>();
   for (const item of value) {
     if (typeof item !== "object" || item === null) return invalid();
-    const mount = item as { volume?: unknown; role?: unknown; path?: unknown; mode?: unknown };
+    const mount = item as { volume?: unknown; role?: unknown; path?: unknown; mode?: unknown; pool?: unknown };
     const hasVolume = mount.volume !== undefined && mount.volume !== null && mount.volume !== "";
     const hasRole = mount.role !== undefined && mount.role !== null && mount.role !== "";
     if (hasVolume === hasRole) return invalid();
+    const hasPool = mount.pool !== undefined && mount.pool !== null && mount.pool !== "";
+    // A volume that exists is on the pool it was made on, so only a role's new volume can pick one.
+    if (hasPool && !hasRole) return invalid();
+    if (hasPool && (typeof mount.pool !== "string" || !IDENT_RE.test(mount.pool))) return invalid();
     if (hasVolume) {
       if (typeof mount.volume !== "string" || !IDENT_RE.test(mount.volume)) return invalid();
       if (!mountPathOk(mount.path)) return invalid();
@@ -704,7 +709,7 @@ function checkCreateMounts(value: unknown): Checked<CreateMount[] | undefined> {
     }
     if (paths.has(path)) return reject(msg("mount_duplicate", { path }), "mounts");
     paths.add(path);
-    mounts.push({ role: mount.role });
+    mounts.push(hasPool ? { role: mount.role, pool: mount.pool as string } : { role: mount.role });
   }
   return accept(mounts);
 }
@@ -914,6 +919,11 @@ const CREATE_MOUNT_ITEMS: Meta = {
         },
         path: { type: "string", description: "Optional, and only the role's own path." },
         mode: { type: "string", enum: ["rw", "ro"], description: "Optional, and only the role's own mode." },
+        pool: {
+          type: "string",
+          description:
+            "Optional storage pool the role's new volume goes to, such as local or an NFS pool name. Omitted, the role's rule picks the pool: cache on the local pool, the other roles on the default pool. A pool this host does not have is refused with pool_not_found. The tools role's shared volume is one per pool, so a picked pool mounts or creates the shared tools volume of that pool.",
+        },
       },
       required: ["role"],
     },
@@ -921,7 +931,7 @@ const CREATE_MOUNT_ITEMS: Meta = {
 };
 
 const CREATE_MOUNTS_HELP =
-  "Mounts this box gets. An entry is { volume, path, mode } to mount a volume that exists, or { role } to have MiniBox create that role's volume for this box: workspace at /workspace read-write, home at /home/dev read-write, tools at /opt/minibox/tools read-only, cache at /home/dev/.cache read-write. A role the list omits is not created. The tools role mounts the host's shared tools volume, and creates it when the host has none. Omitted, MiniBox creates workspace, home, tools and cache. An empty list creates a box with no mounts. Mounting an existing volume needs volume:attach, and a read-write one also needs volume:write. A role volume is new, so every role mount needs volume:write, and the tools role also needs volume:attach when the shared volume already exists.";
+  "Mounts this box gets. An entry is { volume, path, mode } to mount a volume that exists, or { role } to have MiniBox create that role's volume for this box: workspace at /workspace read-write, home at /home/dev read-write, tools at /opt/minibox/tools read-only, cache at /home/dev/.cache read-write. A role the list omits is not created. The tools role mounts the host's shared tools volume, and creates it when the host has none. Omitted, MiniBox creates workspace, home, tools and cache. An empty list creates a box with no mounts. Mounting an existing volume needs volume:attach, and a read-write one also needs volume:write. A role volume is new, so every role mount needs volume:write, and the tools role also needs volume:attach when the shared volume already exists. A role mount may also name pool, the storage pool its new volume goes to instead of the one the role's rule picks; a pool this host does not have is refused with pool_not_found, and the tools role's shared volume is one per pool.";
 
 export const createMounts = () =>
   field(checkCreateMounts, {

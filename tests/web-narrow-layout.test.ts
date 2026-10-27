@@ -173,9 +173,10 @@ describe("a create row's volume name in the Customize dialog", () => {
     // the phone breakpoint: an id outranks the phone's own `.rebuild-mount { grid-template-columns: 1fr }`.
     const wide = mediaBlockFrom(modal, 561, "#cbMountRows .rebuild-mount {");
     // The path column keeps a 140px floor: `/home/dev/.cache` is 137px wide at 14px, and a path that cannot show its
-    // text is as unreadable as a name that cannot show its own.
+    // text is as unreadable as a name that cannot show its own. The pool column a role row picks with is bounded, so it
+    // cannot grow past a pool name and take the share the volume name needs.
     expect(block(wide, "#cbMountRows .rebuild-mount")).toContain(
-      "grid-template-columns: minmax(0, 3fr) minmax(140px, 1fr) 132px auto;",
+      "grid-template-columns: minmax(0, 3fr) minmax(140px, 1fr) 132px minmax(96px, 128px) auto;",
     );
     expect(block(wide, "#cbMountRows .rebuild-mount")).not.toContain("overflow-x");
   });

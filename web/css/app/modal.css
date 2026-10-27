@@ -83,8 +83,13 @@
 @media (min-width: 561px) {
   #cbMountRows .rebuild-mount {
     /* The path keeps the room the longest default path (`/home/dev/.cache`, 137px at 14px) needs; the name takes what is
-       left, and gives it back on a wide dialog where both fit. */
-    grid-template-columns: minmax(0, 3fr) minmax(140px, 1fr) 132px auto;
+       left, and gives it back on a wide dialog where both fit. The pool column is sized to the longest pool name the
+       dialog read, and stays narrow enough for the name to keep its share. */
+    grid-template-columns: minmax(0, 3fr) minmax(140px, 1fr) 132px minmax(96px, 128px) auto;
+  }
+  /* A row that mounts a volume that exists has no pool control, so its cells keep the same width without a gap. */
+  #cbMountRows .rebuild-mount > [data-pool]:empty {
+    display: none;
   }
 }
 /* The selected volume label can outgrow even a desktop column. Wrap it and grow the trigger with it at every width. */
