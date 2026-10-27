@@ -71,8 +71,15 @@ describe("hosts.json", () => {
     expect(() => store.load()).toThrow("does not match the hosts format");
   });
 
-  test("the reserved id local cannot be a stored host, and an id cannot repeat", () => {
+  test("local metadata must use a unix endpoint, auto is reserved, and no id may repeat", () => {
     store.save([{ ...lab, id: "local" }]);
+    expect(() => store.load()).toThrow("unix endpoint");
+    const local = { ...lab, id: "local", endpoint: "unix:///var/run/docker.sock", labels: {} };
+    store.save([local, lab]);
+    expect(store.load()).toEqual([local, lab]);
+    store.save([local, local]);
+    expect(() => store.load()).toThrow("more than once");
+    store.save([{ ...lab, id: "auto" }]);
     expect(() => store.load()).toThrow("reserved id");
     store.save([lab, lab]);
     expect(() => store.load()).toThrow("more than once");

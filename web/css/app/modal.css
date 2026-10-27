@@ -87,6 +87,15 @@
     grid-template-columns: minmax(0, 3fr) minmax(140px, 1fr) 132px auto;
   }
 }
+/* The selected volume label can outgrow even a desktop column. Wrap it and grow the trigger with it at every width. */
+#cbMountRows .dropdown-trigger {
+  height: auto;
+  min-height: 36px;
+}
+#cbMountRows .dropdown-current {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
 .env-rows {
   display: flex;
   flex-direction: column;

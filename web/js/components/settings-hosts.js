@@ -33,11 +33,17 @@ export async function loadHosts(view) {
       <div class="card-body"><div class="callout danger">${icon("alert")}<span>${esc(e.message)}</span></div></div>`;
     return;
   }
-  const shown = drawHosts(view, card, { hosts });
-  // A redraw that happens while a read is in flight draws its own "not read yet" lines, and this read does not touch
-  // them: each line it fills is the one the card drew for it.
-  const drawn = shown.map((host) => card.querySelector(`[data-disk-host="${host.id}"]`));
-  void loadDisk(drawn, shown);
+  // Share pending and completed reads across redraws. A newly revealed host is read once; existing rows reuse theirs.
+  const readings = new Map();
+  const readDisk = (id) => {
+    if (!readings.has(id))
+      readings.set(
+        id,
+        api(`/api/hosts/${enc(id)}/disk`).catch(() => null),
+      );
+    return readings.get(id);
+  };
+  drawHosts(view, card, { hosts, readDisk });
 }
 
 /**
@@ -46,15 +52,10 @@ export async function loadHosts(view) {
  * line empty and the others shown. Each line is the one the drawing made, so a redraw that happens while a read is in
  * flight is not written into by the older answer.
  */
-async function loadDisk(lines, hosts) {
+async function loadDisk(lines, hosts, readDisk) {
   await Promise.all(
     hosts.map(async (host, index) => {
-      let disk = null;
-      try {
-        disk = await api(`/api/hosts/${enc(host.id)}/disk`);
-      } catch {
-        disk = null;
-      }
+      const disk = await readDisk(host.id);
       const line = lines[index];
       if (line) line.innerHTML = diskLines(disk);
     }),
@@ -62,10 +63,9 @@ async function loadDisk(lines, hosts) {
 }
 
 /**
- * Draws the hosts card from the data it already has. The list toggle redraws this, so expanding or collapsing the list
- * asks the API for nothing.
+ * Draws the cached host list. Disk reads are shared across draws, including a read still in flight during a toggle.
  */
-function drawHosts(view, card, { hosts }) {
+function drawHosts(view, card, { hosts, readDisk }) {
   const { shown, toggle } = limitList(view, "hosts", hosts);
   card.innerHTML = `
     <div class="card-head">
@@ -88,7 +88,9 @@ function drawHosts(view, card, { hosts }) {
   card.querySelectorAll("[data-revoke-host]").forEach((btn) => {
     btn.addEventListener("click", () => revokeAgent(view, btn.dataset.revokeHost, btn.dataset.hostName));
   });
-  bindToggles(view, card, () => drawHosts(view, card, { hosts }));
+  bindToggles(view, card, () => drawHosts(view, card, { hosts, readDisk }));
+  const lines = shown.map((host) => card.querySelector(`[data-disk-host="${host.id}"]`));
+  void loadDisk(lines, shown, readDisk);
   return shown;
 }
 

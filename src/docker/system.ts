@@ -80,12 +80,27 @@ const CONTAINERS: LegacyFields = {
   active: (item) => ACTIVE_CONTAINER_STATES.includes(String(item.State ?? "")),
 };
 
-const IMAGES: LegacyFields = {
-  // `VirtualSize` is what older engines reported before `Size` replaced it in API 1.44.
-  size: (item) => amount(item.Size) ?? amount(item.VirtualSize),
-  unused: (item) => (amount(item.Containers) ?? 0) === 0,
-  active: (item) => (amount(item.Containers) ?? 0) > 0,
-};
+/** Legacy image sizes overlap. Docker CLI uses LayersSize and subtracts the unique bytes of images in use. */
+function imageTotals(value: unknown, layersSize: unknown): DiskBreakdownEntry | null {
+  if (!Array.isArray(value)) return null;
+  const totalBytes = amount(layersSize);
+  let activeCount = 0;
+  let usedBytes = 0;
+  for (const item of value) {
+    const fields = fieldsOf(item);
+    if (!fields || (amount(fields.Containers) ?? 0) === 0) continue;
+    activeCount += 1;
+    const size = amount(fields.Size) ?? amount(fields.VirtualSize);
+    const shared = amount(fields.SharedSize);
+    if (size !== null && shared !== null) usedBytes += Math.max(0, size - shared);
+  }
+  return {
+    count: value.length,
+    activeCount,
+    totalBytes,
+    reclaimableBytes: totalBytes === null ? null : Math.max(0, totalBytes - usedBytes),
+  };
+}
 
 const VOLUMES: LegacyFields = {
   // A volume's size is in its usage data, and is -1 when the engine never measured it.
@@ -103,15 +118,15 @@ const BUILD_CACHE: LegacyFields = {
 
 /**
  * `/system/df` as `docker system df` reads it. An engine of API 1.52 or later reports each class with its own totals
- * (`ImageUsage` and the rest). An older one reports the classes as plain arrays (`Images` and the rest) with no totals,
- * which are summed here. A class the engine does not report at all is null, and so is a figure it leaves out, so an
+ * (`ImageUsage` and the rest). An older one reports plain arrays: image totals use `LayersSize`, which counts shared
+ * layers once, and the other classes are summed here. A class or figure the engine does not report is null, so an
  * engine that answers less yields less instead of an error.
  */
 export function toDiskBreakdown(raw: unknown): DiskBreakdown {
   const body = fieldsOf(raw) ?? {};
   const entry = (totals: string, items: string, how: LegacyFields) => totalsOf(body[totals]) ?? sumOf(body[items], how);
   return {
-    images: entry("ImageUsage", "Images", IMAGES),
+    images: totalsOf(body.ImageUsage) ?? imageTotals(body.Images, body.LayersSize),
     containers: entry("ContainerUsage", "Containers", CONTAINERS),
     volumes: entry("VolumeUsage", "Volumes", VOLUMES),
     buildCache: entry("BuildCacheUsage", "BuildCache", BUILD_CACHE),
