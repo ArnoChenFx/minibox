@@ -136,6 +136,26 @@ export function copyRecipe(from: HostCtx, to: HostCtx, ref: string, imageId: str
   writeRecipe(to, name, recipe);
 }
 
+/**
+ * Gives the name `to` the recipe that built the template `from`, pointed at the image the fork has. The source and the
+ * setup stay as they were, so the fork rebuilds from the same source, and the description is the fork's own, so a
+ * rebuild keeps what the fork was called. Nothing is written when the source has no recipe, or when its recipe built
+ * another image than `sourceImageId`: a template saved from a box is forked without one, and cannot be rebuilt, as it
+ * could not before.
+ */
+export function forkRecipe(
+  host: HostCtx,
+  from: string,
+  to: string,
+  sourceImageId: string,
+  imageId: string,
+  description: string | null,
+): void {
+  const recipe = readRecipe(host, from);
+  if (!recipe || recipe.imageId !== sourceImageId) return;
+  writeRecipe(host, to, { ...recipe, imageId, description, created: new Date().toISOString() });
+}
+
 /** How a template was built, when its image still matches the recipe that built it. */
 export function buildKindOf(host: HostCtx, name: string, imageId: string): BuildKind | null {
   if (!NAME_RE.test(name)) return null;

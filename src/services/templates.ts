@@ -4,13 +4,13 @@ import { conflict, notFound } from "../lib/errors";
 import { log } from "../lib/logger";
 import { msg } from "../lib/messages";
 import { NAME_RE } from "../lib/validation";
-import { isRuntimeError } from "../runtime";
+import { type ImageDetails, isRuntimeError } from "../runtime";
 export { BASE_DESCRIPTION, buildBaseTemplate } from "./base-template";
 import { getBox } from "./boxes";
 import { type Progress, underBox } from "./checkpoints";
 import { type ImageItem, listImagesByLabel, removeLabeledImage } from "./images";
 import { createSnapshot, deleteSnapshot } from "./snapshots";
-import { type BuildKind, buildKindOf, removeRecipe, templateInitOf } from "./template-builds";
+import { type BuildKind, buildKindOf, forkRecipe, removeRecipe, templateInitOf } from "./template-builds";
 
 export type TemplateItem = ImageItem & { buildKind?: BuildKind; postCreate?: string[]; forwardPorts?: number[] };
 
@@ -158,6 +158,101 @@ export async function saveBoxAsTemplate(
       }
     }),
   );
+}
+
+/**
+ * A template a fork copies: the image the host holds, the name its tag gives, and the description its label carries. The
+ * image is the one the host reported, so the recipe a fork copies is the one that built that image.
+ */
+export interface TemplateSourceImage {
+  readonly ref: string;
+  readonly name: string;
+  readonly image: ImageDetails;
+  readonly description: string | null;
+}
+
+/**
+ * The template `ref` names on `host`, which may be its image reference, its tag or its bare name. A ref that is not an
+ * image the host holds, or is not labelled as a template, is not found, so a fork never copies a box image or a
+ * snapshot.
+ */
+export async function templateSourceImage(host: HostCtx, ref: string): Promise<TemplateSourceImage> {
+  const candidates = ref.startsWith(`${host.prefix}-template:`)
+    ? [ref]
+    : NAME_RE.test(ref)
+      ? [ref, `${host.prefix}-template:${ref}`]
+      : [ref];
+  let image: ImageDetails | null = null;
+  for (const candidate of candidates) {
+    image = await host.runtime.inspectImage(candidate).catch((e: unknown) => {
+      if (isRuntimeError(e, "not_found")) return null;
+      throw e;
+    });
+    if (image) break;
+  }
+  if (!image || image.labels[host.keys.template] !== "true") throw notFound(msg("template_not_found"));
+  const prefix = `${host.prefix}-template:`;
+  const tag = image.tags.find((candidate) => candidate.startsWith(prefix));
+  const name = image.labels[host.keys.templateName] || (tag === undefined ? "" : tag.slice(prefix.length));
+  return {
+    ref: tag ?? ref,
+    name: NAME_RE.test(name) ? name : "",
+    image,
+    description: image.labels[host.keys.templateDesc] || null,
+  };
+}
+
+/**
+ * Forks a template: a new template image under `name` that holds the same system layer, so its description and its
+ * recipe can change without touching the template it came from. The image is a fresh commit of a throwaway container of
+ * the source image, labelled as a template of the new name, so the source keeps its tags, its labels and its boxes. The
+ * labels a fork records are the ones a build records, and the ones a saved template has, minus the box it came from: a
+ * fork is its own template, not a save of a box. The caller holds the new name through `holdingTemplateName`.
+ *
+ * A template built from a declared source brings its recipe along, pointed at the new image, so `template.rebuild`
+ * rebuilds the fork from the source of the template it came from. A template with no recipe, such as one saved from a
+ * box, forks too, and its fork has no recipe, so it cannot be rebuilt, exactly as the template it came from.
+ */
+export async function forkTemplate(
+  host: HostCtx,
+  source: TemplateSourceImage,
+  input: { name: string; description?: string; createdBy: string },
+): Promise<{ ref: string; name: string }> {
+  const { runtime, keys: k, prefix } = host;
+  const created = new Date().toISOString();
+  const repo = `${prefix}-template`;
+  const description = input.description ?? source.description ?? `Forked from template ${source.name || source.ref}`;
+  const tmp = await runtime.createContainer({ image: source.ref, cmd: ["true"] });
+  try {
+    await runtime.commitContainer(tmp.id, {
+      repo,
+      tag: input.name,
+      changes: [
+        labelChange(k.template, "true"),
+        labelChange(k.snapshot, "false"),
+        labelChange(k.createdBy, input.createdBy),
+        labelChange(k.templateName, input.name),
+        labelChange(k.templateDesc, description),
+        labelChange(k.created, created),
+        // A fork is not a save of a box, so it names no box. An empty value reads back as none.
+        labelChange(k.snapshotOf, ""),
+        labelChange(k.snapshotOfId, ""),
+        'CMD ["sleep","infinity"]',
+      ],
+    });
+  } finally {
+    await runtime.removeContainer(tmp.id, { force: true }).catch(() => {});
+  }
+  const forked = await runtime.inspectImage(`${repo}:${input.name}`);
+  try {
+    if (source.name !== "")
+      forkRecipe(host, source.name, input.name, source.image.id, forked.id, input.description ?? null);
+  } catch (e) {
+    await runtime.removeImage(forked.id, { force: true }).catch(() => {});
+    throw e;
+  }
+  log.info("template.forked", { from: source.ref, name: input.name });
+  return { ref: `${repo}:${input.name}`, name: input.name };
 }
 
 export async function deleteTemplate(host: HostCtx, ref: string): Promise<void> {
