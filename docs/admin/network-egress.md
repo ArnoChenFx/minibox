@@ -22,9 +22,9 @@ The tier limits a box's outbound connections. Exec, SSH and port previews reach 
   { "egress": { "mode": "proxy-only", "presets": ["agent-default"], "domains": ["example.com"] } }
   ```
 
-The box's **Settings** tab, under **Security**, shows the tier, the allowed hosts of a `proxy-only` box, and its recent denials. The console sets the tier only when a box is created.
+The box's **Settings** tab, under **Security**, shows the tier, the allowed hosts of a `proxy-only` box, and its recent denials. Its **Edit** button changes the tier, the presets and the extra hosts; saving stages them, so the box is rebuilt only when you apply the staged changes from the banner above the settings. See [Stage a change and rebuild](../user-guide/boxes.md#stage-a-change-and-rebuild).
 
-To change the tier of an existing box, send an `egress` object to `POST /api/boxes/{id}/rebuild`, or call the `rebuild_box` tool. A change of tier is a rebuild. Without confirmation, the call returns a preview of the change, and the rebuild runs only when you confirm it with `confirm: true`. The box keeps its name, its ID and its volumes. Its container and its writable layer are new. A box keeps its private subnet when the new tier is still private.
+To change the tier of an existing box over the API, send an `egress` object to `POST /api/boxes/{id}/rebuild`, or call the `rebuild_box` tool. A change of tier is a rebuild. Without confirmation, the call returns a preview of the change, and the rebuild runs only when you confirm it with `confirm: true`. The box keeps its name, its ID and its volumes. Its container and its writable layer are new. A box keeps its private subnet when the new tier is still private. To stage the change instead, `PUT /api/boxes/{id}/staged` with the same `egress` object and apply it with `POST /api/boxes/{id}/staged/apply`.
 
 ## Proxy only
 

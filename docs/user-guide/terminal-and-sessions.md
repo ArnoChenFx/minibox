@@ -46,8 +46,12 @@ A phone (640 pixels and narrower) has no grabber: its terminal keeps `min(52vh, 
 ## Start a new session
 
 1. On the **Terminal** tab, click **New session**.
-2. In **Session name**, type a name. Use up to 32 letters, digits, dashes and underscores.
+2. **Session name** already holds a name, so you can click **New session** (or press Enter) straight away. To choose your own, type over it. A name is up to 32 letters, digits, dashes and underscores.
 3. Click **New session**.
+
+The name the dialog fills in is the next free one in a series: `console` while the box has no session of that name, then `console-2`, `console-3`, and so on. The box's own first session is `console`, so a box you have already opened a terminal in offers `console-2`. Opening the dialog twice therefore never offers the same name, and the names read as a series rather than as random text.
+
+A name is checked inside the dialog, before anything is sent. A name that is already in the box, in any capitalisation, says so under the field as you type, and a name the server would refuse, such as one with a space in it or one longer than 32 characters, is marked the same way. Clearing the field is refused too: the dialog is where a name is chosen, so an empty name is never sent. The server checks the name again, and if it refuses it the message appears as a notification.
 
 The session name is how you find the session again. The **Sessions** list shows every session in the box. Each session is marked with who created it: **Created by you** for a session you started in the console, or **Created by agent** for one that an agent or another client started through the API. The session that runs the box's startup command, `minibox-init`, carries no mark, so it also shows **Created by agent**.
 

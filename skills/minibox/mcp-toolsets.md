@@ -23,7 +23,7 @@ A URL with several toolsets: `http://127.0.0.1:3920/mcp?toolsets=core,meta,sessi
 | Tool | Needs | What it does |
 |---|---|---|
 | `list_boxes` | `box:read` | Every visible box, with the usage of running ones. `stats`, `host` |
-| `create_box` | `box:write`, plus `volume:write` for the volumes it creates and `volume:attach` for a volume it mounts | Create and start. `name`, `template`, `cpus`, `memoryMb`, `profile`, `mounts`, `env`, `idleTimeoutSec`, `ttlSec`, `host`, `tools`, `startupCommand`, `selfToken`, `repo`. Returns `box`, plus `setup.taskId` and `clone.taskId` |
+| `create_box` | `box:write`, plus `volume:write` for the volumes it creates and `volume:attach` for a volume it mounts | Create and start. `name`, `template`, `cpus`, `memoryMb`, `profile`, `mounts`, `env`, `idleTimeoutSec`, `ttlSec`, `host`, `tools`, `startupCommand`, `selfToken`, `repo`. A `mounts` entry is `{ volume, path, mode }` to mount a volume that exists, or `{ role }` to have MiniBox create one of the box's role volumes; a role the list omits is not created, and `tools` mounts the shared tools volume. Returns `box`, plus `setup.taskId` and `clone.taskId` |
 | `get_box` | `box:read` | One box, including `revision`, `mounts`, `state`, `sleeping`, `stopReason` |
 | `update_box` | `box:write` | `name`, `cpus`, `memoryMb`, `pids`, `labels`, `idleTimeoutSec`, `ttlSec`. Needs `expectedRevision`. Template, mounts, env, network, egress and profile changes are refused with `confirmation_required`; use `rebuild_box` |
 | `delete_box` | `box:delete` | `deleteVolume`, `skipTrash` (owner or `trash:skip`). The data goes to the recycle bin first |
@@ -92,7 +92,7 @@ Listing and closing sessions are REST and CLI only (`GET`/`DELETE /api/boxes/{id
 | `install_tool`, `upgrade_tool`, `uninstall_tool`, `reconcile_tools` | `tool:install` | The shared tools volume. Each returns a task |
 | `save_template` | `tool:install` | Save a box's system layer as a template. Returns a task |
 | `list_templates` | `box:read` | Templates on every host |
-| `create_template`, `rebuild_template`, `sync_template`, `build_official_template`, `list_official_templates`, `pull_image` | owner | Template builds and image pulls. Each build returns a task |
+| `create_template`, `fork_template`, `rebuild_template`, `sync_template`, `build_official_template`, `list_official_templates`, `pull_image` | owner | Template builds, forks and image pulls. Each build returns a task; a fork answers at once |
 | `list_custom_tools`, `put_custom_tool`, `delete_custom_tool` | owner | `DATA_DIR/tools.d`. Deleting an entry does not uninstall the tool |
 
 ## rebuild and move

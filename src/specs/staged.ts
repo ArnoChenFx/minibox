@@ -54,6 +54,16 @@ export function stagedFieldsOf(fields: StagedFields): StagedField[] {
 }
 
 /**
+ * Stages `fields` on top of what is staged already. A field passed again replaces the staged value, and a field that is
+ * left out keeps the one it holds. An empty result means the request staged nothing.
+ */
+export function mergeStaged(before: StagedFields | null, fields: StagedFields): StagedFields {
+  const merged: StagedFields = { ...before };
+  for (const field of stagedFieldsOf(fields)) Object.assign(merged, { [field]: fields[field] });
+  return merged;
+}
+
+/**
  * `DATA_DIR/boxes/staged/<id>.json`: the rebuild changes staged for a box, kept until they are applied or discarded, so
  * they survive a restart. Mode 600, like the spec, because a plain env value may be staged. The spec store removes a
  * box's file when it removes the box.

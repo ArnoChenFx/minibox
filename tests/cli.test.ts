@@ -1081,6 +1081,40 @@ describe("CLI templates, images and box clones", () => {
     }
   });
 
+  test("template fork copies a template under a new name and prints its ref; a taken name exits 1 with the message", async () => {
+    const env = serve();
+    try {
+      const file = join(mkdtempSync(join(tmpdir(), "mb-cli-fork-")), "Dockerfile");
+      writeFileSync(file, "FROM alpine:3.20\n");
+      expect(await runCli(["template", "create", "tool", "--dockerfile", file], env.env, io(), lines([]))).toBe(0);
+
+      const forked = io();
+      expect(
+        await runCli(
+          ["template", "fork", "mbtest-template:tool", "tool-copy", "--description", "Ours"],
+          env.env,
+          forked,
+          lines([]),
+        ),
+      ).toBe(0);
+      expect(forked.out).toBe("mbtest-template:tool-copy\n");
+      expect((await env.runtime.inspectImage("mbtest-template:tool-copy")).labels["mbtest.template.description"]).toBe(
+        "Ours",
+      );
+
+      const asJson = io();
+      expect(await runCli(["template", "fork", "tool", "tool-2", "--json"], env.env, asJson, lines([]))).toBe(0);
+      expect(JSON.parse(asJson.out)).toEqual({ template: { ref: "mbtest-template:tool-2", name: "tool-2" } });
+
+      const again = io();
+      expect(await runCli(["template", "fork", "tool", "tool-copy"], env.env, again, lines([]))).toBe(1);
+      expect(again.out).toBe("");
+      expect(again.err).toContain("A template named “tool-copy” already exists.");
+    } finally {
+      env.stop();
+    }
+  });
+
   test("template build-official builds the official template on a host and prints its ref; a name the host holds is refused", async () => {
     const env = serve();
     try {
@@ -1125,6 +1159,9 @@ describe("CLI templates, images and box clones", () => {
       ["template", "create", "tool", "--repo"],
       ["template", "rebuild"],
       ["template", "rebuild", "a", "b"],
+      ["template", "fork"],
+      ["template", "fork", "mbtest-template:tool"],
+      ["template", "fork", "a", "b", "c"],
       ["template", "build-official"],
       ["template", "build-official", "minimal", "extra"],
       ["image"],

@@ -5,6 +5,7 @@ import { duration } from "../lib/format.js";
 import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
 import { terminalHash } from "../lib/routes.js";
+import { DEFAULT_SESSION_NAME, nextSessionName, sessionNameProblem } from "../lib/session-name.js";
 import {
   availableHeight,
   ceilingHeight,
@@ -20,8 +21,7 @@ import {
 import { ctrlChar, keyBytes, keysReveal, TERM_KEYS } from "../lib/terminal-keys.js";
 import { confirmDialog, emptyState, promptDialog, toast, toastError } from "../lib/ui.js";
 
-const DEFAULT_NAME = "console";
-const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$/;
+const DEFAULT_NAME = DEFAULT_SESSION_NAME;
 const POLL_MS = 10_000;
 
 const rememberKey = (boxId) => `minibox.session.${boxId}`;
@@ -634,16 +634,26 @@ function mountLive(root, b, session) {
     if (action === "takeover" || action === "release") sendControl(action);
     else if (action === "close") closeCurrent();
   });
+  /** The names the box holds, which the dialog offers a name from and refuses a name against. */
+  const taken = () => sessions.map((s) => s.name);
   root.querySelector("#tNew").addEventListener("click", async () => {
+    // The dialog opens with a name already in it, so a person can press Enter, and a name the box already holds is refused
+    // in the dialog instead of by the server after the request. The names come from the list the panel has: it is read
+    // when the tab opens, again after every session this page creates, and by the poll below. A session another client
+    // started a moment ago may not be in it yet; the server then answers with that session rather than a second one, and
+    // the list catches up on the next poll. A name the server refuses for its form still comes back as a notification.
     const name = await promptDialog({
       title: t("bd.newSessionTitle"),
       description: t("bd.newSessionText"),
       label: t("bd.sessionName"),
-      placeholder: DEFAULT_NAME,
+      value: nextSessionName(taken()),
       help: t("bd.sessionNameHelp"),
       confirmText: t("bd.newSession"),
       iconName: "terminal",
-      validate: (value) => (NAME_RE.test(value) ? "" : t("bd.sessionNameInvalid")),
+      validate: (value) => {
+        const problem = sessionNameProblem(value, taken());
+        return problem ? t(problem, { name: value.trim() }) : "";
+      },
     });
     if (!name) return;
     try {

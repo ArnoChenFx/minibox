@@ -126,7 +126,14 @@ export function confirmDialog({
   });
 }
 
-/** Simple single-field prompt dialog. Resolves to the string or null. */
+/**
+ * Simple single-field prompt dialog. Resolves to the string or null.
+ *
+ * `validate` returns the error to show under the field, or "" when the value may be sent. It runs when the dialog opens
+ * (for a `value` it fills in), and again on every keystroke and on each press of the confirm button, so a name that is
+ * refused is refused inside the dialog instead of after the request. Enter submits from the field without also pressing
+ * whatever button the dialog gives back the focus.
+ */
 export function promptDialog({
   title,
   description = "",
@@ -146,24 +153,39 @@ export function promptDialog({
       iconName,
       body: `<div class="field"><label class="label" for="pd-input">${esc(label)}</label>
         <input class="input" id="pd-input" placeholder="${esc(placeholder)}" value="${esc(value)}" autocomplete="off" autofocus />
-        ${help ? `<div class="help">${help}</div>` : ""}<div class="error-text" id="pd-err"></div></div>`,
+        ${help ? `<div class="help">${help}</div>` : ""}<div class="error-text" id="pd-err" role="alert"></div></div>`,
       footer: `<button class="btn" data-close>${t("common.cancel")}</button><button class="btn btn-primary" id="pd-ok">${esc(confirmText)}</button>`,
       onClose: () => resolve(result),
     });
     const input = root.querySelector("#pd-input");
+    const err = root.querySelector("#pd-err");
+    /** Draws `problem` under the field, or clears it, so the dialog says what is wrong before the button is pressed. */
+    const show = (problem) => {
+      input.classList.toggle("invalid", Boolean(problem));
+      err.textContent = problem;
+    };
     const submit = () => {
       const v = input.value.trim();
-      const err = validate?.(v);
-      if (err) {
-        input.classList.add("invalid");
-        root.querySelector("#pd-err").textContent = err;
+      const problem = validate?.(v) ?? "";
+      if (problem) {
+        show(problem);
         return;
       }
       result = v;
       close();
     };
     root.querySelector("#pd-ok").addEventListener("click", submit);
-    input.addEventListener("keydown", (e) => e.key === "Enter" && submit());
+    input.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter") return;
+      // The dialog hands the focus back to the button that opened it, and the Enter key's own activation would then press
+      // that button: opening the dialog again, for one. Enter here only submits this field.
+      e.preventDefault();
+      submit();
+    });
+    input.addEventListener("input", () => show(validate?.(input.value.trim()) ?? ""));
+    // A value the dialog fills in is checked at once, so a suggestion that is already taken reads as taken before anyone
+    // presses the button. An empty field is left alone until it is typed in, so no dialog opens showing an error.
+    if (value.trim()) show(validate?.(value.trim()) ?? "");
   });
 }
 
