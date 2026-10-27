@@ -122,6 +122,21 @@ export default {
   "tp.rebuildStarted": "Rebuilding template",
   "tp.rebuildStartedText": "Watch the build log in the Tasks panel.",
   "tp.rebuildFailed": "Couldn't rebuild template",
+  "tp.edit": "Edit",
+  "tp.editTitle": "Edit “{name}”",
+  "tp.editDesc":
+    "Change what <code>{ref}</code> rebuilds from. Its current image is kept, so boxes created before the next rebuild are unaffected.",
+  "tp.editWhat": "Saving changes the recipe only. Click Rebuild on the card to build the new source into a new image.",
+  "tp.editOfficial":
+    "This template is built from MiniBox's own Dockerfile, so its source cannot be edited here. Fork it to get one you can change.",
+  "tp.editConfirm": "Save changes",
+  "tp.editing": "Saving…",
+  "tp.edited": "Template updated",
+  "tp.editFailed": "Couldn't edit template",
+  "tp.editPorts": "Forwarded ports",
+  "tp.editPortsHelp": "TCP ports a box created from the template opens, separated by commas. Empty for none.",
+  "tp.editPostCreateHelp": "Runs once in each box created from the template, as /bin/sh -c. Empty for none.",
+  "tp.errPort": "“{port}” is not a port between 1 and 65535.",
   "tp.fork": "Fork",
   "tp.forkTitle": "Fork “{name}”",
   "tp.forkDesc":

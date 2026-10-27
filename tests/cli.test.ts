@@ -1177,6 +1177,64 @@ describe("CLI templates, images and box clones", () => {
     }
   });
 
+  test("template edit changes the Dockerfile a template rebuilds from, and template get prints what it reads", async () => {
+    const env = serve();
+    try {
+      const dir = mkdtempSync(join(tmpdir(), "mb-cli-edit-"));
+      const first = join(dir, "Dockerfile");
+      writeFileSync(first, "FROM alpine:3.20\n");
+      expect(await runCli(["template", "create", "tool", "--dockerfile", first], env.env, io(), lines([]))).toBe(0);
+
+      const edited = io();
+      expect(
+        await runCli(
+          ["template", "edit", "tool", "--dockerfile", first, "--description", "Ours"],
+          env.env,
+          edited,
+          lines([]),
+        ),
+      ).toBe(0);
+      expect(edited.out).toBe("mbtest-template:tool\n");
+      expect(env.runtime.builds).toHaveLength(1);
+      expect((await env.runtime.inspectImage("mbtest-template:tool")).labels["mbtest.template.description"]).toBe(
+        "Ours",
+      );
+
+      const asJson = io();
+      expect(
+        await runCli(
+          ["template", "edit", "mbtest-template:tool", "--forward-port", "3000,8080", "--json"],
+          env.env,
+          asJson,
+          lines([]),
+        ),
+      ).toBe(0);
+      expect(JSON.parse(asJson.out)).toEqual({
+        template: { ref: "mbtest-template:tool", name: "tool", buildKind: "dockerfile" },
+      });
+
+      const read = io();
+      expect(await runCli(["template", "get", "tool", "--json"], env.env, read, lines([]))).toBe(0);
+      const recipe = JSON.parse(read.out).recipe;
+      expect(recipe.source).toEqual({ kind: "dockerfile", text: "FROM alpine:3.20\n" });
+      expect(recipe.forwardPorts).toEqual([3000, 8080]);
+
+      const cleared = io();
+      expect(await runCli(["template", "edit", "tool", "--clear-setup", "--json"], env.env, cleared, lines([]))).toBe(
+        0,
+      );
+      const afterClear = io();
+      expect(await runCli(["template", "get", "tool", "--json"], env.env, afterClear, lines([]))).toBe(0);
+      expect(JSON.parse(afterClear.out).recipe.forwardPorts).toBeUndefined();
+
+      const nothing = io();
+      expect(await runCli(["template", "edit", "tool"], env.env, nothing, lines([]))).toBe(1);
+      expect(nothing.err).toContain("Nothing to change");
+    } finally {
+      env.stop();
+    }
+  });
+
   test("template build-official builds the official template on a host and prints its ref; a name the host holds is refused", async () => {
     const env = serve();
     try {
@@ -1224,6 +1282,11 @@ describe("CLI templates, images and box clones", () => {
       ["template", "fork"],
       ["template", "fork", "mbtest-template:tool"],
       ["template", "fork", "a", "b", "c"],
+      ["template", "edit"],
+      ["template", "edit", "a", "b"],
+      ["template", "edit", "tool", "--dockerfile", dockerfile, "--repo", "https://github.com/org/app.git"],
+      ["template", "edit", "tool", "--branch", "main"],
+      ["template", "get"],
       ["template", "build-official"],
       ["template", "build-official", "minimal", "extra"],
       ["image"],

@@ -982,6 +982,25 @@ async function recordScenario(): Promise<Exchange[]> {
       name: "ghost-copy",
     });
     await send("delete the forked template", "DELETE", "/api/templates/mbtest-template%3Asample-copy");
+    await send("read the source a template rebuilds from", "GET", "/api/templates/mbtest-template%3Asample/recipe");
+    await send("read the source of a template that has none", "GET", "/api/templates/mbtest-template%3Abase/recipe");
+    await send("edit a template with nothing to change", "PATCH", "/api/templates/mbtest-template%3Asample", {
+      body: JSON.stringify({}),
+      contentType: JSON_TYPE,
+    });
+    await send("edit the Dockerfile a template rebuilds from", "PATCH", "/api/templates/mbtest-template%3Asample", {
+      body: JSON.stringify({
+        source: { kind: "dockerfile", text: "FROM alpine:3.21\n" },
+        description: "Our own toolchain",
+        init: { forwardPorts: [3000] },
+      }),
+      contentType: JSON_TYPE,
+    });
+    await send("read the source after the edit", "GET", "/api/templates/mbtest-template%3Asample/recipe");
+    await send("edit a template that was not declared", "PATCH", "/api/templates/mbtest-template%3Abase", {
+      body: JSON.stringify({ description: "Renamed" }),
+      contentType: JSON_TYPE,
+    });
 
     const pulled = await post("pull an image", "/api/images/pull", { ref: "alpine:3.20" });
     await waitTask(base, pulled.json);

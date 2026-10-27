@@ -13,8 +13,11 @@ import { createSnapshot, deleteSnapshot } from "./snapshots";
 import {
   type BuildKind,
   buildKindOf,
+  type DeclaredTemplate,
+  editRecipe,
   forkRecipe,
   readRecipe,
+  type RecipeEdit,
   removeRecipe,
   templateInitOf,
   type TemplateRecipe,
@@ -58,12 +61,30 @@ export async function assertTemplateNameAvailable(host: HostCtx, name: string): 
   if (taken) throw conflict(msg("template_name_taken", { name }));
 }
 
-/** Template names a save, a promotion or a declared build is writing right now, as `<host id>:<name>`. */
+/** Template names a save, a promotion, a declared build or an edit is writing right now, as `<host id>:<name>`. */
 const writing = new Set<string>();
 
 /**
- * Runs `fn` holding `name` for this host, so two saves, promotions or builds to one name cannot both pass the check and have the
- * second commit move the tag over the first (which would leave the first image untagged). The name must also be free.
+ * Runs `fn` holding `name` for this host, so no two writers to one recipe or tag overlap: a save, a promotion, a build, a
+ * rebuild and an edit all take this lock. A second caller is refused with `409 template_busy`, so a caller is told to try
+ * again rather than having its write overwritten by the one already running. The name itself is not checked here, because
+ * an edit holds the name the template already has.
+ */
+export async function holdingTemplate<T>(host: HostCtx, name: string, fn: () => Promise<T>): Promise<T> {
+  const key = `${host.host.id}:${name}`;
+  if (writing.has(key)) throw conflict(msg("template_busy", { name }));
+  writing.add(key);
+  try {
+    return await fn();
+  } finally {
+    writing.delete(key);
+  }
+}
+
+/**
+ * Runs `fn` holding `name` for this host, so two saves, promotions or builds to one name cannot both pass the check and
+ * have the second commit move the tag over the first (which would leave the first image untagged). The name must also be
+ * free. A second writer is refused as a taken name, which is what a caller racing for a new template is told.
  */
 export async function holdingTemplateName<T>(host: HostCtx, name: string, fn: () => Promise<T>): Promise<T> {
   const key = `${host.host.id}:${name}`;
@@ -264,6 +285,59 @@ export async function forkTemplate(
   }
   log.info("template.forked", { from: source.ref, name: input.name });
   return { ref: `${repo}:${input.name}`, name: input.name };
+}
+
+/**
+ * Changes what a declared template would build next: its source, the setup a box created from it gets, and the
+ * description. Nothing is built, so the image a box created right now starts from keeps its system layer; the next
+ * `template.rebuild` builds the edited source into a new image. A template with no recipe, such as one saved from a box,
+ * has nothing to edit, so the caller refuses it. The caller also holds the name through `holdingTemplate`, so a rebuild
+ * or another edit cannot read the recipe while this writes it.
+ *
+ * A new description also re-commits the image under the same tag, because the description a card shows is the image's
+ * label. The system layer is unchanged and the recipe's `imageId` follows the new image, so a rebuild still knows the
+ * image it built. A commit that fails leaves the recipe and the image as they were.
+ */
+export async function editTemplate(
+  host: HostCtx,
+  declared: DeclaredTemplate,
+  image: ImageDetails,
+  edit: RecipeEdit,
+): Promise<{ ref: string; name: string; buildKind: BuildKind }> {
+  const description = edit.description;
+  const current = image.labels[host.keys.templateDesc] || null;
+  const relabelled =
+    description === undefined || description === current || description === null
+      ? image
+      : await relabelTemplate(host, declared, image, description);
+  const recipe = editRecipe(host, declared, edit, relabelled.id);
+  log.info("template.edited", { name: declared.name, kind: recipe.source.kind });
+  return { ref: `${host.prefix}-template:${declared.name}`, name: declared.name, buildKind: recipe.source.kind };
+}
+
+/**
+ * Writes `description` onto the template's image by committing a throwaway container of it to the same tag. The system
+ * layer, the creator and the other labels are kept, so only the description a card reads changes. The caller points the
+ * recipe at the returned image.
+ */
+async function relabelTemplate(
+  host: HostCtx,
+  declared: DeclaredTemplate,
+  image: ImageDetails,
+  description: string,
+): Promise<ImageDetails> {
+  const { runtime, keys: k, prefix } = host;
+  const tmp = await runtime.createContainer({ image: image.id, cmd: ["true"] });
+  try {
+    await runtime.commitContainer(tmp.id, {
+      repo: `${prefix}-template`,
+      tag: declared.name,
+      changes: [labelChange(k.templateDesc, description)],
+    });
+  } finally {
+    await runtime.removeContainer(tmp.id, { force: true }).catch(() => {});
+  }
+  return runtime.inspectImage(`${prefix}-template:${declared.name}`);
 }
 
 export async function deleteTemplate(host: HostCtx, ref: string): Promise<void> {

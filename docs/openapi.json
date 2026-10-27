@@ -35413,6 +35413,231 @@
         }
       }
     },
+    "/api/templates/{ref}/recipe": {
+      "get": {
+        "operationId": "template.get",
+        "tags": [
+          "templates"
+        ],
+        "summary": "Read the source a template rebuilds from",
+        "parameters": [
+          {
+            "name": "ref",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Template image reference, URL-encoded."
+            }
+          },
+          {
+            "name": "host",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "description": "Host that holds the template. Omitted, the first host that holds it.",
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{0,31}$"
+            }
+          },
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "recipe": {
+                      "type": "object",
+                      "properties": {
+                        "buildKind": {
+                          "type": "string",
+                          "enum": [
+                            "dockerfile",
+                            "git",
+                            "context",
+                            "devcontainer",
+                            "official"
+                          ]
+                        },
+                        "source": {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "enum": [
+                                "dockerfile",
+                                "git",
+                                "context",
+                                "devcontainer",
+                                "official"
+                              ]
+                            },
+                            "text": {
+                              "type": "string"
+                            },
+                            "url": {
+                              "type": "string"
+                            },
+                            "branch": {
+                              "type": "string"
+                            },
+                            "subdir": {
+                              "type": "string"
+                            },
+                            "path": {
+                              "type": "string"
+                            },
+                            "dockerfile": {
+                              "type": "string"
+                            },
+                            "secretRef": {
+                              "type": "string"
+                            },
+                            "name": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "kind"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "postCreate": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "forwardPorts": {
+                          "type": "array",
+                          "items": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 65535
+                          }
+                        }
+                      },
+                      "required": [
+                        "buildKind",
+                        "source"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "recipe"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The box would exceed the host's CPU or memory.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable, or a storage pool backing the request cannot be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "read",
+        "x-scope": "template:read",
+        "x-async": false,
+        "x-cli": "template get",
+        "x-mcp": {
+          "name": "get_template_source",
+          "toolset": "tools"
+        }
+      }
+    },
     "/api/templates/{ref}/fork": {
       "post": {
         "operationId": "template.fork",
@@ -35622,6 +35847,450 @@
           "name": "fork_template",
           "toolset": "tools"
         }
+      }
+    },
+    "/api/templates/{ref}": {
+      "patch": {
+        "operationId": "template.edit",
+        "tags": [
+          "templates"
+        ],
+        "summary": "Edit the source a template rebuilds from, without building it",
+        "parameters": [
+          {
+            "name": "ref",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Template image reference, URL-encoded."
+            }
+          },
+          {
+            "name": "host",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "description": "Host that holds the template. Omitted, the first host that holds it.",
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{0,31}$"
+            }
+          },
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "description": {
+                    "type": "string",
+                    "maxLength": 200,
+                    "description": "One line, at most 200 characters. Line breaks and other control characters are refused."
+                  },
+                  "source": {
+                    "type": "object",
+                    "required": [
+                      "kind"
+                    ],
+                    "description": "Where the template's files come from. kind dockerfile takes text, the Dockerfile itself, at most 64 KB with a FROM instruction. kind git takes url, with optional branch, subdir (the build context inside the repository) and dockerfile (relative to the context), and secretRef, as for a box. kind context takes url of a .tar or .tar.gz build context, with optional dockerfile. kind devcontainer takes url of a repository, with optional branch, path (the devcontainer.json inside it; without it, .devcontainer/devcontainer.json, then .devcontainer.json) and secretRef; it reads image, build (dockerfile, context, args, target), containerEnv, remoteEnv, postCreateCommand and forwardPorts, and lists any other setting as a warning in the build log. Each build fetches the files again, so a rebuild picks up the newest commit or archive.",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "dockerfile",
+                          "git",
+                          "context",
+                          "devcontainer"
+                        ]
+                      },
+                      "text": {
+                        "type": "string",
+                        "maxLength": 65536
+                      },
+                      "url": {
+                        "type": "string",
+                        "maxLength": 2048
+                      },
+                      "branch": {
+                        "type": "string",
+                        "maxLength": 200
+                      },
+                      "subdir": {
+                        "type": "string",
+                        "maxLength": 512
+                      },
+                      "path": {
+                        "type": "string",
+                        "maxLength": 512
+                      },
+                      "dockerfile": {
+                        "type": "string",
+                        "maxLength": 512
+                      },
+                      "secretRef": {
+                        "type": "string",
+                        "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$",
+                        "maxLength": 128
+                      }
+                    }
+                  },
+                  "init": {
+                    "description": "The setup a box created from the template gets. Omitted keeps the setup the template has; null or an empty object clears it. postCreate is the command as argv, forwardPorts the TCP ports to open.",
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "postCreate": {
+                            "description": "postCreateCommand as argv, or as /bin/sh -c <text>.",
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "forwardPorts": {
+                            "description": "TCP ports a box created from the template opens as manual preview ports.",
+                            "type": "array",
+                            "items": {
+                              "type": "integer",
+                              "minimum": 1,
+                              "maximum": 65535
+                            }
+                          }
+                        }
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "template": {
+                      "type": "object",
+                      "properties": {
+                        "ref": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "buildKind": {
+                          "type": "string",
+                          "enum": [
+                            "dockerfile",
+                            "git",
+                            "context",
+                            "devcontainer",
+                            "official"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "ref",
+                        "name",
+                        "buildKind"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "template"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The name is already taken, this operation is already running, a volume is in use, an exec is not running, a checkpoint is pinned or cannot change, a change was requested without confirm set to true, or a terminal session is under a person's control (code taken_over). A refusal for a confirmation includes a preview of the change, and a rebuild preview includes the docker diff and the planned changes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request declares a body that is not JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The box would exceed the host's CPU or memory.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable, or a storage pool backing the request cannot be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "write",
+        "x-scope": "template:write",
+        "x-async": false,
+        "x-cli": "template edit",
+        "x-mcp": {
+          "name": "edit_template",
+          "toolset": "tools"
+        }
+      },
+      "delete": {
+        "operationId": "template.delete",
+        "tags": [
+          "templates"
+        ],
+        "summary": "Delete a template",
+        "parameters": [
+          {
+            "name": "ref",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Template image reference, URL-encoded."
+            }
+          },
+          {
+            "name": "host",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "description": "Host that holds the template. Omitted, the first host that holds it.",
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{0,31}$"
+            }
+          },
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request declares a body that is not JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The box would exceed the host's CPU or memory.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable, or a storage pool backing the request cannot be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "destructive",
+        "x-scope": "template:delete",
+        "x-async": false,
+        "x-cli": "template rm"
       }
     },
     "/api/templates/{ref}/rebuild": {
@@ -36179,164 +36848,6 @@
           "name": "sync_template",
           "toolset": "tools"
         }
-      }
-    },
-    "/api/templates/{ref}": {
-      "delete": {
-        "operationId": "template.delete",
-        "tags": [
-          "templates"
-        ],
-        "summary": "Delete a template",
-        "parameters": [
-          {
-            "name": "ref",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "description": "Template image reference, URL-encoded."
-            }
-          },
-          {
-            "name": "host",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "description": "Host that holds the template. Omitted, the first host that holds it.",
-              "type": "string",
-              "pattern": "^[a-z][a-z0-9-]{0,31}$"
-            }
-          },
-          {
-            "name": "X-Minibox-Run",
-            "in": "header",
-            "required": false,
-            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
-            "schema": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 64,
-              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "ok": {
-                      "type": "boolean",
-                      "const": true
-                    }
-                  },
-                  "required": [
-                    "ok"
-                  ],
-                  "additionalProperties": false
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid input, or a malformed X-Minibox-Run header.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Not signed in, or the access key is invalid.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Refused: a cross-site write, or an operation this credential may not run.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "415": {
-            "description": "The request declares a body that is not JSON.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "The box would exceed the host's CPU or memory.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Unexpected server error.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "502": {
-            "description": "Docker returned an error.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Docker is unavailable, or a storage pool backing the request cannot be reached.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        },
-        "x-kind": "destructive",
-        "x-scope": "template:delete",
-        "x-async": false,
-        "x-cli": "template rm"
       }
     },
     "/api/templates/official": {

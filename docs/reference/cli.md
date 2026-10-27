@@ -191,11 +191,13 @@ minibox cp mybox:/workspace/report.txt ./report.txt
 
 ## Templates and images
 
-Building a template, forking one, rebuilding one and pulling an image are for the owner only. A build, a rebuild and a pull run as a task. The command waits for the task, prints the task log to standard error, and exits with `1` if the task fails. `--no-wait` prints the task ID and returns at once. A fork is a quick image commit, so it answers with the new reference and takes no `--no-wait`. See [Templates](../user-guide/templates.md).
+Building a template, editing one, forking one, rebuilding one and pulling an image are for the owner only. A build, a rebuild and a pull run as a task. The command waits for the task, prints the task log to standard error, and exits with `1` if the task fails. `--no-wait` prints the task ID and returns at once. An edit and a fork answer with the reference at once and take no `--no-wait`, because neither builds anything. See [Templates](../user-guide/templates.md).
 
 | Command | Meaning |
 |---|---|
 | `minibox template create <name> (--dockerfile FILE \| --repo URL \| --context URL \| --devcontainer URL) [options]` | Builds a template from one source, and prints its reference, such as `minibox-template:node-tools` |
+| `minibox template get <ref> [--host ID] [--json]` | Prints the source the template rebuilds from: the Dockerfile's text, or the URL of a repository or archive. `--json` prints the whole recipe. A template saved from a box has no source, so it is refused |
+| `minibox template edit <ref> [source options] [--description TEXT] [--forward-port N,...] [--clear-setup] [--host ID] [--json]` | Changes what the template rebuilds from without building it. The source options are the ones `template create` takes; `--forward-port` and `--clear-setup` set and clear the setup a box created from the template gets. The template keeps its image until `minibox template rebuild` runs |
 | `minibox template fork <ref> <new-name> [--description TEXT] [--host ID] [--json]` | Copies a template's image and build recipe under `new-name`, and prints the new reference. The copy can be rebuilt from the same source; a template saved from a box has no recipe, so its copy cannot. Without `--host`, the first host that holds the template. A name the host already holds is refused |
 | `minibox template rebuild <ref> [--host ID]` | Rebuilds a template from the source it was built from. The tag moves only when the build succeeds. Without `--host`, the first host that holds the template. |
 | `minibox template sync <ref> --host ID` | Copies a template from a host that holds it to host `ID`, so a box can start there |
@@ -221,6 +223,9 @@ The options of `template create`:
 ```bash
 minibox template create node-tools --dockerfile ./Dockerfile
 minibox template create node-tools --repo https://github.com/example/app.git --branch main --subdir services/api --secret DEPLOY_TOKEN
+minibox template get node-tools
+minibox template edit node-tools --dockerfile ./Dockerfile --description "Our own toolchain"
+minibox template edit node-tools --forward-port 3000,8080
 minibox template fork minibox-template:node-tools node-tools-mine --description "Our own toolchain"
 minibox template rebuild minibox-template:node-tools
 minibox image pull node:24-bookworm-slim

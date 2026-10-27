@@ -2,7 +2,7 @@
 
 Every MiniBox operation is available over a JSON REST API under `/api`. The console, the [CLI](cli.md) and the [MCP tools](mcp.md) use the same operations.
 
-The full machine-readable description is the OpenAPI 3.1 document in [`openapi.json`](../openapi.json). Import it into any OpenAPI tool to generate a client. The document describes 151 operations in 23 groups.
+The full machine-readable description is the OpenAPI 3.1 document in [`openapi.json`](../openapi.json). Import it into any OpenAPI tool to generate a client. The document describes 157 operations in 23 groups.
 
 ## Authentication
 
@@ -328,6 +328,8 @@ An entry is kept for `TRASH_RETENTION_DAYS` days, see [Configuration](configurat
 | `GET` | `/api/templates/official` | List the official templates: name, ref, description and base image. Owner only |
 | `POST` | `/api/templates` | Build a template from a source, as a task. Owner only |
 | `POST` | `/api/templates/{ref}/fork` | Fork a template into a new one: copy its image and build recipe under `name`, with an optional `description`. Answers `201` with `{ template: { ref, name } }`. Owner only |
+| `GET` | `/api/templates/{ref}/recipe` | Read the source a template rebuilds from, as `{ recipe: { buildKind, source, postCreate?, forwardPorts? } }`. A template with no source answers `400` (`template_not_declared`) |
+| `PATCH` | `/api/templates/{ref}` | Change the source a template rebuilds from, its setup and its description, without building it. The image stays as it is until a rebuild. Owner only |
 | `POST` | `/api/templates/{ref}/rebuild` | Rebuild a template from the source it was built from, as a task. Owner only |
 | `POST` | `/api/templates/{ref}/sync` | Copy a template to another host, as a task. The body is `{ host }`. Owner only |
 | `POST` | `/api/images/pull` | Pull an image from its registry, as a task, unless the engine has it. Owner only |
@@ -342,6 +344,10 @@ An entry is kept for `TRASH_RETENTION_DAYS` days, see [Configuration](configurat
 `host` names the host an operation runs on. In a body it is the `host` field, as in `POST /api/templates`, `POST /api/images/pull` and `POST /api/templates/{ref}/sync`, where it is the host to copy to. As a query parameter it is `?host=`, as in `POST /api/templates/{ref}/rebuild`, `POST /api/templates/{ref}/fork`, `POST /api/templates/base/build`, `POST /api/templates/official/{name}/build` and `DELETE /api/templates/{ref}`. Without it, a build or a pull runs on `local`, and a rebuild, a fork or a delete runs on the first host that holds the template.
 
 `POST /api/templates/{ref}/fork` copies a template instead of building one, so it answers at once with the new template rather than with a task: `{ template: { ref, name } }`. The body is `name`, an optional `description` and an optional `host`, and `?host=` picks the host that holds the template to copy. The new image is committed from the source template's image with the labels a template carries (`template`, `template.name`, `template.description`, `createdBy` and `created`), and the source keeps its own tag, labels and boxes. A template built from a source brings its recipe along, with `imageId` set to the new image, so `POST /api/templates/{ref}/rebuild` rebuilds the fork from the same source and its `postCreateCommand` and `forwardPorts` come with it. A template saved from a box has no recipe, so its fork has none either, and cannot be rebuilt. A name the host already holds is refused with `409` (`template_name_taken`), and a ref that names no template with `404` (`template_not_found`). See [Fork a template](../user-guide/templates.md#fork-a-template).
+
+`PATCH /api/templates/{ref}` takes an optional `source`, an optional `init` and an optional `description`, and answers `200` with `{ template: { ref, name, buildKind } }`. A field it leaves out keeps the value the recipe has, so an edit that only changes the Dockerfile does not send the rest. `init` is `{ postCreate, forwardPorts }` and replaces the setup a box created from the template gets; `init: null` clears it. Nothing is built, so the template keeps its image, and the next `POST /api/templates/{ref}/rebuild` builds the edited source. A new `description` is committed onto the image under the same tag, so the template's card shows it at once. An edit that names none of the three fields is refused with `400` (`template_edit_empty`), and so is an edit of a template with no source, such as one saved from a box (`400`, `template_not_declared`). Another change to the same template while an edit or a build holds it is refused with `409` (`template_busy`). See [Edit what a template rebuilds from](../user-guide/templates.md#edit-what-a-template-rebuilds-from).
+
+`GET /api/templates/{ref}/recipe` reads the same recipe, so a client can prefill an editor: `{ recipe: { buildKind, source, postCreate?, forwardPorts? } }`, where `source` holds the fields of its kind, including the pasted Dockerfile as `text`.
 
 `POST /api/templates/official/{name}/build` returns `202` with `taskId`, and its task's result holds `template.ref`. A name that the host already holds is refused with `409` (`template_name_taken`). `POST /api/boxes` gives a missing official template to the host the box goes to: it copies the template from a host that holds it, or else builds it there, as a task that the create waits for. The response then holds `sync.taskId`, as it does for a copy. See [Official templates](../user-guide/templates.md#official-templates).
 

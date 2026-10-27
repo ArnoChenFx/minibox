@@ -224,6 +224,47 @@ describe("MCP", () => {
     }
   });
 
+  test("the tools toolset reads and edits the source a template rebuilds from over MCP", async () => {
+    const env = setup();
+    try {
+      const session = await openSession(env.base, "tools");
+      await createDeclaredTemplate(
+        env.app.hosts.get(),
+        { name: "tool", source: { kind: "dockerfile", text: "FROM alpine:3.20\n" }, createdBy: "owner" },
+        {},
+      );
+
+      const read = await callTool(env.base, session, "get_template_source", { ref: "tool" });
+      expect(read.result.isError).toBeUndefined();
+      expect(read.result.structuredContent).toEqual({
+        recipe: { buildKind: "dockerfile", source: { kind: "dockerfile", text: "FROM alpine:3.20\n" } },
+      });
+
+      const edited = await callTool(env.base, session, "edit_template", {
+        ref: "tool",
+        source: { kind: "dockerfile", text: "FROM alpine:3.21\n" },
+        init: { forwardPorts: [3000] },
+      });
+      expect(edited.result.isError).toBeUndefined();
+      expect(edited.result.structuredContent).toEqual({
+        template: { ref: "mbtest-template:tool", name: "tool", buildKind: "dockerfile" },
+      });
+
+      const after = await callTool(env.base, session, "get_template_source", { ref: "tool" });
+      expect(after.result.structuredContent).toEqual({
+        recipe: {
+          buildKind: "dockerfile",
+          source: { kind: "dockerfile", text: "FROM alpine:3.21\n" },
+          forwardPorts: [3000],
+        },
+      });
+      // Nothing was built: an edit changes the recipe, and rebuild_template builds it.
+      expect(env.runtime.builds).toHaveLength(1);
+    } finally {
+      env.stop();
+    }
+  });
+
   test("rejects batches, bad toolsets, and tools outside the selected set", async () => {
     const env = setup();
     try {
