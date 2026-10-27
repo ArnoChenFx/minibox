@@ -27,6 +27,7 @@ export default {
   "task.op.template.build": "构建基础模板",
   "task.op.template.save": "将 Box 存为模板",
   "task.op.template.create": "构建模板",
+  "task.op.template.fork": "派生模板",
   "task.op.template.rebuild": "重新构建模板",
   "task.op.template.sync": "同步模板",
   "task.op.template.official.build": "构建官方模板",

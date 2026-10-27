@@ -74,6 +74,8 @@ export interface Body {
   volumes?: { id: string; name: string; createdBy: string | null }[];
   snapshots?: { ref: string; source: string | null; createdBy: string | null }[];
   templates?: { ref: string; name: string | null; createdBy: string | null }[];
+  /** The template a fork answered with. */
+  template?: { ref: string; name: string };
   taskId?: string;
   clone?: { taskId?: string };
   setup?: { taskId?: string };

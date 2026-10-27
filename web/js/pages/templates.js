@@ -1,4 +1,5 @@
 import { openCreateBox } from "../components/create-box.js";
+import { openForkTemplate } from "../components/fork-template.js";
 import { bindToggles, limitList } from "../components/list-toggle.js";
 import { bindSearchBox, searchBoxHtml } from "../components/search-box.js";
 import { openTasks, trackTask } from "../components/tasks.js";
@@ -173,6 +174,7 @@ export function render(view, focusName = "") {
           ${unbuilt ? "<span></span>" : `<button class="icon-btn danger" data-action="delete" data-ref="${esc(tp.ref)}" title="${t("tp.delete")}" aria-label="${t("tp.delete")}">${icon("trash")}</button>`}
           <div class="actions">
             ${unbuilt && !multiHost() ? `<button class="btn btn-sm" data-action="build-official" data-name="${esc(tp.name)}">${icon("hammer")}${t("tp.buildOfficial")}</button>` : ""}
+            ${!unbuilt ? `<button class="btn btn-sm" data-action="fork" data-ref="${esc(tp.ref)}" title="${esc(t("tp.fork"))}">${icon("copy")}${t("tp.fork")}</button>` : ""}
             ${tp.buildKind && !unbuilt ? `<button class="btn btn-sm" data-action="rebuild" data-ref="${esc(tp.ref)}" data-host="${esc(tp.holders[0])}">${icon("refresh")}${t("tp.rebuild")}</button>` : ""}
             <button class="btn btn-sm btn-primary" data-action="use" data-ref="${esc(tp.ref)}">${icon("plus")}${t("tp.use")}</button>
           </div>
@@ -235,7 +237,11 @@ export function render(view, focusName = "") {
     drawLegacy();
   };
 
-  const load = () => Promise.all([loadTemplates(), loadLegacy()]);
+  /** Reloads the page, optionally bringing the named template's card into focus once it is drawn. */
+  const load = (focus = "") => {
+    if (focus) pendingFocus = focus;
+    return Promise.all([loadTemplates(), loadLegacy()]);
+  };
 
   delegate(view, {
     use: (b) => openCreateBox({ template: b.dataset.ref, onCreated: (b) => (location.hash = `#/boxes/${b.id}`) }),
@@ -265,6 +271,11 @@ export function render(view, focusName = "") {
         }
         toastError(t("tp.pullFailed"), e);
       }
+    },
+    fork: (b) => {
+      const card = cards.find((tp) => tp.ref === b.dataset.ref);
+      if (!card) return;
+      openForkTemplate({ card, cards, onForked: (template) => load(template?.name) });
     },
     rebuild: async (b) => {
       try {

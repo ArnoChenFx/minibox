@@ -50,12 +50,12 @@ Saving an edit works like adding a pool: the dialog's **Confirm** sends the chan
 ## Create and attach volumes
 
 - To create a volume, click **Create volume**, and choose a pool. The volume is independent, which means it is not tied to a box.
-- To attach a volume to a box, open the box's page, and use **Attach**. Attaching a volume rebuilds the box, so MiniBox shows a preview first.
-- To detach a volume, click **Detach**. Detaching also rebuilds the box.
+- To attach a volume to a box, open the box's page, and use **Attach**. Attaching a volume is a change of the box's mounts, so it is staged, and the box is rebuilt when the staged changes are applied.
+- To detach a volume, click **Detach**. Detaching is staged the same way, and the row is marked **To detach** until you apply the change or click **Undo**.
 
-Both take a [safety checkpoint](checkpoints.md#safety-checkpoints) of the box first, unless you clear **Take a safety checkpoint first** in the confirmation.
+Applying the staged changes takes a [safety checkpoint](checkpoints.md#safety-checkpoints) of the box first, unless you clear **Take a safety checkpoint first** in the confirmation.
 
-Changing the mounts of a box rebuilds it. The box keeps its name and its volumes. The writable layer and the running processes are lost.
+Changing the mounts of a box rebuilds it. The box keeps its name and its volumes. The writable layer and the running processes are lost. See [Stage a change and rebuild](boxes.md#stage-a-change-and-rebuild).
 
 ## Read-write and read-only
 

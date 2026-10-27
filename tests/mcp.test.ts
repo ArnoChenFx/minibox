@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { AGENTS_MD_SNIPPET } from "../src/mcp/instructions";
 import type { OperationContext, Principal } from "../src/operations/types";
 import { startServer } from "../src/server";
+import { createDeclaredTemplate } from "../src/services/template-builds";
 import { createTestApp, silenceLogs, TEST_KEY } from "./support/app";
 
 const OWNER: Principal = { type: "owner", id: "owner", name: "owner" };
@@ -190,6 +191,34 @@ describe("MCP", () => {
       expect(payload.result.structuredContent).toMatchObject({ exitCode: 0, stdout: "ok\n" });
       const recorded = env.app.events.list({ op: "exec.run" }, { limit: 5 }).events;
       expect(recorded.some((event) => event.source === "mcp" && event.run === session)).toBe(true);
+    } finally {
+      env.stop();
+    }
+  });
+
+  test("the tools toolset forks a template over MCP and returns the new ref", async () => {
+    const env = setup();
+    try {
+      const session = await openSession(env.base, "tools");
+      const listed = await post(env.base, rpc(1, "tools/list"), {}, "/mcp?toolsets=tools");
+      expect(
+        ((await listed.json()) as { result: { tools: { name: string }[] } }).result.tools.map((t) => t.name),
+      ).toContain("fork_template");
+
+      // A declared template to copy, built through the service the create operation uses.
+      await createDeclaredTemplate(
+        env.app.hosts.get(),
+        { name: "tool", source: { kind: "dockerfile", text: "FROM alpine:3.20\n" }, createdBy: "owner" },
+        {},
+      );
+
+      const made = await callTool(env.base, session, "fork_template", { ref: "tool", name: "tool-copy" });
+
+      expect(made.result.isError).toBeUndefined();
+      expect(made.result.structuredContent).toEqual({
+        template: { ref: "mbtest-template:tool-copy", name: "tool-copy" },
+      });
+      expect(env.runtime.callsTo("commitContainer").at(-1)?.args[1]).toMatchObject({ tag: "tool-copy" });
     } finally {
       env.stop();
     }

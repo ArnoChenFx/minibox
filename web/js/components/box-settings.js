@@ -3,6 +3,8 @@ import { esc, revealInStrip } from "../lib/dom.js";
 import { t } from "../lib/i18n.js";
 import { boxHash } from "../lib/routes.js";
 import { mountResources } from "./box-resources.js";
+import { mountSecurityCard } from "./box-security-card.js";
+import { mountTemplateCard } from "./box-template-card.js";
 import { mountTools } from "./box-tools.js";
 import { mountMounts } from "./box-volumes.js";
 import { mountCheckpoints } from "./checkpoints.js";
@@ -11,15 +13,6 @@ import { mountEnvCard } from "./env-card.js";
 import { mountLifecycleCard } from "./lifecycle-card.js";
 import { mountStagedBanner } from "./staged-changes.js";
 import { mountStartupCard } from "./startup-card.js";
-
-function kvCard(title, rows) {
-  return `<div class="card"><div class="card-head"><h3>${esc(title)}</h3></div><div class="card-body"><dl class="kv">${rows}</dl></div></div>`;
-}
-
-function securityRows(b) {
-  return `<dt>${t("bd.profile")}</dt><dd>${b.profile ? t(`profile.${b.profile}`) : t("bd.profileLegacy")}</dd>
-    <dt>${t("bd.selfToken")}</dt><dd>${b.selfToken ? t("bd.selfTokenOn") : t("bd.selfTokenOff")}</dd>`;
-}
 
 /** A card that answers box changes through its own `onBoxChange` and is disposed with the section. */
 function withBoxChanges(card, onChange) {
@@ -49,20 +42,25 @@ function lifecycleSection(panel, { box, onChange, refreshBox }) {
   };
 }
 
+/**
+ * The security section: the template the box runs, its network egress and its security profile. All three are rebuild
+ * settings, so each card stages its change and the banner above the settings applies them together.
+ */
 function securitySection(panel, { box, onChange }) {
-  panel.innerHTML = `<div id="bsEgress"></div><div id="bsSecurity"></div>`;
+  panel.innerHTML = `<div id="bsTemplate"></div><div id="bsEgress"></div><div id="bsSecurity"></div>`;
+  const template = mountTemplateCard(panel.querySelector("#bsTemplate"), { box });
   const egress = mountEgressCard(panel.querySelector("#bsEgress"), { box });
-  const draw = () => {
-    panel.querySelector("#bsSecurity").innerHTML = kvCard(t("bd.setSecurity"), securityRows(box()));
-  };
-  draw();
+  const security = mountSecurityCard(panel.querySelector("#bsSecurity"), { box });
   const off = onChange(() => {
-    draw();
+    template.onBoxChange();
     egress.onBoxChange();
+    security.onBoxChange();
   });
   return () => {
     off();
+    template.dispose();
     egress.dispose();
+    security.dispose();
   };
 }
 
