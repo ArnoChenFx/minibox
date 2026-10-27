@@ -11,6 +11,7 @@ Commands:
   minibox box ls [--json]              List boxes
   minibox box list [--json]            Same as box ls
   minibox box create <name> [--template IMAGE] [--cpus N] [--memory MB] [--profile P]
+                       [--host ID|auto [--host-label KEY=VALUE]...]
                        [--egress open|none|proxy-only [--egress-preset NAME] [--egress-domain HOST]...]
                        [--repo URL [--branch BRANCH] [--secret NAME]]
                        [--startup-command TEXT | --startup-command-stdin] [--self-token] [--no-wait] [--json]
@@ -18,6 +19,8 @@ Commands:
                                        A devcontainer.json template runs its postCreateCommand once, after the clone.
                                        A startup command runs at every start of the box. --self-token gives the box's
                                        agent a token for this box alone, in /run/minibox/self-token.
+                                       --host names the host, or auto. --host-label, which needs --host auto, keeps the
+                                       pick to the hosts that carry every label given.
   minibox box startup-command get <box> [--json]
                                        Print the startup command; its status and last output lines go to stderr
   minibox box startup-command set <box> (--command TEXT | --stdin) [--apply] [--json]
@@ -38,6 +41,10 @@ Commands:
                                        Copy a template from a host that holds it to ID, so a box can start there
   minibox template build-official <name> [--host ID] [--no-wait] [--json]
                                        Build an official template (node, python, go or minimal) from its shipped Dockerfile
+  minibox host labels get <id> [--json]
+                                       Print the labels of one host, as JSON
+  minibox host labels set <id> [--label KEY=VALUE]...
+                                       Replace a host's labels, local included. No --label clears them
   minibox checkpoint copy <id> --host ID [--no-wait] [--json]
                                        Copy a checkpoint to host ID, so a box can be forked there. Prints the copy's id
   minibox image pull <ref> [--host ID] [--no-wait] [--json]

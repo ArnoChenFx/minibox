@@ -53,6 +53,43 @@ Agent 是一个小程序，运行在宿主机上的容器中，并主动连接 M
 
 复制镜像的方式与迁移相同，因此目标引擎必须保留镜像 ID。见 [限制](#限制)。
 
+## 按标签选择宿主机
+
+宿主机可以带标签，创建 Box 时可以要求 **自动** 只在带这些标签的宿主机中选择。这样，一个控制面里型号不同的机器就能说清 Box 该放在哪里：一台有 GPU，一台磁盘更大，一台是另一种架构。
+
+在 **设置** 的 **宿主机** 里给宿主机加标签，也可以通过 API 或命令行：
+
+```bash
+minibox host labels set lab --label gpu=true --label org/arch=amd64
+minibox host labels get lab
+```
+
+`PATCH /api/hosts/{id}` 加 `{ "labels": { "gpu": "true" } }` 效果相同，传空对象则清空标签。`POST /api/hosts` 在添加宿主机时可以直接带 `labels`。键为小写，可以用一个斜杠表示命名空间，如 `org/arch`；值为单行、最多 256 个字符，可以为空。一台宿主机最多 32 个标签。
+
+本机宿主机也能带标签，来源有两处：
+
+- `.env` 里的 `HOST_LABELS`，例如 `HOST_LABELS=gpu,arch=amd64`，在启动时设置。MiniBox 会把它们写进 `hosts.json` 中 id 为 `local` 的记录，所以标签最终存在这个文件里。
+- `PATCH /api/hosts/local`，或 `minibox host labels set local`，随时可以改。已经有标签的本机宿主机在下次启动时会保留它们，因此旧的 `.env` 不会覆盖你在控制台里做的修改。
+
+要按标签放置 Box，宿主机选 **自动**，并给出标签。API 里这个字段是 `hostLabels`，命令行上每个标签一个 `--host-label`：
+
+```bash
+minibox box create trainer --host auto --host-label gpu=true --host-label org/arch=amd64
+```
+
+```json
+{ "name": "trainer", "cpus": 4, "memoryMb": 8192, "host": "auto", "hostLabels": { "gpu": "true" } }
+```
+
+规则：
+
+- 只考虑在线、并且带有**全部**这些标签的宿主机，每个值都必须完全一致。`--host-label gpu` 要求名为 `gpu`、值为空的标签。
+- **自动** 的其余规则不变。在带标签的宿主机中，持有模板的排在未持有模板的前面，其中剩余空间最多的胜出；只有所有者的官方模板才可以在未持有它的宿主机上构建。
+- 没有这些标签的宿主机永远不会成为候选，无论它有多少余量；本来会落到它上面的创建会被拒绝。
+- 若没有任何在线宿主机带有这些标签，创建会以 `422` 和 `host_auto_no_label_match` 拒绝，并列出这些标签。不会创建任何东西。
+- 标签只和 **自动** 一起使用。指定了宿主机又发标签会被 `host_labels_need_auto` 拒绝，因为指定宿主机时不做筛选。
+- 不给 `hostLabels` 时，放置规则与标签功能出现之前完全一致。
+
 ## 容量
 
 当有多个宿主机时，MiniBox 会统计每台宿主机上运行中 Box 预留的 CPU 与内存。新建、调整资源或迁移若会使预留超过宿主机容量，会被拒绝。`HOST_OVERCOMMIT` 可放宽这一限制，最多为宿主机容量的 10 倍（见 [配置（英文）](../../reference/configuration.md)）。已停止的 Box 不占用预留。
@@ -95,8 +132,8 @@ Agent 是一个小程序，运行在宿主机上的容器中，并主动连接 M
 
 - 复制或迁移镜像要求目标引擎保留镜像 ID。Docker 的经典镜像存储满足此要求。containerd 镜像存储在加载镜像时会改变镜像 ID，因此 MiniBox 会以 `docker_error` 拒绝复制，并列出两个 ID。若 `docker info` 显示 `driver-type io.containerd.snapshotter.v1`，即表示该引擎使用 containerd 镜像存储。
 - 每个宿主机各自保留检查点。要让另一台宿主机也有某个检查点，请[复制](checkpoints.md#复制到其他宿主机)它。副本是新检查点，原检查点留在原处。带系统层的检查点暂时不能复制。
-- **自动** 只考虑已持有模板镜像的宿主机，并且目前还不会按 `arch`、`gpu` 等标签匹配。请先把模板复制到某台宿主机，或直接指定宿主机。
+- **自动** 只考虑已持有模板镜像的宿主机，除非所有者的官方模板可以在某台上构建。要限定它可用的宿主机，请给宿主机加标签并传 `hostLabels`；不传时它会考虑所有在线宿主机。
 - Agent 宿主机暂不支持迁入或迁出 Box，因为 Agent 不复制镜像或卷。请改为在 Agent 宿主机上创建 Box。Agent 宿主机暂不支持模板、快照与端口预览，也不能在其上创建带自助令牌的 Box，因为 Agent 无法写入令牌文件。
 - 宿主机级别的 CPU 与内存占用仅对本机宿主机显示。远程宿主机显示其引擎上报的核心数与内存，以及其上 Box 的占用。
-- 命令行工具没有宿主机相关命令。请使用控制台，或 [REST API（英文）](../../reference/api.md)。
+- 命令行工具的宿主机命令只读写标签：`minibox host labels get` 与 `minibox host labels set`。添加、移除和吊销宿主机请在控制台或通过 [REST API（英文）](../../reference/api.md) 完成。
 - [Agent 令牌](access-and-tokens.md) 可以限制为特定宿主机。

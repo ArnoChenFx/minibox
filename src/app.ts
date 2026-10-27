@@ -264,7 +264,18 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
     volumes,
     bus,
     pulse,
-    { checkpoints, checkpointEngine, multiHost, secrets, egress, firewall, selfTokens, questions, activity },
+    {
+      checkpoints,
+      checkpointEngine,
+      multiHost,
+      secrets,
+      egress,
+      firewall,
+      selfTokens,
+      questions,
+      activity,
+      labels: cfg.localHostLabels,
+    },
   );
   hosts.add(local);
   const knownSecrets = [cfg.accessKey];
@@ -380,6 +391,7 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
     },
     onLive: reconcileOnLive,
     agents,
+    localLabels: cfg.localHostLabels,
   });
   hostAdmin.load();
   bus.subscribe("link", (frame) => hostAdmin.onLink(frame));

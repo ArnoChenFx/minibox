@@ -60,6 +60,7 @@ Off unless `SSH_PORT` is set. See [SSH access](../user-guide/ssh-and-cli.md#conn
 | `METRICS_INTERVAL_MS` | `3000` | How often MiniBox samples host and box resource use, in milliseconds. A positive whole number. Keep it above 2000. |
 | `METRICS_HISTORY` | `120` | The number of samples kept for each host and each box. A positive whole number. |
 | `HOST_OVERCOMMIT` | `1` | How far the CPU and memory that running boxes reserve on a host may exceed its capacity, as a ratio from 1 to 10. `1` reserves no more than the host has. Checked only when there is more than one host. A host past it is listed under **Needs attention** on the overview. See [Hosts](../user-guide/hosts.md#capacity). |
+| `HOST_LABELS` | Empty | Labels of the local host, as `key` or `key=value` entries separated by commas, such as `gpu,arch=amd64`. A key with no `=` carries an empty value. An `auto` box create selects hosts by them. They are written into `hosts.json` under the id `local` at startup, and labels set there or with `PATCH /api/hosts/local` are kept instead, so a change through the API is never undone by an old `.env`. A key or value that breaks the label rules stops startup. See [Hosts](../user-guide/hosts.md#choose-a-host-by-labels). |
 
 ## Sessions and tokens
 

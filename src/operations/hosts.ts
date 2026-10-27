@@ -4,6 +4,7 @@ import { endpointLabel, parseEndpoint } from "../host/endpoint";
 import type { HostManager, HostView } from "../host/manager";
 import { defineOperation } from "./define";
 import type { OperationContext } from "./types";
+import { hostLabelsInput } from "./validation";
 
 const HostStatusSchema = z.enum(["online", "offline", "unknown"]);
 
@@ -41,6 +42,10 @@ export const HostViewSchema = z.object({
   error: z.string().nullable().meta({ description: "The last failed check, as text. Null once a check succeeds." }),
   boxes: z.number().int().meta({ description: "Boxes whose spec names this host." }),
   createdAt: z.string().nullable(),
+  labels: z.record(z.string(), z.string()).meta({
+    description:
+      'Labels the host carries, such as { "gpu": "true" }. An auto box create selects a host by them with its hostLabels field. Empty when the host carries none.',
+  }),
   agent: AgentViewSchema.optional().meta({ description: "The agent connection. Present on an agent host only." }),
 });
 
@@ -94,6 +99,7 @@ const hostFieldsInput = z.object({
   hostKeyFingerprint: z.string().optional().meta({
     description: "The SSH host key confirmed for an ssh host, as SHA256:…, from host.test. A different key is refused.",
   }),
+  labels: hostLabelsInput().optional(),
 });
 
 /** Credentials never reach the audit log: only the id, the name, the endpoint and the host key fingerprint are recorded. */
@@ -103,6 +109,7 @@ function hostDetail(input: z.output<typeof hostFieldsInput>) {
     name: input.name ?? null,
     endpoint: auditedEndpoint(input.endpoint),
     hostKeyFingerprint: input.hostKeyFingerprint ?? null,
+    labels: input.labels ?? {},
   };
 }
 
@@ -235,6 +242,36 @@ export const hostTest = defineOperation({
   run: async (ctx, input) => hostsOf(ctx).test(input),
 });
 
+export const hostLabelsSet = defineOperation({
+  name: "host.labels.set",
+  tag: "hosts",
+  summary: "Set the labels of a host",
+  kind: "write",
+  scope: "host:manage",
+  async: false,
+  conflicts: true,
+  input: z.object({
+    id: z.string().min(1).max(32).meta({ description: "Host id, local included. A host that is not held is a 404." }),
+    labels: hostLabelsInput(),
+  }),
+  output: z.object({ host: HostViewSchema }),
+  rest: [{ method: "PATCH", path: "/api/hosts/:id", body: true }],
+  mcp: {
+    toolset: "meta",
+    name: "set_host_labels",
+    description:
+      "Replace the labels of a host, the local host included, so an auto box create can select it with hostLabels. An empty object clears them. Owner only.",
+  },
+  activity: { action: () => "host.labels.set", target: (input) => input.id },
+  audit: {
+    target: ({ id }, _resolved, result) => ({ kind: "host", id, name: result?.host.name ?? id }),
+    detail: ({ id, labels }) => ({ id, labels }),
+  },
+  run: async (ctx, input): Promise<{ host: HostView }> => ({
+    host: await hostsOf(ctx).setLabels(input.id, input.labels ?? {}),
+  }),
+});
+
 export const hostRemove = defineOperation({
   name: "host.remove",
   tag: "hosts",
@@ -307,4 +344,13 @@ export const hostRevoke = defineOperation({
   run: async (ctx, input): Promise<{ host: HostView }> => ({ host: await hostsOf(ctx).revoke(input.id) }),
 });
 
-export const hostOperations = [hostList, hostUsage, hostAdd, hostTest, hostRemove, hostPairingCreate, hostRevoke];
+export const hostOperations = [
+  hostList,
+  hostUsage,
+  hostAdd,
+  hostTest,
+  hostLabelsSet,
+  hostRemove,
+  hostPairingCreate,
+  hostRevoke,
+];

@@ -134,6 +134,7 @@ describe("OpenAPI document", () => {
       "files.upload",
       "files.write",
       "host.add",
+      "host.labels.set",
       "host.list",
       "host.pairing.create",
       "host.remove",
