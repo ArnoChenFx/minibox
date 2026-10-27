@@ -59,11 +59,12 @@ function customActionCell(tool) {
 }
 
 /**
- * Every row offers the catalog entry as JSON, built-in or custom, so a fork starts from a copy. The label is the icon's
- * accessible name, which is what a narrow phone shows when the words no longer fit.
+ * Every row offers the catalog entry as JSON, built-in or custom, so a fork starts from a copy. The button is its icon
+ * alone at every width: the words are its tooltip, which says what the copy is for, and its accessible name, so the row
+ * keeps the room the actions beside it need on a phone.
  */
 function copyJsonButton(tool) {
-  return `<button type="button" class="btn btn-sm btn-ghost tool-copy" data-action="tool-copy-json" data-tool="${esc(tool.id)}" aria-label="${esc(t("bd.toolCopyJson"))}" title="${esc(t("bd.toolCopyJsonHelp"))}">${icon("copy")}<span class="tool-copy-label">${esc(t("bd.toolCopyJson"))}</span></button>`;
+  return `<button type="button" class="btn btn-sm btn-ghost tool-copy" data-action="tool-copy-json" data-tool="${esc(tool.id)}" aria-label="${esc(t("bd.toolCopyJson"))}" title="${esc(t("bd.toolCopyJsonHelp"))}">${icon("copy")}</button>`;
 }
 
 function toolRow(tool, isCustom, busy) {

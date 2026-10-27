@@ -72,13 +72,13 @@ If the id matches a built-in tool, tick **Replace the built-in entry**. Deleting
 
 ## Copy and paste a tool's JSON
 
-Every tool in the table has a **Copy JSON** button, next to its install, upgrade or uninstall buttons. It copies that tool's catalog entry as JSON, in the same shape as the files in `catalog/` on the server: `id`, `name`, `description`, `category`, `source`, `package`, `bin`, `needsRoot`, `estimatedMb`, `requires`, `install`, `upgrade`, `uninstall`, `stop` and `detect`. `requires` and `stop` appear only when the tool sets them. Install state is not part of it, so a copy describes the tool rather than the box.
+Every tool in the table has a **Copy JSON** button, next to its install, upgrade or uninstall buttons. It is the icon alone, and its tooltip says what it does: the words would take the room the actions beside it need on a narrow window. It copies that tool's catalog entry as JSON, in the same shape as the files in `catalog/` on the server: `id`, `name`, `description`, `category`, `source`, `package`, `bin`, `needsRoot`, `estimatedMb`, `requires`, `install`, `upgrade`, `uninstall`, `stop` and `detect`. `requires` and `stop` appear only when the tool sets them. Install state is not part of it, so a copy describes the tool rather than the box.
 
-Built-in tools have no edit or delete button, and that stays true: their JSON is copied read-only, to start a fork of your own. A custom tool's row has **Copy JSON** beside **Edit** and **Delete**.
+Built-in tools have no edit or delete button, and that stays true: their JSON is copied read-only, to start a fork of your own. A custom tool's row has the copy button beside **Edit** and **Delete**.
 
 To fork a tool:
 
-1. Click **Copy JSON** on the tool's row. A toast confirms that it is on the clipboard. If the browser refuses, MiniBox still copies through the older clipboard path, and says so if that fails too.
+1. Click the copy button on the tool's row (its tooltip reads **Copy JSON**). A toast confirms that it is on the clipboard. If the browser refuses, MiniBox still copies through the older clipboard path, and says so if that fails too.
 2. Click **Custom tool**, then open **Paste JSON** in the dialog and paste the text there.
 3. Click **Fill the form**. The form fills from the description, and the **Id** becomes `<id>-copy`, because the catalog already has the tool: a paste adds a tool rather than replacing a built-in one. If `<id>-copy` is taken too, the id becomes `-copy-2`, `-copy-3` and so on, always within the 63 characters an id allows.
 4. Change what you need, then click **Save**.

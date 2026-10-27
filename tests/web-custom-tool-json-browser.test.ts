@@ -42,6 +42,41 @@ async function clipboardText(page: Page): Promise<string> {
   });
 }
 
+/** The copy buttons' geometry and names, as the page renders them: shared by both widths the test reads. */
+const copyLayout = (target: Page) =>
+  target.evaluate(() => {
+    interface El {
+      getBoundingClientRect(): { width: number };
+      getAttribute(name: string): string | null;
+      textContent: string | null;
+      querySelector(selector: string): { textContent: string | null } | null;
+    }
+    const view = globalThis as unknown as {
+      document: {
+        documentElement: { scrollWidth: number; clientWidth: number };
+        querySelectorAll(selector: string): unknown;
+      };
+    };
+    const root = view.document.documentElement;
+    const found: El[] = [];
+    for (const el of view.document.querySelectorAll(
+      '#bdToolRows [data-action="tool-copy-json"]',
+    ) as unknown as Iterable<El>) {
+      found.push(el);
+    }
+    return {
+      scrollWidth: root.scrollWidth,
+      clientWidth: root.clientWidth,
+      buttons: found.length,
+      widths: found.map((el) => Math.round(el.getBoundingClientRect().width)),
+      // Only the icon is rendered: the button holds no words of its own.
+      texts: found.map((el) => (el.textContent ?? "").trim()),
+      named: found.map((el) => (el.getAttribute("aria-label") ?? "").trim()),
+      tips: found.map((el) => (el.getAttribute("title") ?? "").trim()),
+      icons: found.map((el) => el.querySelector("svg") !== null),
+    };
+  });
+
 /** The form's values, as the dialog's inputs hold them. */
 async function formValues(page: Page) {
   return page.evaluate(() => {
@@ -154,6 +189,11 @@ describe.skipIf(!executablePath)("a tool's JSON description (real browser)", () 
       await webExpect(row.locator('[data-action="tool-custom-edit"]')).toHaveCount(0);
       await webExpect(row.locator('[data-action="tool-custom-delete"]')).toHaveCount(0);
       await webExpect(row.locator('[data-action="tool-copy-json"]')).toHaveAttribute("aria-label", "Copy JSON");
+      // The words are the tooltip, not a label in the row.
+      await webExpect(row.locator('[data-action="tool-copy-json"]')).toHaveAttribute(
+        "title",
+        "Copy this tool's JSON description, to paste into a new custom tool",
+      );
 
       await row.locator('[data-action="tool-copy-json"]').click();
       await webExpect(page.locator("#toasts")).toContainText("JSON copied to the clipboard");
@@ -279,62 +319,33 @@ describe.skipIf(!executablePath)("a tool's JSON description (real browser)", () 
   );
 
   test(
-    "on a 320px phone a copy button is only its icon, so it adds no words to the row and the page never scrolls sideways",
+    "a copy button is its icon alone at every width: the words are its tooltip, so no row grows and the page never scrolls sideways",
     async () => {
+      // The words are long in both languages and a row's action cell can be narrow, so the button never spends row width
+      // on them. It keeps the name as its accessible name and tooltip, which is how a phone says it too.
+      const wide = await copyLayout(page);
+      expect(wide.buttons).toBeGreaterThan(0);
+      // The page itself never scrolls sideways, at the wide width or the narrow one.
+      expect(wide.scrollWidth).toBe(wide.clientWidth);
+      expect(wide.texts.every((text) => text === "")).toBe(true);
+      expect(wide.icons.every(Boolean)).toBe(true);
+      expect(wide.named.every((name) => name !== "")).toBe(true);
+      expect(wide.tips.every((tip) => tip !== "")).toBe(true);
+      // One size at every width: an icon with no words to grow for.
+      expect(new Set(wide.widths).size).toBe(1);
+
       try {
         await page.setViewportSize(NARROW);
         await openTools();
-        const layout = await page.evaluate(() => {
-          interface El {
-            getBoundingClientRect(): { width: number; right: number };
-            getAttribute(name: string): string | null;
-            textContent: string | null;
-            style: { display: string };
-            querySelector(selector: string): El | null;
-          }
-          const view = globalThis as unknown as {
-            document: {
-              documentElement: { scrollWidth: number; clientWidth: number };
-              querySelector(selector: string): El | null;
-              querySelectorAll(selector: string): unknown;
-            };
-            getComputedStyle(el: El): { position: string };
-          };
-          const root = view.document.documentElement;
-          const found: El[] = [];
-          for (const el of view.document.querySelectorAll(
-            '#bdToolRows [data-action="tool-copy-json"]',
-          ) as unknown as Iterable<El>) {
-            found.push(el);
-          }
-          const table = view.document.querySelector("table.table") as El & { scrollWidth: number };
-          const withButtons = table.scrollWidth;
-          for (const el of found) el.style.display = "none";
-          const withoutButtons = table.scrollWidth;
-          for (const el of found) el.style.display = "";
-          return {
-            scrollWidth: root.scrollWidth,
-            clientWidth: root.clientWidth,
-            buttons: found.length,
-            widths: found.map((el) => el.getBoundingClientRect().width),
-            named: found.map((el) => (el.getAttribute("aria-label") ?? el.textContent ?? "").trim() !== ""),
-            labels: found.map((el) => {
-              const label = el.querySelector(".tool-copy-label");
-              return label ? view.getComputedStyle(label).position : "";
-            }),
-            // What the button adds to the widest row: the icon, not the words.
-            added: withButtons - withoutButtons,
-          };
-        });
-        expect(layout.buttons).toBeGreaterThan(0);
-        // The page itself never scrolls sideways: the table scrolls inside its own card, as it already did.
-        expect(layout.scrollWidth).toBe(layout.clientWidth);
-        expect(layout.named.every(Boolean)).toBe(true);
-        // Every button is an icon: 34px at most, with the words clipped to a screen-reader-only box.
-        expect(layout.widths.every((width) => width <= 34)).toBe(true);
-        expect(layout.labels.every((position) => position === "absolute")).toBe(true);
-        // The words add nothing to the row: the table is no wider than one icon per row than it is without them.
-        expect(layout.added).toBeLessThanOrEqual(40);
+        const narrow = await copyLayout(page);
+        expect(narrow.buttons).toBe(wide.buttons);
+        expect(narrow.scrollWidth).toBe(narrow.clientWidth);
+        expect(narrow.texts.every((text) => text === "")).toBe(true);
+        expect(narrow.named.every((name) => name !== "")).toBe(true);
+        // The same square button as on the desktop: nothing to hide, because there are no words.
+        expect(narrow.widths).toEqual(wide.widths);
+        // Icon plus a sm button's padding: no wider than one short label, and the same at every width.
+        expect(Math.max(...narrow.widths)).toBeLessThanOrEqual(40);
       } finally {
         await page.setViewportSize(VIEWPORT);
       }

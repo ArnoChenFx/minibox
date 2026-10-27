@@ -322,6 +322,21 @@ describe("the copy button of a tool row", () => {
     expect(DOM).toContain("if (!copied) throw new Error(");
   });
 
+  test("the button is its icon alone: the words are the tooltip and the accessible name, never a visible label", () => {
+    // A row can be narrow, and the words are long in both languages. The button keeps its accessible name, so a screen
+    // reader still says what it does, and its tooltip says it to a mouse or a long press.
+    const button = TOOLS_ROW.slice(
+      TOOLS_ROW.indexOf("function copyJsonButton("),
+      TOOLS_ROW.indexOf("function toolRow("),
+    );
+    expect(button).toContain('aria-label="${esc(t("bd.toolCopyJson"))}"');
+    expect(button).toContain('title="${esc(t("bd.toolCopyJsonHelp"))}"');
+    // No text node inside the button: only the icon, which is `aria-hidden` itself.
+    expect(button).toMatch(/\$\{icon\("copy"\)\}<\/button>/);
+    expect(button).not.toContain("tool-copy-label");
+    expect(button).not.toContain('esc(t("bd.toolCopyJson"))}<');
+  });
+
   test("the strings the row shows are in the dictionary, in both languages", () => {
     for (const key of ["bd.toolCopyJson", "bd.toolCopyJsonHelp", "bd.toolCopyJsonDone", "bd.toolCopyJsonFailed"]) {
       expect([key, typeof en[key], typeof zh[key]]).toEqual([key, "string", "string"]);
