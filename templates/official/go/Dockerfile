@@ -1,4 +1,4 @@
-FROM golang:1.26-bookworm
+FROM golang:1.27-bookworm
 
 # Box user convention, the same as templates/base. Change these only together with the volumes that already use them.
 ARG DEV_UID=1000
