@@ -7,6 +7,7 @@ import en from "../web/js/i18n/en.js";
 import zh from "../web/js/i18n/zh-CN.js";
 import {
   PREVIEW_MAX_BYTES,
+  absolutePath,
   baseOf,
   childrenOf,
   clashesOf,
@@ -102,6 +103,25 @@ describe("paths", () => {
       { name: "b", path: "a/b" },
       { name: "c", path: "a/b/c" },
     ]);
+  });
+});
+
+describe("absolute paths", () => {
+  test("a path in a volume becomes the path the box sees, under the volume's mount path", () => {
+    expect(absolutePath("/workspace", "src/main.ts")).toBe("/workspace/src/main.ts");
+    expect(absolutePath("/home/dev", "notes/todo.md")).toBe("/home/dev/notes/todo.md");
+  });
+
+  test("the root of a volume is its mount path, and a mount at / is not doubled", () => {
+    expect(absolutePath("/workspace", "")).toBe("/workspace");
+    expect(absolutePath("/opt/minibox/tools", "")).toBe("/opt/minibox/tools");
+    expect(absolutePath("/", "")).toBe("/");
+    expect(absolutePath("/", "etc/hosts")).toBe("/etc/hosts");
+  });
+
+  test("a mount path with a trailing slash still gives one separator", () => {
+    expect(absolutePath("/data/", "a.txt")).toBe("/data/a.txt");
+    expect(absolutePath("/data/", "")).toBe("/data");
   });
 });
 
@@ -290,6 +310,15 @@ describe("the rows of a listing", () => {
     expect(large).not.toContain('data-fb="preview"');
     expect(large).toContain('<span class="fb-name">');
     expect(large).toContain('title="Download"');
+  });
+
+  test("every row copies the path the box sees, which is the mount path plus the path inside the volume", () => {
+    const html = row(named(file("src/main.ts", 12)));
+    expect(html).toContain('data-fb="copy-path" data-path="src/main.ts"');
+    expect(html).toContain('title="Copy path"');
+    expect(html).toContain('aria-label="Copy path"');
+    // The button is its icon alone, so it keeps the row's width for the name.
+    expect(html).not.toContain(">Copy path<");
   });
 
   test("a symbolic link is shown as a link, is not followed, and cannot be downloaded", () => {

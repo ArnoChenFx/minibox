@@ -1,7 +1,8 @@
 import { api } from "../lib/api.js";
-import { esc } from "../lib/dom.js";
+import { copyText, esc } from "../lib/dom.js";
 import { sendFile } from "../lib/file-transfer.js";
 import {
+  absolutePath,
   baseOf,
   childrenOf,
   clashesOf,
@@ -102,11 +103,13 @@ export function rowHtml(entry, volumeId) {
       ? `<a class="icon-btn" href="${esc(downloadUrl(volumeId, entry.path))}" title="${esc(entry.type === "dir" ? t("fl.downloadFolder") : t("fl.download"))}" aria-label="${esc(entry.type === "dir" ? t("fl.downloadFolder") : t("fl.download"))}">${icon("download")}</a>`
       : "";
   const preview = previewable(entry) ? iconButton("preview", entry.path, t("fl.preview"), "eye") : "";
+  // The path a person would type in the box's terminal, so a copied one can be pasted there as it is.
+  const copy = iconButton("copy-path", entry.path, t("fl.copyPath"), "copy");
   return `<tr>
     <td class="fb-col-name">${name}</td>
     <td class="num fb-col-size">${esc(entry.type === "file" ? bytes(entry.size) : "—")}</td>
     <td class="fb-col-modified">${esc(entry.mtime ? dateTime(entry.mtime) : "—")}</td>
-    <td class="fb-col-actions"><div class="fb-actions">${preview}${download}${iconButton("rename", entry.path, t("fl.rename"), "pencil")}${iconButton("delete", entry.path, t("fl.delete"), "trash", " danger")}</div></td>
+    <td class="fb-col-actions"><div class="fb-actions">${preview}${copy}${download}${iconButton("rename", entry.path, t("fl.rename"), "pencil")}${iconButton("delete", entry.path, t("fl.delete"), "trash", " danger")}</div></td>
   </tr>`;
 }
 
@@ -590,7 +593,25 @@ export function mountFiles(root, { box, onChange }) {
 
   const pick = (id) => root.querySelector(`#${id}`).click();
 
+  /**
+   * Copies a row's path as the box sees it, which is the volume's mount path plus the path inside it, so it can be
+   * pasted straight into the box's terminal. The row's own path is relative to the volume, so a volume mounted at
+   * `/workspace` shows `src/main.ts` and copies `/workspace/src/main.ts`.
+   */
+  const copyPath = async (path) => {
+    const volume = current();
+    if (!volume) return;
+    const full = absolutePath(volume.path, path);
+    try {
+      await copyText(full);
+      toast(t("fl.pathCopied"), { message: full });
+    } catch (err) {
+      toastError(t("fl.pathCopyFailed"), err);
+    }
+  };
+
   const actions = {
+    "copy-path": (el) => void copyPath(el.dataset.path ?? ""),
     "upload-files": () => pick("fbPickFiles"),
     "upload-folder": () => pick("fbPickFolder"),
     "new-folder": () => void newFolder(),
