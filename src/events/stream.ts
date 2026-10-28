@@ -1,7 +1,5 @@
-import { HEARTBEAT_MS, PENDING_BYTES, PENDING_LIMIT, RETRY_MS, sseStream } from "./sse-body";
+import { sseStream } from "./sse-body";
 import { type EventFilter, matchesFilter, type StoredEvent } from "./store";
-
-export { HEARTBEAT_MS, PENDING_BYTES, PENDING_LIMIT, RETRY_MS };
 
 /** Events a reconnecting client is replayed at most. Beyond this the stream asks it to catch up on the list instead. */
 export const REPLAY_LIMIT = 500;

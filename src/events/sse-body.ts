@@ -1,15 +1,15 @@
 import { FrameBuffer } from "./frames";
 
-export const HEARTBEAT_MS = 15_000;
+const HEARTBEAT_MS = 15_000;
 /** The delay a browser waits before it reconnects after the connection drops. */
-export const RETRY_MS = 3000;
+const RETRY_MS = 3000;
 /** Frames a client may leave unread. Past this the queue is dropped and the client is asked to catch up. */
-export const PENDING_LIMIT = 1000;
+const PENDING_LIMIT = 1000;
 /**
  * Bytes a client may leave unread. Past this the queue is dropped, as it is past PENDING_LIMIT frames. A sync frame
  * larger than this raises the limit to twice its size, so the frames after it still fit.
  */
-export const PENDING_BYTES = 1024 * 1024;
+const PENDING_BYTES = 1024 * 1024;
 
 const HEARTBEAT = ": keep-alive\n\n";
 const FRAMES_PER_CHUNK = 100;
