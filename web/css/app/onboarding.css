@@ -1,0 +1,157 @@
+/* The overview's first-run guide: three numbered steps, drawn only while the console has no box. */
+/* The guide takes the page head's own bottom margin, so the cards below it keep the gap they have without it. */
+.onboarding-host {
+  margin-bottom: 16px;
+}
+/* The hidden attribute needs its own rule: a host the page keeps for the guide sets display below. */
+.onboarding-host[hidden] {
+  display: none;
+}
+.onboarding .card-head {
+  align-items: flex-start;
+}
+.onboarding .card-head .help {
+  margin-top: 4px;
+  max-width: 68ch;
+}
+.onboarding-steps {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+/* One step is a row: its mark and number, then what it asks for. The steps are separated by a line, so the guide reads
+   as one list rather than three cards. */
+.onboarding-step {
+  padding: 14px 18px;
+  border-top: 1px solid var(--border);
+}
+.onboarding-step:first-child {
+  border-top: 0;
+}
+.onboarding-step.is-locked {
+  color: var(--text-3);
+}
+.onboarding-step.is-locked .onboarding-mark {
+  opacity: 0.55;
+}
+.onboarding-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.onboarding-mark {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  flex: 0 0 auto;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  color: var(--text-2);
+  background: var(--bg-elev);
+}
+.onboarding-mark.is-done {
+  border-color: var(--success);
+  color: var(--success);
+  background: var(--success-soft, var(--bg-elev));
+}
+.onboarding-mark .icon {
+  width: 14px;
+  height: 14px;
+}
+.onboarding-num {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-3);
+}
+.onboarding-name {
+  font-size: 13.5px;
+  font-weight: 600;
+}
+.onboarding-body {
+  margin-top: 8px;
+  padding-left: 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+.onboarding-body > .help {
+  margin: 0;
+  max-width: 68ch;
+}
+.onboarding-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-2);
+}
+/* A field stacks its label, its control and its hint, like `.field` does. It is a flex column rather than a grid, so a
+   control that asks for 100% of the row really takes the row's width. */
+.onboarding-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.onboarding-field > .help {
+  margin: 0;
+}
+.onboarding-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.onboarding-mono {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+.onboarding-secret {
+  min-width: 0;
+}
+.onboarding-secret .token-secret {
+  margin-top: 6px;
+}
+.onboarding-body .token-snippet {
+  margin: 0;
+  max-height: 260px;
+}
+/* A client's own button in the three-way choice keeps the row's look; `.seg` centres its one line of text. */
+.onboarding-client {
+  padding: 8px 10px;
+  text-align: center;
+}
+.onboarding-client strong {
+  font-size: 13px;
+  font-weight: 500;
+}
+/* On a phone the mark and the number sit closer to the text, and the snippet scrolls inside the step rather than
+   pushing the page sideways. */
+@media (max-width: 640px) {
+  .onboarding-step {
+    padding: 12px 14px;
+  }
+  .onboarding-body {
+    padding-left: 0;
+  }
+  .onboarding-body .token-snippet {
+    max-height: 200px;
+  }
+  .onboarding-actions .btn {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+  /* Three clients on one row still fit a 320px window: the buttons lose their padding, and the label shrinks a step. */
+  .onboarding-client {
+    padding: 8px 4px;
+  }
+  .onboarding-client strong {
+    font-size: 12px;
+  }
+}

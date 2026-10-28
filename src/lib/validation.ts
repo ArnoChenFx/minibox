@@ -44,12 +44,6 @@ export function checkName(value: unknown, label: LabelKey): Checked<string> {
   return accept(v);
 }
 
-export function validateName(value: unknown, field = "name", label: LabelKey = "name"): string {
-  const checked = checkName(value, label);
-  if (!checked.ok) throw badRequest(checked.failure.message, { field });
-  return checked.value;
-}
-
 export const DESCRIPTION_MAX = 200;
 
 /** Optional one-line description. Control characters are refused, newlines above all: they would start a new Dockerfile instruction. */

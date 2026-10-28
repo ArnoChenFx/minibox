@@ -65,10 +65,6 @@ export function poolForRole(file: PoolsFile, role: VolumeRole): StoragePool {
   return file.pools.find((pool) => pool.default) ?? file.pools[0] ?? localPool(true);
 }
 
-export function defaultPool(file: PoolsFile): StoragePool {
-  return file.pools.find((pool) => pool.default) ?? file.pools[0] ?? localPool(true);
-}
-
 export interface PoolDraft {
   name: string;
   backend: PoolBackend;
