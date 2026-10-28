@@ -102,6 +102,59 @@ describe.skipIf(!executablePath)("the volumes page: batch delete and prune (real
   });
 
   test(
+    "above 640px the rows are still a table, with the nine cells the columns are in",
+    async () => {
+      await page.goto(`${consoleUrl}/#/storage/volumes`);
+      await webExpect(row(page, "extra-6")).toBeVisible();
+      const shape = await page.evaluate(() => {
+        interface Node {
+          display: string;
+        }
+        const view = globalThis as unknown as {
+          document: {
+            querySelector(selector: string): (Node & { querySelectorAll(s: string): Node[] }) | null;
+          };
+          getComputedStyle(element: Node): { display: string; gridTemplateAreas: string };
+        };
+        const table = view.document.querySelector(".vol-table")!;
+        const first = view.document.querySelector("#volRows tr")!;
+        const cells = first.querySelectorAll("td");
+        return {
+          table: view.getComputedStyle(table).display,
+          row: view.getComputedStyle(first).display,
+          // No card layout leaks out of the phone block.
+          areas: view.getComputedStyle(first).gridTemplateAreas,
+          count: cells.length,
+          first: (cells[0] as unknown as { className: string }).className,
+          last: (cells[cells.length - 1] as unknown as { className: string }).className,
+        };
+      });
+      expect(shape.table).toBe("table");
+      expect(shape.row).toBe("table-row");
+      expect(shape.areas).toBe("none");
+      // The checkbox comes first and the actions last, so every column is still where the header says.
+      expect(shape.count).toBe(9);
+      expect(shape.first).toBe("select-cell");
+      expect(shape.last).toContain("vol-actions");
+      // The desktop row keeps every field on one line, so a long name or mount ends in an ellipsis rather than wrapping.
+      const layout = await page.evaluate(() => {
+        interface Node {
+          querySelectorAll(selector: string): Node[];
+        }
+        const view = globalThis as unknown as {
+          document: { querySelectorAll(selector: string): Node[] };
+          getComputedStyle(element: Node): { whiteSpace: string };
+        };
+        return [...view.document.querySelectorAll("#volRows tr:first-child td")].map(
+          (cell) => view.getComputedStyle(cell).whiteSpace,
+        );
+      });
+      expect([...new Set(layout)]).toEqual(["nowrap"]);
+    },
+    TIMEOUT_MS,
+  );
+
+  test(
     "each row has a checkbox; the volume a box mounts and the tools volume cannot be picked",
     async () => {
       await page.goto(`${consoleUrl}/#/storage/volumes`);
@@ -304,7 +357,15 @@ describe.skipIf(!executablePath)("the volumes page on a phone (real browser)", (
     });
     expect(made.status).toBe(201);
     await createVolume(host, { name: "notes", role: null, createdBy: "owner" });
-    await createVolume(host, { name: "cache-a", role: "cache", createdBy: "owner" });
+    const cache = await createVolume(host, { name: "cache-a", role: "cache", createdBy: "owner" });
+    // One volume over its soft limit, so its card can be seen to carry the accent the desktop table put on the first cell.
+    const record = host.volumes.read(cache.id);
+    if (!record) throw new Error("the cache volume has a record");
+    host.volumes.write({
+      ...record,
+      bytes: 3_000_000,
+      limits: { softBytes: 1_000_000, hardBytes: null, action: "warn" },
+    });
 
     browser = await chromium.launch({ executablePath: executablePath ?? undefined, args: ["--no-sandbox"] });
     context = await browser.newContext({ viewport: PHONE });
@@ -338,16 +399,16 @@ describe.skipIf(!executablePath)("the volumes page on a phone (real browser)", (
           scrollWidth: number;
           clientWidth: number;
           querySelector(selector: string): Node | null;
+          querySelectorAll(selector: string): Node[];
         }
         const view = globalThis as unknown as {
           document: Node & {
-            querySelectorAll(selector: string): Node[];
             documentElement: { scrollWidth: number; clientWidth: number };
           };
           getComputedStyle(
             element: Node,
             pseudo?: string,
-          ): { display: string; gridTemplateAreas: string; content: string };
+          ): { display: string; gridTemplateAreas: string; content: string; gridArea: string };
         };
         const row = view.document.querySelector("#volRows tr")!;
         const header = view.document.querySelector(".vol-table thead")!;
@@ -357,6 +418,13 @@ describe.skipIf(!executablePath)("the volumes page on a phone (real browser)", (
           thead: view.getComputedStyle(header).display,
           firstHeader: view.getComputedStyle(header.querySelector("th")!).display,
           selectAllLabel: view.getComputedStyle(header.querySelector("th.select-cell")!, "::after").content,
+          // The visible fields of the first card, and the area each of them took, so a field placed nowhere shows up.
+          cells: [...row.querySelectorAll("td")]
+            .filter((cell) => view.getComputedStyle(cell).display !== "none")
+            .map((cell): [string, string] => [
+              (cell as unknown as { className: string }).className,
+              view.getComputedStyle(cell).gridArea,
+            ]),
           fits: {
             wrap:
               view.document.querySelector("#volWrap")!.scrollWidth <=
@@ -369,23 +437,177 @@ describe.skipIf(!executablePath)("the volumes page on a phone (real browser)", (
         };
       });
       expect(shape.row).toBe("grid");
-      expect(shape.areas).toContain("name");
-      expect(shape.areas).toContain("actions");
+      // Every field takes the named area the grid lays out for it, so no column is left to overflow.
+      expect(shape.cells.every(([, area]) => area !== "")).toBe(true);
+      for (const [, area] of shape.cells) expect(shape.areas).toContain(area);
+      expect(shape.cells.map(([, area]) => area).toSorted()).toEqual(
+        ["actions", "mounts", "name", "owner", "pool", "select", "status", "usage"].toSorted(),
+      );
       expect(shape.thead).toBe("block");
       expect(shape.firstHeader).toBe("flex");
+      // The select-all box in the header lines up with the checkbox of the card below, so the two form one column.
+      const insets = await page.evaluate(() => {
+        const view = globalThis as unknown as {
+          document: { querySelector(selector: string): { getBoundingClientRect(): { left: number } } | null };
+        };
+        const header = view.document.querySelector("th.select-cell")!;
+        const first = view.document.querySelector("#volRows tr td")!;
+        return {
+          header: Math.round(header.getBoundingClientRect().left),
+          card: Math.round(first.getBoundingClientRect().left),
+        };
+      });
+      expect(Math.abs(insets.header - insets.card)).toBeLessThanOrEqual(1);
       // The header keeps only its select-all box, which names itself now that the header row is gone.
       await webExpect(page.locator("#volSelectAll")).toBeVisible();
       expect(shape.selectAllLabel).toContain("Select all");
       // Every card fits inside the wrapper, and the page itself does not scroll sideways.
       expect(shape.fits).toEqual({ wrap: true, cards: true, page: true });
-      // Each field keeps the name of the column it used to sit in.
+      // Each field carries the name of the column it used to sit in, and draws it above its value.
       await webExpect(page.locator("#volRows tr").first().locator(".vol-pool")).toHaveAttribute("data-label", "Pool");
+      const labels = await page.evaluate(() => {
+        interface Node {
+          className: string;
+          hasAttribute(name: string): boolean;
+          getAttribute(name: string): string | null;
+        }
+        const view = globalThis as unknown as {
+          document: { querySelector(selector: string): (Node & { querySelectorAll(s: string): Node[] }) | null };
+          getComputedStyle(element: Node, pseudo?: string): { content: string };
+        };
+        const card = view.document.querySelector("#volRows tr")!;
+        return [...card.querySelectorAll("td")]
+          .filter((cell) => cell.hasAttribute("data-label"))
+          .map((cell) => [
+            cell.className,
+            cell.getAttribute("data-label"),
+            view.getComputedStyle(cell, "::before").content,
+          ]);
+      });
+      // Every field but the name, the status and the actions names itself, in the order the columns were in.
+      expect(labels.map(([, label]) => label)).toEqual(["Size", "Mounts", "Ownership", "Pool", "Latest checkpoint"]);
+      // The name is drawn from `data-label` itself, so it never drifts from the column it came from.
+      for (const [cls, label, content] of labels) expect([cls, label, content]).toEqual([cls, label, `"${label}"`]);
       // Picking a row and deleting it together still works from the card.
       await pick(page, "notes").click();
       await webExpect(page.locator("#volBulk")).toBeVisible();
       await webExpect(page.locator("#volBulkCount")).toHaveText("1 selected");
       await page.locator('#volBulk [data-action="clear-selection"]').click();
       await webExpect(page.locator("#volBulk")).toBeHidden();
+    },
+    TIMEOUT_MS,
+  );
+
+  test(
+    "while the list loads, a skeleton row is one line instead of nine empty cells",
+    async () => {
+      // Hold the volume list so the page's own skeleton stays on screen long enough to be measured.
+      const held = Promise.withResolvers<void>();
+      const settled = Promise.withResolvers<void>();
+      await page.route("**/api/volumes", async (route) => {
+        await held.promise;
+        await route.continue();
+        settled.resolve();
+      });
+      try {
+        await page.reload();
+        await webExpect(page.locator("#volRows tr").first()).toBeVisible();
+        const skeleton = await page.evaluate(() => {
+          interface Node {
+            querySelectorAll(selector: string): Node[];
+            getBoundingClientRect(): { height: number };
+          }
+          const view = globalThis as unknown as {
+            document: { querySelector(selector: string): Node | null };
+            getComputedStyle(element: Node): { display: string; gridColumn: string };
+          };
+          const row = view.document.querySelector("#volRows tr")!;
+          const cells = [...row.querySelectorAll("td")];
+          const shown = cells.filter((cell) => view.getComputedStyle(cell).display !== "none");
+          return {
+            cells: cells.length,
+            shown: shown.length,
+            span: view.getComputedStyle(shown[0]!).gridColumn,
+            height: Math.round(row.getBoundingClientRect().height),
+          };
+        });
+        // Nine cells are drawn, but only the first takes the row, stretched across every column.
+        expect(skeleton.cells).toBe(9);
+        expect(skeleton.span).toBe("1 / -1");
+        expect(skeleton.shown).toBeLessThanOrEqual(2);
+
+        held.resolve();
+        await settled.promise;
+        await page.unroute("**/api/volumes");
+        await webExpect(page.locator("#volRows .vol-name").first()).toBeVisible();
+        // A loaded card is far taller than the loading row, so the placeholder never looks like a filled card.
+        const card = await page.locator("#volRows tr").first().boundingBox();
+        if (!card) throw new Error("the first card has no layout box");
+        expect(skeleton.height).toBeLessThan(Math.round(card.height) / 2);
+      } finally {
+        held.resolve();
+      }
+    },
+    TIMEOUT_MS,
+  );
+
+  test(
+    "a field with nothing in it is left out, so a card is not a column of dashes",
+    async () => {
+      // `notes` mounts nowhere and has no checkpoint, so the two fields that would only draw a dash are hidden.
+      const empty = page.locator("#volRows tr", { hasText: "notes" }).locator("td.vol-empty");
+      await webExpect(empty).toHaveCount(2);
+      const shape = await page.evaluate(() => {
+        interface Node {
+          className: string;
+          textContent: string | null;
+          querySelectorAll(selector: string): Node[];
+        }
+        const view = globalThis as unknown as {
+          document: { querySelectorAll(selector: string): Node[] };
+          getComputedStyle(element: Node): { display: string };
+        };
+        const card = [...view.document.querySelectorAll("#volRows tr")].find((row) =>
+          row.textContent?.includes("notes"),
+        )!;
+        return [...card.querySelectorAll("td")]
+          .filter((cell) => cell.className.includes("vol-empty"))
+          .map((cell) => [cell.className, view.getComputedStyle(cell).display]);
+      });
+      expect(shape).toEqual([
+        ["vol-mounts vol-empty", "none"],
+        ["vol-latest-cell vol-empty", "none"],
+      ]);
+    },
+    TIMEOUT_MS,
+  );
+
+  test(
+    "a volume over its limit marks its whole card, and the first cell no longer carries the accent on its own",
+    async () => {
+      const shape = await page.evaluate(() => {
+        interface Node {
+          className: string;
+          textContent: string | null;
+          querySelector(selector: string): Node | null;
+        }
+        const view = globalThis as unknown as {
+          document: { querySelectorAll(selector: string): Node[] };
+          getComputedStyle(element: Node): { boxShadow: string };
+        };
+        const card = [...view.document.querySelectorAll("#volRows tr")].find((row) =>
+          row.textContent?.includes("cache-a"),
+        )!;
+        const first = card.querySelector("td")!;
+        return {
+          row: card.className,
+          rowShadow: view.getComputedStyle(card).boxShadow,
+          firstShadow: view.getComputedStyle(first).boxShadow,
+        };
+      });
+      expect(shape.row).toBe("volume-over-soft");
+      expect(shape.rowShadow).not.toBe("none");
+      expect(shape.firstShadow).toBe("none");
     },
     TIMEOUT_MS,
   );
@@ -408,26 +630,71 @@ describe.skipIf(!executablePath)("the volumes page on a phone (real browser)", (
   test(
     "the storage pools table is cards too, so the pools card does not scroll sideways either",
     async () => {
-      await page.locator(".fold-toggle").first().click();
+      // The pools card folds under the volumes table; another test may already have opened it, so only open it when shut.
+      if (!(await page.locator("#volBody .pool-table tbody tr").first().isVisible())) {
+        await page.locator(".fold-toggle").first().click();
+      }
       await webExpect(page.locator("#volBody .pool-table tbody tr").first()).toBeVisible();
       const pools = await page.evaluate(() => {
         interface Node {
           scrollWidth: number;
           clientWidth: number;
+          className: string;
+          querySelectorAll(selector: string): Node[];
         }
         const view = globalThis as unknown as {
-          document: {
-            querySelector(selector: string): Node | null;
-          };
-          getComputedStyle(element: Node): { display: string };
+          document: { querySelector(selector: string): (Node & { querySelectorAll(s: string): Node[] }) | null };
+          getComputedStyle(element: Node): { display: string; gridArea: string; gridTemplateAreas: string };
         };
         const wrap = view.document.querySelector("#volBody .table-wrap")!;
+        const card = view.document.querySelector("#volBody .pool-table tbody tr")!;
+        const style = view.getComputedStyle(card);
         return {
-          row: view.getComputedStyle(view.document.querySelector("#volBody .pool-table tbody tr")!).display,
+          row: style.display,
+          areas: style.gridTemplateAreas,
+          // Each field of the pool card takes the area the grid lays out for it.
+          cells: [...card.querySelectorAll("td")].map((cell): [string, string] => [
+            cell.className,
+            view.getComputedStyle(cell).gridArea,
+          ]),
           fits: wrap.scrollWidth <= wrap.clientWidth,
         };
       });
-      expect(pools).toEqual({ row: "grid", fits: true });
+      expect(pools.row).toBe("grid");
+      expect(pools.fits).toBe(true);
+      // Every named area the pool card lays out is claimed by a field, so none is left empty.
+      const laid = new Set(
+        (pools.areas.match(/"[^"]+"/g) ?? []).flatMap((line) => line.replace(/"/g, "").trim().split(/\s+/)),
+      );
+      expect([...laid].toSorted()).toEqual(["actions", "backend", "free", "health", "name", "note"]);
+      for (const [cls, area] of pools.cells) expect([cls, laid.has(area)]).toEqual([cls, true]);
+    },
+    TIMEOUT_MS,
+  );
+
+  test(
+    "a pool with no note leaves that line out, as the volumes card does",
+    async () => {
+      // The pools card folds under the volumes table; another test may already have opened it, so only open it when shut.
+      if (!(await page.locator("#volBody .pool-table tbody tr").first().isVisible())) {
+        await page.locator(".fold-toggle").first().click();
+      }
+      await webExpect(page.locator("#volBody .pool-table tbody tr").first()).toBeVisible();
+      // The local pool answers with no note, so its cell is marked and the card leaves the line out.
+      const shape = await page.evaluate(() => {
+        interface Node {
+          className: string;
+          textContent: string | null;
+          querySelectorAll(selector: string): Node[];
+        }
+        const view = globalThis as unknown as {
+          document: { querySelectorAll(selector: string): Node[] };
+          getComputedStyle(element: Node): { display: string };
+        };
+        const card = view.document.querySelectorAll("#volBody .pool-table tbody tr")[0]!;
+        return [...card.querySelectorAll("td")].map((cell) => [cell.className, view.getComputedStyle(cell).display]);
+      });
+      expect(shape).toContainEqual(["pool-note pool-empty", "none"]);
     },
     TIMEOUT_MS,
   );

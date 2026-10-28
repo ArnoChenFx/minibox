@@ -178,6 +178,8 @@ A task is in one of `queued`, `running`, `succeeded`, `failed`, `cancelled` or `
 
 Both streams below are server-sent events on a `GET`, both disable Bun's idle timer with `server.timeout(req, 0)`, both take a slot from `app.streams` (`src/events/slots.ts`, `STREAM_MAX_CONNECTIONS`, default 256) and both stop when the caller's credential ends: `abortWhenEnded` (`src/routes/router.ts`) watches the browser session or the token and aborts the stream, so a signed-out browser stops receiving frames at once instead of at its next reconnect. Neither is an operation, and neither appears in the OpenAPI document.
 
+All three streams share one body, `src/events/sse-body.ts` (the third is the box log stream below). It owns what is the same for each: the `FrameBuffer` and its limits, the read loop that waits for a frame, sends up to a hundred as one chunk and closes once the stream stopped, `stop` (once, running the releases, clearing the heartbeat and reporting the end), `cancel`, and the opening of `retry: 3000`, the heartbeat and the abort listener. A stream passes its own parts: `attach` (its subscription), `begin` (its replay, sync, or both), and the optional `holds` / `drained` hooks — the log stream is the one that uses them, to keep a `closed` frame queued behind the end of the stream. Nothing else is shared: the frame builders differ per stream, and so do cursor parsing and authorization, which stay in the routes.
+
 **`GET /api/tasks/:id/events`** (`src/routes/tasks.ts` → `src/tasks/stream.ts`):
 
 - Authorization: scope `task:read` on the route, then `taskVisible` for the task's own record. A task the principal may not see answers `404`, as a task that does not exist does.

@@ -36,7 +36,6 @@ export const snapshotCreate = defineOperation({
   input: z.object({ id: boxId(), name: snapshotName() }),
   output: z.object({ snapshot: SnapshotSchema }),
   rest: [{ method: "POST", path: "/api/boxes/:id/snapshots", body: true, status: 202 }],
-  cli: "snapshot create",
   hostFor: (ctx, input) => hostOfBox(ctx, input.id),
   precondition: async ({ host }) => refuseAgent(host, "snapshots"),
   resolve: ({ host }, input) => getBox(host, input.id),
@@ -70,7 +69,6 @@ export const snapshotFork = defineOperation({
   }),
   output: z.object({ box: BoxSchema }),
   rest: [{ method: "POST", path: "/api/snapshots/:ref/boxes", body: true, status: 201 }],
-  cli: "snapshot fork",
   hostFor: (ctx, input) => hostOfImage(ctx, input.ref.trim()),
   precondition: ({ host }, input) => assertNewBox(host, input),
   activity: { action: () => "box.create", target: (input) => input.name },
@@ -109,7 +107,6 @@ export const snapshotList = defineOperation({
   input: z.object({ host: hostId().optional() }),
   output: z.object({ snapshots: z.array(ImageSchema) }),
   rest: [{ method: "GET", path: "/api/snapshots", query: ["host"] }],
-  cli: "snapshot list",
   run: async (ctx, input) => {
     const { principal, host } = ctx;
     const snapshots = await fromEveryHost(imageHosts(ctx, input.host), async (on) =>
@@ -135,7 +132,6 @@ export const snapshotDelete = defineOperation({
   input: z.object({ ref: snapshotRef(), host: hostId().optional() }),
   output: OkSchema,
   rest: [{ method: "DELETE", path: "/api/snapshots/:ref", query: ["host"] }],
-  cli: "snapshot rm",
   hostFor: (ctx, input) => hostOfImage(ctx, input.ref, input.host),
   precondition: async ({ host }) => refuseAgent(host, "snapshots"),
   activity: { action: () => "snapshot.delete", target: ({ ref }) => ref },

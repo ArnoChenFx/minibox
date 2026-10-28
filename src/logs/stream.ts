@@ -1,10 +1,5 @@
-import { FrameBuffer } from "../events/frames";
-import { HEARTBEAT_MS, PENDING_BYTES, PENDING_LIMIT, RETRY_MS } from "../events/stream";
+import { sseStream } from "../events/sse-body";
 import type { LogEvent, LogFollows, LogSubscription } from "../host/log-follow";
-
-const HEARTBEAT = ": keep-alive\n\n";
-const FRAMES_PER_CHUNK = 100;
-const encoder = new TextEncoder();
 
 export interface LogStreamOptions {
   /** The host's log follows. The stream subscribes to one box of them, so every stream of a box shares one follow. */
@@ -30,113 +25,60 @@ const frame = (kind: string, data: unknown) => `event: ${kind}\ndata: ${JSON.str
  * ends without a frame, so the client reads the box again once it reconnects.
  */
 export function logStream(options: LogStreamOptions): ReadableStream<Uint8Array> {
-  const { follows, boxId, tail, signal } = options;
-  const frames = new FrameBuffer({
-    frames: options.pendingLimit ?? PENDING_LIMIT,
-    bytes: options.pendingBytes ?? PENDING_BYTES,
-  });
+  const { follows, boxId, tail } = options;
   let subscription: LogSubscription | undefined;
-  let done = false;
-  let cancelled = false;
   let ending = false;
-  let wake: (() => void) | undefined;
-  let heartbeat: ReturnType<typeof setInterval> | undefined;
 
-  const notify = () => {
-    wake?.();
-    wake = undefined;
-  };
+  return sseStream(options, (shell) => {
+    const { frames, notify } = shell;
 
-  const syncFrame = (): string => {
-    const lines = subscription?.snapshot(tail).map((line) => line.text) ?? [];
-    const text = frame("sync", { lines });
-    frames.raiseByteLimit(2 * Buffer.byteLength(text));
-    return text;
-  };
+    const syncFrame = (): string => {
+      const lines = subscription?.snapshot(tail).map((line) => line.text) ?? [];
+      const text = frame("sync", { lines });
+      frames.raiseByteLimit(2 * Buffer.byteLength(text));
+      return text;
+    };
 
-  const resync = () => {
-    frames.clear();
-    frames.force(syncFrame());
-    notify();
-  };
-
-  const onLog = (event: LogEvent) => {
-    if (done || ending) return;
-    if (event.kind === "reset") {
-      resync();
-      return;
-    }
-    if (event.kind === "closed") {
+    const resync = () => {
       frames.clear();
-      frames.force(frame("closed", {}));
-      ending = true;
+      frames.force(syncFrame());
       notify();
-      return;
-    }
-    if (event.kind === "stopped") {
-      ending = true;
-      notify();
-      return;
-    }
-    if (frames.push(frame("line", { text: event.line.text }))) notify();
-    else resync();
-  };
+    };
 
-  const stop = () => {
-    if (done) return;
-    done = true;
-    subscription?.unsubscribe();
-    subscription = undefined;
-    clearInterval(heartbeat);
-    signal?.removeEventListener("abort", stop);
-    options.onEnd?.();
-    notify();
-  };
+    const onLog = (event: LogEvent) => {
+      if (shell.done || ending) return;
+      if (event.kind === "reset") {
+        resync();
+        return;
+      }
+      if (event.kind === "closed") {
+        frames.clear();
+        frames.force(frame("closed", {}));
+        ending = true;
+        notify();
+        return;
+      }
+      if (event.kind === "stopped") {
+        ending = true;
+        notify();
+        return;
+      }
+      if (frames.push(frame("line", { text: event.line.text }))) notify();
+      else resync();
+    };
 
-  return new ReadableStream<Uint8Array>({
-    start() {
-      try {
+    return {
+      attach: () => {
         subscription = follows.subscribe(boxId, onLog);
-        frames.force(`retry: ${RETRY_MS}\n\n`);
-        frames.force(syncFrame());
-        heartbeat = setInterval(() => {
-          if (frames.push(HEARTBEAT)) notify();
-        }, options.heartbeatMs ?? HEARTBEAT_MS);
-        heartbeat.unref();
-        if (signal?.aborted) stop();
-        else signal?.addEventListener("abort", stop);
-      } catch (e) {
-        stop();
-        throw e;
-      }
-    },
-    async pull(controller) {
-      try {
-        if (frames.length === 0 && !done && !ending) {
-          await new Promise<void>((resolve) => {
-            wake = resolve;
-          });
-        }
-        if (done) {
-          if (!cancelled) controller.close();
-          return;
-        }
-        if (frames.length > 0) {
-          controller.enqueue(encoder.encode(frames.take(FRAMES_PER_CHUNK).join("")));
-          return;
-        }
-        if (ending) {
-          stop();
-          controller.close();
-        }
-      } catch (e) {
-        stop();
-        throw e;
-      }
-    },
-    cancel() {
-      cancelled = true;
-      stop();
-    },
+        return () => {
+          subscription?.unsubscribe();
+          subscription = undefined;
+        };
+      },
+      begin: () => frames.force(syncFrame()),
+      // A `closed` frame is queued behind `ending`: a read waits for the queue to drain, and the queue ends the stream.
+      holds: () => !ending,
+      drained: () => ending,
+    };
   });
 }

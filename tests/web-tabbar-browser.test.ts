@@ -202,8 +202,45 @@ describe.skipIf(!executablePath)("the bottom tab bar (real browser)", () => {
         await webExpect(page.locator("#tabbar [data-tab]")).toHaveCount(4);
         await webExpect(page.locator("#tabbar > a > span[data-i18n]")).toHaveText(["Overview", "Boxes", "Activity"]);
         await webExpect(page.locator("#moreBtn > span[data-i18n]")).toHaveText("More");
+        // Every entry draws an icon above its label, from the set the console's other pages use.
+        await webExpect(page.locator("#tabbar [data-tab] > svg.icon")).toHaveCount(4);
         await webExpect(page.locator("#menuBtn")).toBeHidden();
         await webExpect(page.locator("#tabbar [aria-current='page']")).toHaveAttribute("data-tab", "overview");
+      },
+      TIMEOUT_MS,
+    );
+
+    test(
+      "each entry opens the page its address names, and the bar sits over the page rather than in it",
+      async () => {
+        // The bar's entries are links to the page they open, and it is fixed over the page, so it never scrolls away.
+        for (const [tab, hash, heading] of [
+          ["overview", "#/overview", "Overview"],
+          ["boxes", "#/boxes", "Boxes"],
+          ["activity", "#/activity", "Activity"],
+        ] as const) {
+          await page.locator(`#tabbar [data-tab="${tab}"]`).click();
+          await webExpect(page).toHaveURL((url) => url.hash === hash);
+          await webExpect(page.locator("#view h1").first()).toHaveText(heading);
+          expect([tab, await currentTab(page)]).toEqual([tab, tab]);
+        }
+        const shape = await page.evaluate(() => {
+          const view = globalThis as unknown as {
+            document: { querySelector(selector: string): El | null };
+            getComputedStyle(element: El): { position: string; inset: string; gridTemplateColumns: string };
+            innerHeight: number;
+          };
+          const bar = view.document.querySelector("#tabbar")!;
+          const style = view.getComputedStyle(bar);
+          return {
+            position: style.position,
+            // The bar is pinned to the bottom edge of the window, not to the page's own last line.
+            bottom: Math.round(bar.getBoundingClientRect().bottom),
+            viewport: view.innerHeight,
+            columns: style.gridTemplateColumns.split(" ").length,
+          };
+        });
+        expect(shape).toEqual({ position: "fixed", bottom: PHONE.height, viewport: PHONE.height, columns: 4 });
       },
       TIMEOUT_MS,
     );
@@ -251,13 +288,39 @@ describe.skipIf(!executablePath)("the bottom tab bar (real browser)", () => {
         expect(drawer.width).toBeGreaterThan(200);
         // Opening the drawer keeps the page where it was; the bar itself does not navigate.
         await webExpect(page).toHaveURL((url) => url.hash === "#/boxes");
+        // The scrim lies under the top bar, the bar and the drawer, so each of them keeps working while it is open.
+        const onTop = await page.evaluate(() => {
+          const view = globalThis as unknown as {
+            document: {
+              querySelector(selector: string): El | null;
+              elementFromPoint(x: number, y: number): (El & { closest(s: string): unknown }) | null;
+            };
+          };
+          const hit = (selector: string) => {
+            const node = view.document.querySelector(selector)!;
+            const rect = node.getBoundingClientRect();
+            const found = view.document.elementFromPoint(
+              Math.round(rect.left + rect.width / 2),
+              Math.round(rect.top + rect.height / 2),
+            );
+            return found === node || Boolean(found?.closest(selector));
+          };
+          return { topbar: hit("#tasksBtn"), drawer: hit('#sidebar a[data-nav="storage"]') };
+        });
+        expect(onTop).toEqual({ topbar: true, drawer: true });
       },
       TIMEOUT_MS,
     );
 
     test(
-      "choosing an entry in the drawer closes it, and More stays the current tab on pages of its own",
+      "a route change closes the drawer, and More stays the current tab on pages of its own",
       async () => {
+        // The test above leaves the drawer open, so only open it when it is shut.
+        if ((await page.locator("#moreBtn").getAttribute("aria-expanded")) !== "true") {
+          await page.locator("#moreBtn").click();
+        }
+        await webExpect(page.locator("#moreBtn")).toHaveAttribute("aria-expanded", "true");
+        // Choosing an entry in the drawer closes it, and the page it opens marks More rather than an entry of its own.
         await page.locator('.sidebar a[data-nav="storage"]').click();
         await webExpect(page).toHaveURL((url) => url.hash === "#/storage/volumes");
         await webExpect(page.locator("#moreBtn")).toHaveAttribute("aria-expanded", "false");
@@ -390,6 +453,21 @@ describe.skipIf(!executablePath)("the bottom tab bar (real browser)", () => {
         await page.keyboard.press("Escape");
         await webExpect(page.locator(".overlay")).toHaveCount(0);
         await webExpect(page.locator("#tabbar")).toBeVisible();
+        // A toast says what a press did, so it rises above the bar rather than landing on it.
+        const clearance = await page.evaluate(() => {
+          const view = globalThis as unknown as {
+            document: { querySelector(selector: string): El | null };
+            getComputedStyle(element: El): { bottom: string };
+          };
+          const toasts = view.document.querySelector("#toasts")!;
+          const bar = view.document.querySelector("#tabbar")!;
+          return {
+            toastsBottom: Number.parseFloat(view.getComputedStyle(toasts).bottom),
+            barHeight: Math.round(bar.getBoundingClientRect().height),
+          };
+        });
+        // The stack of toasts starts above the bar's own height, so a toast never covers an entry.
+        expect(clearance.toastsBottom).toBeGreaterThanOrEqual(clearance.barHeight);
       },
       TIMEOUT_MS,
     );
