@@ -1,6 +1,7 @@
 import { activityRow } from "../components/activity-row.js";
 import { openCreateBox } from "../components/create-box.js";
 import { bindToggles, limitList } from "../components/list-toggle.js";
+import { mountOnboarding } from "../components/onboarding.js";
 import { followOverview } from "../components/overview-feed.js";
 import { drawWatch } from "../components/overview-watch.js";
 import { api, enc } from "../lib/api.js";
@@ -39,6 +40,7 @@ export function render(view) {
       <div><h1>${t("nav.overview")}</h1><p id="ovSub">${t("ov.subtitle")}</p></div>
       <div class="page-actions"><button class="btn btn-primary" data-action="create">${icon("plus")}${t("box.create")}</button></div>
     </div>
+    <div id="ovOnboarding" class="onboarding-host" hidden></div>
     <div class="grid grid-4" id="ovHosts" style="margin-bottom:16px" hidden></div>
     <div class="grid grid-4" id="ovMetrics">${metricSkeleton().repeat(4)}</div>
     <div class="grid watch-grid" style="margin-top:16px">
@@ -62,6 +64,14 @@ export function render(view) {
 
   delegate(view, { create: () => openCreateBox({ onCreated: (b) => (location.hash = `#/boxes/${b.id}`) }) });
 
+  // The first-run guide: shown only while no box exists, and each step asks for one thing the page already knows how.
+  // The guide waits for the first read of the box list: until it answers, the page cannot say whether there is a box.
+  const onboarding = mountOnboarding(view.querySelector("#ovOnboarding"), {
+    boxesOf: () => (loaded ? boxes : null),
+    onBoxCreated: () => void loadBoxes(),
+  });
+  const redrawOnboarding = () => onboarding.redraw();
+
   const off = onHost((h, failing) => {
     if (!h) return;
     renderMetrics(view, h, failing);
@@ -74,6 +84,8 @@ export function render(view) {
       boxes = (await api("/api/boxes?stats=false")).boxes;
       loaded = true;
       renderBoxes(view, boxes);
+      // The guide asks for a box only while there is none, so a box appearing here is what retires it.
+      redrawOnboarding();
     } catch {
       /* the host pill already signals connectivity issues */
     }
@@ -151,6 +163,7 @@ export function render(view) {
       // A host that was added, removed or came back online gets its storage read at once.
       void loadDisk();
       if (loaded) renderBoxes(view, boxes);
+      redrawOnboarding();
       if (latest) drawWatch(view, latest);
     }),
     subscribe("sync", (frame) => {
@@ -162,6 +175,7 @@ export function render(view) {
     subscribe("box", (frame) => {
       boxes = applyBoxFrame(boxes, frame);
       renderBoxes(view, boxes);
+      redrawOnboarding();
     }),
     // Reading the summary is itself a routine read, so routine reads never trigger a refresh.
     subscribe("event", (event) => {
@@ -176,6 +190,7 @@ export function render(view) {
     for (const unsubscribe of offs) unsubscribe();
     stopPolling();
     stopFeed();
+    onboarding.stop();
     clearTimeout(activityTimer);
     clearInterval(usageTimer);
   };
