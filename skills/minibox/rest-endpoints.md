@@ -146,7 +146,7 @@ All paths are jailed inside the volume. `{id}` is a `vol_…` or a volume name; 
 | `POST` | `/api/templates` | owner | `name`, `description`, `source`. `202` |
 | `GET` | `/api/templates/{ref}/recipe` | `box:read` (`template:read`) | The source a template rebuilds from, plus its `postCreate` and `forwardPorts` |
 | `POST` | `/api/templates/{ref}/fork` | owner | `name`, `description`, `?host=`. `201`; `template.ref`, `template.name` |
-| `PATCH` | `/api/templates/{ref}` | owner | `source`, `init` (`postCreate`, `forwardPorts`, or `null`), `description`, `?host=`. `200`; `template.ref`, `template.name`, `template.buildKind`. No build runs |
+| `PATCH` | `/api/templates/{ref}` | `tool:install`; a token only a template it created | `source`, `init` (`postCreate`, `forwardPorts`, or `null`), `description`, `?host=`. `200`; `template.ref`, `template.name`, `template.buildKind`. No build runs |
 | `POST` | `/api/templates/{ref}/rebuild` | owner | `?host=`. `202` |
 | `POST` | `/api/images/pull` | owner | `ref`. `202` |
 | `GET` | `/api/tools/custom` | owner | Custom catalog entries |

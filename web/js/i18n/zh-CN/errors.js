@@ -114,6 +114,8 @@ export default {
   "err.template_name_taken": "名为「{name}」的模板已存在。",
   "err.template_edit_empty":
     "没有要改的内容：请给出构建来源（source）、设置（init）或描述（description）。从 Box 保存的模板没有可改的构建来源。",
+  "err.template_source_builtin":
+    "模板「{name}」由 MiniBox 自带的 Dockerfile 构建，来源不能修改。派生一份属于你自己的模板再改。",
   "err.template_busy": "模板「{name}」的另一次修改还在进行，等它结束再试。",
   "err.template_image_missing": "模板镜像 {image} 不存在，请先在「模板」页构建或选择其他模板。",
   "err.template_source_required": "请选择模板的来源：Dockerfile、Git 代码仓库、构建上下文 URL 或 devcontainer.json。",

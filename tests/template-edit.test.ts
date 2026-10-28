@@ -361,6 +361,35 @@ describe("a rebuild and an edit of one template", () => {
       harness.stop();
     }
   });
+
+  test("an edit that lands before the queued rebuild runs is not overwritten by it", async () => {
+    // The operation reads the recipe while resolving its input, and the task takes the name later. An edit can land in
+    // that gap, so the rebuild reads the recipe again once it holds the name and refuses a changed one.
+    const l = lab();
+    await declared(l);
+    const resolved = await declaredTemplate(l.host, "mbtest-template:tool");
+    editRecipe(l.host, resolved, { source: { kind: "dockerfile", text: FROM_ALPINE_21 } });
+
+    const error = await rejectionOf(rebuildDeclaredTemplate(l.host, resolved, progressOf()));
+
+    expect(error).toMatchObject({ status: 409, key: "template_busy" });
+    // The edit is still what the template holds, and nothing was built from the source the rebuild started with.
+    expect(readRecipe(l.host, "tool")?.source).toEqual({ kind: "dockerfile", text: FROM_ALPINE_21 });
+    expect(l.runtime.builds).toHaveLength(1);
+  });
+
+  test("a rebuild from a Dockerfile keeps the setup an edit wrote, because that source names none", async () => {
+    const l = lab();
+    await declared(l);
+    const { declared: source, image } = await editable(l);
+    await editTemplate(l.host, source, image, {
+      init: { postCreate: ["/bin/sh", "-c", "npm ci"], forwardPorts: [3000] },
+    });
+
+    await rebuildDeclaredTemplate(l.host, await declaredTemplate(l.host, "mbtest-template:tool"), progressOf());
+
+    expect(readRecipe(l.host, "tool")?.init).toEqual({ postCreate: ["/bin/sh", "-c", "npm ci"], forwardPorts: [3000] });
+  });
 });
 
 const forkPath = (ref: string) => `/api/templates/${encodeURIComponent(ref)}/fork`;
@@ -463,10 +492,10 @@ describe("template.get and template.edit over REST", () => {
     expect(readRecipeOnDisk(harness, "tool")).toEqual({ kind: "dockerfile", text: FROM_ALPINE });
   });
 
-  test("a token may edit a template it can use, and may not edit another principal's template", async () => {
+  test("a token edits the template it created, and neither the owner's nor another token's", async () => {
     const maker = mint(harness.app, { name: "maker", preset: "operator" });
     const other = mint(harness.app, { name: "other", preset: "operator" });
-    // The owner builds one, which every token may use; one token forks it, so the fork belongs to that token.
+    // The owner builds one; one token forks it, so the fork belongs to that token.
     await declaredOverRest("shared");
     const forked = await call(harness.base, forkPath("mbtest-template:shared"), {
       token: maker.secret,
@@ -474,13 +503,26 @@ describe("template.get and template.edit over REST", () => {
     });
     expect(forked.status).toBe(201);
 
-    const mine = await call(harness.base, editPath("mbtest-template:shared"), {
+    const mine = await call(harness.base, editPath("mbtest-template:makers"), {
       token: maker.secret,
       method: "PATCH",
       body: { source: { kind: "dockerfile", text: FROM_ALPINE_21 } },
     });
     expect(mine.status).toBe(200);
-    expect(readRecipeOnDisk(harness, "shared")).toEqual({ kind: "dockerfile", text: FROM_ALPINE_21 });
+    expect(readRecipeOnDisk(harness, "makers")).toEqual({ kind: "dockerfile", text: FROM_ALPINE_21 });
+
+    // An edit decides what the owner's next build produces and what every box created from it runs, so a token may not
+    // change a template it merely may use.
+    expect(
+      refused(
+        await call(harness.base, editPath("mbtest-template:shared"), {
+          token: maker.secret,
+          method: "PATCH",
+          body: { source: { kind: "dockerfile", text: FROM_ALPINE_21 } },
+        }),
+      ),
+    ).toEqual({ status: 403, key: "template_out_of_scope" });
+    expect(readRecipeOnDisk(harness, "shared")).toEqual({ kind: "dockerfile", text: FROM_ALPINE });
 
     const stolen = await call(harness.base, editPath("mbtest-template:makers"), {
       token: other.secret,
@@ -493,7 +535,7 @@ describe("template.get and template.edit over REST", () => {
       status: 403,
       key: "template_out_of_scope",
     });
-    expect(readRecipeOnDisk(harness, "makers")).toEqual({ kind: "dockerfile", text: FROM_ALPINE });
+    expect(readRecipeOnDisk(harness, "makers")).toEqual({ kind: "dockerfile", text: FROM_ALPINE_21 });
   });
 
   test("a sandboxed agent may read the recipe of a template it may use, and may not edit it", async () => {
@@ -514,6 +556,47 @@ describe("template.get and template.edit over REST", () => {
         }),
       ),
     ).toEqual({ status: 403, key: "operation_forbidden" });
+  });
+
+  test("the source of an official template cannot be replaced, and its setup can", async () => {
+    // An official template's Dockerfile ships with MiniBox, so a rebuild uses the one of the running version.
+    const host = harness.app.hosts.get();
+    await createDeclaredTemplate(
+      host,
+      { name: "node", source: { kind: "official", name: "node" }, createdBy: "owner" },
+      {
+        log: () => {},
+      },
+    );
+
+    expect(
+      refused(
+        await call(harness.base, editPath("mbtest-template:node"), {
+          method: "PATCH",
+          body: { source: { kind: "dockerfile", text: FROM_ALPINE_21 } },
+        }),
+      ),
+    ).toEqual({ status: 400, key: "template_source_builtin" });
+    expect(readRecipeOnDisk(harness, "node")).toEqual({ kind: "official", name: "node" });
+
+    // The setup and the description belong to the template itself, so they stay editable.
+    const setup = await call(harness.base, editPath("mbtest-template:node"), {
+      method: "PATCH",
+      body: { init: { forwardPorts: [3000] } },
+    });
+    expect(setup.status).toBe(200);
+    expect(readRecipe(host, "node")?.init).toEqual({ forwardPorts: [3000] });
+  });
+
+  test("a bare template name still names the template when a plain image has that name too", async () => {
+    await declaredOverRest("tool");
+    // A host may hold an image that is not a template and happens to be called `tool`.
+    harness.runtime.seedImage("tool", {});
+
+    const read = await call(harness.base, recipePath("tool"));
+
+    expect(read.status).toBe(200);
+    expect(read.json.recipe).toEqual({ buildKind: "dockerfile", source: { kind: "dockerfile", text: FROM_ALPINE } });
   });
 });
 

@@ -7,7 +7,7 @@ import { dirname, join } from "node:path";
 import { DIR_MODE, writeFileAtomic } from "../data-dir";
 import type { HostCtx } from "../host/registry";
 import { DEVCONTAINER_PATHS, type DevcontainerPlan, envInstructions, readDevcontainer } from "../lib/devcontainer";
-import { badRequest, notFound } from "../lib/errors";
+import { badRequest, conflict, notFound } from "../lib/errors";
 import { log } from "../lib/logger";
 import { msg } from "../lib/messages";
 import { dockerfileProblem, resolveInside } from "../lib/source";
@@ -214,20 +214,25 @@ export async function declaredTemplate(host: HostCtx, ref: string): Promise<Decl
 /**
  * The declared template `ref` names, with its recipe and the image the host reported. The image is the one the recipe must
  * have built, so a caller that edits the recipe knows the image it names stays as it is. The ref may be the image
- * reference, the tag or the bare name, as `templateSourceImage` accepts them.
+ * reference, the tag or the bare name, as `templateSourceImage` accepts them. A candidate that is an image but not a
+ * template is passed over rather than ending the search: a host may hold a plain image named, say, `node` beside the
+ * template of that name, and the bare name still means the template.
  */
 export async function templateAndRecipe(host: HostCtx, ref: string): Promise<[DeclaredTemplate, ImageDetails]> {
   const prefix = `${host.prefix}-template:`;
   const candidates = ref.startsWith(prefix) ? [ref] : NAME_RE.test(ref) ? [ref, `${prefix}${ref}`] : [ref];
   let image: ImageDetails | null = null;
   for (const candidate of candidates) {
-    image = await host.runtime.inspectImage(candidate).catch((e: unknown) => {
+    const found = await host.runtime.inspectImage(candidate).catch((e: unknown) => {
       if (isRuntimeError(e, "not_found")) return null;
       throw e;
     });
-    if (image) break;
+    if (found?.labels[host.keys.template] === "true") {
+      image = found;
+      break;
+    }
   }
-  if (!image || image.labels[host.keys.template] !== "true") throw notFound(msg("template_not_found"));
+  if (!image) throw notFound(msg("template_not_found"));
   const tag = image.tags.find((candidate) => candidate.startsWith(prefix));
   const name = image.labels[host.keys.templateName] || (tag === undefined ? "" : tag.slice(prefix.length));
   if (!NAME_RE.test(name)) throw notFound(msg("template_not_found"));
@@ -558,13 +563,23 @@ export async function createDeclaredTemplate(
  * Builds a declared template again from its recipe, so a branch or an archive URL yields its newest content. The tag
  * moves only when the build succeeds, so a failed rebuild keeps the image the template had. The image it replaced is
  * removed when no box still runs it.
+ *
+ * The recipe is read again here rather than taken from `declared`: the operation resolves it before the task takes the
+ * name, and an edit that lands in that gap would otherwise be overwritten by the recipe this build started from. A
+ * recipe that changed in the gap, or an image that is no longer the one the tag names, is refused as `template_busy`
+ * instead, so the caller retries against what the template now holds.
  */
 export async function rebuildDeclaredTemplate(
   host: HostCtx,
   declared: DeclaredTemplate,
   progress: BuildProgress,
 ): Promise<{ ref: string; name: string }> {
-  const { name, recipe } = declared;
+  const { name } = declared;
+  const current = await declaredTemplate(host, `${host.prefix}-template:${name}`);
+  if (current.imageId !== declared.imageId || JSON.stringify(current.recipe) !== JSON.stringify(declared.recipe)) {
+    throw conflict(msg("template_busy", { name }));
+  }
+  const { recipe } = current;
   const created = new Date().toISOString();
   const built = await buildImageFrom(
     host,
@@ -578,8 +593,13 @@ export async function rebuildDeclaredTemplate(
     progress,
   );
   const next: TemplateRecipe = { ...recipe, imageId: built.image.id, created };
-  delete next.init;
-  writeRecipe(host, name, built.init === undefined ? next : { ...next, init: built.init });
+  // A devcontainer.json names its own setup, so a rebuild takes the one the newest file asks for and drops one it no
+  // longer has. A Dockerfile, a repository or an archive names none, and the setup an edit wrote belongs to the template:
+  // dropping it there would undo that edit.
+  const init = recipe.source.kind === "devcontainer" ? built.init : (built.init ?? recipe.init);
+  if (init === undefined) delete next.init;
+  else next.init = init;
+  writeRecipe(host, name, next);
   if (built.image.id !== declared.imageId) {
     await host.runtime.removeImage(declared.imageId, { force: false }).catch((e: unknown) => {
       log.warn("template.previous_image_kept", { name, image: declared.imageId, error: String(e) });

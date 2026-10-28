@@ -137,6 +137,8 @@ export default {
   "err.template_name_taken": "A template named “{name}” already exists.",
   "err.template_edit_empty":
     "Nothing to change: send a source, a setup (init) or a description. A template that was not built from a declared source has no source to edit.",
+  "err.template_source_builtin":
+    "Template {name} is built by MiniBox itself, so its source cannot be edited. Fork it into a template of your own and edit that.",
   "err.template_busy": "Another change to the template “{name}” is still running. Try again when it ends.",
   "err.template_image_missing":
     "Template image {image} does not exist. Build it on the Templates page or choose another template.",

@@ -220,6 +220,36 @@ describe("creating a box from role mounts", () => {
     ).toEqual(["beta-workspace"]);
   });
 
+  test("a workspace that names a pool is not swapped for the leftover volume of that name", async () => {
+    // A volume left by a deleted box of the same name sits on the local pool. A create that sends its workspace to
+    // another pool must land there, not mount the leftover and ignore the pick.
+    harness.runtime.helperHandler = () => ({ exitCode: 0, logs: "" });
+    expect(
+      (
+        await call(harness.base, "/api/pools", {
+          method: "PUT",
+          body: {
+            pools: [
+              { name: "local", backend: "local", default: true },
+              { name: "disk", backend: "path", root: "/mnt/disk", marker: ".minibox-mounted" },
+            ],
+            confirm: true,
+          },
+        })
+      ).status,
+    ).toBe(200);
+    harness.runtime.volumes.set("mbtest-ws-alpha", {
+      name: "mbtest-ws-alpha",
+      labels: { [host().keys.box]: "true", [host().keys.name]: "alpha" },
+    });
+
+    const mounts = await createdMounts("alpha", [{ role: "workspace", pool: "disk" }]);
+
+    const workspace = host().volumes.findByEngine(host().host.id, mounts[0]?.volume ?? "");
+    expect(mounts[0]?.volume).not.toBe("mbtest-ws-alpha");
+    expect(workspace?.pool).toBe("disk");
+  });
+
   test("a role that picks a pool gets its volume there, and one that picks none keeps the rule", async () => {
     // A second pool the role can be sent to. It is a path pool, so its volumes need no NFS server.
     harness.runtime.helperHandler = () => ({ exitCode: 0, logs: "" });

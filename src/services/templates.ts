@@ -1,6 +1,6 @@
 import type { HostCtx } from "../host/registry";
 import { labelChange } from "../labels";
-import { conflict, notFound } from "../lib/errors";
+import { badRequest, conflict, notFound } from "../lib/errors";
 import { log } from "../lib/logger";
 import { msg } from "../lib/messages";
 import { NAME_RE } from "../lib/validation";
@@ -215,13 +215,17 @@ export async function templateSourceImage(host: HostCtx, ref: string): Promise<T
       : [ref];
   let image: ImageDetails | null = null;
   for (const candidate of candidates) {
-    image = await host.runtime.inspectImage(candidate).catch((e: unknown) => {
+    const found = await host.runtime.inspectImage(candidate).catch((e: unknown) => {
       if (isRuntimeError(e, "not_found")) return null;
       throw e;
     });
-    if (image) break;
+    // A plain image of the same name is passed over: the bare name of a template still means the template.
+    if (found?.labels[host.keys.template] === "true") {
+      image = found;
+      break;
+    }
   }
-  if (!image || image.labels[host.keys.template] !== "true") throw notFound(msg("template_not_found"));
+  if (!image) throw notFound(msg("template_not_found"));
   const prefix = `${host.prefix}-template:`;
   const tag = image.tags.find((candidate) => candidate.startsWith(prefix));
   const name = image.labels[host.keys.templateName] || (tag === undefined ? "" : tag.slice(prefix.length));
@@ -297,6 +301,10 @@ export async function forkTemplate(
  * A new description also re-commits the image under the same tag, because the description a card shows is the image's
  * label. The system layer is unchanged and the recipe's `imageId` follows the new image, so a rebuild still knows the
  * image it built. A commit that fails leaves the recipe and the image as they were.
+ *
+ * The source of a template MiniBox builds itself, an official one, cannot be replaced: its Dockerfile ships with MiniBox
+ * and a rebuild uses the one of the running version, so writing another source there would quietly turn the template
+ * into a custom one. Its setup and description are the template's own and stay editable.
  */
 export async function editTemplate(
   host: HostCtx,
@@ -304,6 +312,9 @@ export async function editTemplate(
   image: ImageDetails,
   edit: RecipeEdit,
 ): Promise<{ ref: string; name: string; buildKind: BuildKind }> {
+  if (edit.source !== undefined && declared.recipe.source.kind === "official") {
+    throw badRequest(msg("template_source_builtin", { name: declared.name }));
+  }
   const description = edit.description;
   const current = image.labels[host.keys.templateDesc] || null;
   const relabelled =
