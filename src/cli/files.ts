@@ -1,4 +1,4 @@
-import { type CliIo, flagValue, request, fail } from "./shared";
+import { type CliIo, flagValue, request, fail, readStdinBytes } from "./shared";
 
 export async function filesCommand(
   argv: string[],
@@ -79,9 +79,7 @@ export async function filesCommand(
       throw new Error("minibox files write needs exactly one of --content or --stdin");
     }
     if (fromStdin) {
-      const chunks: Buffer[] = [];
-      for await (const chunk of Bun.stdin.stream()) chunks.push(Buffer.from(chunk));
-      const raw = Buffer.concat(chunks);
+      const raw = await readStdinBytes(io);
       content = encoding === "base64" ? raw.toString("base64") : raw.toString("utf8");
     }
     const res = await request(env, "PUT", `/api/volumes/${encodeURIComponent(volume)}/files/content`, {
@@ -120,9 +118,7 @@ export async function filesCommand(
     const volume = rest[0];
     if (!volume) throw new Error("minibox files upload needs a volume");
     const filePath = rest[1] && !rest[1].startsWith("--") ? rest[1] : "/";
-    const chunks: Buffer[] = [];
-    for await (const chunk of Bun.stdin.stream()) chunks.push(Buffer.from(chunk));
-    const content = Buffer.concat(chunks).toString("utf8").trim();
+    const content = (await readStdinBytes(io)).toString("utf8").trim();
     const res = await request(env, "PUT", `/api/volumes/${encodeURIComponent(volume)}/files/archive`, {
       path: filePath,
       content,

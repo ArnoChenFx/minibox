@@ -57,7 +57,7 @@ const CLI_COMMANDS: Record<string, { argv: string[]; stdin?: string }> = {
   "files download": { argv: ["volume-1"] },
   "files ls": { argv: ["volume-1"] },
   "files read": { argv: ["volume-1", "notes.txt"] },
-  "files upload": { argv: ["volume-1"] },
+  "files upload": { argv: ["volume-1"], stdin: "hello" },
   "files write": { argv: ["volume-1", "notes.txt", "--content", "hello"] },
   "image pull": { argv: ["alpine:3.20"] },
   "session close": { argv: ["alpha", "work"] },

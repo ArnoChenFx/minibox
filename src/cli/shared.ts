@@ -62,10 +62,15 @@ export function printJson(io: CliIo, json: unknown): number {
   return 0;
 }
 
-export async function readStdinText(io: CliIo): Promise<string> {
+/** Everything on stdin, as bytes. Every command reads stdin through `io`, so a test can supply it. */
+export async function readStdinBytes(io: CliIo): Promise<Buffer> {
   const chunks: Buffer[] = [];
   for await (const chunk of io.stdinBytes()) chunks.push(Buffer.from(chunk));
-  return Buffer.concat(chunks).toString("utf8");
+  return Buffer.concat(chunks);
+}
+
+export async function readStdinText(io: CliIo): Promise<string> {
+  return (await readStdinBytes(io)).toString("utf8");
 }
 
 export interface Options {
