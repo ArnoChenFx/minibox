@@ -18,9 +18,6 @@ export const TASK_STATUSES: readonly TaskStatus[] = [
   "interrupted",
 ];
 
-/** A terminal status does not change again. */
-export const isTerminal = (status: TaskStatus): boolean => status !== "running" && status !== "queued";
-
 /** The object a task is about. Same shape as an event target. */
 export interface TaskTarget {
   readonly kind: string;

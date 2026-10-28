@@ -67,6 +67,8 @@ MINIBOX_TEST_DOCKER=1 MINIBOX_TEST_PREFIX=mbitlocal1 bun test tests/docker-runti
 
 `check:template` runs `scripts/check-box-image.sh` against a built image. To check the arm64 image, pass its tag and set `PLATFORM=linux/arm64`.
 
+The same script runs on each official template in CI, for `linux/amd64` and, under QEMU emulation, for `linux/arm64`. `PLATFORM=linux/arm64` also makes it check that the image really is arm64, and it skips the `ping` probe, because file capabilities are not applied to binaries run under emulation.
+
 ## Build
 
 ```bash
@@ -93,7 +95,7 @@ bun run openapi
 
 | Workflow | When it runs | What it does |
 |---|---|---|
-| CI (`ci.yml`) | Pushes to `main`, pull requests, and calls from the release workflow | The `check` job installs Chromium with Playwright, then runs `fmt:check`, `lint`, `typecheck` and `bun test`. The `docker` job builds the release image, starts it and probes `/login`. It also builds the base template for `linux/amd64` and `linux/arm64` and runs `scripts/check-box-image.sh` on each. The `official-templates` job builds each official template for `linux/amd64` and runs the same script on it, with `REQUIRED_TOOLS` set for the minimal template. |
+| CI (`ci.yml`) | Pushes to `main`, pull requests, and calls from the release workflow | The `check` job installs Chromium with Playwright, then runs `fmt:check`, `lint`, `typecheck` and `bun test`. The `docker` job builds the release image, starts it and probes `/login`. It also builds the base template for `linux/amd64` and `linux/arm64` and runs `scripts/check-box-image.sh` on each. The `official-templates` job builds each official template for `linux/amd64` and `linux/arm64`, the second one under QEMU emulation, and runs the same script on both images, with `REQUIRED_TOOLS` set for the minimal template. A first step builds both platforms into the GitHub Actions cache only, so the two loaded builds reuse those layers instead of building the template twice. |
 | Integration (`integration.yml`) | Pushes to `main`, pull requests, and manual runs | Runs `bun run test:docker` on the runner's Docker engine. |
 | Project homepage (`pages.yml`) | Changes to the homepage files, on pushes to `main`, pull requests, and manual runs | Runs the browser tests. On `main` only, deploys `dist/site` to GitHub Pages. |
 | Release (`release.yml`) | Tags that match `v*.*.*` | Runs the CI checks, checks that the tag matches `package.json`, pushes the multi-architecture image to `ghcr.io/arnochenfx/minibox`, and creates a GitHub release from the matching CHANGELOG section. |
