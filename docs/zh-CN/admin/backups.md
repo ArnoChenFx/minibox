@@ -62,6 +62,7 @@ BACKUP_DIR=/mnt/backups
 - 运行 MiniBox 的用户必须能写入该文件夹。建不出来或写不进去会让备份失败，失败不会留下归档和记录。启动时不会创建任何东西，所以 `BACKUP_DIR` 没设或暂时不可用都不会让 MiniBox 起不来。
 - 请指向一个只放备份的文件夹。MiniBox 只会读写（以及在 `BACKUP_KEEP` 下删除）自己的 `<id>.mbbak` 与 `<id>.json`，但与别的工具共用的文件夹更难排查，而且它的权限会被收紧到 `700`。
 - 位于 `DATA_DIR` 内的 `BACKUP_DIR` 与 `DATA_DIR/backups/` 一样不会被放进备份，所以备份里永远不会套着备份。位于 `DATA_DIR` 之外的 `BACKUP_DIR` 本来就不属于数据目录。
+- `BACKUP_DIR` 不能是 `DATA_DIR` 本身，也不能是它上层的文件夹（如 `/mnt` 或项目根目录）：那样整个数据目录都会被排除在归档之外，备份会「成功」却什么也没装，所以 MiniBox 会直接拒绝启动并说明原因。
 - 其他行为完全一样：`minibox backup ls`、`minibox backup rm`、`GET /api/backups`、下载路由与异地目标读写的都是这个文件夹里的归档。从目标拉取的备份也落在这里。
 - 用 `--out` 下载到本机的归档写在指定的位置，不放进这个文件夹。
 

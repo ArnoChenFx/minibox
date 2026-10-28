@@ -56,6 +56,19 @@ export function isWithinDir(path: string, dir: string): boolean {
   return target === base || target.startsWith(base.endsWith(sep) ? base : `${base}${sep}`);
 }
 
+/**
+ * Why `dir` cannot hold the archives of `dataDir`, or `null` when it can.
+ *
+ * The archives of a folder inside DATA_DIR are left out of the backup, so that a backup never contains backups. That rule
+ * turns into a trap for a folder that *holds* DATA_DIR instead: everything in the data directory counts as "inside the
+ * backup folder", and the backup comes out empty while reporting success. So a folder that is DATA_DIR itself, or a
+ * folder above it, is refused rather than silently producing empty archives.
+ */
+export function backupDirRefusal(dir: string, dataDir: string): string | null {
+  if (!isWithinDir(dataDir, dir)) return null;
+  return resolve(dir) === resolve(dataDir) ? "it is the data directory itself" : "it holds the data directory";
+}
+
 /** The auto-generated access key lives directly in DATA_DIR. It is never written to `.env`. */
 export function accessKeyPath(dataDir: string): string {
   return join(dataDir, "access_key");

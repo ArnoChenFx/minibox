@@ -62,6 +62,7 @@ BACKUP_DIR=/mnt/backups
 - The user that runs MiniBox must be able to write the folder. A folder it cannot create or write makes the backup fail, and the failure leaves no archive and no record behind. Nothing is created at startup, so an unset or unusable `BACKUP_DIR` does not stop MiniBox from starting.
 - Point it at a folder for backups alone. MiniBox only reads, writes and (with `BACKUP_KEEP`) deletes its own `<id>.mbbak` and `<id>.json` files there, but a folder shared with other tools is harder to reason about, and its mode is tightened to `700`.
 - A `BACKUP_DIR` inside `DATA_DIR` is left out of the archive, as `DATA_DIR/backups/` always is, so a backup never contains backups. A `BACKUP_DIR` outside `DATA_DIR` is not part of the data directory at all.
+- `BACKUP_DIR` cannot be `DATA_DIR` itself, nor a folder above it such as `/mnt` or the project root. Those would exclude the whole data directory from the archive, leaving a backup that reports success but holds nothing, so MiniBox refuses to start and names the problem.
 - Everything else works the same: `minibox backup ls`, `minibox backup rm`, `GET /api/backups`, the download route and the off-site targets read and write the archives in this folder. A backup pulled from a target lands there too.
 - Backups downloaded with `--out` are written where you say, not in this folder.
 

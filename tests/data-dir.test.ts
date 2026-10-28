@@ -5,6 +5,7 @@ import { join } from "node:path";
 
 import {
   accessKeyPath,
+  backupDirRefusal,
   createSecretFile,
   ensureDataDir,
   ensurePrivateDir,
@@ -75,6 +76,24 @@ describe("isWithinDir", () => {
   test("`..` cannot escape the folder", () => {
     expect(isWithinDir("/data/backups/../secrets", "/data/backups")).toBe(false);
     expect(isWithinDir("/data/backups/sub/..", "/data/backups")).toBe(true);
+  });
+});
+
+describe("backupDirRefusal", () => {
+  const dataDir = "/srv/minibox/data";
+
+  test("a folder beside or inside DATA_DIR is allowed", () => {
+    expect(backupDirRefusal("/srv/minibox/archives", dataDir)).toBeNull();
+    expect(backupDirRefusal("/mnt/backups", dataDir)).toBeNull();
+    expect(backupDirRefusal(join(dataDir, "backups"), dataDir)).toBeNull();
+    expect(backupDirRefusal(join(dataDir, "archives"), dataDir)).toBeNull();
+  });
+
+  test("DATA_DIR itself, or a folder above it, is refused with the reason", () => {
+    expect(backupDirRefusal(dataDir, dataDir)).toBe("it is the data directory itself");
+    expect(backupDirRefusal("/srv/minibox", dataDir)).toBe("it holds the data directory");
+    expect(backupDirRefusal("/", dataDir)).toBe("it holds the data directory");
+    expect(backupDirRefusal(`${dataDir}/..`, dataDir)).toBe("it holds the data directory");
   });
 });
 

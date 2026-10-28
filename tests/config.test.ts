@@ -546,6 +546,13 @@ describe("backup folder and retention", () => {
     expect(existsSync(target)).toBe(false);
   });
 
+  test("a BACKUP_DIR that is DATA_DIR, or holds it, is refused instead of writing empty archives", () => {
+    expect(() => load({ ACCESS_KEY: KEY, BACKUP_DIR: dataDir })).toThrow(/BACKUP_DIR.*data directory itself/);
+    expect(() => load({ ACCESS_KEY: KEY, BACKUP_DIR: root })).toThrow(/BACKUP_DIR.*holds the data directory/);
+    expect(() => load({ ACCESS_KEY: KEY, BACKUP_DIR: "/" })).toThrow(/BACKUP_DIR/);
+    expect(() => load({ ACCESS_KEY: KEY, BACKUP_DIR: `${dataDir}/..` })).toThrow(/BACKUP_DIR/);
+  });
+
   test("BACKUP_KEEP is 0 when unset, which keeps every backup", () => {
     expect(load({ ACCESS_KEY: KEY }).backupKeep).toBe(0);
     expect(load({ ACCESS_KEY: KEY, BACKUP_KEEP: "" }).backupKeep).toBe(0);

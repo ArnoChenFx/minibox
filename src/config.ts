@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { BOX_PROFILES, type BoxProfile, DEFAULT_BOX_PROFILE, DEFAULT_PIDS_LIMIT, isBoxProfile } from "./box-profile";
 import {
   accessKeyPath,
+  backupDirRefusal,
   createSecretFile,
   ensureDataDir,
   readSecretFile,
@@ -299,6 +300,12 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
 
   const dataDir = resolveDataDir(nonBlank(env.DATA_DIR) ?? nonBlank(file.DATA_DIR), ROOT);
   const backupDir = resolveBackupDir(nonBlank(env.BACKUP_DIR) ?? nonBlank(file.BACKUP_DIR), dataDir, ROOT);
+  const refused = backupDirRefusal(backupDir, dataDir);
+  if (refused !== null) {
+    throw new Error(
+      `BACKUP_DIR: ${backupDir} cannot hold the backups because ${refused}: a backup leaves out the folder it is written to, so every entry would be skipped and each archive would come out empty`,
+    );
+  }
   tryEnsureDataDir(dataDir);
   const { accessKey, accessKeySource } = resolveAccessKey(env, file, dataDir);
 
