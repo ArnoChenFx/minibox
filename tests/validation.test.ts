@@ -1,9 +1,10 @@
 import { describe, expect, test } from "bun:test";
 
 import { AppError } from "../src/lib/errors";
-import { validateDescription } from "../src/lib/validation";
+import { checkDescription } from "../src/lib/validation";
 import { boxCreate, boxDelete, boxList, boxLogs, boxResources } from "../src/operations/boxes";
 import { snapshotCreate, snapshotFork } from "../src/operations/snapshots";
+import { templatePromote } from "../src/operations/templates";
 import type { Operation } from "../src/operations/types";
 
 /** The error a call is refused with. Fails the test when the call succeeds. */
@@ -164,24 +165,37 @@ describe("query parameters", () => {
   });
 });
 
+/** The value, or the failure the check reports. `checkDescription` returns a result instead of throwing. */
+function checkDescriptionResult(value: unknown) {
+  const checked = checkDescription(value);
+  return checked.ok ? checked.value : checked.failure;
+}
+
 describe("description", () => {
   test("keeps one-line text, including quotes, backslashes and dollar signs", () => {
-    expect(validateDescription('say "hi" C:\\tmp $HOME')).toBe('say "hi" C:\\tmp $HOME');
+    expect(checkDescriptionResult('say "hi" C:\\tmp $HOME')).toBe('say "hi" C:\\tmp $HOME');
   });
+
   test("missing or blank means no description; text is trimmed and capped at 200 characters", () => {
-    expect(validateDescription(undefined)).toBeUndefined();
-    expect(validateDescription("   ")).toBeUndefined();
-    expect(validateDescription("  demo  ")).toBe("demo");
-    expect(validateDescription("é".repeat(300))).toHaveLength(200);
+    expect(checkDescriptionResult(undefined)).toBeUndefined();
+    expect(checkDescriptionResult("   ")).toBeUndefined();
+    expect(checkDescriptionResult("  demo  ")).toBe("demo");
+    expect(String(checkDescriptionResult("é".repeat(300)))).toHaveLength(200);
   });
+
   test("refuses newlines and other control characters, with the field named", () => {
     for (const bad of ["ok\nENV X=1", 'ok\r\nCMD ["sh"]', "tab\there", "nul\u0000", "trailing\n"]) {
-      const error = refusal(() => validateDescription(bad));
-      expect(error.status).toBe(400);
-      expect(error.details).toEqual({ field: "description" });
+      expect(checkDescriptionResult(bad)).toMatchObject({ field: "description" });
     }
   });
+
   test("the refusal carries a translatable key", () => {
-    expect(refusal(() => validateDescription("a\nb"))).toMatchObject({ key: "description_invalid" });
+    expect(checkDescriptionResult("a\nb")).toMatchObject({ message: { key: "description_invalid" } });
+  });
+
+  test("an operation that takes a description reports the same refusal", () => {
+    const error = rejection(templatePromote, { ref: "alpha", name: "gold", description: "ok\nENV X=1" });
+    expect(error.status).toBe(400);
+    expect(error.key).toBe("description_invalid");
   });
 });

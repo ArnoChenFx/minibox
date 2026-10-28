@@ -45,12 +45,3 @@ export function parseMeminfo(text: string): MemInfo | null {
   const swapTotal = kv.SwapTotal ?? 0;
   return { total, available, used: total - available, swapTotal, swapUsed: swapTotal - (kv.SwapFree ?? 0) };
 }
-
-/** cgroup v2 cpu.max → number of CPUs, or null when unlimited. */
-export function parseCpuMax(text: string): number | null {
-  const [quota, period] = text.trim().split(/\s+/);
-  if (!quota || quota === "max" || !period) return null;
-  const q = Number(quota);
-  const p = Number(period);
-  return q > 0 && p > 0 ? q / p : null;
-}

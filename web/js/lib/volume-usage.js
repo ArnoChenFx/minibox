@@ -31,16 +31,6 @@ export function fillPercent(bytes, scale) {
   return Math.min(100, Math.max(0, (bytes / scale) * 100));
 }
 
-/**
- * The trend's points from 0 to 100. Against the scale when there is one, else against the largest point, so a volume
- * without a limit still shows its shape.
- */
-export function trendValues(points, scale) {
-  const top = scale ?? Math.max(0, ...points.map((point) => point.bytes));
-  if (!top) return points.map(() => 0);
-  return points.map((point) => Math.min(100, (point.bytes / top) * 100));
-}
-
 /** The bar's colour class for a level: `crit` over the hard limit, `warn` over the soft one, none otherwise. */
 export function levelClass(level) {
   if (level === "hard") return "crit";

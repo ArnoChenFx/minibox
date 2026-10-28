@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import { parseDotenv } from "../src/config";
 import { demuxLogs } from "../src/docker/logs";
-import { cpuPercent, parseCpuMax, parseMeminfo, parseProcStat } from "../src/host/procfs";
+import { cpuPercent, parseMeminfo, parseProcStat } from "../src/host/procfs";
 import { compilePath, matchRoute, route } from "../src/routes/router";
 import { snapshotTag } from "../src/services/snapshots";
 import { safeJoin } from "../src/static";
@@ -21,10 +21,6 @@ describe("procfs", () => {
     const m = parseMeminfo("MemTotal: 1000 kB\nMemFree: 100 kB\nMemAvailable: 400 kB\nSwapTotal: 0 kB\nSwapFree: 0 kB");
     expect(m?.total).toBe(1000 * 1024);
     expect(m?.used).toBe(600 * 1024);
-  });
-  test("cpu.max", () => {
-    expect(parseCpuMax("200000 100000")).toBe(2);
-    expect(parseCpuMax("max 100000")).toBeNull();
   });
 });
 

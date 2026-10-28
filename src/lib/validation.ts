@@ -59,9 +59,3 @@ export function checkDescription(value: unknown): Checked<string | undefined> {
   const v = value.trim();
   return accept(v ? [...v].slice(0, DESCRIPTION_MAX).join("") : undefined);
 }
-
-export function validateDescription(value: unknown): string | undefined {
-  const checked = checkDescription(value);
-  if (!checked.ok) throw badRequest(checked.failure.message, { field: "description" });
-  return checked.value;
-}
