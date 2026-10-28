@@ -1,11 +1,8 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 
 import { type Browser, type BrowserContext, chromium, expect as webExpect, type Page } from "@playwright/test";
 
 import type { App } from "../src/app";
-import { ROOT } from "../src/config";
 import { startServer } from "../src/server";
 import { createDeclaredTemplate, readRecipe } from "../src/services/template-builds";
 import { initOf, readPorts } from "../web/js/lib/template-edit.js";
@@ -17,20 +14,17 @@ const executablePath = chromiumFor("The template edit test");
 const TIMEOUT_MS = 30_000;
 const VIEWPORT = { width: 1280, height: 800 };
 
-const WEB = join(ROOT, "web");
-const PAGE = readFileSync(join(WEB, "js", "pages", "templates.js"), "utf8");
-const DIALOG = readFileSync(join(WEB, "js", "components", "edit-template.js"), "utf8");
-const EN = readFileSync(join(WEB, "js", "i18n", "en.js"), "utf8");
-const ZH = readFileSync(join(WEB, "js", "i18n", "zh-CN.js"), "utf8");
-const EN_ERRORS = readFileSync(join(WEB, "js", "i18n", "en", "errors.js"), "utf8");
-const ZH_ERRORS = readFileSync(join(WEB, "js", "i18n", "zh-CN", "errors.js"), "utf8");
-const EN_BOXES = readFileSync(join(WEB, "js", "i18n", "en", "boxes.js"), "utf8");
-const ZH_BOXES = readFileSync(join(WEB, "js", "i18n", "zh-CN", "boxes.js"), "utf8");
-
 const restoreLogs = silenceLogs();
 afterAll(restoreLogs);
 
 const FROM_ALPINE = "FROM alpine:3.20\nRUN true\n";
+
+/** One request the page made, kept so a test can say what the dialog sent and in which order. */
+interface Sent {
+  method: string;
+  url: string;
+  body: string;
+}
 
 describe("the ports an edit asks for", () => {
   test("a comma or space separated list becomes the numbers it names", () => {
@@ -66,55 +60,6 @@ describe("the setup an edit sends", () => {
   });
 });
 
-describe("the edit action on the template card", () => {
-  test("the page renders an edit button on a template that has a source, wired to the edit dialog", () => {
-    expect(PAGE).toContain('data-action="edit"');
-    expect(PAGE).toContain('import { openEditTemplate } from "../components/edit-template.js"');
-    expect(PAGE).toContain("void openEditTemplate({ card, onEdited:");
-    // A template with no source has nothing to edit, so its card shows no edit button.
-    expect(PAGE).toContain('${tp.buildKind && !unbuilt ? `<button class="btn btn-sm" data-action="edit"');
-  });
-
-  test("the dialog reads the recipe first, then patches the template and reloads the page", () => {
-    expect(DIALOG).toContain("/recipe`");
-    expect(DIALOG).toContain('method: "PATCH"');
-    expect(DIALOG).toContain("invalidateTemplates()");
-    expect(PAGE).toContain("onEdited: (name) => load(name)");
-  });
-
-  test("the dialog says the image is kept until a rebuild, in both languages", () => {
-    for (const [lang, source] of [
-      ["en", EN],
-      ["zh-CN", ZH],
-    ] as const) {
-      for (const key of [
-        "tp.edit",
-        "tp.editTitle",
-        "tp.editDesc",
-        "tp.editWhat",
-        "tp.editConfirm",
-        "tp.editing",
-        "tp.edited",
-        "tp.editFailed",
-        "tp.editPorts",
-        "tp.editPortsHelp",
-        "tp.editPostCreateHelp",
-        "tp.errPort",
-        "tp.editOfficial",
-      ]) {
-        expect([lang, key, source.includes(`"${key}":`)]).toEqual([lang, key, true]);
-      }
-    }
-    expect(EN).toContain("Saving changes the recipe only.");
-    expect(ZH).toContain("保存只会修改构建记录。");
-    // The activity feed and the error the server answers with are translated too.
-    expect(EN_BOXES).toContain('"act.template.edit": "Edited template"');
-    expect(ZH_BOXES).toContain('"act.template.edit": "修改模板"');
-    expect(EN_ERRORS).toContain('"err.template_edit_empty":');
-    expect(ZH_ERRORS).toContain('"err.template_edit_empty":');
-  });
-});
-
 describe.skipIf(!executablePath)("editing a template from the Templates page (real browser)", () => {
   let app: App | undefined;
   let server: ReturnType<typeof startServer> | undefined;
@@ -122,6 +67,8 @@ describe.skipIf(!executablePath)("editing a template from the Templates page (re
   let context: BrowserContext | undefined;
   let page: Page;
   let consoleUrl = "";
+  /** What the page has sent, in order, so a test can read the recipe-then-patch-then-reload sequence. */
+  const sent: Sent[] = [];
 
   beforeAll(async () => {
     const harness = createTestApp();
@@ -142,6 +89,12 @@ describe.skipIf(!executablePath)("editing a template from the Templates page (re
       },
       {},
     );
+    // An official template: its Dockerfile ships with MiniBox, so the dialog offers no source field for it.
+    await createDeclaredTemplate(
+      host,
+      { name: "official-node", source: { kind: "official", name: "node" }, createdBy: "owner" },
+      {},
+    );
     server = startServer(app);
     consoleUrl = `http://127.0.0.1:${server.port}`;
 
@@ -153,6 +106,10 @@ describe.skipIf(!executablePath)("editing a template from the Templates page (re
     });
     expect(login.status()).toBe(200);
     page = await context.newPage();
+    page.on("request", (request) => {
+      if (!request.url().includes("/api/")) return;
+      sent.push({ method: request.method(), url: request.url(), body: request.postData() ?? "" });
+    });
     await page.goto(`${consoleUrl}/#/library/templates`);
   }, 60_000);
 
@@ -168,6 +125,10 @@ describe.skipIf(!executablePath)("editing a template from the Templates page (re
 
   const card = (name: string) => page.locator(`#tpGrid [data-name="${name}"]`);
   const dialog = () => page.getByRole("dialog");
+  const lastPatch = () => sent.filter((request) => request.method === "PATCH").at(-1);
+  const recipeRead = () => sent.findIndex((request) => request.method === "GET" && request.url.endsWith("/recipe"));
+  const listRead = () =>
+    sent.findIndex((request) => request.method === "GET" && /\/api\/templates(\?|$)/.test(request.url));
 
   test(
     "the Edit button opens a dialog with the Dockerfile, the description and the setup filled in",
@@ -180,19 +141,39 @@ describe.skipIf(!executablePath)("editing a template from the Templates page (re
       await webExpect(dialog().locator("#teDockerfile")).toHaveValue(FROM_ALPINE);
       await webExpect(dialog().locator("#teDesc")).toHaveValue("Build tools");
       await webExpect(dialog().locator("#tePorts")).toHaveValue("");
+      // The dialog names the template it edits, and explains the fields the save below fills in.
+      await webExpect(dialog()).toContainText("mbtest-template:tool");
+      await webExpect(dialog()).toContainText("TCP ports a box created from the template opens");
+      await webExpect(dialog()).toContainText("Runs once in each box created from the template");
+      // The dialog says the image is kept until a rebuild, which is what the save below relies on.
+      await webExpect(dialog()).toContainText("Saving changes the recipe only.");
+      // Opening the dialog read the recipe first, so every field started with what the template has now.
+      expect(recipeRead()).toBeGreaterThanOrEqual(0);
     },
     TIMEOUT_MS,
   );
 
   test(
-    "saving changes the Dockerfile the template rebuilds from, and the card stays as it is until a rebuild",
+    "saving patches the edited source and setup, reloads the list, and the card stays as it is until a rebuild",
     async () => {
+      sent.length = 0;
       await dialog().locator("#teDockerfile").fill("FROM alpine:3.21\n");
       await dialog().locator("#tePorts").fill("3000, 8080");
       await dialog().getByRole("button", { name: "Save changes" }).click();
 
       await webExpect(dialog()).toHaveCount(0);
+      await webExpect(page.locator("#toasts")).toContainText("Template updated");
+      // The body carries the edited source and setup, and the page reloaded the list after the patch.
+      const patched = sent.findIndex((request) => request.method === "PATCH");
+      expect([patched >= 0, listRead() > patched]).toEqual([true, true]);
+      expect(JSON.parse(lastPatch()?.body ?? "{}")).toMatchObject({
+        source: { kind: "dockerfile", text: "FROM alpine:3.21\n" },
+        init: { forwardPorts: [3000, 8080] },
+      });
+
       await webExpect(card("tool")).toBeVisible();
+      // The reload names the edited template, so the page scrolls its card into view instead of leaving it off screen.
+      await webExpect(card("tool")).toHaveClass(/is-focus/);
       const host = app?.hosts.get();
       if (!host) throw new Error("the test app has a host");
       // The recipe is the edited one, and no build ran, so the card still says what it said before.
@@ -220,6 +201,119 @@ describe.skipIf(!executablePath)("editing a template from the Templates page (re
       await webExpect(dialog().locator("#teErr")).toContainText("db:5432");
       await dialog().getByRole("button", { name: "Cancel" }).click();
       await webExpect(dialog()).toHaveCount(0);
+    },
+    TIMEOUT_MS,
+  );
+
+  test(
+    "in Chinese the dialog's own words are translated, not the English copied across",
+    async () => {
+      const chinese = await browser.newContext({ viewport: VIEWPORT, locale: "zh-CN" });
+      try {
+        const login = await chinese.request.post(`${consoleUrl}/api/auth/login`, {
+          data: { key: TEST_KEY },
+          headers: { origin: consoleUrl },
+        });
+        expect(login.status()).toBe(200);
+        const zhPage = await chinese.newPage();
+        await zhPage.goto(`${consoleUrl}/#/library/templates`);
+        await webExpect(zhPage.locator(`#tpGrid [data-name="tool"]`)).toBeVisible();
+        await zhPage.locator(`#tpGrid [data-name="tool"]`).getByRole("button", { name: "修改", exact: true }).click();
+        const zhDialog = zhPage.getByRole("dialog");
+        await webExpect(zhDialog).toBeVisible();
+        await webExpect(zhDialog.getByRole("heading")).toContainText("修改「tool」");
+        await webExpect(zhDialog).toContainText("保存只会修改构建记录。");
+        await webExpect(zhDialog).not.toContainText("Saving changes the recipe only.");
+        await webExpect(zhDialog.getByRole("button", { name: "保存修改" })).toBeVisible();
+        // The port error is translated too, and it names the entry the operator typed.
+        await zhDialog.locator("#tePorts").fill("db:5432");
+        await zhDialog.getByRole("button", { name: "保存修改" }).click();
+        await webExpect(zhDialog.locator("#teErr")).toContainText("「db:5432」不是 1 到 65535 之间的端口。");
+      } finally {
+        await chinese.close();
+      }
+    },
+    TIMEOUT_MS,
+  );
+
+  test(
+    "an official template's dialog offers its setup and description only, and saving sends no source",
+    async () => {
+      const edit = card("official-node").getByRole("button", { name: "Edit", exact: true });
+      await webExpect(edit).toBeVisible();
+      await edit.click();
+      await webExpect(dialog()).toBeVisible();
+      // Its Dockerfile ships with MiniBox, so there is no field to edit and the dialog says why.
+      await webExpect(dialog().locator("#teDockerfile")).toHaveCount(0);
+      await webExpect(dialog()).toContainText("built from MiniBox's own Dockerfile");
+
+      sent.length = 0;
+      await dialog().locator("#tePorts").fill("8080");
+      await dialog().getByRole("button", { name: "Save changes" }).click();
+      await webExpect(dialog()).toHaveCount(0);
+
+      const body = JSON.parse(lastPatch()?.body ?? "{}") as Record<string, unknown>;
+      expect(body).not.toHaveProperty("source");
+      expect(body.init).toEqual({ forwardPorts: [8080] });
+      const host = app?.hosts.get();
+      if (!host) throw new Error("the test app has a host");
+      expect(readRecipe(host, "official-node")?.source).toEqual({ kind: "official", name: "node" });
+      expect(readRecipe(host, "official-node")?.init).toEqual({ forwardPorts: [8080] });
+    },
+    TIMEOUT_MS,
+  );
+
+  test(
+    "while the save is in flight the button says it is saving and cannot be pressed again",
+    async () => {
+      // Hold the PATCH so the saving state can be read before the server answers.
+      const held = Promise.withResolvers<void>();
+      const settled = Promise.withResolvers<void>();
+      await page.route("**/api/templates/*", async (route) => {
+        if (route.request().method() !== "PATCH") return route.continue();
+        await held.promise;
+        await route.continue();
+        settled.resolve();
+      });
+      try {
+        await card("tool").getByRole("button", { name: "Edit", exact: true }).click();
+        await webExpect(dialog()).toBeVisible();
+        sent.length = 0;
+        await dialog().locator("#tePorts").fill("9090");
+        await dialog().getByRole("button", { name: "Save changes" }).click();
+
+        const ok = dialog().locator("#teOk");
+        await webExpect(ok).toHaveText("Saving…");
+        await webExpect(ok).toBeDisabled();
+        // A second press while the first is in flight sends nothing more.
+        await ok.click({ force: true });
+        expect(sent.filter((request) => request.method === "PATCH")).toHaveLength(1);
+
+        held.resolve();
+        await settled.promise;
+        await webExpect(dialog()).toHaveCount(0);
+        const host = app?.hosts.get();
+        if (!host) throw new Error("the test app has a host");
+        expect(readRecipe(host, "tool")?.init).toEqual({ forwardPorts: [9090] });
+      } finally {
+        held.resolve();
+        await page.unroute("**/api/templates/*");
+      }
+    },
+    TIMEOUT_MS,
+  );
+
+  test(
+    "a recipe the server cannot answer says so and opens no dialog, so a field is never filled with nothing",
+    async () => {
+      await page.route("**/recipe", (route) => route.fulfill({ status: 500, body: "{}" }));
+      try {
+        await card("tool").getByRole("button", { name: "Edit", exact: true }).click();
+        await webExpect(page.locator("#toasts")).toContainText("Couldn't edit template");
+        await webExpect(dialog()).toHaveCount(0);
+      } finally {
+        await page.unroute("**/recipe");
+      }
     },
     TIMEOUT_MS,
   );

@@ -133,9 +133,11 @@ describe.skipIf(!executablePath)("the storage checkpoints page on a phone (real 
           scrollWidth: number;
           clientWidth: number;
           textContent: string | null;
+          className: string;
           getBoundingClientRect(): Box;
           querySelector(selector: string): Node | null;
           querySelectorAll(selector: string): Node[];
+          hasAttribute(name: string): boolean;
         }
         const view = globalThis as unknown as {
           document: Node & {
@@ -146,7 +148,7 @@ describe.skipIf(!executablePath)("the storage checkpoints page on a phone (real 
           getComputedStyle(
             element: Node,
             pseudo?: string,
-          ): { display: string; gridTemplateAreas: string; content: string };
+          ): { display: string; gridTemplateAreas: string; content: string; paddingLeft: string };
         };
         const doc = view.document;
         const wrap = doc.querySelector("#sckWrap")!;
@@ -173,6 +175,16 @@ describe.skipIf(!executablePath)("the storage checkpoints page on a phone (real 
             );
           }),
           contentsLabel: view.getComputedStyle(doc.querySelector("#sckRows .sck-contents")!, "::before").content,
+          // Only the contents field names itself: a date, a label, a size and a kind badge read as what they are.
+          labelled: [...doc.querySelectorAll("#sckRows > tr:not(.group-row):not(.toggle-row) td")]
+            .filter((cell) => cell.hasAttribute("data-label"))
+            .map((cell) => cell.className),
+          // The first and last fields of a card line up with the card's own padding, as the rest of the page does.
+          padding: {
+            card: Number.parseFloat(view.getComputedStyle(cards[0]!).paddingLeft),
+            first: Math.round(cards[0]!.querySelector("td")!.getBoundingClientRect().left),
+            cardLeft: Math.round(cards[0]!.getBoundingClientRect().left),
+          },
           // Every card stays inside the wrapper, and no card is wider than the viewport.
           widest: Math.max(...cards.map((card) => Math.round(card.getBoundingClientRect().width))),
           wrapWidth: Math.round(wrap.getBoundingClientRect().width),
@@ -185,6 +197,11 @@ describe.skipIf(!executablePath)("the storage checkpoints page on a phone (real 
       expect(shape.fits).toEqual({ page: true, wrap: true, cards: true });
       expect(shape.overlaps).toEqual([]);
       expect(shape.contentsLabel).toContain("Contents");
+      // Only the contents cell is labelled, so no other field repeats its column's name on the card.
+      expect([...new Set(shape.labelled)]).toEqual(["sck-contents", "sck-contents sck-empty"]);
+      expect(shape.labelled.length).toBeGreaterThan(1);
+      // The first field starts where the card's padding ends, rather than being pushed out by the table's own padding.
+      expect(shape.padding.first - shape.padding.cardLeft).toBe(shape.padding.card);
       expect(shape.widest).toBeLessThanOrEqual(shape.wrapWidth);
     },
     TIMEOUT_MS,
@@ -259,6 +276,13 @@ describe.skipIf(!executablePath)("the storage checkpoints page on a phone (real 
             headers: [
               ...(table as unknown as { querySelectorAll(s: string): Node[] }).querySelectorAll("thead th"),
             ].map((cell) => Math.round(cell.getBoundingClientRect().width)),
+            // The named columns of the colgroup, each keeping a width of its own on the desktop table.
+            widths: [...(table as unknown as { querySelectorAll(s: string): Node[] }).querySelectorAll("colgroup col")]
+              .map((col): [string, number] => [
+                (col as unknown as { className: string }).className,
+                Math.round(col.getBoundingClientRect().width),
+              ])
+              .filter(([name]) => name !== ""),
           };
         });
         expect(shape.table).toBe("table");
@@ -267,6 +291,15 @@ describe.skipIf(!executablePath)("the storage checkpoints page on a phone (real 
         expect(shape.headers.length).toBe(6);
         // The cells line up under the headers they belong to.
         expect(shape.cells).toEqual(shape.headers);
+        // The five named columns of the colgroup each take a width, so a long label cannot squeeze them to nothing.
+        expect(shape.widths.map(([name]) => name)).toEqual([
+          "sck-c-time",
+          "sck-c-kind",
+          "sck-c-contents",
+          "sck-c-size",
+          "sck-c-actions",
+        ]);
+        for (const [name, width] of shape.widths) expect([name, width > 0]).toEqual([name, true]);
       } finally {
         await desktopContext.close();
       }
