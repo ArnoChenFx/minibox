@@ -148,6 +148,86 @@ async function templateBuildOfficialCommand(
   );
 }
 
+/** The options `template edit` takes: every source flag `template create` takes, plus the edit's own. */
+const TEMPLATE_EDIT_VALUE_FLAGS = [...TEMPLATE_CREATE_VALUE_FLAGS, "--forward-port", "--post-create"];
+
+/** Source options that only mean something next to a source flag, so `template edit` refuses them on their own. */
+const TEMPLATE_EDIT_SOURCE_ONLY_FLAGS = [
+  "--branch",
+  "--subdir",
+  "--dockerfile-path",
+  "--devcontainer-path",
+  "--secret",
+];
+
+async function templateGetCommand(argv: string[], env: Record<string, string | undefined>, io: CliIo): Promise<number> {
+  const options = parseOptions(argv, ["--host"], OUTPUT_SWITCHES);
+  const [ref, ...more] = options.positional;
+  if (!ref || more.length > 0) throw new Error("minibox template get needs one template ref");
+  const host = options.values.get("--host");
+  const query = host === undefined ? "" : `?host=${encodeURIComponent(host)}`;
+  const read = await request(env, "GET", `/api/templates/${encodeURIComponent(ref)}/recipe${query}`);
+  if (read.status >= 400) return fail(io, read.status, read.json, read.text);
+  if (options.switches.has("--json")) return printJson(io, read.json);
+  const recipe = (read.json as { recipe?: { source?: Record<string, string | undefined> } } | null)?.recipe;
+  io.stdout(`${recipe?.source?.text ?? recipe?.source?.url ?? ""}\n`);
+  return 0;
+}
+
+async function templateEditCommand(
+  argv: string[],
+  env: Record<string, string | undefined>,
+  io: CliIo,
+): Promise<number> {
+  const options = parseOptions(argv, TEMPLATE_EDIT_VALUE_FLAGS, [...OUTPUT_SWITCHES, "--clear-setup"]);
+  const [ref, ...more] = options.positional;
+  if (!ref || more.length > 0) throw new Error("minibox template edit needs one template ref");
+  const chosen = TEMPLATE_SOURCES.filter((source) => options.values.has(source.flag));
+  const source = chosen[0];
+  if (chosen.length > 1) {
+    throw new Error(
+      "minibox template edit takes at most one of --dockerfile FILE, --repo URL, --context URL or --devcontainer URL",
+    );
+  }
+  const body: Record<string, unknown> = {};
+  if (source) {
+    const value = options.values.get(source.flag) ?? "";
+    const payload: Record<string, unknown> = { kind: source.kind };
+    if (source.kind === "dockerfile") payload.text = await readDockerfile(io, value);
+    else payload.url = value;
+    for (const [flag, key] of SOURCE_KEYS) {
+      const given = options.values.get(flag);
+      if (given === undefined) continue;
+      if (!source.takes.includes(flag)) throw new Error(`${flag} does not apply to ${source.flag}`);
+      payload[key] = given;
+    }
+    body.source = payload;
+  } else {
+    for (const flag of TEMPLATE_EDIT_SOURCE_ONLY_FLAGS) {
+      if (options.values.has(flag)) throw new Error(`${flag} needs one of the source flags`);
+    }
+  }
+  const description = options.values.get("--description");
+  if (description !== undefined) body.description = description;
+  const ports = options.values.get("--forward-port");
+  const command = options.values.get("--post-create");
+  // A field the caller names keeps the setup it does not name, which the server merges field by field.
+  const init: Record<string, unknown> = {};
+  if (ports !== undefined) init.forwardPorts = ports.split(",").map((port) => Number(port.trim()));
+  if (command !== undefined) init.postCreate = ["/bin/sh", "-c", command];
+  if (Object.keys(init).length > 0) body.init = init;
+  if (options.switches.has("--clear-setup")) body.init = null;
+  const host = options.values.get("--host");
+  if (host !== undefined) body.host = host;
+  const query = host === undefined ? "" : `?host=${encodeURIComponent(host)}`;
+  const edited = await request(env, "PATCH", `/api/templates/${encodeURIComponent(ref)}${query}`, body);
+  if (edited.status >= 400) return fail(io, edited.status, edited.json, edited.text);
+  if (options.switches.has("--json")) return printJson(io, edited.json);
+  const template = (edited.json as { template?: { ref?: string } } | null)?.template;
+  io.stdout(`${template?.ref ?? ""}\n`);
+  return 0;
+}
+
 async function templateForkCommand(
   argv: string[],
   env: Record<string, string | undefined>,
@@ -171,7 +251,7 @@ async function templateForkCommand(
   return 0;
 }
 
-/** `template create`, `fork`, `rebuild`, `sync` and `build-official`. A build, a rebuild and a copy run as a task; a fork answers at once. */
+/** `template create`, `get`, `edit`, `fork`, `rebuild`, `sync` and `build-official`. A build, a rebuild and a copy run as a task; a read, an edit and a fork answer at once. */
 export async function templateCommand(
   argv: string[],
   env: Record<string, string | undefined>,
@@ -179,9 +259,11 @@ export async function templateCommand(
 ): Promise<number> {
   const [sub, ...rest] = argv;
   if (sub === "create") return templateCreateCommand(rest, env, io);
+  if (sub === "get") return templateGetCommand(rest, env, io);
+  if (sub === "edit") return templateEditCommand(rest, env, io);
   if (sub === "fork") return templateForkCommand(rest, env, io);
   if (sub === "rebuild") return templateRebuildCommand(rest, env, io);
   if (sub === "sync") return templateSyncCommand(rest, env, io);
   if (sub === "build-official") return templateBuildOfficialCommand(rest, env, io);
-  throw new Error("minibox template needs create, fork, rebuild, sync or build-official");
+  throw new Error("minibox template needs create, get, edit, fork, rebuild, sync or build-official");
 }

@@ -117,6 +117,54 @@ function writeRecipe(host: HostCtx, name: string, recipe: TemplateRecipe): void 
   writeFileAtomic(recipePath(host, name), `${JSON.stringify(recipe, null, 2)}\n`);
 }
 
+/**
+ * What a caller may change about a declared template's recipe without building it: where its files come from, the setup a
+ * box created from it gets, and the description. A field left out keeps the value the recipe has, so a caller that only
+ * edits the Dockerfile does not have to send the rest. `init` merges field by field for the same reason: a caller that only
+ * sets `forwardPorts` keeps the `postCreateCommand` the template has. `init: null`, and an `init` with no field in it, drop
+ * the setup, because that is how a caller asks for none.
+ */
+export interface RecipeEdit {
+  source?: TemplateSource;
+  init?: TemplateInit | null;
+  description?: string | null;
+}
+
+/**
+ * Replaces the parts of a declared template's recipe that `edit` names, so the next rebuild builds the edited source. The
+ * creator and the rest of the recipe stay as they are: an edit changes what a rebuild would produce, not the image a box
+ * created now starts from. `imageId` is the image the tag names after the edit, which a description change commits anew. The
+ * caller has checked that the recipe built that image.
+ */
+export function editRecipe(
+  host: HostCtx,
+  declared: DeclaredTemplate,
+  edit: RecipeEdit,
+  imageId = declared.imageId,
+): TemplateRecipe {
+  const init =
+    edit.init === null || (edit.init !== undefined && Object.keys(edit.init).length === 0) ? null : edit.init;
+  const next: TemplateRecipe = { ...declared.recipe, imageId };
+  // A field the caller left out keeps the value the recipe has, so only the ones it named are written.
+  if (edit.source !== undefined) next.source = edit.source;
+  if (edit.description !== undefined) next.description = edit.description;
+  // An empty setup asks for nothing, which is the same as dropping it. A setup that names one field keeps the other, so
+  // `--forward-port 8080` alone does not throw away the command the template runs.
+  if (init === null) delete next.init;
+  else if (init !== undefined) {
+    const merged = {
+      ...(declared.recipe.init?.postCreate === undefined ? {} : { postCreate: declared.recipe.init.postCreate }),
+      ...(init.postCreate === undefined ? {} : { postCreate: init.postCreate }),
+      ...(declared.recipe.init?.forwardPorts === undefined ? {} : { forwardPorts: declared.recipe.init.forwardPorts }),
+      ...(init.forwardPorts === undefined ? {} : { forwardPorts: init.forwardPorts }),
+    };
+    if (Object.keys(merged).length === 0) delete next.init;
+    else next.init = merged;
+  }
+  writeRecipe(host, declared.name, next);
+  return next;
+}
+
 /** Forgets the recipe of a template name. A recipe whose image was removed by another tool is harmless and is replaced. */
 export function removeRecipe(host: HostCtx, name: string): void {
   rmSync(recipePath(host, name), { force: true });
@@ -160,22 +208,34 @@ export function buildKindOf(host: HostCtx, name: string, imageId: string): Build
 
 /** The declared template named by `ref`, which must be a template image this recipe built. */
 export async function declaredTemplate(host: HostCtx, ref: string): Promise<DeclaredTemplate> {
+  return (await templateAndRecipe(host, ref))[0];
+}
+
+/**
+ * The declared template `ref` names, with its recipe and the image the host reported. The image is the one the recipe must
+ * have built, so a caller that edits the recipe knows the image it names stays as it is. The ref may be the image
+ * reference, the tag or the bare name, as `templateSourceImage` accepts them.
+ */
+export async function templateAndRecipe(host: HostCtx, ref: string): Promise<[DeclaredTemplate, ImageDetails]> {
   const prefix = `${host.prefix}-template:`;
-  const name = ref.startsWith(prefix) ? ref.slice(prefix.length) : "";
-  if (!NAME_RE.test(name)) throw notFound(msg("template_not_found"));
-  let image: ImageDetails;
-  try {
-    image = await host.runtime.inspectImage(ref);
-  } catch (e) {
-    if (isRuntimeError(e, "not_found")) throw notFound(msg("template_not_found"));
-    throw e;
+  const candidates = ref.startsWith(prefix) ? [ref] : NAME_RE.test(ref) ? [ref, `${prefix}${ref}`] : [ref];
+  let image: ImageDetails | null = null;
+  for (const candidate of candidates) {
+    image = await host.runtime.inspectImage(candidate).catch((e: unknown) => {
+      if (isRuntimeError(e, "not_found")) return null;
+      throw e;
+    });
+    if (image) break;
   }
-  if (image.labels[host.keys.template] !== "true") throw notFound(msg("template_not_found"));
+  if (!image || image.labels[host.keys.template] !== "true") throw notFound(msg("template_not_found"));
+  const tag = image.tags.find((candidate) => candidate.startsWith(prefix));
+  const name = image.labels[host.keys.templateName] || (tag === undefined ? "" : tag.slice(prefix.length));
+  if (!NAME_RE.test(name)) throw notFound(msg("template_not_found"));
   const recipe = readRecipe(host, name);
   if (!recipe || recipe.imageId !== image.id) throw badRequest(msg("template_not_declared", { name }));
   // Older forks copied the source's creator into the recipe. The image's label is the ownership authority.
   const createdBy = image.labels[host.keys.createdBy] || recipe.createdBy;
-  return { name, imageId: image.id, recipe: { ...recipe, createdBy } };
+  return [{ name, imageId: image.id, recipe: { ...recipe, createdBy } }, image];
 }
 
 /**

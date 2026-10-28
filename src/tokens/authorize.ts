@@ -565,6 +565,20 @@ const RULES: ReadonlyMap<string, Rule> = new Map<string, Rule>([
     },
   ],
   [
+    "template.get",
+    async ({ principal, host, input }) => {
+      // The recipe holds the source and the setup, so only a token that may use the template reads it.
+      await assertImageUsable(principal, host, String(input.ref), "template");
+    },
+  ],
+  [
+    "template.edit",
+    async ({ principal, host, input }) => {
+      // Editing decides what a later rebuild produces, so the token must be able to use the template it changes.
+      await assertImageUsable(principal, host, String(input.ref), "template");
+    },
+  ],
+  [
     "template.delete",
     async ({ principal, host, input }) => assertOwnedImage(principal, host, String(input.ref), "template"),
   ],

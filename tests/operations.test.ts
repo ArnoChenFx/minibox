@@ -231,8 +231,10 @@ const SAMPLES: Record<string, (boxId: string, app: App) => unknown> = {
   "template.list": () => ({}),
   "template.promote": () => ({ ref: SNAPSHOT_REF, name: "silver" }),
   "template.save": (id) => ({ id, name: "silver" }),
+  "template.get": () => ({ ref: "mbtest-template:sample" }),
   "template.create": () => ({ name: "sample", source: { kind: "dockerfile", text: "FROM alpine:3.20\n" } }),
   "template.fork": () => ({ ref: TEMPLATE_REF, name: "gold-copy" }),
+  "template.edit": () => ({ ref: "mbtest-template:sample", description: "Our own toolchain" }),
   "template.rebuild": () => ({ ref: "mbtest-template:sample" }),
   "template.build": () => ({}),
   "template.sync": () => ({ ref: SYNCED_TEMPLATE_REF, host: "local" }),
@@ -432,7 +434,11 @@ async function preparedInput(
   if (operation.name.startsWith("box.staged.") && operation.name !== "box.staged.set") {
     await app.operations.run("box.staged.set", ctx, SAMPLES["box.staged.set"]?.(boxId, app));
   }
-  if (operation.name === "template.rebuild") {
+  if (
+    operation.name === "template.rebuild" ||
+    operation.name === "template.get" ||
+    operation.name === "template.edit"
+  ) {
     await app.operations.run("template.create", ctx, SAMPLES["template.create"]?.(boxId, app));
     await app.tasks.drain();
   }
@@ -1222,7 +1228,9 @@ describe("projections", () => {
       "build_official_template",
       "create_template",
       "delete_custom_tool",
+      "edit_template",
       "fork_template",
+      "get_template_source",
       "install_tool",
       "list_custom_tools",
       "list_official_templates",

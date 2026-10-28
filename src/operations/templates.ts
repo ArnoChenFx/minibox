@@ -7,13 +7,21 @@ import { NAME_RE } from "../lib/validation";
 import { assertNoSecretInImage } from "../secrets/env";
 import { getBox } from "../services/boxes";
 import { OFFICIAL_TEMPLATES, officialOfRef } from "../services/official-templates";
-import { createDeclaredTemplate, declaredTemplate, rebuildDeclaredTemplate } from "../services/template-builds";
+import {
+  createDeclaredTemplate,
+  declaredTemplate,
+  rebuildDeclaredTemplate,
+  type TemplateRecipe,
+  templateAndRecipe,
+} from "../services/template-builds";
 import { copyTemplate, findTemplateSource, heldImage } from "../services/template-sync";
 import {
   assertTemplateNameAvailable,
   buildBaseTemplate,
   deleteTemplate,
+  editTemplate,
   forkTemplate,
+  holdingTemplate,
   holdingTemplateName,
   listTemplates,
   promoteSnapshot,
@@ -26,14 +34,17 @@ import { defineOperation } from "./define";
 import { fromEveryHost, hostById, hostNamed, hostOfBox, hostOfImage, imageHosts, refuseAgent } from "./routing";
 import {
   BuildResultSchema,
+  EditedTemplateSchema,
   OfficialTemplateSchema,
   OkSchema,
   PromotedTemplateSchema,
+  TemplateRecipeSchema,
   TemplateSchema,
   TemplateSyncedSchema,
 } from "./schemas";
 import type { Operation, OperationContext } from "./types";
 import {
+  addFailure,
   boxId,
   hostId,
   officialName,
@@ -230,6 +241,143 @@ export const templateFork = defineOperation({
   }),
 });
 
+/**
+ * The setup a template edit sets: a `postCreateCommand` and the `forwardPorts` a box created from the template gets. A
+ * field the edit leaves out keeps the value the template has, so an edit that only sets the ports keeps its command;
+ * `init: null` or an empty object clears both. `init` is read from the same body the build takes, so a client sends the
+ * shape it already knows.
+ */
+const templateInitInput = () =>
+  z
+    .object({
+      postCreate: z
+        .array(z.string())
+        .optional()
+        .meta({ description: "postCreateCommand as argv, or as /bin/sh -c <text>." }),
+      forwardPorts: z
+        .array(z.number().int().min(1).max(65535))
+        .optional()
+        .meta({ description: "TCP ports a box created from the template opens as manual preview ports." }),
+    })
+    .nullable()
+    .optional()
+    .meta({
+      description:
+        "The setup a box created from the template gets. Omitted keeps the setup the template has, and a field left out keeps that field, so sending only forwardPorts keeps the template's postCreate. null or an empty object clears the whole setup. postCreate is the command as argv, forwardPorts the TCP ports to open.",
+    });
+
+/**
+ * The source a template rebuilds from, so the console can prefill its edit dialog. Only a declared template has one; a
+ * template saved from a box answers `400 template_not_declared`, as a rebuild does, because there is nothing to edit.
+ */
+export const templateGet = defineOperation({
+  name: "template.get",
+  tag: "templates",
+  summary: "Read the source a template rebuilds from",
+  kind: "read",
+  scope: "template:read",
+  async: false,
+  input: z.object({
+    ref: templateRef(),
+    host: hostId()
+      .optional()
+      .meta({ description: "Host that holds the template. Omitted, the first host that holds it." }),
+  }),
+  output: z.object({ recipe: TemplateRecipeSchema }),
+  rest: [{ method: "GET", path: "/api/templates/:ref/recipe", query: ["host"] }],
+  cli: "template get",
+  mcp: {
+    toolset: "tools",
+    name: "get_template_source",
+    description:
+      "Read the source a template rebuilds from: its kind, the fields of that source (the Dockerfile text for a dockerfile, the url and optional branch, subdir, path, dockerfile and secretRef for the others), and the setup a box created from it gets. A template saved from a box has no source, so it answers 400 template_not_declared. Optional host names the host that holds the template; without it the first host that holds it. Returns the recipe.",
+  },
+  hostFor: (ctx, input) => hostOfImage(ctx, input.ref, input.host),
+  precondition: async ({ host }) => refuseAgent(host, "templates"),
+  resolve: ({ host }, input) => templateAndRecipe(host, input.ref),
+  run: async (_ctx, _input, [declared]) => ({ recipe: recipeView(declared.recipe) }),
+});
+
+/** The recipe as `template.get` answers it: the source's fields, and the setup the template asks for. */
+function recipeView(recipe: TemplateRecipe): z.input<typeof TemplateRecipeSchema> {
+  const { source } = recipe;
+  return {
+    buildKind: source.kind,
+    source: {
+      kind: source.kind,
+      ...(source.kind === "dockerfile" ? { text: source.text } : {}),
+      ...(source.kind === "git" || source.kind === "context" || source.kind === "devcontainer"
+        ? { url: source.url }
+        : {}),
+      ...(source.kind === "git" || source.kind === "devcontainer" ? { branch: source.branch } : {}),
+      ...(source.kind === "git" ? { subdir: source.subdir } : {}),
+      ...(source.kind === "devcontainer" ? { path: source.path } : {}),
+      ...(source.kind === "git" || source.kind === "context" ? { dockerfile: source.dockerfile } : {}),
+      ...(source.kind === "git" || source.kind === "devcontainer" ? { secretRef: source.secretRef } : {}),
+      ...(source.kind === "official" ? { name: source.name } : {}),
+    },
+    ...(recipe.init?.postCreate === undefined ? {} : { postCreate: recipe.init.postCreate }),
+    ...(recipe.init?.forwardPorts === undefined ? {} : { forwardPorts: recipe.init.forwardPorts }),
+  };
+}
+
+export const templateEdit = defineOperation({
+  name: "template.edit",
+  tag: "templates",
+  summary: "Edit the source a template rebuilds from, without building it",
+  kind: "write",
+  scope: "template:write",
+  async: false,
+  conflicts: true,
+  input: z
+    .object({
+      ref: templateRef(),
+      description: templateDescription(),
+      source: templateSource().optional(),
+      init: templateInitInput(),
+      host: hostId()
+        .optional()
+        .meta({ description: "Host that holds the template. Omitted, the first host that holds it." }),
+    })
+    .superRefine((input, ctx) => {
+      if (input.source === undefined && input.init === undefined && input.description === undefined) {
+        addFailure(ctx, { message: msg("template_edit_empty"), field: "source" });
+      }
+    }),
+  output: z.object({ template: EditedTemplateSchema }),
+  rest: [{ method: "PATCH", path: "/api/templates/:ref", body: true, query: ["host"] }],
+  cli: "template edit",
+  mcp: {
+    toolset: "tools",
+    name: "edit_template",
+    description:
+      "Change what a template rebuilds from without building it: its source, the setup a box created from it gets, and its description. The template's current image is kept, so boxes created before the next rebuild are unaffected; rebuild_template then builds the edited source. A template built from a Dockerfile, a repository, a build context or a devcontainer.json can be edited, and a template saved from a box cannot, because it has no source to build from. A new description re-commits the image under the same tag, so its card shows the new one. Omitted source, init and description fields keep the values the template has; init null clears the setup. Optional host names the host that holds the template; without it the first host that holds it. A token may edit a template it can use, which needs the tool:install scope, as template writes do. Returns the template's ref, name and build kind.",
+  },
+  hostFor: (ctx, input) => hostOfImage(ctx, input.ref, input.host),
+  precondition: async ({ host }) => refuseAgent(host, "templates"),
+  resolve: ({ host }, input) => templateAndRecipe(host, input.ref),
+  activity: { action: () => "template.edit", target: (_input, resolved) => resolved[0].name },
+  audit: {
+    target: (_input, resolved) => resolved && { kind: "template", name: resolved[0].name },
+    // The source's text is a Dockerfile, so only its size is recorded, as a create records it.
+    detail: (input) => ({
+      name: input.ref,
+      description: input.description,
+      source: input.source === undefined ? undefined : sourceDetail(input.source),
+      init: input.init,
+    }),
+  },
+  run: async ({ host }, _input, [declared, image]) => ({
+    template: await holdingTemplate(host, declared.name, () =>
+      editTemplate(host, declared, image, {
+        source: _input.source,
+        init: _input.init,
+        description: _input.description,
+      }),
+    ),
+  }),
+});
+
 export const templateRebuild = defineOperation({
   name: "template.rebuild",
   tag: "templates",
@@ -260,8 +408,12 @@ export const templateRebuild = defineOperation({
   subject: (_input, declared) => declared.name,
   activity: { action: () => "template.rebuild", target: (_input, declared) => declared.name },
   audit: { target: (_input, declared) => declared && { kind: "template", name: declared.name } },
+  // A rebuild reads the recipe and writes it back when it ends, so an edit that lands while it runs would be overwritten.
+  // Holding the name for the whole build makes such an edit answer `409 template_busy` instead, as it does beside a save.
   run: async ({ host, task }, _input, declared) => ({
-    template: await rebuildDeclaredTemplate(host, declared, { log: (text) => task?.log(text), signal: task?.signal }),
+    template: await holdingTemplate(host, declared.name, () =>
+      rebuildDeclaredTemplate(host, declared, { log: (text) => task?.log(text), signal: task?.signal }),
+    ),
   }),
 });
 
@@ -489,8 +641,10 @@ export const templateOperations = [
   templateList,
   templatePromote,
   templateSave,
+  templateGet,
   templateCreate,
   templateFork,
+  templateEdit,
   templateRebuild,
   templateBuild,
   templateSync,

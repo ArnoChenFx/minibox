@@ -135,6 +135,9 @@ export default {
   "err.snapshot_not_found": "Snapshot not found.",
   "err.template_not_found": "Template not found.",
   "err.template_name_taken": "A template named “{name}” already exists.",
+  "err.template_edit_empty":
+    "Nothing to change: send a source, a setup (init) or a description. A template that was not built from a declared source has no source to edit.",
+  "err.template_busy": "Another change to the template “{name}” is still running. Try again when it ends.",
   "err.template_image_missing":
     "Template image {image} does not exist. Build it on the Templates page or choose another template.",
   "err.template_source_required":

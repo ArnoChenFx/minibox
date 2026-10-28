@@ -147,6 +147,37 @@ MiniBox 从不拉取它自己的模板、快照和检查点镜像。这些镜像
 
 在命令行中，`minibox template fork minibox-template:node-tools node-tools-mine --description "我们自己的工具链"` 会打印新的引用。与其他模板写入操作一样，只有所有者可以派生模板。
 
+## 修改模板的构建来源
+
+由 Dockerfile、代码仓库、构建上下文或 `devcontainer.json` 构建的模板会保留它的构建来源。**修改** 直接改这份来源，因此一次构建出来的模板可以就地纠正，不必再建一个。
+
+1. 在侧栏点击 **库**，然后进入 **模板** 标签页。
+2. 在带有构建来源的模板卡片上点击 **修改**。从 Box 保存的模板没有来源，它的卡片上也没有 **修改** 按钮；请改为派生后重新构建，或按所需来源新建一个模板。
+3. 对话框会填上模板当前的内容：**描述**、**转发的端口**、**设置命令**（`postCreateCommand`）以及来源的各个字段。Dockerfile 模板的 Dockerfile 本身就在框里，可以逐行修改。
+4. 改完点击 **保存修改**。
+
+保存只会修改构建记录。模板保留它当前的镜像，因此在重新构建之前创建的 Box 不受影响。在卡片上点击 **重新构建**，才会按修改后的来源构建出新镜像；此后该 tag 指向新镜像，新建的 Box 也就从新镜像启动。参见[重新构建模板](#重新构建模板)。
+
+- **来源。** 可以换一种类型并填写它的字段（同[从源构建模板](#从源构建模板)），把模板指向另一份 Dockerfile、代码仓库、压缩包或 `devcontainer.json`。换类型会整体替换来源，旧类型独有的字段会被丢弃。
+- **设置。** **设置命令** 在以该模板创建的每个 Box 中运行一次，形式为 `/bin/sh -c`；**转发的端口** 是这类 Box 会打开的 TCP 端口。两者都留空即移除设置。它们不属于镜像，所以改完对下一个新建的 Box 直接生效，无需重新构建。
+- **描述。** 新描述会写到模板的镜像上，卡片立刻显示它。MiniBox 把同一份系统层以同一 tag 重新提交一次，只换掉这个标签。
+
+写模板需要 `tool:install` scope，因此所有者可以修改任何模板，令牌可以修改它看得见的模板；沙箱 Agent 令牌没有 `tool:install`，不能修改。从 Box 保存的模板，以及 MiniBox 自己构建的模板，没有自己的来源可改：基础模板由 `templates/base` 重新构建，官方模板由 MiniBox 自带的 Dockerfile 构建。
+
+在命令行中，同样的修改是：
+
+```bash
+minibox template get node-tools                          # 打印它重新构建所用的来源
+minibox template edit node-tools --dockerfile ./Dockerfile
+minibox template edit node-tools --forward-port 3000,8080
+minibox template edit node-tools --post-create "npm ci"
+minibox template edit node-tools --clear-setup
+minibox template edit node-tools --description "我们自己的工具链"
+minibox template rebuild node-tools
+```
+
+`minibox template edit` 接受与 `minibox template create` 相同的来源选项，`minibox template get` 打印来源，加 `--json` 则打印整份构建记录。`--forward-port` 与 `--post-create` 各设置设置项的一半，另一半保持模板原有的值，因此只设端口不会丢掉它的设置命令；`--clear-setup` 把两者一起清空。参见 [CLI 参考（英文）](../../reference/cli.md)。
+
 ## 把模板复制到其他宿主机
 
 其他宿主机上的 Box 需要该宿主机上已有模板的镜像。MiniBox 在你于该宿主机上创建 Box 时会自动复制镜像，因此通常无需手动复制。若想提前复制，请在模板卡片上点击缺少该模板的宿主机旁的 **同步到此宿主机**。复制以 **同步模板** 任务的形式运行。每张卡片都会列出所有宿主机，以及各自是否已有该模板。复制还会带上由来源构建的模板的构建记录。副本保留该模板的设置，并可以在该宿主机上按同一来源重新构建。

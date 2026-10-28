@@ -47,10 +47,12 @@ export function envRowHtml(row, secrets) {
   </div>`;
 }
 
-/** The options of a secret chooser: an empty first option that means no secret, then each name. */
-export function secretChoicesHtml(names, emptyText) {
-  const choices = (names ?? []).map((name) => `<option value="${esc(name)}">${esc(name)}</option>`).join("");
-  return `<option value="">${esc(emptyText)}</option>${choices}`;
+/** The options of a secret chooser: an empty first option that means no secret, then each name. `selected` picks one. */
+export function secretChoicesHtml(names, emptyText, selected = "") {
+  const choices = (names ?? [])
+    .map((name) => `<option value="${esc(name)}"${name === selected ? " selected" : ""}>${esc(name)}</option>`)
+    .join("");
+  return `<option value=""${selected === "" ? " selected" : ""}>${esc(emptyText)}</option>${choices}`;
 }
 
 /** One env row as an element, ready to append to an editor. */

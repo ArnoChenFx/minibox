@@ -189,12 +189,15 @@ export const MESSAGES = {
   snapshot_not_found: "Snapshot not found.",
   template_not_found: "Template not found.",
   template_name_taken: "A template named “{name}” already exists.",
+  template_busy: "Another change to the template “{name}” is still running. Try again when it ends.",
   template_image_missing:
     "Template image {image} does not exist. Build it on the Templates page or choose another template.",
   template_source_required:
     "Choose where the template comes from: a Dockerfile, a Git repository, a build context URL or a devcontainer.json.",
   template_not_declared:
     "Template {name} was not built from a declared source, so it cannot be rebuilt. Build a template from a Dockerfile, a repository, a build context or a devcontainer.json instead.",
+  template_edit_empty:
+    "Nothing to change: send a source, a setup (init) or a description. A template that was not built from a declared source has no source to edit.",
   dockerfile_invalid: "The Dockerfile must be at most 64 KB, contain no NUL bytes, and include a FROM instruction.",
   dockerfile_not_found: "There is no Dockerfile at {path} in the build context.",
   context_url_invalid:

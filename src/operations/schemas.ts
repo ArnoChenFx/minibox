@@ -284,10 +284,36 @@ export const PromotedTemplateSchema = z.object({
   name: z.string(),
 });
 
+/** A template after an edit. `buildKind` is the kind of source it now rebuilds from, so a card can say so. */
+export const EditedTemplateSchema = PromotedTemplateSchema.extend({
+  buildKind: z.enum(BUILD_KINDS),
+});
+
 /** A template as the list reports it. `buildKind` is present only on a template built from a declared source, and
  * `postCreate` and `forwardPorts` only on one whose devcontainer.json asks for the setup. */
 export const TemplateSchema = ImageSchema.extend({
   buildKind: z.enum(BUILD_KINDS).optional(),
+  postCreate: z.array(z.string()).optional(),
+  forwardPorts: z.array(z.number().int().min(1).max(65535)).optional(),
+});
+
+/**
+ * The declared source a template rebuilds from, as the edit dialog prefills it. `text` is the pasted Dockerfile, which
+ * only a `dockerfile` source has; the other kinds keep their fields instead.
+ */
+export const TemplateRecipeSchema = z.object({
+  buildKind: z.enum(BUILD_KINDS),
+  source: z.object({
+    kind: z.enum(BUILD_KINDS),
+    text: z.string().optional(),
+    url: z.string().optional(),
+    branch: z.string().optional(),
+    subdir: z.string().optional(),
+    path: z.string().optional(),
+    dockerfile: z.string().optional(),
+    secretRef: z.string().optional(),
+    name: z.string().optional(),
+  }),
   postCreate: z.array(z.string()).optional(),
   forwardPorts: z.array(z.number().int().min(1).max(65535)).optional(),
 });

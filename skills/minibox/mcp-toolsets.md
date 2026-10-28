@@ -94,7 +94,8 @@ Listing and closing sessions are REST and CLI only (`GET`/`DELETE /api/boxes/{id
 | `install_tool`, `upgrade_tool`, `uninstall_tool`, `reconcile_tools` | `tool:install` | The shared tools volume. Each returns a task |
 | `save_template` | `tool:install` | Save a box's system layer as a template. Returns a task |
 | `list_templates` | `box:read` | Templates on every host |
-| `create_template`, `fork_template`, `rebuild_template`, `sync_template`, `build_official_template`, `list_official_templates`, `pull_image` | owner | Template builds, forks and image pulls. Each build returns a task; a fork answers at once |
+| `get_template_source` | `box:read` | The source a template rebuilds from |
+| `create_template`, `edit_template`, `fork_template`, `rebuild_template`, `sync_template`, `build_official_template`, `list_official_templates`, `pull_image` | owner | Template builds, edits, forks and image pulls. Each build returns a task; an edit and a fork answer at once |
 | `list_custom_tools`, `put_custom_tool`, `delete_custom_tool` | owner | `DATA_DIR/tools.d`. Deleting an entry does not uninstall the tool |
 
 ## rebuild and move

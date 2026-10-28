@@ -45,6 +45,7 @@ export const ACTION_ICON = {
   "checkpoint.schedule": "clock",
   "checkpoint.schedule.clear": "clock",
   "template.create": "hammer",
+  "template.edit": "pencil",
   "template.fork": "copy",
   "template.rebuild": "hammer",
   "template.promote": "upload",

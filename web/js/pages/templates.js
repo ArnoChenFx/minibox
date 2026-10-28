@@ -1,4 +1,5 @@
 import { openCreateBox } from "../components/create-box.js";
+import { openEditTemplate } from "../components/edit-template.js";
 import { openForkTemplate } from "../components/fork-template.js";
 import { bindToggles, limitList } from "../components/list-toggle.js";
 import { bindSearchBox, searchBoxHtml } from "../components/search-box.js";
@@ -175,6 +176,7 @@ export function render(view, focusName = "") {
           <div class="actions">
             ${unbuilt && !multiHost() ? `<button class="btn btn-sm" data-action="build-official" data-name="${esc(tp.name)}">${icon("hammer")}${t("tp.buildOfficial")}</button>` : ""}
             ${!unbuilt ? `<button class="btn btn-sm" data-action="fork" data-ref="${esc(tp.ref)}" title="${esc(t("tp.fork"))}">${icon("copy")}${t("tp.fork")}</button>` : ""}
+            ${tp.buildKind && !unbuilt ? `<button class="btn btn-sm" data-action="edit" data-ref="${esc(tp.ref)}" title="${esc(t("tp.edit"))}">${icon("pencil")}${t("tp.edit")}</button>` : ""}
             ${tp.buildKind && !unbuilt ? `<button class="btn btn-sm" data-action="rebuild" data-ref="${esc(tp.ref)}" data-host="${esc(tp.holders[0])}">${icon("refresh")}${t("tp.rebuild")}</button>` : ""}
             <button class="btn btn-sm btn-primary" data-action="use" data-ref="${esc(tp.ref)}">${icon("plus")}${t("tp.use")}</button>
           </div>
@@ -276,6 +278,11 @@ export function render(view, focusName = "") {
       const card = cards.find((tp) => tp.ref === b.dataset.ref);
       if (!card) return;
       openForkTemplate({ card, cards, onForked: (template) => load(template?.name) });
+    },
+    edit: (b) => {
+      const card = cards.find((tp) => tp.ref === b.dataset.ref);
+      if (!card) return;
+      void openEditTemplate({ card, onEdited: (name) => load(name) });
     },
     rebuild: async (b) => {
       try {

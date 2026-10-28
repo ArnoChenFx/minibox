@@ -147,6 +147,37 @@ Deleting the template you forked from does not affect the fork. Each copy keeps 
 
 On the command line, `minibox template fork minibox-template:node-tools node-tools-mine --description "Our own toolchain"` prints the new reference. Only the owner can fork a template, as with the other template writes.
 
+## Edit what a template rebuilds from
+
+A template built from a Dockerfile, a repository, a build context or a `devcontainer.json` keeps the source it was built from. **Edit** changes that source in place, so a template you built once can be corrected without building a second one.
+
+1. Click **Library** in the sidebar, then **Templates**.
+2. On the card of a template that has a build source, click **Edit**. A template saved from a box has no source, so its card has no **Edit** button; fork it and build a source instead, or build a new template from the source you want.
+3. The dialog fills in what the template has now: its **Description**, its **Forwarded ports**, its **Setup command** (`postCreateCommand`), and the fields of its source. For a Dockerfile template the Dockerfile itself is in the box, and you can change any line of it.
+4. Change what you need, and click **Save changes**.
+
+Saving changes the recipe only. The template keeps the image it has, so boxes created before you rebuild are unaffected. Click **Rebuild** on the card to build the edited source into a new image; from then on the tag names the new image, and boxes created after that start from it. See [Rebuild a template](#rebuild-a-template).
+
+- **The source.** Choose another kind and fill in its fields, as in [Build a template from a source](#build-a-template-from-a-source), to point the template at another Dockerfile, repository, archive or `devcontainer.json`. Changing the kind replaces the whole source, so the fields of the old kind are dropped.
+- **The setup.** **Setup command** runs once in each box created from the template, as `/bin/sh -c`, and **Forwarded ports** are the TCP ports such a box opens. Leave both empty to remove the setup. They are not part of the image, so changing them takes effect for the next box created, with no rebuild.
+- **The description.** A new description is written onto the template's image, so its card shows it at once. MiniBox commits the same image under the same tag with the new label; the system layer is unchanged.
+
+A template write needs the `tool:install` scope, so the owner can edit any template and a token can edit one it may use; a sandboxed agent token, which has no `tool:install`, cannot. A template saved from a box, and a template built by MiniBox itself, have no source of their own to edit: the base template is rebuilt from `templates/base`, and an official template from the Dockerfile that ships with MiniBox.
+
+On the command line, the same change is:
+
+```bash
+minibox template get node-tools                          # print the source it rebuilds from
+minibox template edit node-tools --dockerfile ./Dockerfile
+minibox template edit node-tools --forward-port 3000,8080
+minibox template edit node-tools --post-create "npm ci"
+minibox template edit node-tools --clear-setup
+minibox template edit node-tools --description "Our own toolchain"
+minibox template rebuild node-tools
+```
+
+`minibox template edit` takes the same source options as `minibox template create`, and `minibox template get` prints the source, or `--json` for the whole recipe. `--forward-port` and `--post-create` each set one half of the setup and keep the other half the template has, so setting the ports does not drop its command; `--clear-setup` drops both. See the [CLI reference](../reference/cli.md).
+
 ## Copy a template to another host
 
 A box on another host needs the template's image on that host. MiniBox copies the image when you create the box there, so you rarely need to copy a template by hand. To copy one ahead of time, click **Copy here** next to a host that lacks it, on the template's card. The copy runs as a **Sync template** task. Each card lists every host, and whether it has the template. A copy also carries the recipe of a template built from a source. The copy keeps that template's setup, and it can be rebuilt on that host from the same source.
