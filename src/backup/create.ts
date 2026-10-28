@@ -20,6 +20,8 @@ export interface ArchiveOptions {
   readonly passphrase: string;
   /** The file to write. It must not exist yet, and its folder must exist. */
   readonly output: string;
+  /** Folders under `dataDir` to leave out, such as a `BACKUP_DIR` that sits inside it. */
+  readonly exclude?: readonly string[];
   readonly logN?: number;
   readonly log?: (line: string) => void;
 }
@@ -42,7 +44,7 @@ export async function writeArchive(options: ArchiveOptions): Promise<ArchiveSumm
   try {
     staging = await mkdtemp(join(dirname(options.output), ".snapshot-"));
     const snapshots = await snapshotStores(options.databases, staging, options.log);
-    const listed = await listEntries(options.dataDir);
+    const listed = await listEntries(options.dataDir, { exclude: options.exclude });
     const entries = [...listed, ...snapshots].toSorted((a, b) => (a.rel < b.rel ? -1 : a.rel > b.rel ? 1 : 0));
     const hash = createHash("sha256");
     let bytes = 0;

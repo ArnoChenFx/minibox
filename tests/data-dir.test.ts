@@ -5,10 +5,15 @@ import { join } from "node:path";
 
 import {
   accessKeyPath,
+  backupDirRefusal,
   createSecretFile,
   ensureDataDir,
+  ensurePrivateDir,
+  isWithinDir,
   readSecretFile,
+  resolveBackupDir,
   resolveDataDir,
+  resolvePath,
   sessionsPath,
   writeFileAtomic,
 } from "../src/data-dir";
@@ -32,6 +37,80 @@ describe("resolveDataDir", () => {
     expect(resolveDataDir("~/minibox", root, home)).toBe("/home/dev/minibox");
     expect(resolveDataDir("~", root, home)).toBe("/home/dev");
   });
+});
+
+describe("resolveBackupDir", () => {
+  const root = "/srv/minibox";
+  const home = "/home/dev";
+  const dataDir = "/srv/minibox/data";
+
+  test("unset or blank means DATA_DIR/backups", () => {
+    expect(resolveBackupDir(undefined, dataDir, root, home)).toBe("/srv/minibox/data/backups");
+    expect(resolveBackupDir("   ", dataDir, root, home)).toBe("/srv/minibox/data/backups");
+  });
+  test("an absolute path is kept, and a relative one resolves from the project root as DATA_DIR does", () => {
+    expect(resolveBackupDir("/mnt/backups", dataDir, root, home)).toBe("/mnt/backups");
+    expect(resolveBackupDir("archives", dataDir, root, home)).toBe("/srv/minibox/archives");
+    expect(resolveBackupDir("../backups", dataDir, root, home)).toBe("/srv/backups");
+  });
+  test("~ expands to the home directory", () => {
+    expect(resolveBackupDir("~/minibox-backups", dataDir, root, home)).toBe("/home/dev/minibox-backups");
+    expect(resolveBackupDir("~", dataDir, root, home)).toBe("/home/dev");
+  });
+  test("the fallback is the folder itself, not the data directory", () => {
+    expect(resolvePath(undefined, root, home, "/fallback")).toBe("/fallback");
+    expect(resolvePath("  ", root, home, "/fallback")).toBe("/fallback");
+    expect(resolvePath("sub", root, home, "/fallback")).toBe("/srv/minibox/sub");
+  });
+});
+
+describe("isWithinDir", () => {
+  test("a folder is within itself, and its children are within it", () => {
+    expect(isWithinDir("/data/backups", "/data/backups")).toBe(true);
+    expect(isWithinDir("/data/backups/bk_1.mbbak", "/data/backups")).toBe(true);
+  });
+  test("a sibling that shares a prefix is not within it, and a parent is not either", () => {
+    expect(isWithinDir("/data/backups-old", "/data/backups")).toBe(false);
+    expect(isWithinDir("/data", "/data/backups")).toBe(false);
+  });
+  test("`..` cannot escape the folder", () => {
+    expect(isWithinDir("/data/backups/../secrets", "/data/backups")).toBe(false);
+    expect(isWithinDir("/data/backups/sub/..", "/data/backups")).toBe(true);
+  });
+});
+
+describe("backupDirRefusal", () => {
+  const dataDir = "/srv/minibox/data";
+
+  test("a folder beside or inside DATA_DIR is allowed", () => {
+    expect(backupDirRefusal("/srv/minibox/archives", dataDir)).toBeNull();
+    expect(backupDirRefusal("/mnt/backups", dataDir)).toBeNull();
+    expect(backupDirRefusal(join(dataDir, "backups"), dataDir)).toBeNull();
+    expect(backupDirRefusal(join(dataDir, "archives"), dataDir)).toBeNull();
+  });
+
+  test("DATA_DIR itself, or a folder above it, is refused with the reason", () => {
+    expect(backupDirRefusal(dataDir, dataDir)).toBe("it is the data directory itself");
+    expect(backupDirRefusal("/srv/minibox", dataDir)).toBe("it holds the data directory");
+    expect(backupDirRefusal("/", dataDir)).toBe("it holds the data directory");
+    expect(backupDirRefusal(`${dataDir}/..`, dataDir)).toBe("it holds the data directory");
+  });
+});
+
+test("ensurePrivateDir creates parents and tightens an existing folder to 700", () => {
+  const dir = mkdtempSync(join(tmpdir(), "minibox-private-"));
+  try {
+    const nested = join(dir, "a", "b");
+    ensurePrivateDir(nested);
+    expect(mode(nested)).toBe(0o700);
+    expect(mode(join(dir, "a"))).toBe(0o700);
+
+    chmodSync(nested, 0o755);
+    ensurePrivateDir(nested);
+    expect(mode(nested)).toBe(0o700);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("accessKeyPath sits directly in DATA_DIR", () => {
