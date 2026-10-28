@@ -297,6 +297,8 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
   const events = openEventStore(eventsPath, redactor);
   const backups = new BackupService({
     dataDir: cfg.dataDir,
+    backupDir: cfg.backupDir,
+    keep: cfg.backupKeep,
     databases: [
       { name: "events.db", path: eventsPath },
       { name: "tasks.db", path: tasksPath },
@@ -304,6 +306,7 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
   });
   const swept = backups.sweepPartial();
   if (swept > 0) log.info("backup.partial_swept", { count: swept });
+  backups.applyRetention();
   const targets = new TargetService({
     dataDir: cfg.dataDir,
     secrets,

@@ -12,7 +12,7 @@ Code belongs in git. Push your code to a remote repository, so you do not depend
 
 A backup contains every file in the data directory, except these:
 
-- `backups/`: the backups kept on the server.
+- The folder that holds the server's backups: `DATA_DIR/backups/`, or `BACKUP_DIR` when that is set and sits inside the data directory. See [Where backups are kept](#where-backups-are-kept).
 - `packages/`: checkpoint packages. They expire 24 hours after they are made. Push one to an off-site target to keep it.
 - `exec/`: the saved output of `exec` commands.
 - `cli/`: cached command-line binaries. MiniBox builds them again when they are needed.
@@ -49,6 +49,24 @@ For a copy in which every file matches one moment, stop MiniBox first, and copy 
 
 A backup that fails leaves no archive behind.
 
+## Where backups are kept
+
+Without a setting, the server keeps its archives in `DATA_DIR/backups/`, one `<id>.mbbak` per backup with a `<id>.json` record beside it. Set `BACKUP_DIR` to keep them somewhere else, such as a disk that is not the one `DATA_DIR` lives on:
+
+```bash
+BACKUP_DIR=/mnt/backups
+```
+
+- An absolute path is used as it is. A relative path resolves from the project root, the folder that holds `src/`, exactly as `DATA_DIR` does, so `BACKUP_DIR=archives` is `<project>/archives`. A leading `~/` expands to the home directory of the user that runs MiniBox.
+- The folder is created on the first backup that needs it, with mode `700`, together with any folder above it. An existing folder is tightened to `700` when the filesystem allows it, because an archive holds every secret of the instance. The archives themselves are mode `600`.
+- The user that runs MiniBox must be able to write the folder. A folder it cannot create or write makes the backup fail, and the failure leaves no archive and no record behind. Nothing is created at startup, so an unset or unusable `BACKUP_DIR` does not stop MiniBox from starting.
+- Point it at a folder for backups alone. MiniBox only reads, writes and (with `BACKUP_KEEP`) deletes its own `<id>.mbbak` and `<id>.json` files there, but a folder shared with other tools is harder to reason about, and its mode is tightened to `700`.
+- A `BACKUP_DIR` inside `DATA_DIR` is left out of the archive, as `DATA_DIR/backups/` always is, so a backup never contains backups. A `BACKUP_DIR` outside `DATA_DIR` is not part of the data directory at all.
+- Everything else works the same: `minibox backup ls`, `minibox backup rm`, `GET /api/backups`, the download route and the off-site targets read and write the archives in this folder. A backup pulled from a target lands there too.
+- Backups downloaded with `--out` are written where you say, not in this folder.
+
+A backup started before `BACKUP_DIR` was set stays where it was written: MiniBox does not move old archives, and a listing shows only the folder it is configured to use. Move the old files yourself, or leave them where they are.
+
 ## Restore a backup
 
 Restore runs offline, with MiniBox stopped. It writes into an empty data directory, and it never merges into a directory that holds any file. A wrong passphrase, a damaged file, or a file that is not a backup is refused, and nothing is restored.
@@ -83,7 +101,7 @@ Then start MiniBox with the `minibox-data` volume, as in the [install guide](ins
 
 ### Restore a pulled backup
 
-A backup pulled from an off-site target is stored in `DATA_DIR/backups/` on the instance that pulled it. Restore its archive as described above, from that file or from a copy of it. Its id is listed by `minibox backup ls`, and `GET /api/backups/{id}/download` returns the archive.
+A backup pulled from an off-site target is stored in the server's backup folder: `DATA_DIR/backups/`, or `BACKUP_DIR` when it is set. Restore its archive as described above, from that file or from a copy of it. Its id is listed by `minibox backup ls`, and `GET /api/backups/{id}/download` returns the archive.
 
 ### Restore a volume
 
@@ -148,8 +166,39 @@ MiniBox does not delete a complete object on a target. It replaces a file that a
 
 ## Retention and schedules
 
-- Backups stay until you delete them, and they use space in `DATA_DIR/backups/` until then. MiniBox does not create backups on a schedule, and it does not expire them. To back up on a schedule, run `minibox backup --out` from cron or a task scheduler, and delete the archives you no longer need. Keep the passphrase where only that scheduler can read it.
-- A pulled package expires 24 hours after the pull. Objects on targets stay until you remove them.
+### Keep only the newest backups
+
+`BACKUP_KEEP=N` keeps the newest `N` backups and deletes the older ones:
+
+```bash
+BACKUP_KEEP=7
+```
+
+What counts, and what does not:
+
+- The backups are the archives in the server's backup folder, `DATA_DIR/backups/` or `BACKUP_DIR`. Only the ones MiniBox wrote count: a `<id>.mbbak` with its `<id>.json` record beside it, whose size matches the record. A record whose archive is missing or short, a partial archive left by a crash, and any other file in the folder are left alone, so a folder that holds other things keeps them.
+- Off-site targets are not touched. MiniBox never deletes a complete object on an S3-compatible bucket or an SFTP server, whatever `BACKUP_KEEP` says. Remove old objects with the tools of the bucket or the server, or with `DELETE /api/backups/{id}` before pushing fewer.
+- Archives downloaded with `minibox backup --out` are on your machine, not in this folder, so they are yours to delete.
+
+Order and timing:
+
+- Newest first, by the time the backup was made, then by id. Two backups made in the same millisecond are ordered by id, so a pass always picks the same ones, and the backup that just finished is always among the newest.
+- A pass runs after every backup that succeeds, and once at startup. Lowering `BACKUP_KEEP` and restarting therefore prunes at once, without waiting for the next backup. A backup that fails does not run a pass, so a failing backup never removes a good archive.
+- `BACKUP_KEEP=0`, a blank value and an unset value all keep every backup. That is the default. A value that is not a whole number, or is negative, also keeps every backup instead of guessing: a typo must never delete archives. A number above 10000 is treated the same way.
+
+A backup that `BACKUP_KEEP` removes is gone for good. Push the ones you want to keep to an [off-site target](#off-site-targets) first.
+
+### Schedules
+
+MiniBox does not create backups on a schedule yet. To back up on a schedule, run `minibox backup` from cron or a task scheduler, and keep the passphrase where only that scheduler can read it:
+
+```
+30 3 * * * MINIBOX_URL=http://127.0.0.1:3920 MINIBOX_ACCESS_KEY=… MINIBOX_BACKUP_PASSPHRASE=… minibox backup
+```
+
+Without `--out`, each run adds an archive to the server's backup folder, and `BACKUP_KEEP` decides how many stay. With `--out`, the archive is downloaded to the machine that runs the job, and the copy on the server counts against `BACKUP_KEEP` like any other.
+
+A pulled checkpoint package expires 24 hours after the pull. Objects on targets stay until you remove them.
 
 ## Copy the data directory by hand
 

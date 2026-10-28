@@ -265,6 +265,8 @@ The `backup` commands use the access key, and they are for the owner only. `rest
 | `minibox backup rm <id> [--json]` | Deletes a backup kept on the server |
 | `minibox restore <file> --data-dir DIR [--passphrase-stdin]` | Restores an archive into an empty `DIR`. Without `--data-dir`, it uses `DATA_DIR`. Stop MiniBox first. |
 
+The archives are kept in `DATA_DIR/backups/`, or in `BACKUP_DIR` when that is set, and `BACKUP_KEEP` keeps only the newest few. See [Backups](../admin/backups.md#retention-and-schedules).
+
 The passphrase comes from `MINIBOX_BACKUP_PASSPHRASE`, or from the first line of standard input with `--passphrase-stdin`.
 
 ```bash

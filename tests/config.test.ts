@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
-import { DEFAULT_MCP_ALLOW_OWNER_KEY, loadConfig } from "../src/config";
+import { DEFAULT_MCP_ALLOW_OWNER_KEY, loadConfig, ROOT } from "../src/config";
 import { setLogLevel } from "../src/lib/logger";
 
 const KEY = "k".repeat(64);
@@ -520,5 +520,46 @@ describe("direct SSH", () => {
     expect(() => load({ ACCESS_KEY: KEY, SSH_PORT: "22x" })).toThrow(/SSH_PORT/);
     expect(() => load({ ACCESS_KEY: KEY, SSH_PORT: "3920" })).toThrow(/already the web PORT/);
     expect(() => load({ ACCESS_KEY: KEY, SSH_PUBLIC_HOST: "ssh://nas" })).toThrow(/SSH_PUBLIC_HOST/);
+  });
+});
+
+describe("backup folder and retention", () => {
+  test("BACKUP_DIR is unset by default, so archives stay in DATA_DIR/backups", () => {
+    expect(load({ ACCESS_KEY: KEY }).backupDir).toBe(join(dataDir, "backups"));
+    expect(load({ ACCESS_KEY: KEY, BACKUP_DIR: "   " }).backupDir).toBe(join(dataDir, "backups"));
+  });
+  test("an absolute BACKUP_DIR is kept, a relative one resolves from the project root, and ~ expands", () => {
+    expect(load({ ACCESS_KEY: KEY, BACKUP_DIR: "/mnt/archives" }).backupDir).toBe("/mnt/archives");
+    expect(load({ ACCESS_KEY: KEY, BACKUP_DIR: "archives" }).backupDir).toBe(join(ROOT, "archives"));
+    expect(load({ ACCESS_KEY: KEY, BACKUP_DIR: "../backups" }).backupDir).toBe(resolve(ROOT, "..", "backups"));
+  });
+  test("BACKUP_DIR can come from .env, and the process env wins over it", () => {
+    writeFileSync(envFile, `BACKUP_DIR=${join(root, "from-file")}\n`);
+    expect(loadConfig({ ACCESS_KEY: KEY, DATA_DIR: dataDir }, { envFile }).backupDir).toBe(join(root, "from-file"));
+    expect(
+      loadConfig({ ACCESS_KEY: KEY, DATA_DIR: dataDir, BACKUP_DIR: join(root, "from-env") }, { envFile }).backupDir,
+    ).toBe(join(root, "from-env"));
+  });
+  test("a BACKUP_DIR does not have to exist yet, and loading does not create it", () => {
+    const target = join(root, "later");
+    expect(load({ ACCESS_KEY: KEY, BACKUP_DIR: target }).backupDir).toBe(target);
+    expect(existsSync(target)).toBe(false);
+  });
+
+  test("BACKUP_KEEP is 0 when unset, which keeps every backup", () => {
+    expect(load({ ACCESS_KEY: KEY }).backupKeep).toBe(0);
+    expect(load({ ACCESS_KEY: KEY, BACKUP_KEEP: "" }).backupKeep).toBe(0);
+    expect(load({ ACCESS_KEY: KEY, BACKUP_KEEP: "0" }).backupKeep).toBe(0);
+  });
+  test("a positive whole number is the number of backups kept, from the environment or .env", () => {
+    expect(load({ ACCESS_KEY: KEY, BACKUP_KEEP: "7" }).backupKeep).toBe(7);
+    expect(load({ ACCESS_KEY: KEY, BACKUP_KEEP: "10000" }).backupKeep).toBe(10_000);
+    writeFileSync(envFile, "BACKUP_KEEP=3\n");
+    expect(loadConfig({ ACCESS_KEY: KEY, DATA_DIR: dataDir }, { envFile }).backupKeep).toBe(3);
+  });
+  test("an invalid BACKUP_KEEP keeps every backup rather than guessing a limit that would delete archives", () => {
+    for (const value of ["-1", "1.5", "many", "10001", "  "]) {
+      expect(load({ ACCESS_KEY: KEY, BACKUP_KEEP: value }).backupKeep).toBe(0);
+    }
   });
 });

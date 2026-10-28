@@ -3,7 +3,14 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { BOX_PROFILES, type BoxProfile, DEFAULT_BOX_PROFILE, DEFAULT_PIDS_LIMIT, isBoxProfile } from "./box-profile";
-import { accessKeyPath, createSecretFile, ensureDataDir, readSecretFile, resolveDataDir } from "./data-dir";
+import {
+  accessKeyPath,
+  createSecretFile,
+  ensureDataDir,
+  readSecretFile,
+  resolveBackupDir,
+  resolveDataDir,
+} from "./data-dir";
 import { hostLabelsProblem } from "./host/store";
 import { log } from "./lib/logger";
 import { parsePreviewBaseDomain } from "./preview/domain";
@@ -19,6 +26,10 @@ export interface Config {
   accessKey: string;
   accessKeySource: AccessKeySource;
   dataDir: string;
+  /** Where local backup archives are kept. `DATA_DIR/backups` unless `BACKUP_DIR` sets another folder. */
+  backupDir: string;
+  /** How many backups `BACKUP_KEEP` retains, newest first. 0 keeps every backup, which is the default. */
+  backupKeep: number;
   dockerSocket: string;
   labelPrefix: string;
   baseTemplateTag: string;
@@ -209,6 +220,17 @@ function parseBoxPidsLimit(value: string | undefined): number {
 
 const MAX_HOST_OVERCOMMIT = 10;
 
+/** The most backups `BACKUP_KEEP` may keep. A larger number still means a positive whole number, so it keeps them all. */
+const MAX_BACKUP_KEEP = 10_000;
+
+/**
+ * How many local backups to keep, newest first. Blank or `0` keeps every backup, and so does an invalid value: unlike a
+ * box setting, a typo here would delete archives, so it falls back to keeping them rather than to a guessed limit.
+ */
+function parseBackupKeep(value: string | undefined): number {
+  return intInRange(value, 0, 0, MAX_BACKUP_KEEP);
+}
+
 function parseHostOvercommit(value: string | undefined): number {
   const v = nonBlank(value);
   if (v === undefined) return 1;
@@ -276,6 +298,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
   const get = (k: string) => env[k] ?? file[k];
 
   const dataDir = resolveDataDir(nonBlank(env.DATA_DIR) ?? nonBlank(file.DATA_DIR), ROOT);
+  const backupDir = resolveBackupDir(nonBlank(env.BACKUP_DIR) ?? nonBlank(file.BACKUP_DIR), dataDir, ROOT);
   tryEnsureDataDir(dataDir);
   const { accessKey, accessKeySource } = resolveAccessKey(env, file, dataDir);
 
@@ -291,8 +314,10 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     accessKey,
     accessKeySource,
     dataDir,
-    dockerSocket: get("DOCKER_SOCKET")?.trim() || "/var/run/docker.sock",
+    backupDir,
+    backupKeep: parseBackupKeep(get("BACKUP_KEEP")),
     labelPrefix,
+    dockerSocket: get("DOCKER_SOCKET")?.trim() || "/var/run/docker.sock",
     baseTemplateTag: get("BASE_TEMPLATE")?.trim() || `${labelPrefix}-template:base`,
     stopTimeoutSec: intInRange(get("STOP_TIMEOUT_SEC"), 3, 0, 300),
     webDir: join(ROOT, "web"),

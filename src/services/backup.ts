@@ -3,6 +3,7 @@ import { open } from "node:fs/promises";
 
 import { type DatabaseSource, writeArchive } from "../backup/create";
 import { writeAll } from "../backup/io";
+import { applyBackupRetention, type RetentionResult } from "../backup/retention";
 import { BACKUP_EXTENSION, BACKUP_VERSION, type BackupRecord, BackupStore } from "../backup/store";
 import type { ByteStream } from "../lib/body";
 import { badRequest, conflict, notFound } from "../lib/errors";
@@ -39,24 +40,44 @@ export interface BackupServiceOptions {
   readonly dataDir: string;
   /** The SQLite stores copied with `VACUUM INTO`. A store without a file, `:memory:`, is left out. */
   readonly databases: readonly DatabaseSource[];
+  /**
+   * The folder the archives are kept in. Defaults to `DATA_DIR/backups`; `BACKUP_DIR` sets it. When it sits inside
+   * DATA_DIR, outside `DATA_DIR/backups`, it is left out of the archive too, so a backup never contains backups.
+   */
+  readonly backupDir?: string;
+  /** How many backups to keep, newest first. 0 or less, or anything that is not a whole number, keeps every one. */
+  readonly keep?: number;
 }
 
 /**
  * Makes and keeps backups of DATA_DIR. An archive is written under a partial name, renamed into place, and given its
  * record last, so a listing never shows an archive that is still being written. The passphrase goes to the archive
- * writer and nowhere else: it is not kept, logged or returned.
+ * writer and nowhere else: it is not kept, logged or returned. After a backup succeeds, `BACKUP_KEEP` is applied: the
+ * older archives in this folder go, and the off-site targets are untouched.
  */
 export class BackupService {
   readonly store: BackupStore;
+  private readonly keep: number;
+  private readonly exclude: readonly string[];
   private readonly receiving = new Set<string>();
 
   constructor(private readonly options: BackupServiceOptions) {
-    this.store = new BackupStore(options.dataDir);
+    this.store = new BackupStore(options.dataDir, { dir: options.backupDir });
+    this.keep = options.keep ?? 0;
+    this.exclude = this.store.insideDataDir() ? [] : [this.store.dir()];
   }
 
   /** Removes what a crash left behind. Runs once at startup, before any backup can be running. */
   sweepPartial(): number {
     return this.store.sweepPartial();
+  }
+
+  /**
+   * Removes the backups `BACKUP_KEEP` no longer keeps. Called at startup, and after every backup that succeeds, where the
+   * backup just made is protected: two backups can share a millisecond, and a tie must not delete the newest one.
+   */
+  applyRetention(protect?: string): RetentionResult {
+    return applyBackupRetention(this.store, this.keep, { protect });
   }
 
   async create(passphrase: string, createdBy: string | null, progress?: (line: string) => void): Promise<BackupRecord> {
@@ -68,6 +89,7 @@ export class BackupService {
         databases: this.options.databases,
         passphrase,
         output: this.store.partialPath(id),
+        exclude: this.exclude,
         log: progress,
       });
       this.store.commitArchive(id);
@@ -84,6 +106,7 @@ export class BackupService {
       };
       this.store.write(record);
       log.info("backup.created", { id, bytes: record.bytes, entries: record.entries });
+      this.applyRetention(id);
       return record;
     } catch (e) {
       this.store.remove(id);
