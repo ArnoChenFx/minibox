@@ -215,8 +215,16 @@ describe.skipIf(!executablePath)("the overview's first-run guide (real browser)"
       });
       expect(stored).not.toContain(secret);
 
-      // Copying the configuration ends the guide, and a reload keeps it away.
+      // Copying the configuration puts the snippet on the clipboard, not the bare secret: that is what the button says,
+      // and it is what a client reads.
       await guide.locator('[data-action="copy"]').click();
+      const clipboard = await page.evaluate(() =>
+        (
+          globalThis as unknown as { navigator: { clipboard: { readText(): Promise<string> } } }
+        ).navigator.clipboard.readText(),
+      );
+      expect(clipboard).toBe(mcpSnippet({ client: "codex", origin: consoleUrl, secret }).text);
+      expect(clipboard).not.toBe(secret);
       await webExpect(page.locator("#onboarding")).toHaveCount(0);
       await page.reload();
       await webExpect(page.locator("#onboarding")).toHaveCount(0);
@@ -285,8 +293,8 @@ describe.skipIf(!executablePath)("the overview's first-run guide (real browser)"
           const overflow = await overflowOf(small);
           expect([viewport.width, overflow.scrollWidth <= overflow.clientWidth]).toEqual([viewport.width, true]);
           const after = await insideOf(guide, ".onboarding-actions .btn, .token-secret");
-          // The copy button, the one that ends the guide, and the secret.
-          expect([viewport.width, after.length]).toEqual([viewport.width, 3]);
+          // The two copy buttons, the one that ends the guide, and the secret itself.
+          expect([viewport.width, after.length]).toEqual([viewport.width, 4]);
           expect(after.filter((rect) => !rect.inside)).toEqual([]);
           // The snippet scrolls inside its own box rather than pushing the page sideways.
           const snippet = await guide.locator("#obSnippet").evaluate((node) => {

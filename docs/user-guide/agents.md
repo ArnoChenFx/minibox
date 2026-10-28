@@ -22,7 +22,7 @@ While the console has no box at all, **Overview** shows a **Get started** card w
    - **Codex** gets a `[mcp_servers.minibox]` table for `~/.codex/config.toml`.
    - **Other clients** get the plain `mcpServers` JSON that the token dialog shows too.
 
-   The token's secret appears once, above the snippet, and MiniBox never shows it again: **Copy configuration** copies the snippet with the secret in it, and **Done, hide this** ends the guide. If you lose the secret, revoke the token in **Settings → Agent API tokens** and create another.
+   The token's secret appears once, above the snippet, and MiniBox never shows it again: **Copy configuration** puts the whole snippet, secret included, on the clipboard, **Copy token only** copies the bare `mbx_…` secret, and **Done, hide this** ends the guide. If you lose the secret, revoke the token in **Settings → Agent API tokens** and create another.
 
 The guide is remembered per browser: **Hide** dismisses it, and finishing it hides it for good. The box list is still the judge — a console that has a box never shows it, whatever this browser saved — and a page that opened the guide keeps the agent step reachable when the first box appears, so a checklist in progress can be finished.
 

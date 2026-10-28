@@ -375,6 +375,19 @@ describe("the guide's wiring", () => {
     expect(COMPONENT).toContain("await copyText(guide.secret);");
   });
 
+  test("copying the configuration puts the client's snippet on the clipboard, not the bare secret", () => {
+    // The button says "Copy configuration", and the snippet is what a client reads. Copying the secret alone would make
+    // the user paste an mbx_… token into a config file, which is not a configuration.
+    const copy = COMPONENT.slice(COMPONENT.indexOf("copy: async () =>"), COMPONENT.indexOf('"copy-secret"'));
+    expect(copy).toContain("mcpSnippet({ client: guide.client, origin: location.origin, secret: guide.secret })");
+    expect(copy).toContain("await copyText(snippet.text);");
+    expect(copy).not.toContain("copyText(guide.secret)");
+    // The secret on its own is a second, clearly named button rather than what the main one does.
+    const secretCopy = COMPONENT.slice(COMPONENT.indexOf('"copy-secret"'));
+    expect(secretCopy).toContain("await copyText(guide.secret);");
+    expect(COMPONENT).toContain('data-action="copy-secret"');
+  });
+
   test("every string the guide shows is in both dictionaries, and the Chinese is its own text", () => {
     const keys = [...COMPONENT.matchAll(/\bt\("([\w.]+)"/g), ...COMPONENT.matchAll(/key: "([\w.]+)"/g)].map(
       (m) => m[1] ?? "",

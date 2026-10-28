@@ -34,5 +34,8 @@ export default {
   "ob.agentSnippet": "粘贴到 {client}",
   "ob.agentSnippetWhere": "写入 {path}。其中含有令牌，请不要把它提交到版本库。",
   "ob.agentCopy": "复制配置",
+  "ob.agentCopySecret": "只复制令牌",
+  "ob.agentCopied": "配置已复制。粘贴到 {client} 后重启该客户端即可。",
+  "ob.agentCopiedSecret": "令牌已复制。",
   "ob.agentDone": "完成，隐藏此卡片",
 };

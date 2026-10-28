@@ -36,5 +36,8 @@ export default {
   "ob.agentSnippet": "Paste this into {client}",
   "ob.agentSnippetWhere": "In {path}. The token is inside it, so keep the file out of version control.",
   "ob.agentCopy": "Copy configuration",
+  "ob.agentCopySecret": "Copy token only",
+  "ob.agentCopied": "Configuration copied. Paste it into {client}, then restart the client.",
+  "ob.agentCopiedSecret": "Token copied.",
   "ob.agentDone": "Done, hide this",
 };

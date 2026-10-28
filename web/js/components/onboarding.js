@@ -160,14 +160,25 @@ export function mountOnboarding(host, { boxesOf, onBoxCreated }) {
       draw();
     },
     copy: async () => {
+      // The button says it copies the configuration, so the clipboard holds the snippet a client reads, not the bare
+      // secret: pasting the secret into a config file is not a configuration.
+      const snippet = mcpSnippet({ client: guide.client, origin: location.origin, secret: guide.secret });
       try {
-        await copyText(guide.secret);
-        toast(t("st.tokenCopied"));
+        await copyText(snippet.text);
+        toast(t("ob.agentCopied", { client: t(clientLabel(guide.client)) }));
       } catch (e) {
-        toastError(t("st.tokenCopy"), e);
+        toastError(t("ob.agentCopy"), e);
         return;
       }
       finish();
+    },
+    "copy-secret": async () => {
+      try {
+        await copyText(guide.secret);
+        toast(t("ob.agentCopiedSecret"));
+      } catch (e) {
+        toastError(t("ob.agentCopySecret"), e);
+      }
     },
     done: () => finish(),
   };
@@ -212,6 +223,11 @@ async function tokenNames() {
     // Without the list the guide still asks for its own name, and a taken one comes back as the server's refusal.
     return [];
   }
+}
+
+/** The translation key of a client's name, for a message that names it. */
+function clientLabel(client) {
+  return (CLIENTS.find((item) => item.id === client) ?? CLIENTS[2]).key;
 }
 
 /** The guide's markup. Every string is escaped; the step that is open carries its own controls. */
@@ -311,6 +327,7 @@ function secretBody(guide) {
     </div>
     <div class="onboarding-actions">
       <button class="btn" type="button" data-action="copy">${icon("copy")}${esc(t("ob.agentCopy"))}</button>
+      <button class="btn btn-ghost" type="button" data-action="copy-secret">${esc(t("ob.agentCopySecret"))}</button>
       <button class="btn btn-ghost" type="button" data-action="done">${esc(t("ob.agentDone"))}</button>
     </div>`;
 }
