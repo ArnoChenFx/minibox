@@ -60,6 +60,24 @@ function createVolumeOptions(choices, selected) {
 }
 
 /**
+ * The options of a create row's pool select: the storage pools this host has, then "use the rule" for a row that has not
+ * picked one. The pool a row picks is the one its new volume goes to, and the server reads the same pick from `{ role,
+ * pool }`. A pool with a name the list does not hold keeps its option, so a pick that went away still reads as it was.
+ */
+export function poolOptionsHtml(pools, selected) {
+  const names = new Set(pools.map((pool) => pool.name));
+  const options = pools.map(
+    (pool) =>
+      `<option value="${esc(pool.name)}" ${pool.name === selected ? "selected" : ""}>${esc(pool.name)}</option>`,
+  );
+  if (selected && !names.has(selected)) {
+    options.push(`<option value="${esc(selected)}" selected>${esc(selected)}</option>`);
+  }
+  options.push(`<option value="" ${selected ? "" : "selected"}>${esc(t("mount.poolRule"))}</option>`);
+  return options.join("");
+}
+
+/**
  * Replaces the role options of one row's select with new predictions, keeping the volume the row picked. The volumes that
  * exist stay as they were, so a row that names one keeps it.
  */
@@ -71,13 +89,20 @@ export function updateMountRowChoices(row, choices) {
   select.value = chosen;
 }
 
+/** The pool control of a row that creates a role's volume, or nothing for a row that mounts a volume that exists. */
+function poolControl(role, pool, pools) {
+  if (!role) return "";
+  return `<select class="select" data-pool aria-label="${esc(t("mount.pool"))}" title="${esc(t("mount.poolHelp"))}">${poolOptionsHtml(pools, pool ?? null)}</select>`;
+}
+
 /**
- * The inner markup of one mount row: a volume, a path, a mode and a remove button. Without `volumes` the volume is a typed
- * name, which is how a rebuild names a standalone volume that does not exist yet. With `volumes`, each `{ id, name,
- * disabled }` is a choice, since a create mounts only recorded volumes. `create` adds the roles a new box can have
- * MiniBox create, which fix the row's path and mode.
+ * The inner markup of one mount row: a volume, a path, a mode and a remove button, plus the storage pool of a role row.
+ * Without `volumes` the volume is a typed name, which is how a rebuild names a standalone volume that does not exist
+ * yet. With `volumes`, each `{ id, name, disabled }` is a choice, since a create mounts only recorded volumes. `create`
+ * adds the roles a new box can have MiniBox create, which fix the row's path and mode, and `pools` the storage pools a
+ * role's new volume can go to.
  */
-export function mountRowHtml(mount, { volumes, create = false, choices = null } = {}) {
+export function mountRowHtml(mount, { volumes, create = false, choices = null, pools = [] } = {}) {
   const role = create ? roleOfValue(mount.volume) : null;
   const volume = volumes
     ? `<select class="select" data-volume aria-label="${esc(t("mount.volume"))}">${
@@ -102,34 +127,48 @@ export function mountRowHtml(mount, { volumes, create = false, choices = null } 
       <option value="rw" ${mount.mode === "rw" ? "selected" : ""}>${esc(mountModeLabel("rw"))}</option>
       <option value="ro" ${mount.mode === "ro" ? "selected" : ""}>${esc(mountModeLabel("ro"))}</option>
     </select>`;
+  const pool = create ? poolControl(role, mount.pool, pools) : "";
   return `${volume}
     ${path}
     ${mode}
+    ${pool}
     <button type="button" class="btn" data-remove-mount>${esc(t("mount.remove"))}</button>`;
 }
 
 /**
- * Sets the path and mode of a create row from the role it now names: a role fixes both, and a volume the operator picks
- * gives the row back its own fields. `mount` is the row's mount, as `readMountRows` would read it.
+ * Sets the path, mode and pool control of a create row from the role it now names: a role fixes the path and the mode,
+ * and a volume the operator picks gives the row back its own fields and takes the pool control away. `mount` is the
+ * row's mount, as `readMountRows` would read it.
  */
-export function syncRoleRow(row, mount) {
+export function syncRoleRow(row, mount, pools = []) {
   const path = row.querySelector("[data-path]");
   const mode = row.querySelector("[data-mode]");
   if (!path || !mode) return;
   const role = roleOfValue(mount.volume);
   const fixed = role ? roleMount(role) : null;
+  const control = row.querySelector("[data-pool]");
   if (fixed) {
     path.value = fixed.path;
     path.readOnly = true;
     mode.innerHTML = `<option value="${fixed.mode}">${esc(mountModeLabel(fixed.mode))}</option>`;
     mode.disabled = true;
-  } else {
-    path.readOnly = false;
-    if (!mode.disabled) return;
-    mode.disabled = false;
-    mode.innerHTML = `<option value="rw">${esc(mountModeLabel("rw"))}</option><option value="ro">${esc(mountModeLabel("ro"))}</option>`;
-    mode.value = mount.mode === "ro" ? "ro" : "rw";
+    if (!control) {
+      const select = document.createElement("select");
+      select.className = "select";
+      select.dataset.pool = "true";
+      select.setAttribute("aria-label", t("mount.pool"));
+      select.title = t("mount.poolHelp");
+      select.innerHTML = poolOptionsHtml(pools, null);
+      mode.after(select);
+    }
+    return;
   }
+  path.readOnly = false;
+  control?.remove();
+  if (!mode.disabled) return;
+  mode.disabled = false;
+  mode.innerHTML = `<option value="rw">${esc(mountModeLabel("rw"))}</option><option value="ro">${esc(mountModeLabel("ro"))}</option>`;
+  mode.value = mount.mode === "ro" ? "ro" : "rw";
 }
 
 /** One mount row as an element. Its remove button takes the row out of its list. */
@@ -141,18 +180,21 @@ export function mountRow(mount, options) {
   row.querySelector("[data-remove-mount]").addEventListener("click", () => row.remove());
   if (options?.create) {
     row.querySelector("[data-volume]").addEventListener("change", () => {
-      syncRoleRow(row, readMountRow(row));
+      syncRoleRow(row, readMountRow(row), options.pools ?? []);
     });
   }
   return row;
 }
 
-/** One row's mount, read back from its fields. Volumes and paths are trimmed. */
+/** One row's mount, read back from its fields. Volumes and paths are trimmed. A role row carries the pool it picked. */
 function readMountRow(row) {
+  const role = roleOfValue(row.querySelector("[data-volume]").value.trim());
+  const pool = role ? (row.querySelector("[data-pool]")?.value ?? "") : "";
   return {
     volume: row.querySelector("[data-volume]").value.trim(),
     path: row.querySelector("[data-path]").value.trim(),
     mode: row.querySelector("[data-mode]").value,
+    ...(pool ? { pool } : {}),
   };
 }
 

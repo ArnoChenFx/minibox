@@ -17,7 +17,17 @@ A new box gets four volumes by default:
 
 To use different volumes, click **Customize** in the create dialog. Each row there mounts a volume that already exists, or has MiniBox create one of the box's role volumes for it. The dialog starts with one row per role, so the box gets the same four volumes as the default mode, and a row you remove means that role's volume is not created. That is how a box gets the shared tools volume without the other three, or only a workspace.
 
-The tools row mounts the host's shared tools volume, and creates it when the host has none. One tools volume serves every box on the host.
+The tools row mounts the host's shared tools volume, and creates it when the host has none. One tools volume serves every box on the host, for each pool.
+
+### Choose the storage pool of a role volume
+
+Each role row in **Customize** has a **Storage pool** control beside its path and mode. It lists the pools this host has, so a role volume can go somewhere other than where the role's rule would put it: a workspace on an NFS pool, or a home on a fast local disk, without changing the role defaults for every box.
+
+- The pool control appears on a row that creates a role volume. A row that mounts a volume that already exists has no pool control, because that volume is already on its own pool. Pick a role again and the control comes back.
+- **Use the rule**, the default, keeps the role's own default: cache on the local pool, every other role on the default pool, or whatever the [role defaults](#storage-pools) say.
+- The tools role follows the pool too. There is one shared tools volume per pool, so picking another pool mounts that pool's shared tools volume, or creates it there when that pool has none. Two pools therefore mean two shared tools volumes, one per pool.
+
+The pool list is read while the dialog opens, so on a host with a slow or dead share the control appears a moment after the rest of the dialog. Until it does, every row reads **Use the rule**, which is what the create would do anyway.
 
 ### Previewed volume names in Customize
 
@@ -25,14 +35,15 @@ The Customize dialog names the volume each role row would create, so you can see
 
 The names follow the server:
 
-- A role volume is named after the box: `<box name>-<role>`, such as `alpha-workspace`.
-- The tools role is the host's one shared tools volume, named `<label prefix>-tools-<host id>`, such as `minibox-tools-local`. `LABEL_PREFIX` sets the prefix, and the host is the one the box is created on. When the host already has it, the row reads `minibox-tools-local (exists)` and nothing is created for it.
-- Typing another box name updates every prediction.
+- A role volume is named after the box: `<box name>-<role>`, such as `alpha-workspace`. The name does not depend on the pool.
+- The tools role is the shared tools volume of the pool it goes to, named `<label prefix>-tools-<host id>`, such as `minibox-tools-local`. `LABEL_PREFIX` sets the prefix, and the host is the one the box is created on. When that pool already has it, the row reads `minibox-tools-local (exists)` and nothing is created for it.
+- Typing another box name updates every prediction, and so does picking another pool: the note under the rows says which pool the volume goes to, such as `Will create alpha-workspace in pool nas when the box is created (preview)`.
 
 The names are a **preview**, and can differ slightly from what the create makes:
 
-- A name the host already uses cannot be taken again. MiniBox then adds a suffix: `<box>-<role>-<pool>`, then `-2`, `-3` and so on. The dialog says the name may get a suffix instead of promising the plain one.
+- A name the host already uses cannot be taken again. MiniBox then adds a suffix: `<box>-<role>-<pool>`, then `-2`, `-3` and so on. The dialog says the name may get a suffix instead of promising the plain one. Display names are unique per host rather than per pool, so a name another pool already uses is a clash too.
 - With **Automatic** host placement the host is picked inside the create, so the shared tools volume has no name yet: the row reads `Shared tools volume (preview)`, and the note under the rows says it is created on the host the create picks.
+- A pool this host does not have is refused by the create with `pool_not_found`, and nothing is created. The dialog only offers the pools it read, so this happens when a pool is removed while the dialog is open.
 
 A role mount creates a new volume, so it needs the `volume:write` scope, and so does mounting an existing volume read-write. The tools row also needs `volume:attach` when the shared tools volume already exists.
 

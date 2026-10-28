@@ -13,7 +13,7 @@ import { newBoxId, isBoxId } from "../specs/revision";
 import type { BoxMount, MountMode, BoxSpec } from "../specs/types";
 import { loadCatalog } from "../tools/catalog";
 import { VolumeChanges } from "../volumes/changes";
-import { type CreateMount, isRoleMount, mountPointOf, rolesToCreate } from "../volumes/create-mounts";
+import { type CreateMount, isRoleMount, mountPointOf, rolePoolsOf, roleRequests } from "../volumes/create-mounts";
 import { assertVolumesPresent, healSharedToolsMounts, poolsUsed, trackPoolRoots } from "../volumes/engine";
 import { assertPoolsReachable } from "../volumes/health";
 import { assertMountsWithinLimits } from "../volumes/limits";
@@ -88,15 +88,24 @@ async function mountsForCreate(
   changes: VolumeChanges,
 ): Promise<BoxMount[]> {
   const attached = await attachedMounts(host, requested);
-  const roles = rolesToCreate(requested);
-  if (roles.length === 0) return resolveCreateMounts(host, attached, known);
+  const asked = roleRequests(requested);
+  if (asked.length === 0) return resolveCreateMounts(host, attached, known);
   await healSharedToolsMounts(
     host,
     attached.map((mount) => mount.volume),
     known,
   );
   // A role volume is new, so its attachment rules are the role's own: no recorded volume can be owned by another box.
-  const created = await provisionRoleMounts(host, box, roles, known, changes);
+  // A role the request picked a pool for is made on that pool, instead of the one the role's rule names.
+  const created = await provisionRoleMounts(
+    host,
+    box,
+    asked.map((request) => request.role),
+    known,
+    changes,
+    new Map(),
+    rolePoolsOf(asked),
+  );
   const made = new Map(created.map((mount) => [mount.path, mount]));
   let next = 0;
   const mounts = requested.map((mount) => {

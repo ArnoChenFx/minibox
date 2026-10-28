@@ -2,9 +2,10 @@ import { AppError } from "../lib/errors";
 import { msg } from "../lib/messages";
 import type { TemplateInit } from "../services/template-builds";
 import type { BoxMount } from "../specs/types";
-import { type CreateMount, isRoleMount, mountPointOf, rolesToCreate } from "../volumes/create-mounts";
+import { type CreateMount, isRoleMount, mountPointOf, type RoleRequest, roleRequests } from "../volumes/create-mounts";
 import { findSharedTools, leftoverWorkspace } from "../volumes/engine";
 import { poolForRole } from "../volumes/pools";
+import type { StoragePool } from "../volumes/types";
 import { AuthorizationDenied } from "./executor";
 import type { OperationContext, VolumeResource } from "./types";
 
@@ -119,20 +120,32 @@ export async function assertCanChangeMounts(
  * gets the checks of any such mount. The shared tools volume is mounted read-only and needs `volume:attach`.
  */
 export async function assertCanCreateDefaultMounts(ctx: OperationContext, boxName: string): Promise<void> {
-  await assertCanCreateRoleVolumes(ctx, boxName, ["workspace", "home", "tools", "cache"]);
+  await assertCanCreateRoleVolumes(ctx, boxName, [
+    { role: "workspace" },
+    { role: "home" },
+    { role: "tools" },
+    { role: "cache" },
+  ]);
 }
 
 /**
  * The checks for the role volumes a create asks MiniBox to make. Every role volume is new, so each needs
  * `volume:write`. A workspace may adopt a leftover `prefix-ws-<name>` volume instead, which is an existing volume
  * mounted read-write, so it takes the checks of any such mount. The tools role reuses the host's shared tools volume
- * when it has one, which is mounted read-only and needs `volume:attach`.
+ * of the pool it goes to, when that pool has one, which is mounted read-only and needs `volume:attach`. A role the
+ * request picked a pool for must name a pool this host has: the create would refuse an unknown one, so the check does.
  */
 async function assertCanCreateRoleVolumes(
   ctx: OperationContext,
   boxName: string,
-  roles: readonly string[],
+  requests: readonly RoleRequest[],
 ): Promise<void> {
+  const roles = requests.map((request) => request.role);
+  for (const request of requests) {
+    if (request.pool !== undefined && !poolNamed(ctx, request.pool)) {
+      throw new AppError(400, "validation_failed", msg("pool_not_found", { pool: request.pool }), { field: "mounts" });
+    }
+  }
   if (roles.includes("workspace")) {
     const leftover = await leftoverWorkspace(ctx.host, boxName);
     if (leftover) {
@@ -142,10 +155,17 @@ async function assertCanCreateRoleVolumes(
     }
   }
   if (roles.includes("tools")) {
-    const tools = findSharedTools(ctx.host, poolForRole(ctx.host.volumes.readPools(), "tools").name);
+    const picked = requests.find((request) => request.role === "tools")?.pool;
+    const pool = picked ?? poolForRole(ctx.host.volumes.readPools(), "tools").name;
+    const tools = findSharedTools(ctx.host, pool);
     if (tools) await assertCanAttach(ctx, tools);
   }
   if (roles.length > 0) await assertCanWrite(ctx);
+}
+
+/** The storage pool of this host with that name, or null when it has none. */
+function poolNamed(ctx: OperationContext, name: string): StoragePool | null {
+  return ctx.host.volumes.readPools().pools.find((pool) => pool.name === name) ?? null;
 }
 
 /**
@@ -162,5 +182,5 @@ export async function assertCanCreateMounts(
     isRoleMount(mount) ? [] : [{ volume: mount.volume, ...mountPointOf(mount) }],
   );
   await assertCanChangeMounts(ctx, attached, []);
-  await assertCanCreateRoleVolumes(ctx, boxName, rolesToCreate(mounts));
+  await assertCanCreateRoleVolumes(ctx, boxName, roleRequests(mounts));
 }
