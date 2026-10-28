@@ -2,6 +2,8 @@
 
 The **Files** tab on a box's page browses the files in the box's volumes: the workspace, the home folder and any other volume the box mounts. The tab works while the box is stopped, because MiniBox reads and writes the volume through a short-lived helper container. [Volumes and storage](volumes-and-storage.md) explains volumes.
 
+**An agent host does not support this tab.** It reads and writes the volumes through a short-lived helper container, and an agent host runs boxes only, so it cannot start one. The tab stays in the strip and says so instead of offering a listing; move the box to a host MiniBox reaches directly to browse its files.
+
 The tab shows volumes only. Files that a box writes outside a volume, such as the packages it installs with `apt install`, are not listed. Use the [terminal](terminal-and-sessions.md) to work with those.
 
 ## Browse

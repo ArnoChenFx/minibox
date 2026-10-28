@@ -25,6 +25,17 @@ export interface AgentConnection {
   lastSeenAt: string | null;
 }
 
+/** One host, as `GET /api/hosts` lists it. Only the fields the console decides with are named. */
+export interface ListedHost {
+  id: string;
+  name?: string;
+  transport?: string;
+}
+
+export declare function agentHostOfBox<H extends ListedHost>(box: HostedBox, hosts: readonly H[]): H | null;
+
+export declare const boxOnAgentHost: (box: HostedBox, hosts: readonly ListedHost[]) => boolean;
+
 export declare function agentState(
   agent: AgentConnection | null | undefined,
 ): "revoked" | "upgrade" | "online" | "offline" | null;

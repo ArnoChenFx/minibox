@@ -16,7 +16,7 @@ import {
 } from "../lib/checkpoint-state.js";
 import { esc } from "../lib/dom.js";
 import { bytes, dateTime, relTime } from "../lib/format.js";
-import { hostOfBox } from "../lib/host-list.js";
+import { boxOnAgentHost, hostOfBox } from "../lib/host-list.js";
 import { hostFilter, hostName, hostsNow, multiHost } from "../lib/hosts.js";
 import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
@@ -771,7 +771,17 @@ export function checkpointRowHtml(checkpoint, state) {
  * the hosts when there are several, and `boxHostId` is the host the box runs on. `toggle` is the show-all button drawn
  * under a long list, and `total` how many checkpoints the box has when `rows` is only the first of them.
  */
-export function checkpointCardHtml({ rows, pending, usage, schedule, hosts = [], boxHostId, toggle = "", total }) {
+export function checkpointCardHtml({
+  rows,
+  pending,
+  usage,
+  schedule,
+  hosts = [],
+  boxHostId,
+  toggle = "",
+  total,
+  onAgent = false,
+}) {
   const count = total ?? rows.length;
   const body = rows.length
     ? `<div class="table-wrap"><table class="table ck-table">
@@ -793,9 +803,10 @@ export function checkpointCardHtml({ rows, pending, usage, schedule, hosts = [],
   const counted = count ? `<span class="badge">${count}</span>` : "";
   return `<div class="card ck-card">
     <div class="card-head"><h3>${esc(t("ck.title"))}${counted}</h3>
-      <div class="actions"><button class="btn btn-sm" data-action="ck-import">${icon("upload")}${esc(t("ck.import"))}</button><button class="btn btn-sm btn-primary" data-action="ck-take">${icon("camera")}${esc(t("act.checkpoint"))}</button></div></div>
+      <div class="actions"><button class="btn btn-sm" data-action="ck-import">${icon("upload")}${esc(t("ck.import"))}</button>${onAgent ? `<button class="btn btn-sm btn-primary" data-action="ck-take" disabled title="${esc(t("bd.agentCheckpoints"))}">${icon("camera")}${esc(t("act.checkpoint"))}</button>` : `<button class="btn btn-sm btn-primary" data-action="ck-take">${icon("camera")}${esc(t("act.checkpoint"))}</button>`}</div></div>
     <div class="card-body stack">
       <p class="help">${esc(t("ck.help"))}</p>
+      ${onAgent ? callout("warn", t("bd.agentCheckpoints")) : ""}
       ${usage ? usageHtml(usage) : ""}
       ${pending ? pendingHtml(pending) : ""}
       ${schedule === undefined ? "" : scheduleHtml(schedule)}
@@ -832,6 +843,7 @@ export function mountCheckpoints(root, { box, refreshBox }) {
       schedule,
       hosts: multiHost() ? hostsNow() : [],
       boxHostId: hostOfBox(current),
+      onAgent: boxOnAgentHost(current, hostsNow()),
     });
   };
 

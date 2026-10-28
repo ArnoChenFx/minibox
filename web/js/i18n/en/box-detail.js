@@ -431,6 +431,16 @@ export default {
   "bd.portsListening": "Listening",
   "bd.portsManual": "Manual",
   "bd.portsOpen": "Open",
+  "bd.agentFilesTitle": "Files need a helper this host cannot run",
+  "bd.agentFiles":
+    "The file browser reads and writes a box's volumes through a short-lived helper container, and an agent host runs boxes only, so it cannot start one. The Files tab stays off until the box moves to a host MiniBox reaches directly.",
+  "bd.agentPortsTitle": "Port preview does not reach this host",
+  "bd.agentPorts":
+    "A preview relays the port through MiniBox, and an agent host opens no address MiniBox can relay to, so the preview is refused even when the port is listed. Reach the service on the machine itself, or use the terminal or SSH, until the box moves to a host MiniBox reaches directly.",
+  "bd.agentHostHint": "Agent host",
+  "bd.agentCheckpoints":
+    "An agent host cannot take checkpoints: a backup commits a system image and copies the volumes through a helper container, and an agent runs boxes only. Rollback, pinning and deleting still work on checkpoints kept on other hosts.",
+  "bd.agentTab": "{feature} is limited on an agent host",
   "bd.portsAdd": "Add port",
   "bd.portsAddTitle": "Add preview port",
   "bd.portsAddText": "Remember a TCP port for one-click preview. It does not publish a host port.",

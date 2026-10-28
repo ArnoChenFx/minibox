@@ -413,6 +413,16 @@ export default {
   "bd.portsListening": "监听中",
   "bd.portsManual": "手动",
   "bd.portsOpen": "打开",
+  "bd.agentFilesTitle": "文件浏览需要这台宿主机跑不了的辅助容器",
+  "bd.agentFiles":
+    "文件浏览器靠一个短命的辅助容器读写 Box 的卷，而 Agent 宿主机只跑 Box，起不了这个容器。在 Box 迁移到 MiniBox 能直接连上的宿主机之前，「文件」标签暂不可用。",
+  "bd.agentPortsTitle": "端口预览到不了这台宿主机",
+  "bd.agentPorts":
+    "预览要把端口经 MiniBox 转发出去，而 Agent 宿主机不开放 MiniBox 能连的地址，所以即使端口能列出来，预览也会被拒绝。在 Box 迁移到 MiniBox 能直接连上的宿主机之前，请直接在那台机器上访问该服务，或改用终端与 SSH。",
+  "bd.agentHostHint": "Agent 宿主机",
+  "bd.agentCheckpoints":
+    "Agent 宿主机不能做检查点：备份要提交系统镜像，并通过辅助容器复制各个卷，而 Agent 只跑 Box。对保存在其他宿主机上的检查点，回滚、固定与删除仍然可用。",
+  "bd.agentTab": "Agent 宿主机上 {feature} 受限",
   "bd.portsAdd": "添加端口",
   "bd.portsAddTitle": "添加预览端口",
   "bd.portsAddText": "把 TCP 端口记入预览列表，便于一键打开。不会在宿主机发布端口。",
