@@ -50,14 +50,6 @@ export function rolePoolsOf(requests: readonly RoleRequest[]): Map<VolumeRole, s
   return pools;
 }
 
-/** The roles that mount a volume read-write, so a create hands a new one to the box user. */
-export function writableRoleMounts(mounts: readonly CreateMount[]): { role: VolumeRole; path: string }[] {
-  return mounts
-    .filter(isRoleMount)
-    .map((mount) => ({ role: mount.role, ...mountPointOf(mount) }))
-    .filter((mount) => mount.mode === "rw");
-}
-
 /** True for a role name the volume model knows. */
 export function isVolumeRole(value: unknown): value is VolumeRole {
   return typeof value === "string" && (VOLUME_ROLES as readonly string[]).includes(value);

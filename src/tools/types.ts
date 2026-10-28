@@ -79,4 +79,3 @@ export interface ToolStatus {
 }
 
 export const TOOLS_PREFIX = "/opt/minibox/tools";
-export const TOOLS_BIN = `${TOOLS_PREFIX}/bin`;
