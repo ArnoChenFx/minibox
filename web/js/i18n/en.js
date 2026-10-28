@@ -7,6 +7,7 @@ import common from "./en/common.js";
 import egress from "./en/egress.js";
 import errors from "./en/errors.js";
 import files from "./en/files.js";
+import onboarding from "./en/onboarding.js";
 import overview from "./en/overview.js";
 import settings from "./en/settings.js";
 import tasks from "./en/tasks.js";
@@ -25,6 +26,7 @@ export default {
   ...volumes,
   ...files,
   ...overview,
+  ...onboarding,
   ...tasks,
   ...tools,
   ...trash,
