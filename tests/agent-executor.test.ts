@@ -325,3 +325,62 @@ describe("networks", () => {
     expect(runtime.networks.has("mbx-egress-c")).toBe(false);
   });
 });
+
+describe("the connection state around a request", () => {
+  test("a cancel that arrives while an operation is still starting answers nothing, and the stream opens anyway", async () => {
+    const { executor, frames, runtime } = setup();
+    const containerId = runtime.seedContainer({ image: "alpine:3.20", name: "starting", running: true });
+    const held = runtime.hold("startExec");
+    const starting = executor.request("c1", "startExec", {
+      containerId,
+      spec: { cmd: ["sh", "-c", "sleep 60"], env: [], workingDir: "/", tty: false },
+    });
+
+    // The exec is still being opened, so the id names no stream yet: the cancel has nothing to detach and says nothing.
+    executor.cancel("c1");
+    expect(frames).toEqual([]);
+
+    held.release();
+    await starting;
+
+    // The request that owns the id answers it once, and the exec it opened is the one the cancel could not reach.
+    expect(frames.filter((frame) => frame.id === "c1")).toHaveLength(1);
+    expect(responseTo(frames, "c1")).toMatchObject({ ok: true, result: { execId: expect.any(String) } });
+    expect(runtime.execs).toHaveLength(1);
+    expect(runtime.execs[0]?.stream.destroyed).toBe(false);
+  });
+
+  test("a connection that closed while an exec was starting ends that exec's stream and answers unavailable", async () => {
+    const { executor, frames, runtime } = setup();
+    const containerId = runtime.seedContainer({ image: "alpine:3.20", name: "closing", running: true });
+    const held = runtime.hold("startExec");
+    const starting = executor.request("c2", "startExec", {
+      containerId,
+      spec: { cmd: ["sh", "-c", "sleep 60"], env: [], workingDir: "/", tty: false },
+    });
+
+    executor.close();
+    held.release();
+    await starting;
+
+    expect(responseTo(frames, "c2")).toMatchObject({
+      ok: false,
+      error: { kind: "unavailable", message: "the connection closed" },
+    });
+    expect(runtime.execs).toHaveLength(1);
+    expect(runtime.execs[0]?.stream.destroyed).toBe(true);
+    expect(frames.some((frame) => frame.type === "end")).toBe(false);
+  });
+
+  test("an id whose stream has ended can be used again", async () => {
+    const { executor, frames, runtime } = setup();
+    await executor.request("r1", "events", { filter: {} });
+    expect(responseTo(frames, "r1")).toMatchObject({ ok: true });
+    executor.cancel("r1");
+    await until(() => frames.some((frame) => frame.type === "end" && frame.id === "r1"));
+
+    await executor.request("r1", "ping", {});
+    expect(responseTo(frames, "r1")).toMatchObject({ ok: true, result: {} });
+    expect(runtime.ops()).toContain("ping");
+  });
+});
