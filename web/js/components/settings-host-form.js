@@ -1,9 +1,16 @@
-import { agentBashCommand, agentPowerShellCommand } from "../lib/agent-command.js";
+import {
+  agentBashCommand,
+  agentImage,
+  agentImageTag,
+  agentPowerShellCommand,
+  insecureConsole,
+} from "../lib/agent-command.js";
 import { api, errorText } from "../lib/api.js";
 import { esc } from "../lib/dom.js";
 import { dateTime, mem } from "../lib/format.js";
 import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
+import { systemVersion } from "../lib/system.js";
 import { confirmDialog } from "../lib/ui.js";
 
 const HOST_CREDENTIALS = { tcp: ["ca", "cert", "key"], ssh: ["privateKey"] };
@@ -25,18 +32,38 @@ export function hostBody(form) {
 
 const AGENT_POLL_MS = 2_000;
 
-/** The pairing code and the two commands that start the agent, shown until it connects or the code runs out. */
-export function pairingView({ code, expiresAt }) {
+/**
+ * Why the command runs the image at the tag it does: the server's own version, or `latest` with the reason a dev build
+ * or an unread version has no tag of its own.
+ */
+export function imageNote(version) {
+  const tag = agentImageTag(version);
+  if (tag !== "latest") return t("st.agentImagePinned", { tag });
+  const clean = String(version ?? "").trim();
+  return clean ? t("st.agentImageLatest", { version: clean }) : t("st.agentImageLatestUnknown");
+}
+
+/**
+ * The pairing code and the two commands that start the agent, shown until it connects or the code runs out. The address,
+ * its protocol and the server's version are passed in so a test can render the fragment without a browser.
+ */
+export function pairingView(
+  { code, expiresAt },
+  { origin = location.origin, protocol = location.protocol, version = systemVersion() } = {},
+) {
+  const insecure = insecureConsole(protocol);
   return `<div class="stack">
+    ${insecure ? `<div class="callout warn agent-insecure">${icon("alert")}<span>${esc(t("st.agentInsecure"))}</span></div>` : ""}
     <p class="help">${esc(t("st.agentPairHelp"))}</p>
     <div class="agent-code-box">
       <div><div class="help">${esc(t("st.agentCode"))}</div><span class="agent-code mono">${esc(code)}</span></div>
       <button class="btn btn-sm" type="button" data-copy="${esc(code)}">${icon("copy")}${esc(t("st.agentCopyCode"))}</button>
     </div>
     <div class="help">${esc(t("st.agentExpires", { time: dateTime(expiresAt) }))}</div>
-    <div class="help">${esc(t("st.agentServer", { server: location.origin }))}</div>
-    ${commandBlock(t("st.agentBash"), agentBashCommand(location.origin, code))}
-    ${commandBlock(t("st.agentPowerShell"), agentPowerShellCommand(location.origin, code))}
+    <div class="help">${esc(t("st.agentServer", { server: origin }))}</div>
+    <div class="help agent-image" data-agent-image="${esc(agentImage(version))}">${esc(t("st.agentImage", { image: agentImage(version) }))} ${esc(imageNote(version))}</div>
+    ${commandBlock(t("st.agentBash"), agentBashCommand(origin, code, version))}
+    ${commandBlock(t("st.agentPowerShell"), agentPowerShellCommand(origin, code, version))}
     <div class="agent-wait" role="status" data-agent-wait>${icon("refresh")}<span>${esc(t("st.agentWaiting"))}</span></div>
   </div>`;
 }

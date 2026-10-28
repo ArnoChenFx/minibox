@@ -350,6 +350,14 @@ export default {
   "st.agentCopyCode": "Copy code",
   "st.agentExpires": "Works once, until {time}.",
   "st.agentServer": "The agent connects to {server}. Use an address that machine can reach.",
+  "st.agentInsecure":
+    "This console is served over plain http. Only the first handshake is signed, so anyone on the network can read the pairing code and inject commands afterwards. Put MiniBox behind https before adding a host this way.",
+  "st.agentImage": "Image: {image}",
+  "st.agentImagePinned": "It is the tag of this MiniBox's own version ({tag}).",
+  "st.agentImageLatest":
+    "This build ({version}) is not a release, so it has no image tag of its own and the command uses latest.",
+  "st.agentImageLatestUnknown":
+    "This console could not read its own version, so the command uses latest. Pull the image again after an upgrade.",
   "st.agentBash": "Linux or macOS (bash)",
   "st.agentPowerShell": "Windows (PowerShell)",
   "st.agentCopy": "Copy",
