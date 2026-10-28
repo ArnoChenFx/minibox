@@ -3,6 +3,7 @@ import { z } from "zod";
 import { type Ipv4Network, ipv4Overlaps, parseIpv4Cidr } from "../lib/cidr";
 import { type ExecSession, type ExecSpec, MAX_OWNER_ID, type Runtime, RuntimeError } from "../runtime";
 import { type AgentErrorInfo, type ExecExit, REFUSED_OPERATIONS } from "./protocol";
+import { StreamRegistry } from "./streams";
 
 /** Where the executor sends what it produces. The connection implements it; a test records it. */
 export interface AgentSink {
@@ -17,10 +18,6 @@ interface Reply {
   /** Starts forwarding a stream. Runs after the response is sent, so the stream's frames follow it. */
   after?: () => void;
 }
-
-type OpenStream =
-  | { readonly kind: "exec"; readonly session: ExecSession; readonly tty: boolean }
-  | { readonly kind: "abort"; readonly abort: AbortController };
 
 const NAME = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$/);
 const IMAGE = z.string().min(1).max(512).regex(/^\S+$/);
@@ -280,10 +277,8 @@ function ended(stream: NodeJS.ReadableStream): Promise<void> {
  * unknown or refused operation is answered with an error, never run.
  */
 export class AgentExecutor {
-  private readonly open = new Map<string, OpenStream>();
-  /** Requests whose operation is still running. An id is taken until its response is sent. */
-  private readonly starting = new Set<string>();
-  private closed = false;
+  /** The streams this connection has open, and the ids whose operation is still starting. See `StreamRegistry`. */
+  private readonly streams = new StreamRegistry();
 
   constructor(
     private readonly runtime: Runtime,
@@ -291,50 +286,42 @@ export class AgentExecutor {
   ) {}
 
   async request(id: string, op: string, args: unknown): Promise<void> {
-    if (this.open.has(id) || this.starting.has(id)) {
+    if (!this.streams.claim(id)) {
       this.sink.respond(id, { ok: false, error: { kind: "invalid", message: "request id is in use", detail: id } });
       return;
     }
-    this.starting.add(id);
     let reply: Reply;
     try {
       reply = await this.run(id, op, args);
     } catch (e) {
-      this.starting.delete(id);
+      this.streams.release(id);
       this.sink.respond(id, { ok: false, error: errorInfo(e) });
       return;
     }
-    this.starting.delete(id);
+    this.streams.release(id);
     this.sink.respond(id, { ok: true, result: reply.result });
     reply.after?.();
   }
 
   /** Detaches an open stream. An exec's process keeps running; only its attachment ends. */
   cancel(id: string): void {
-    const stream = this.open.get(id);
-    if (stream?.kind === "abort") stream.abort.abort();
-    if (stream?.kind === "exec") stream.session.stream.destroy();
+    this.streams.cancel(id);
   }
 
   input(id: string, bytes: Uint8Array): void {
-    const stream = this.open.get(id);
-    if (stream?.kind !== "exec") return;
-    if (!stream.session.stream.destroyed && stream.session.stream.writable) stream.session.stream.write(bytes);
+    const session = this.streams.exec(id);
+    if (!session) return;
+    if (!session.stream.destroyed && session.stream.writable) session.stream.write(bytes);
   }
 
   inputEnd(id: string): void {
-    const stream = this.open.get(id);
-    if (stream?.kind === "exec" && stream.session.stream.writable) stream.session.stream.end();
+    const session = this.streams.exec(id);
+    if (session?.stream.writable) session.stream.end();
   }
 
   /** The connection closed: every open stream ends without reporting, and each exec is detached. */
   close(): void {
-    this.closed = true;
-    for (const stream of this.open.values()) {
-      if (stream.kind === "abort") stream.abort.abort();
-      else stream.session.stream.destroy();
-    }
-    this.open.clear();
+    this.streams.close();
   }
 
   private async run(id: string, op: string, raw: unknown): Promise<Reply> {
@@ -475,12 +462,12 @@ export class AgentExecutor {
 
   private async startExec(id: string, a: { containerId: string; spec: ExecSpec }): Promise<Reply> {
     const session = await this.runtime.startExec(a.containerId, a.spec);
-    if (this.closed) {
+    if (this.streams.isClosed) {
       session.stream.destroy();
       throw new RuntimeError("unavailable", "the connection closed", "the connection closed");
     }
     const tty = a.spec.tty !== false;
-    this.open.set(id, { kind: "exec", session, tty });
+    this.streams.open(id, { kind: "exec", session, tty });
     return {
       result: { execId: session.id },
       after: () => this.pumpExec(id, session, tty),
@@ -509,7 +496,7 @@ export class AgentExecutor {
 
   private followLogs(id: string, a: z.output<typeof ops.followLogs>): Reply {
     const abort = new AbortController();
-    this.open.set(id, { kind: "abort", abort });
+    this.streams.open(id, { kind: "abort", abort });
     const lines = this.runtime.followLogs(a.id, {
       tail: a.tail,
       timestamps: a.timestamps,
@@ -521,7 +508,7 @@ export class AgentExecutor {
 
   private events(id: string, a: z.output<typeof ops.events>): Reply {
     const abort = new AbortController();
-    this.open.set(id, { kind: "abort", abort });
+    this.streams.open(id, { kind: "abort", abort });
     const events = this.runtime.events(a.filter, abort.signal);
     return { result: {}, after: () => void this.pump(id, events) };
   }
@@ -529,7 +516,7 @@ export class AgentExecutor {
   private async pump(id: string, source: AsyncIterable<unknown>): Promise<void> {
     try {
       for await (const value of source) {
-        if (!this.open.has(id)) break;
+        if (!this.streams.has(id)) break;
         this.sink.item(id, value);
       }
       this.finish(id);
@@ -538,17 +525,15 @@ export class AgentExecutor {
     }
   }
 
+  /** Ends the stream an id still names, and reports its end. A stream a cancel or a `close()` already detached is gone. */
   private finish(id: string, error?: AgentErrorInfo, exit?: ExecExit): void {
-    const stream = this.open.get(id);
-    if (!stream) return;
-    this.open.delete(id);
-    if (stream.kind === "exec") stream.session.stream.destroy();
+    if (!this.streams.take(id)) return;
     this.sink.end(id, error, exit);
   }
 
   private session(id: string): ExecSession {
-    const stream = this.open.get(id);
-    if (stream?.kind !== "exec") throw new RuntimeError("not_found", `no open exec session ${id}`, id);
-    return stream.session;
+    const session = this.streams.exec(id);
+    if (!session) throw new RuntimeError("not_found", `no open exec session ${id}`, id);
+    return session;
   }
 }
