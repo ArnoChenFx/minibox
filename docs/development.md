@@ -148,7 +148,11 @@ The repository's **Settings → Pages → Build and deployment** must use **Sour
 minibox/
 ├── src/                 Server, written in TypeScript for Bun
 │   ├── server.ts        Entry point: HTTP routes, WebSockets and the SSH gateway
+│   ├── app.ts           The shared application state: stores, one runtime per host, the executor, the jobs
 │   ├── config.ts        Configuration from the environment, .env and DATA_DIR
+│   ├── auth.ts          Who the caller is: the access key, an agent token, or a browser session
+│   ├── guard.ts         Cross-site and cross-origin checks, before every request
+│   ├── static.ts        The console's files, from web/
 │   ├── operations/      Operation registry, executor, and the REST, MCP and OpenAPI views
 │   ├── routes/          REST routes for each group of operations
 │   ├── mcp/             The MCP endpoint
@@ -156,8 +160,27 @@ minibox/
 │   ├── runtime/         The runtime interface that services call
 │   ├── docker/          The Docker Engine implementation of the runtime
 │   ├── host/            Host registry, and endpoints for unix, tcp and ssh
+│   ├── agent/           The host agent on a remote engine's side, and its executor
+│   ├── preview/         Port previews: the proxy, the relay and what it remembers per container
+│   ├── egress/          The outbound network policy a box gets
+│   ├── backup/          Online backups, and their retention
+│   ├── targets/         Off-site targets for backups
+│   ├── notify/          Notification channels and rules
+│   ├── questions/       Questions a run asks its operator
+│   ├── checkpoints/     restic checkpoints and their schedules
+│   ├── volumes/         Volume roles, storage pools and limits
+│   ├── specs/           The stored box spec, its history, drift and claims
+│   ├── startup/         A box's startup command
+│   ├── logs/            The log stream of one box, over the shared SSE body
+│   ├── tmux/            Pure helpers for driving tmux (names, targets, formats)
+│   ├── secrets/         Secret values, kept as files in DATA_DIR
+│   ├── tools/           The tool catalog: built-in entries and custom ones
+│   ├── tokens/          Access keys, agent tokens, and what each one may do
+│   ├── cli/             The `minibox` CLI, a REST client
+│   ├── cli-dist/        Building and serving the CLI binaries under /cli/
 │   ├── ssh/             The SSH gateway
-│   ├── events/          The audit log and activity log (SQLite), and saved command output
+│   ├── ws/              The terminal, SSH and agent WebSockets
+│   ├── events/          The audit log and activity log (SQLite), the shared SSE body, and saved command output
 │   ├── tasks/           Background tasks (SQLite) and their progress stream
 │   └── lib/             Shared helpers
 ├── web/                 The console: HTML, CSS, ES modules and vendored xterm.js
