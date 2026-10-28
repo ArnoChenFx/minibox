@@ -299,7 +299,6 @@ export const execGet = defineOperation({
   }),
   output: RunOutput,
   rest: [{ method: "GET", path: "/api/execs/:execId", query: ["waitMs"] }],
-  cli: "exec get",
   mcp: {
     toolset: "core",
     name: "exec_get",
@@ -330,7 +329,6 @@ export const execKill = defineOperation({
   input: z.object({ execId: execId() }),
   output: z.object({ execId: z.string(), status: z.literal("killed") }),
   rest: [{ method: "POST", path: "/api/execs/:execId/kill" }],
-  cli: "exec kill",
   mcp: {
     toolset: "core",
     name: "exec_kill",
@@ -371,7 +369,6 @@ export const execOutput = defineOperation({
     stderrBytes: z.number().int(),
   }),
   rest: [{ method: "GET", path: "/api/execs/:execId/output" }],
-  cli: "exec output",
   hostFor: (ctx, input) => hostOfExec(ctx, input.execId),
   resolve: async ({ execs }, input): Promise<ExecTarget | undefined> => targetOf(execs, input.execId),
   audit: {

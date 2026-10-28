@@ -43,7 +43,6 @@ export const sshKeyList = defineOperation({
   input: z.object({}),
   output: z.object({ keys: z.array(SshKeySchema) }),
   rest: [{ method: "GET", path: "/api/ssh-keys" }],
-  cli: "ssh-key ls",
   run: async ({ sshKeys }) => ({ keys: storeOf(sshKeys).list().map(view) }),
 });
 
@@ -70,7 +69,6 @@ export const sshKeyAdd = defineOperation({
   output: z.object({ key: SshKeySchema }),
   rest: [{ method: "POST", path: "/api/ssh-keys", body: true }],
   conflicts: true,
-  cli: "ssh-key add",
   activity: { action: () => "sshkey.add", target: (input) => input.label || "SSH key" },
   audit: {
     target: (_input, _resolved, result) => ({ kind: "sshkey", id: result?.key.id, name: result?.key.label ?? "" }),
@@ -89,7 +87,6 @@ export const sshKeyDelete = defineOperation({
   input: z.object({ id: z.string().regex(/^sk_[0-9a-f]{16}$/) }),
   output: z.object({ key: SshKeySchema }),
   rest: [{ method: "DELETE", path: "/api/ssh-keys/:id" }],
-  cli: "ssh-key rm",
   resolve: async ({ sshKeys }, input) => {
     const key = storeOf(sshKeys)
       .list()

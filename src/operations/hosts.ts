@@ -140,7 +140,6 @@ export const hostList = defineOperation({
   input: z.object({}),
   output: z.object({ hosts: z.array(HostViewSchema) }),
   rest: [{ method: "GET", path: "/api/hosts" }],
-  cli: "host list",
   mcp: {
     toolset: "meta",
     name: "list_hosts",
@@ -181,7 +180,6 @@ export const hostUsage = defineOperation({
   input: z.object({}),
   output: z.object({ hosts: z.array(HostUsageSchema) }),
   rest: [{ method: "GET", path: "/api/hosts/usage" }],
-  cli: "host usage",
   mcp: {
     toolset: "meta",
     name: "get_host_usage",
@@ -261,7 +259,6 @@ export const hostAdd = defineOperation({
   input: hostFieldsInput,
   output: z.object({ host: HostViewSchema }),
   rest: [{ method: "POST", path: "/api/hosts", body: true, status: 201 }],
-  cli: "host add",
   mcp: {
     toolset: "meta",
     name: "add_host",
@@ -286,7 +283,6 @@ export const hostTest = defineOperation({
   input: hostFieldsInput,
   output: HostTestSchema,
   rest: [{ method: "POST", path: "/api/hosts/test", body: true }],
-  cli: "host test",
   mcp: {
     toolset: "meta",
     name: "test_host",
@@ -344,7 +340,6 @@ export const hostRemove = defineOperation({
   }),
   output: z.object({ host: HostViewSchema }),
   rest: [{ method: "DELETE", path: "/api/hosts/:id" }],
-  cli: "host remove",
   mcp: {
     toolset: "meta",
     name: "remove_host",
