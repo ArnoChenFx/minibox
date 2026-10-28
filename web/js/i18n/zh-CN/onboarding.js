@@ -1,0 +1,38 @@
+export default {
+  "ob.title": "开始使用",
+  "ob.help": "三步接上第一个 Agent：构建基础模板、创建 Box，再把 Agent 连接到 MiniBox。有 Box 之后这张卡片就不再出现。",
+  "ob.dismiss": "隐藏",
+  "ob.done": "已完成",
+  "ob.now": "下一步",
+  "ob.locked": "完成上面的步骤后，这一步才会展开。",
+  "ob.step.template": "构建基础模板",
+  "ob.step.box": "创建第一个 Box",
+  "ob.step.agent": "连接 Agent",
+  "ob.templateUnknown": "正在读取这台宿主机上的模板…",
+  "ob.templateBuilt": "这台宿主机上已有 {ref}，新 Box 有可用的镜像了。",
+  "ob.templateMissing":
+    "目前还没有宿主机构建过基础模板。构建需要下载镜像，约 1–3 分钟；构建日志会在「任务」面板中打开。",
+  "ob.templateAction": "构建基础模板",
+  "ob.buildStarted": "开始构建基础模板",
+  "ob.boxText":
+    "Box 是一个容器，有自己的文件系统、持久的工作区卷和自己的进程。填个名字，其余保持默认，MiniBox 就会启动它。",
+  "ob.boxAction": "创建 Box",
+  "ob.agentText":
+    "Agent 通过 MiniBox 的 MCP 服务器（/mcp）在 Box 内工作，用的是 Agent 令牌。选你用的客户端、选择令牌权限，然后粘贴它给出的配置。",
+  "ob.agentClient": "客户端",
+  "ob.client.claudeCode": "Claude Code",
+  "ob.client.codex": "Codex",
+  "ob.client.other": "其他客户端",
+  "ob.agentPreset": "令牌预设",
+  "ob.agentPresetHelp":
+    "预设决定 Agent 能做什么。沙箱 Agent 可以运行命令、改动文件，但不能挂载卷、安装工具或打开 SSH。",
+  "ob.agentAction": "创建令牌并显示配置",
+  "ob.agentBoxNote":
+    "该令牌只能用于它自己创建的 Box，Agent 第一次调用时就会创建自己的 Box。之后可在「设置」的「Agent API 令牌」里看到它。",
+  "ob.agentSecret": "令牌密钥",
+  "ob.agentSecretOnce": "请立即复制：MiniBox 只会显示这一次。若丢失，请吊销该令牌后重新创建。",
+  "ob.agentSnippet": "粘贴到 {client}",
+  "ob.agentSnippetWhere": "写入 {path}。其中含有令牌，请不要把它提交到版本库。",
+  "ob.agentCopy": "复制配置",
+  "ob.agentDone": "完成，隐藏此卡片",
+};
