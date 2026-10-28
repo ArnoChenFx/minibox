@@ -43,6 +43,8 @@ On a phone the console shows a bar at the bottom of the window: **Overview**, **
 
 A box starts from a template. The MiniBox image does not include the base template. MiniBox builds it the first time a box or a helper needs it, but that first build takes a few minutes, so you can build it now instead.
 
+Steps 4 to 6 are also the console's **Get started** card, which **Overview** shows while there is no box: it builds the template, opens the create dialog and then hands you an agent token with its MCP configuration. Use the card or the pages below, whichever you prefer.
+
 1. Click **Library** in the sidebar. Its **Templates** tab opens.
 2. Click **Build base template**.
 3. Wait for the build to finish. The first build can take a few minutes, because it downloads images.
