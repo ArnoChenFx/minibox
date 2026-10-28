@@ -198,6 +198,8 @@ export const MESSAGES = {
     "Template {name} was not built from a declared source, so it cannot be rebuilt. Build a template from a Dockerfile, a repository, a build context or a devcontainer.json instead.",
   template_edit_empty:
     "Nothing to change: send a source, a setup (init) or a description. A template that was not built from a declared source has no source to edit.",
+  template_source_builtin:
+    "Template {name} is built by MiniBox itself, so its source cannot be edited. Fork it into a template of your own and edit that.",
   dockerfile_invalid: "The Dockerfile must be at most 64 KB, contain no NUL bytes, and include a FROM instruction.",
   dockerfile_not_found: "There is no Dockerfile at {path} in the build context.",
   context_url_invalid:

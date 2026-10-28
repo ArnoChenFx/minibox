@@ -162,7 +162,7 @@ Saving changes the recipe only. The template keeps the image it has, so boxes cr
 - **The setup.** **Setup command** runs once in each box created from the template, as `/bin/sh -c`, and **Forwarded ports** are the TCP ports such a box opens. Leave both empty to remove the setup. They are not part of the image, so changing them takes effect for the next box created, with no rebuild.
 - **The description.** A new description is written onto the template's image, so its card shows it at once. MiniBox commits the same image under the same tag with the new label; the system layer is unchanged.
 
-A template write needs the `tool:install` scope, so the owner can edit any template and a token can edit one it may use; a sandboxed agent token, which has no `tool:install`, cannot. A template saved from a box, and a template built by MiniBox itself, have no source of their own to edit: the base template is rebuilt from `templates/base`, and an official template from the Dockerfile that ships with MiniBox.
+A template write needs the `tool:install` scope, and an edit belongs to whoever the template belongs to: the owner can edit any template, and a token only the templates it created, the same ones it can delete. A sandboxed agent token, which has no `tool:install`, cannot edit at all. A template saved from a box has no source to edit; the base template is rebuilt from `templates/base`, and an official template from the Dockerfile that ships with MiniBox, so an official template's dialog shows its setup and description only and answers `template_source_builtin` if a client sends a source.
 
 On the command line, the same change is:
 
@@ -246,6 +246,7 @@ The template's card in the **Templates** list shows the command and the ports. `
 - A command still running after 30 minutes is stopped, and the task fails. Cancelling the task also stops it. In both cases the box is kept.
 - The setup runs once, when the box is created. Starting, stopping, restarting and rebuilding the box do not run it again. A box saved from the template does not inherit it.
 - A token needs the `exec` scope to create a box from a template whose `postCreateCommand` is set, and the `port:expose` scope for `forwardPorts`. A token without the scope is refused before the box is made.
+- A rebuild keeps the setup the template has, unless its source is a `devcontainer.json`: that file names its own setup, so a rebuild takes the newest one and drops a setup the file no longer asks for.
 
 ### Settings MiniBox does not apply
 

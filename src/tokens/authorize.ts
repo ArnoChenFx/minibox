@@ -574,8 +574,10 @@ const RULES: ReadonlyMap<string, Rule> = new Map<string, Rule>([
   [
     "template.edit",
     async ({ principal, host, input }) => {
-      // Editing decides what a later rebuild produces, so the token must be able to use the template it changes.
-      await assertImageUsable(principal, host, String(input.ref), "template");
+      // An edit decides what the template rebuilds to and what a box created from it runs, so it belongs to whoever the
+      // template belongs to: the owner any template, a token only the ones it created. Editing one it merely may use would
+      // let a token change the source of the owner's next build, and put a command into every box the owner creates from it.
+      await assertOwnedImage(principal, host, String(input.ref), "template");
     },
   ],
   [

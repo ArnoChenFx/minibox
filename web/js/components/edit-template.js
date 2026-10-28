@@ -52,19 +52,13 @@ const fieldAttrs = (key) => `data-for="${SHOWN_FOR[key]}"`;
 
 function bodyHtml(names, recipe) {
   const source = recipe?.source ?? {};
-  const kind = EDITABLE_KINDS.includes(recipe?.buildKind) ? recipe.buildKind : "dockerfile";
   const official = recipe?.buildKind === "official";
-  return `
-    <div class="grid grid-2 form-grid">
-      <div class="field"><label class="label" for="teDesc">${t("tp.newDescription")}</label>
-        <input class="input" id="teDesc" maxlength="200" autocomplete="off" value="${esc(recipe?.description ?? "")}" /></div>
-      <div class="field"><label class="label" for="tePorts">${t("tp.editPorts")} <span class="subtle">${esc(t("common.optional"))}</span></label>
-        <input class="input mono" id="tePorts" placeholder="3000, 8080" autocomplete="off" value="${esc((recipe?.forwardPorts ?? []).join(", "))}" />
-        <div class="help">${t("tp.editPortsHelp")}</div></div>
-    </div>
-    <div class="field"><label class="label" for="tePostCreate">${t("tp.postCreate")} <span class="subtle">${esc(t("common.optional"))}</span></label>
-      <input class="input mono" id="tePostCreate" placeholder="npm ci" autocomplete="off" value="${esc(commandText(recipe?.postCreate))}" />
-      <div class="help">${t("tp.editPostCreateHelp")}</div></div>
+  const kind = EDITABLE_KINDS.includes(recipe?.buildKind) ? recipe.buildKind : "dockerfile";
+  // MiniBox builds an official template from the Dockerfile that ships with it, so the dialog has no source to show and
+  // sends none: the setup and the description are what such a template owns.
+  const sourceHtml = official
+    ? `<div class="callout warn">${icon("alert")}<span>${esc(t("tp.editOfficial"))}</span></div>`
+    : `
     <div class="field"><span class="label">${t("tp.sourceKind")}</span>
       <div class="segmented" id="teKinds" role="group" aria-label="${esc(t("tp.sourceKind"))}">${kindButtons(kind)}</div>
       <div class="help" id="teKindHelp">${t(KIND_HELP_KEYS[kind])}</div></div>
@@ -98,8 +92,19 @@ function bodyHtml(names, recipe) {
           <select class="select" id="teSecret">${secretChoicesHtml(names, t("src.secretNone"), source.secretRef ?? "")}</select>
           <div class="help">${names === null ? t("env.secretsUnavailable") : t("src.secretHelp")}</div></div>
       </div>
+    </div>`;
+  return `
+    <div class="grid grid-2 form-grid">
+      <div class="field"><label class="label" for="teDesc">${t("tp.newDescription")}</label>
+        <input class="input" id="teDesc" maxlength="200" autocomplete="off" value="${esc(recipe?.description ?? "")}" /></div>
+      <div class="field"><label class="label" for="tePorts">${t("tp.editPorts")} <span class="subtle">${esc(t("common.optional"))}</span></label>
+        <input class="input mono" id="tePorts" placeholder="3000, 8080" autocomplete="off" value="${esc((recipe?.forwardPorts ?? []).join(", "))}" />
+        <div class="help">${t("tp.editPortsHelp")}</div></div>
     </div>
-    ${official ? `<div class="callout warn">${icon("alert")}<span>${esc(t("tp.editOfficial"))}</span></div>` : ""}
+    <div class="field"><label class="label" for="tePostCreate">${t("tp.postCreate")} <span class="subtle">${esc(t("common.optional"))}</span></label>
+      <input class="input mono" id="tePostCreate" placeholder="npm ci" autocomplete="off" value="${esc(commandText(recipe?.postCreate))}" />
+      <div class="help">${t("tp.editPostCreateHelp")}</div></div>
+    ${sourceHtml}
     <div class="callout info">${icon("info")}<span>${esc(t("tp.editWhat"))}</span></div>
     <div class="error-text" id="teErr"></div>`;
 }
@@ -119,6 +124,9 @@ export async function openEditTemplate({ card, onEdited } = {}) {
       return null;
     });
   if (!recipe) return;
+  // An official template's Dockerfile ships with MiniBox, so the dialog shows no source fields and sends none: only the
+  // setup and the description are the template's own. The server refuses a source there too.
+  const official = recipe.buildKind === "official";
   const state = { kind: EDITABLE_KINDS.includes(recipe.buildKind) ? recipe.buildKind : "dockerfile" };
   const { root, close } = openDialog({
     title: t("tp.editTitle", { name: esc(card.name) }),
@@ -154,16 +162,18 @@ export async function openEditTemplate({ card, onEdited } = {}) {
     secretRef: q("#teSecret").value,
   });
 
-  q("#teKinds").addEventListener("click", (event) => {
-    const button = event.target.closest(".seg");
-    if (button) showKind(button.dataset.kind);
-  });
-  showKind(state.kind);
+  if (!official) {
+    q("#teKinds").addEventListener("click", (event) => {
+      const button = event.target.closest(".seg");
+      if (button) showKind(button.dataset.kind);
+    });
+    showKind(state.kind);
+  }
 
   const submit = async () => {
     const ok = q("#teOk");
     if (ok.disabled) return;
-    const built = templateSource(state.kind, fieldValues());
+    const built = official ? { source: undefined } : templateSource(state.kind, fieldValues());
     if (built.problem) {
       q("#teErr").textContent = t(built.key);
       return;
@@ -180,7 +190,7 @@ export async function openEditTemplate({ card, onEdited } = {}) {
       await api(`/api/templates/${enc(card.ref)}`, {
         method: "PATCH",
         body: {
-          source: built.source,
+          ...(built.source === undefined ? {} : { source: built.source }),
           init: initOf(q("#tePostCreate").value, ports.ports),
           ...(description === "" ? {} : { description }),
         },
@@ -201,7 +211,7 @@ export async function openEditTemplate({ card, onEdited } = {}) {
     onEdited?.(card.name);
   };
   q("#teOk").addEventListener("click", () => void submit());
-  q("#teDockerfile").addEventListener("keydown", (event) => {
+  q("#teDockerfile")?.addEventListener("keydown", (event) => {
     if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) void submit();
   });
 }
