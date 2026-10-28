@@ -1,5 +1,5 @@
 import { type JsonSchema, toJsonSchema } from "./jsonschema";
-import type { Kind, Operation, Toolset } from "./types";
+import type { Operation, Toolset } from "./types";
 
 /** The toolsets served when a client does not ask for others: `/mcp?toolsets=core,storage` opens more. */
 export const DEFAULT_TOOLSETS: readonly Toolset[] = ["core", "meta"];
@@ -28,18 +28,4 @@ export function mcpTools(operations: readonly Operation[], toolsets: readonly To
       },
     ];
   });
-}
-
-export interface CliCommand {
-  readonly command: string;
-  readonly operation: string;
-  readonly summary: string;
-  readonly kind: Kind;
-}
-
-/** The CLI commands the operations name, in registry order. `src/cli.ts` is the client; `bun run build:cli` compiles it. */
-export function cliCommands(operations: readonly Operation[]): CliCommand[] {
-  return operations.flatMap((op) =>
-    op.cli ? [{ command: op.cli, operation: op.name, summary: op.summary, kind: op.kind }] : [],
-  );
 }

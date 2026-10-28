@@ -498,28 +498,6 @@ export function allBoxViews(hosts: readonly { readonly specs: { list(): readonly
 }
 
 /**
- * `exec` grants read and write on every mount of a box the token may use, so `files:*` only changes what a token
- * without `exec` can do. Volume file operations use the same rule via their `files:read` / `files:write` scopes.
- */
-export function fileAccess(principal: Subject, box: BoxView): { read: boolean; write: boolean } {
-  if (principal.type === "owner") return { read: true, write: true };
-  if (principal.type !== "token" || !principal.grants || !boxVisible(principal, box)) {
-    return { read: false, write: false };
-  }
-  const exec = principal.grants.scopes.includes("exec");
-  return {
-    read: exec || principal.grants.scopes.includes("files:read"),
-    write: exec || principal.grants.scopes.includes("files:write"),
-  };
-}
-
-export function canExec(principal: Subject, box: BoxView): boolean {
-  if (principal.type === "owner") return true;
-  if (principal.type !== "token" || !principal.grants) return false;
-  return principal.grants.scopes.includes("exec") && boxVisible(principal, box);
-}
-
-/**
  * Whether a token may see or use a volume record. The creator may, a grant by id may, a box it may see may (its owned
  * volumes), and `volumes: all` covers every volume except another token's. Names never decide.
  */

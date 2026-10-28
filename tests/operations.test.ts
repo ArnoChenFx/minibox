@@ -13,8 +13,14 @@ import { isByteStream } from "../src/lib/body";
 import { AppError } from "../src/lib/errors";
 import { setLogLevel } from "../src/lib/logger";
 import { defineOperation } from "../src/operations/define";
-import { type AuditEvent, Executor, type ExecutorHooks, logAudit, ownerOnly } from "../src/operations/executor";
-import { cliCommands, DEFAULT_TOOLSETS, mcpTools } from "../src/operations/projections";
+import {
+  type AuditEvent,
+  type AuthorizeRequest,
+  Executor,
+  type ExecutorHooks,
+  logAudit,
+} from "../src/operations/executor";
+import { DEFAULT_TOOLSETS, mcpTools } from "../src/operations/projections";
 import { OPERATIONS, registryProblems } from "../src/operations/registry";
 import type { Operation, OperationContext, Principal } from "../src/operations/types";
 import { runOf } from "../src/routes/operations";
@@ -26,6 +32,20 @@ import type { FakeRuntime } from "./support/fake-runtime";
 import { type S3Double, startS3Double } from "./support/s3-double";
 
 const OWNER: Principal = { type: "owner", id: "owner", name: "owner" };
+
+/**
+ * The executor's own contract, not production policy: a hook decides who acts, and the executor honours the answer.
+ * Production passes `authorizeOperation` (`src/tokens/authorize.ts`); these tests pass this so they exercise the
+ * executor without the token rules, which `tests/token-routes.test.ts` covers.
+ */
+const ownerAdmits = ({ principal }: AuthorizeRequest): boolean => principal.type === "owner";
+
+const tokenPrincipal = (): Principal => ({
+  type: "token",
+  id: "tok_1",
+  name: "token",
+  grants: { scopes: [], boxes: { type: "list", ids: [] }, volumes: { type: "list", ids: [] } } as never,
+});
 const SNAPSHOT_REF = "mbtest-snap:nightly";
 const TEMPLATE_REF = "mbtest-template:gold";
 const SYNCED_TEMPLATE_REF = "mbtest-template:synced";
@@ -720,15 +740,15 @@ describe("executor", () => {
   });
   afterEach(() => restoreLogs());
 
-  test("the default authorize hook admits the owner and refuses anyone else", () => {
+  test("the hook decides who may act: the owner passes and a token does not", async () => {
     const operation = opNamed("box.list");
-    expect(ownerOnly({ principal: OWNER, operation })).toBe(true);
-    expect(ownerOnly({ principal: { type: "owner", id: "other", name: "other" }, operation })).toBe(true);
+    expect(ownerAdmits({ principal: OWNER, operation, phase: "scope" })).toBe(true);
+    expect(ownerAdmits({ principal: tokenPrincipal(), operation, phase: "scope" })).toBe(false);
   });
 
   test("operation names must be unique", () => {
     const box = opNamed("box.list");
-    const hooks = { authorize: ownerOnly, audit: () => {} };
+    const hooks = { authorize: ownerAdmits, audit: () => {} };
     expect(() => new Executor([box, box], { activity: new ActivityLog(), hooks })).toThrow(
       "operation names must be unique",
     );
@@ -1289,12 +1309,14 @@ describe("projections", () => {
     expect(tools.get("rebuild_box")?.annotations).toEqual({ readOnlyHint: false, destructiveHint: true });
   });
 
-  test("CLI commands come from the registry, with the operation kind", () => {
-    const commands = cliCommands(OPERATIONS);
-    expect(commands).toContainEqual(
-      expect.objectContaining({ command: "box rm", operation: "box.delete", kind: "destructive" }),
-    );
-    expect(commands).toContainEqual(expect.objectContaining({ command: "snapshot fork", operation: "snapshot.fork" }));
-    expect(new Set(commands.map((c) => c.command)).size).toBe(commands.length);
+  test("each CLI command names one operation, and the registry keeps the names unique", () => {
+    const named = OPERATIONS.filter((operation) => operation.cli);
+    const byCommand = new Map(named.map((operation) => [operation.cli as string, operation]));
+    expect(byCommand.get("box rm")?.name).toBe("box.delete");
+    expect(byCommand.get("snapshot fork")?.name).toBe("snapshot.fork");
+    // A duplicate command name is a registry problem, not something the CLI can resolve at run time.
+    expect(registryProblems(OPERATIONS)).toEqual([]);
+    const twin = { ...opNamed("box.list"), cli: "box rm" };
+    expect(registryProblems([...OPERATIONS, twin]).join("\n")).toContain("duplicate CLI command: box rm");
   });
 });

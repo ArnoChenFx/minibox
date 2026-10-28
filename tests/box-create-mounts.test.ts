@@ -7,7 +7,7 @@ import { OPERATIONS } from "../src/operations/registry";
 import type { OperationContext } from "../src/operations/types";
 import { parseInput } from "../src/operations/validation";
 import type { BoxMount } from "../src/specs/types";
-import { type CreateMount, isRoleMount, mountPointOf, rolesToCreate } from "../src/volumes/create-mounts";
+import { type CreateMount, isRoleMount, mountPointOf, rolePoolsOf, roleRequests } from "../src/volumes/create-mounts";
 import { findSharedTools } from "../src/volumes/engine";
 import { poolForRole } from "../src/volumes/pools";
 import { ROLE_MOUNT, VOLUME_ROLES } from "../src/volumes/types";
@@ -37,7 +37,26 @@ describe("the mounts a create asks for", () => {
     expect(parsed).toEqual([{ role: "workspace" }, { role: "tools" }]);
     if (!parsed) throw new Error("the mounts were refused");
     expect(parsed.map((mount) => mountPointOf(mount))).toEqual([ROLE_MOUNT.workspace, ROLE_MOUNT.tools]);
-    expect(rolesToCreate(parsed)).toEqual(["workspace", "tools"]);
+    // The create path asks for the role volumes through `roleRequests`, in the order the list gives them.
+    expect(roleRequests(parsed)).toEqual([{ role: "workspace" }, { role: "tools" }]);
+  });
+
+  test("the pools a create asks for follow the same list, and only the roles that named one", () => {
+    const parsed = parsedMounts([
+      { role: "workspace", pool: "nas" },
+      { role: "home" },
+      { role: "cache", pool: "disk" },
+    ]);
+    if (!parsed) throw new Error("the mounts were refused");
+    expect(roleRequests(parsed)).toEqual([
+      { role: "workspace", pool: "nas" },
+      { role: "home" },
+      { role: "cache", pool: "disk" },
+    ]);
+    expect([...rolePoolsOf(roleRequests(parsed))]).toEqual([
+      ["workspace", "nas"],
+      ["cache", "disk"],
+    ]);
   });
 
   test("a role mount may repeat the role's own path and mode, and no other", () => {

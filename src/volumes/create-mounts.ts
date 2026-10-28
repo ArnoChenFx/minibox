@@ -31,11 +31,6 @@ export function mountPointOf(mount: CreateMount): { path: string; mode: MountMod
   return { path: mount.path ?? fixed.path, mode: mount.mode ?? fixed.mode };
 }
 
-/** The roles a create mount list would create a volume for, in the order it lists them. */
-export function rolesToCreate(mounts: readonly CreateMount[]): VolumeRole[] {
-  return roleRequests(mounts).map((request) => request.role);
-}
-
 /** The role volumes a create mount list asks for, in the order it lists them, each with the pool it picked. */
 export function roleRequests(mounts: readonly CreateMount[]): RoleRequest[] {
   return mounts
