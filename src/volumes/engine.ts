@@ -11,7 +11,7 @@ import type { BoxSpec } from "../specs/types";
 import { VolumeChanges } from "./changes";
 import { assertPoolsReachable, poolRootVolume } from "./health";
 import { nfsDriverOpts, pathDriverOpts, poolForRole } from "./pools";
-import type { StoragePool, VolumeOwnership, VolumeRecord, VolumeRole } from "./types";
+import type { PoolsFile, StoragePool, VolumeOwnership, VolumeRecord, VolumeRole } from "./types";
 import { DEV_OWNER, LOCAL_POOL, ROLE_MOUNT, UNLIMITED } from "./types";
 
 export interface NewVolume {
@@ -541,14 +541,19 @@ export async function healAllSharedTools(host: HostCtx): Promise<string[]> {
   return recreated;
 }
 
+/**
+ * The volume each of the four roles of a new box would get. A role in `pools` takes the pool the create picked for it,
+ * which must be one the host has; every other role follows its rule. `poolForRole` is what a role without a pick uses.
+ */
 export function defaultRolePlans(
   host: HostCtx,
   box: { id: string; name: string; createdBy: string | null },
+  pools: ReadonlyMap<VolumeRole, string> = new Map(),
 ): { role: VolumeRole; input: NewVolume; existing: VolumeRecord | null }[] {
   const file = host.volumes.readPools();
   const roles: VolumeRole[] = ["workspace", "home", "tools", "cache"];
   return roles.map((role) => {
-    const pool = poolForRole(file, role);
+    const pool = poolForPlan(file, role, pools.get(role));
     const shared = role === "tools";
     const existing = shared ? findSharedTools(host, pool.name) : null;
     return {
@@ -564,6 +569,17 @@ export function defaultRolePlans(
       },
     };
   });
+}
+
+/**
+ * The pool a role's new volume goes to: the one the create picked, when it picked one, else the role's rule. A picked
+ * pool the host does not have is a refusal, so a request never silently lands somewhere else.
+ */
+function poolForPlan(file: PoolsFile, role: VolumeRole, picked: string | undefined): StoragePool {
+  if (picked === undefined) return poolForRole(file, role);
+  const chosen = file.pools.find((pool) => pool.name === picked);
+  if (!chosen) throw badRequest(msg("pool_not_found", { pool: picked }));
+  return chosen;
 }
 
 export function poolsUsed(host: HostCtx, mounts: { volume: string }[]): string[] {

@@ -244,12 +244,20 @@ export default {
   "cb.volumesPreview":
     "Nothing here is created yet. MiniBox makes these volumes when you create the box, and only for the roles a row still names: replace a role row with a volume that exists and that role's volume is not created.",
   "cb.previewCreate": "Will create {name} when the box is created (preview).",
+  "cb.previewCreatePool": "Will create {name} in pool {pool} when the box is created (preview).",
   "cb.previewCreateInexact":
-    "Will create {name} when the box is created (preview). This host already uses that name, so MiniBox adds a suffix to it.",
+    "Will create {name} when the box is created (preview). This pool already uses that name, so MiniBox adds a suffix to it.",
+  "cb.previewCreateInexactPool":
+    "Will create {name} in pool {pool} when the box is created (preview). This pool already uses that name, so MiniBox adds a suffix to it.",
   "cb.previewShared": "Mounts the shared tools volume {name}, which already exists. Nothing is created for it.",
+  "cb.previewSharedPool":
+    "Mounts the shared tools volume {name} of pool {pool}, which already exists. Nothing is created for it.",
   "cb.previewUnnamed": "Will create the {role} volume when the box is created (preview).",
+  "cb.previewUnnamedPool": "Will create the {role} volume in pool {pool} when the box is created (preview).",
   "cb.previewHostUnknown":
     "Will create the {role} volume on the host the create picks (preview). Its name follows that host.",
+  "cb.previewHostUnknownPool":
+    "Will create the {role} volume in pool {pool} on the host the create picks (preview). Its name follows that host.",
   "rb.desc":
     "Volumes, the stable id and the name stay. The writable layer, running processes and the container IP do not.",
   "rb.help":
@@ -275,6 +283,10 @@ export default {
   "mount.roleSharedNoneAuto": "Shared tools volume (preview)",
   "mount.roleWillCreate": "{name} (preview)",
   "mount.roleSharedExists": "{name} (exists)",
+  "mount.pool": "Storage pool",
+  "mount.poolHelp":
+    "The pool the new volume goes to. “Use the rule” follows the role default: cache on the local pool, the other roles on the default pool.",
+  "mount.poolRule": "Use the rule",
   "rb.preview": "Preview",
   "rb.apply": "Apply rebuild",
   "rb.previewTitle": "This rebuild is not applied yet",

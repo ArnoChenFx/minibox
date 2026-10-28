@@ -47,6 +47,20 @@ describe("the mounts a create asks for", () => {
     expect(() => parsedMounts([{ role: "tools", mode: "ro" }])).not.toThrow();
   });
 
+  test("a role mount may name the pool its volume goes to, and a mount of a volume may not", () => {
+    expect(parsedMounts([{ role: "workspace", pool: "nas" }, { role: "cache" }])).toEqual([
+      { role: "workspace", pool: "nas" },
+      { role: "cache" },
+    ]);
+    // An empty pool is no pick at all, so the role's rule still applies.
+    expect(parsedMounts([{ role: "home", pool: "" }])).toEqual([{ role: "home" }]);
+    // A volume that exists is already on a pool of its own, so naming one is refused.
+    expect(() => parsedMounts([{ volume: "vol_a", path: "/data", mode: "rw", pool: "nas" }])).toThrow(
+      "names either an existing volume",
+    );
+    expect(() => parsedMounts([{ role: "home", pool: "../nas" }])).toThrow("names either an existing volume");
+  });
+
   test("a role is listed once, because a box mounts one volume of each role", () => {
     expect(() => parsedMounts([{ role: "home" }, { role: "home" }])).toThrow("home");
   });
@@ -206,6 +220,46 @@ describe("creating a box from role mounts", () => {
     ).toEqual(["beta-workspace"]);
   });
 
+  test("a role that picks a pool gets its volume there, and one that picks none keeps the rule", async () => {
+    // A second pool the role can be sent to. It is a path pool, so its volumes need no NFS server.
+    harness.runtime.helperHandler = () => ({ exitCode: 0, logs: "" });
+    const saved = await call(harness.base, "/api/pools", {
+      method: "PUT",
+      body: {
+        pools: [
+          { name: "local", backend: "local", default: true },
+          { name: "disk", backend: "path", root: "/mnt/disk", marker: ".minibox-mounted" },
+        ],
+        confirm: true,
+      },
+    });
+    expect(saved.status).toBe(200);
+
+    const mounts = await createdMounts("alpha", [{ role: "workspace", pool: "disk" }, { role: "cache" }]);
+    const workspace = host().volumes.findByEngine(host().host.id, mounts[0]?.volume ?? "");
+    const cache = host().volumes.findByEngine(host().host.id, mounts[1]?.volume ?? "");
+    expect(workspace?.pool).toBe("disk");
+    expect(workspace?.name).toBe("alpha-workspace");
+    // Cache keeps its rule, which is the local pool.
+    expect(cache?.pool).toBe("local");
+    // A path pool volume is a bind of a directory under its root, so the engine has the pool's options on it.
+    expect(harness.runtime.volumes.get(workspace?.engineName ?? "")?.options).toMatchObject({
+      type: "none",
+      o: "bind",
+      device: `/mnt/disk/${workspace?.engineName ?? ""}`,
+    });
+  });
+
+  test("a pool the host does not have is refused before anything is created", async () => {
+    const reply = await call(harness.base, "/api/boxes", {
+      body: { name: "alpha", cpus: 1, memoryMb: 256, mounts: [{ role: "workspace", pool: "nowhere" }] },
+    });
+    expect(reply.status).toBe(400);
+    expect(reply.json.error).toMatchObject({ code: "validation_failed", key: "pool_not_found" });
+    expect(host().specs.findByName("alpha")).toBeNull();
+    expect(await volumesNamed()).toEqual([]);
+  });
+
   test("a clone needs a writable workspace among the roles, so a list without one is refused", async () => {
     const repo = { url: "https://github.com/org/app.git" };
     const refused = await call(harness.base, "/api/boxes", {
@@ -349,5 +403,14 @@ describe("the mount list of a create in the OpenAPI document", () => {
     expect(shapes[0]?.properties?.mode?.enum).toEqual(["rw", "ro"]);
     expect(shapes[1]?.properties?.role?.enum).toEqual([...VOLUME_ROLES]);
     expect(shapes[1]?.properties?.role?.description).toContain("shared tools volume");
+  });
+
+  test("it says a role mount may pick the storage pool its new volume goes to", () => {
+    const mounts = documentedMounts();
+    const shapes = mounts?.items?.anyOf ?? [];
+    // The pool belongs to the role shape only: a volume that exists is already on its own pool.
+    expect(shapes[0]?.properties?.pool).toBeUndefined();
+    expect(shapes[1]?.properties?.pool?.description).toContain("pool_not_found");
+    expect(shapes[1]?.required).toEqual(["role"]);
   });
 });

@@ -5,12 +5,14 @@ export interface Mount {
 }
 
 /** A mount a create sends: a recorded volume, or a role whose volume MiniBox creates for the box. */
-export type CreateMount = { volume: string; path: string; mode: "rw" | "ro" } | { role: string };
+export type CreateMount = { volume: string; path: string; mode: "rw" | "ro" } | { role: string; pool?: string };
 
 export interface VolumeLike {
   id: string;
   name: string;
   hostId?: string | null;
+  /** The storage pool the volume was made on. */
+  pool?: string | null;
   role?: string | null;
   ownership: "owned" | "independent";
   ownerBoxId: string | null;
@@ -22,6 +24,8 @@ export interface VolumeChoice {
   name: string;
   /** The host whose engine holds the volume. A create predicts the shared tools volume of its own host. */
   hostId: string | null;
+  /** The storage pool the volume was made on, or null when the list did not say. */
+  pool: string | null;
   role: string | null;
   /** Only an independent tools volume is a host's shared tools volume, as `isSharedTools` has it. */
   ownership: "owned" | "independent";
@@ -55,6 +59,13 @@ export interface RoleVolumeName {
   hostKnown: boolean;
 }
 
+/** One storage pool, as the create dialog reads it from `GET /api/pools`. */
+export interface RolePool {
+  name: string;
+  backend: "local" | "nfs" | "path";
+  default: boolean;
+}
+
 export interface RoleNameInput {
   boxName: string;
   hostId: string;
@@ -80,9 +91,13 @@ export declare const DEFAULT_MOUNTS: readonly { role: string; path: string; mode
 export declare function roleOfValue(value: string | null | undefined): string | null;
 export declare function roleValue(role: string): string;
 export declare function roleMount(role: string): { role: string; path: string; mode: "rw" | "ro" } | null;
+/**
+ * The choices a create row offers. `sharedTools` is a boolean for the whole dialog, or a Map of role to whether that
+ * role's volume already exists, since the shared tools volume is one per pool.
+ */
 export declare function createMountChoices(
   volumes: readonly VolumeChoice[],
-  sharedTools: boolean,
+  sharedTools: boolean | ReadonlyMap<string, boolean>,
   preview?: Partial<Record<string, RoleVolumeName>> | null,
 ): CreateMountChoice[];
 export declare function validMountPath(path: string): boolean;
@@ -92,8 +107,32 @@ export declare function volumeChoices(volumes: readonly VolumeLike[], liveBoxIds
 export declare function sharedToolsChoice(choices: readonly VolumeChoice[]): VolumeChoice | null;
 /** The names the volumes of one host already use. */
 export declare function namesOnHost(choices: readonly VolumeChoice[], hostId: string): string[];
-/** The host's shared tools volume: its independent tools volume, or null when it has none. */
-export declare function sharedToolsOnHost(choices: readonly VolumeChoice[], hostId: string): VolumeChoice | null;
+/**
+ * The pool a role's volume goes to when the create picks none: cache on the local pool, the other roles on the default
+ * pool, or on the pool the role's rule names. Mirrors `poolForRole` in src/volumes/pools.ts.
+ */
+export declare function rulePoolOf(
+  role: string,
+  pools?: { pools?: readonly RolePool[]; roles?: Record<string, string | null> },
+): string;
+/** The pool each role goes to once the dialog's picks are applied. A pick no pool matches falls back to the rule. */
+export declare function rolePoolPicks(
+  roles: readonly string[],
+  options?: {
+    picks?: Record<string, string | null>;
+    pools?: readonly RolePool[];
+    roleRules?: Record<string, string | null>;
+  },
+): Record<string, string>;
+/**
+ * The host's shared tools volume, or that of one pool. There is one shared tools volume per pool, so `pool` narrows the
+ * answer to the pool a tools role goes to.
+ */
+export declare function sharedToolsOnHost(
+  choices: readonly VolumeChoice[],
+  hostId: string,
+  pool?: string | null,
+): VolumeChoice | null;
 /** The names MiniBox would give this box's role volumes. Mirrors `defaultRolePlans` in src/volumes/engine.ts. */
 export declare function roleVolumeNames(input: RoleNameInput): Record<string, RoleVolumeName>;
 /** The predictions of the roles a mount list still names, in row order. */
@@ -108,12 +147,14 @@ export declare function previewRoleNames(
 export declare function previewNoteLines(
   rows: readonly { volume: string }[],
   names: Readonly<Record<string, RoleVolumeName>> | null | undefined,
-): { key: string; params: Record<string, string> }[];
+): { key: string; params: Record<string, string>; role: string }[];
 /** A row of a create's mount list: a volume it mounts, or the role whose volume it has MiniBox create. */
 export interface MountRow {
   volume: string;
   path: string;
   mode: "rw" | "ro";
+  /** The storage pool a role row picked for its new volume, when it picked one. */
+  pool?: string | null;
 }
 
 export declare function checkMountRows(

@@ -86,17 +86,23 @@
     overflow: visible;
   }
 }
-/* Between the one-column phone layout and the desktop row, a create row shares its width with a path, a mode and a
-   remove button. A role row's volume name (the volume the create would make, e.g. `mbtest-tools-local（预览）`) needs
-   more room than that leaves below 700px, so there the name gets a line of its own and the rest stays on the next one.
-   Scoped to the create dialog: a rebuild row types a volume name in a plain input and keeps the desktop grid. */
+/* Between the one-column phone layout and the desktop row the dialog is too narrow for the path, the mode, the storage
+   pool and the remove button on one line: the path would fall under the ~140px `/home/dev/.cache` needs. So there the
+   path and the mode take the second line, and the pool control and the button the third. */
 @media (min-width: 561px) and (max-width: 700px) {
   #cbMountRows .rebuild-mount {
-    grid-template-columns: minmax(0, 1fr) 132px auto;
+    grid-template-columns: minmax(0, 1fr) minmax(96px, 140px);
+    grid-template-areas:
+      "volume pool"
+      "path   mode"
+      "remove remove";
   }
-  /* The volume control is the select the dropdown component turned into a trigger, so the name it shows gets the row. */
-  #cbMountRows .rebuild-mount > [data-volume] + .dropdown-trigger {
-    grid-column: 1 / -1;
+  /* A row that mounts a volume that exists has no pool control: the volume takes the whole first line. */
+  #cbMountRows .rebuild-mount:not(:has([data-pool])) {
+    grid-template-areas:
+      "volume volume"
+      "path   mode"
+      "remove remove";
   }
 }
 @media (max-width: 560px) {

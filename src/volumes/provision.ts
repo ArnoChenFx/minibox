@@ -91,8 +91,9 @@ export async function provisionDefaultMounts(
 
 /**
  * The mounts for the role volumes a create named, in the order it named them. A role the list omits is not created.
- * A role in `restored` mounts the volume that already holds its data, as a fork does. Without `changes`, a failure
- * removes what this call created before it is thrown.
+ * `pools` names the storage pool a role's new volume goes to; a role left out of it follows its own rule. A role in
+ * `restored` mounts the volume that already holds its data, as a fork does. Without `changes`, a failure removes what
+ * this call created before it is thrown.
  */
 export async function provisionRoleMounts(
   host: HostCtx,
@@ -101,10 +102,11 @@ export async function provisionRoleMounts(
   known: Set<string>,
   changes?: VolumeChanges,
   restored: ReadonlyMap<VolumeRole, VolumeRecord> = new Map(),
+  pools: ReadonlyMap<VolumeRole, string> = new Map(),
 ): Promise<BoxMount[]> {
   const own = changes ?? new VolumeChanges();
   try {
-    return await host.volumes.exclusive(() => provisionRoleMountsLocked(host, box, roles, known, own, restored));
+    return await host.volumes.exclusive(() => provisionRoleMountsLocked(host, box, roles, known, own, restored, pools));
   } catch (e) {
     if (!changes) await own.rollback();
     throw e;
@@ -118,9 +120,10 @@ async function provisionRoleMountsLocked(
   known: Set<string>,
   changes: VolumeChanges,
   restored: ReadonlyMap<VolumeRole, VolumeRecord>,
+  pools: ReadonlyMap<VolumeRole, string>,
 ): Promise<BoxMount[]> {
   const wanted = new Set(roles);
-  const plans = defaultRolePlans(host, box).filter((plan) => wanted.has(plan.role));
+  const plans = defaultRolePlans(host, box, pools).filter((plan) => wanted.has(plan.role));
   const mounts: BoxMount[] = [];
   const chown: string[] = [];
   for (const plan of plans) {

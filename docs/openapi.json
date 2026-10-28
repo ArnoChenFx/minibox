@@ -826,6 +826,10 @@
                                 "ro"
                               ],
                               "description": "Optional, and only the role's own mode."
+                            },
+                            "pool": {
+                              "type": "string",
+                              "description": "Optional storage pool the role's new volume goes to, such as local or an NFS pool name. Omitted, the role's rule picks the pool: cache on the local pool, the other roles on the default pool. A pool this host does not have is refused with pool_not_found. The tools role's shared volume is one per pool, so a picked pool mounts or creates the shared tools volume of that pool."
                             }
                           },
                           "required": [
@@ -834,7 +838,7 @@
                         }
                       ]
                     },
-                    "description": "Mounts this box gets. An entry is { volume, path, mode } to mount a volume that exists, or { role } to have MiniBox create that role's volume for this box: workspace at /workspace read-write, home at /home/dev read-write, tools at /opt/minibox/tools read-only, cache at /home/dev/.cache read-write. A role the list omits is not created. The tools role mounts the host's shared tools volume, and creates it when the host has none. Omitted, MiniBox creates workspace, home, tools and cache. An empty list creates a box with no mounts. Mounting an existing volume needs volume:attach, and a read-write one also needs volume:write. A role volume is new, so every role mount needs volume:write, and the tools role also needs volume:attach when the shared volume already exists."
+                    "description": "Mounts this box gets. An entry is { volume, path, mode } to mount a volume that exists, or { role } to have MiniBox create that role's volume for this box: workspace at /workspace read-write, home at /home/dev read-write, tools at /opt/minibox/tools read-only, cache at /home/dev/.cache read-write. A role the list omits is not created. The tools role mounts the host's shared tools volume, and creates it when the host has none. Omitted, MiniBox creates workspace, home, tools and cache. An empty list creates a box with no mounts. Mounting an existing volume needs volume:attach, and a read-write one also needs volume:write. A role volume is new, so every role mount needs volume:write, and the tools role also needs volume:attach when the shared volume already exists. A role mount may also name pool, the storage pool its new volume goes to instead of the one the role's rule picks; a pool this host does not have is refused with pool_not_found, and the tools role's shared volume is one per pool."
                   },
                   "env": {
                     "type": "array",

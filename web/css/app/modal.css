@@ -81,10 +81,39 @@
    shrink, so nothing is pushed past the dialog. Above the phone breakpoint only: below it every row is one column, and a
    rule here would outrank the phone's own because of the id. */
 @media (min-width: 561px) {
+  /* Five cells do not fit a 640px dialog beside a readable volume name: measured, the name fell to 80px and wrapped one
+     letter per line. So a create row gives the volume name a line of its own, and the path, the mode, the storage pool
+     and the remove button share the line below it. */
   #cbMountRows .rebuild-mount {
-    /* The path keeps the room the longest default path (`/home/dev/.cache`, 137px at 14px) needs; the name takes what is
-       left, and gives it back on a wide dialog where both fit. */
-    grid-template-columns: minmax(0, 3fr) minmax(140px, 1fr) 132px auto;
+    grid-template-columns: minmax(140px, 1fr) 132px minmax(96px, 140px) auto;
+    grid-template-areas:
+      "volume volume volume pool"
+      "path   path   mode   remove";
+  }
+  /* The volume control is the select the dropdown component turned into a trigger, so the name it shows gets the row. */
+  #cbMountRows .rebuild-mount > [data-volume] + .dropdown-trigger {
+    grid-area: volume;
+  }
+  /* The dropdown component keeps the native select, out of the flow, and draws a trigger beside it: the trigger is the
+     cell, so each control's area goes on the trigger that follows its select. */
+  #cbMountRows .rebuild-mount > [data-path] {
+    grid-area: path;
+  }
+  #cbMountRows .rebuild-mount > [data-mode] + .dropdown-trigger {
+    grid-area: mode;
+  }
+  #cbMountRows .rebuild-mount > [data-pool] + .dropdown-trigger {
+    grid-area: pool;
+  }
+  #cbMountRows .rebuild-mount > [data-remove-mount] {
+    grid-area: remove;
+  }
+  /* A row that mounts a volume that exists has no pool control: the volume takes the whole first line, and the second
+     line is the path, the mode and the button. */
+  #cbMountRows .rebuild-mount:not(:has([data-pool])) {
+    grid-template-areas:
+      "volume volume volume volume"
+      "path   path   mode   remove";
   }
 }
 /* The selected volume label can outgrow even a desktop column. Wrap it and grow the trigger with it at every width. */
