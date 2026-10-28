@@ -13,14 +13,3 @@ export function snapshotOf(spec: BoxSpec): SpecSnapshot {
 export function pushHistory(spec: BoxSpec): SpecSnapshot[] {
   return [snapshotOf(spec), ...(spec.history ?? [])].slice(0, SPEC_HISTORY_LIMIT);
 }
-
-/**
- * The revision immediately before `spec`, with the history that was current then.
- * Null when this spec has no stored history. A failed rebuild restores the in-memory
- * spec from before the write instead, which keeps a full history even at the cap.
- */
-export function rollbackSpec(spec: BoxSpec): BoxSpec | null {
-  const [previous, ...rest] = spec.history ?? [];
-  if (!previous) return null;
-  return { ...previous.spec, history: rest };
-}
