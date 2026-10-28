@@ -151,7 +151,6 @@ export const boxGet = defineOperation({
   input: z.object({ id: boxId() }),
   output: z.object({ box: BoxSchema.extend({ stats: StatsSchema.nullable() }) }),
   rest: [{ method: "GET", path: "/api/boxes/:id" }],
-  cli: "box get",
   mcp: {
     toolset: "core",
     name: "get_box",
@@ -417,7 +416,6 @@ export const boxDelete = defineOperation({
     }),
   }),
   rest: [{ method: "DELETE", path: "/api/boxes/:id", query: ["deleteVolume", "skipTrash"] }],
-  cli: "box rm",
   mcp: {
     toolset: "core",
     name: "delete_box",
@@ -453,7 +451,6 @@ export const boxAction = defineOperation({
     { method: "POST", path: "/api/boxes/:id/stop", fixed: { action: "stop" } },
     { method: "POST", path: "/api/boxes/:id/restart", fixed: { action: "restart" } },
   ],
-  cli: "box action",
   mcp: {
     toolset: "core",
     name: "box_action",
@@ -484,7 +481,6 @@ export const boxResources = defineOperation({
     .superRefine((input, ctx) => requireResources(ctx, input)),
   output: z.object({ box: BoxSchema }),
   rest: [{ method: "PATCH", path: "/api/boxes/:id/resources", body: true, ifMatch: true }],
-  cli: "box resize",
   precondition: ({ host }, input) => assertCapacity(host, input),
   hostFor: (ctx, input) => hostOfBox(ctx, input.id),
   resolve: ({ host }, input) => getBox(host, input.id),
@@ -552,7 +548,6 @@ export const boxUpdate = defineOperation({
     .superRefine((input, ctx) => requireUpdate(ctx, input)),
   output: z.object({ box: BoxSchema }),
   rest: [{ method: "PATCH", path: "/api/boxes/:id", body: true, ifMatch: true }],
-  cli: "box update",
   mcp: {
     toolset: "core",
     name: "update_box",
@@ -629,7 +624,6 @@ export const boxRebuild = defineOperation({
     }),
   }),
   rest: [{ method: "POST", path: "/api/boxes/:id/rebuild", body: true, ifMatch: true }],
-  cli: "box rebuild",
   mcp: {
     toolset: "rebuild",
     name: "rebuild_box",
@@ -704,7 +698,6 @@ export const boxMove = defineOperation({
     }),
   }),
   rest: [{ method: "POST", path: "/api/boxes/:id/move", body: true, ifMatch: true, status: 202 }],
-  cli: "box move",
   mcp: {
     toolset: "move",
     name: "move_box",
@@ -757,7 +750,6 @@ export const boxLogs = defineOperation({
   input: z.object({ id: boxId(), tail: tail() }),
   output: z.object({ logs: z.string() }),
   rest: [{ method: "GET", path: "/api/boxes/:id/logs", query: ["tail"] }],
-  cli: "box logs",
   hostFor: (ctx, input) => hostOfBox(ctx, input.id),
   resolve: ({ host }, input) => readBox(host, input.id),
   audit: { target: ({ id }) => ({ kind: "box", name: id }) },
@@ -774,7 +766,6 @@ export const boxStats = defineOperation({
   input: z.object({ id: boxId(), history: historyFlag() }),
   output: z.object({ stats: StatsSchema.nullable(), history: z.array(StatSampleSchema).optional() }),
   rest: [{ method: "GET", path: "/api/boxes/:id/stats", query: ["history"] }],
-  cli: "box stats",
   hostFor: (ctx, input) => hostOfBox(ctx, input.id),
   resolve: ({ host }, input) => readBox(host, input.id),
   audit: { target: ({ id }) => ({ kind: "box", name: id }) },

@@ -2144,7 +2144,6 @@
         "x-kind": "read",
         "x-scope": "box:read",
         "x-async": false,
-        "x-cli": "box get",
         "x-mcp": {
           "name": "get_box",
           "toolset": "core"
@@ -2343,7 +2342,6 @@
         "x-kind": "destructive",
         "x-scope": "box:delete",
         "x-async": false,
-        "x-cli": "box rm",
         "x-mcp": {
           "name": "delete_box",
           "toolset": "core"
@@ -3121,7 +3119,6 @@
         "x-kind": "write",
         "x-scope": "box:write",
         "x-async": false,
-        "x-cli": "box update",
         "x-mcp": {
           "name": "update_box",
           "toolset": "core"
@@ -3692,7 +3689,6 @@
         "x-kind": "write",
         "x-scope": "box:write",
         "x-async": false,
-        "x-cli": "box action",
         "x-mcp": {
           "name": "box_action",
           "toolset": "core"
@@ -4263,7 +4259,6 @@
         "x-kind": "write",
         "x-scope": "box:write",
         "x-async": false,
-        "x-cli": "box action",
         "x-mcp": {
           "name": "box_action",
           "toolset": "core"
@@ -4834,7 +4829,6 @@
         "x-kind": "write",
         "x-scope": "box:write",
         "x-async": false,
-        "x-cli": "box action",
         "x-mcp": {
           "name": "box_action",
           "toolset": "core"
@@ -5474,8 +5468,7 @@
         },
         "x-kind": "write",
         "x-scope": "box:write",
-        "x-async": false,
-        "x-cli": "box resize"
+        "x-async": false
       }
     },
     "/api/boxes/{id}/rebuild": {
@@ -6214,7 +6207,6 @@
         "x-kind": "destructive",
         "x-scope": "box:write",
         "x-async": false,
-        "x-cli": "box rebuild",
         "x-mcp": {
           "name": "rebuild_box",
           "toolset": "rebuild"
@@ -6905,7 +6897,6 @@
           ],
           "additionalProperties": false
         },
-        "x-cli": "box move",
         "x-mcp": {
           "name": "move_box",
           "toolset": "move"
@@ -7046,8 +7037,7 @@
         },
         "x-kind": "read",
         "x-scope": "box:read",
-        "x-async": false,
-        "x-cli": "box logs"
+        "x-async": false
       }
     },
     "/api/boxes/{id}/stats": {
@@ -7243,8 +7233,7 @@
         },
         "x-kind": "read",
         "x-scope": "box:read",
-        "x-async": false,
-        "x-cli": "box stats"
+        "x-async": false
       }
     },
     "/api/boxes/{id}/staged": {
@@ -7574,8 +7563,7 @@
         },
         "x-kind": "read",
         "x-scope": "box:read",
-        "x-async": false,
-        "x-cli": "box staged"
+        "x-async": false
       },
       "put": {
         "operationId": "box.staged.set",
@@ -8012,8 +8000,7 @@
         },
         "x-kind": "write",
         "x-scope": "box:write",
-        "x-async": false,
-        "x-cli": "box stage"
+        "x-async": false
       },
       "delete": {
         "operationId": "box.staged.discard",
@@ -8148,8 +8135,7 @@
         },
         "x-kind": "write",
         "x-scope": "box:write",
-        "x-async": false,
-        "x-cli": "box unstage"
+        "x-async": false
       }
     },
     "/api/staged": {
@@ -8759,8 +8745,7 @@
         },
         "x-kind": "read",
         "x-scope": "box:read",
-        "x-async": false,
-        "x-cli": "box staged preview"
+        "x-async": false
       }
     },
     "/api/boxes/{id}/staged/apply": {
@@ -9411,8 +9396,7 @@
         },
         "x-kind": "destructive",
         "x-scope": "box:apply",
-        "x-async": false,
-        "x-cli": "box apply"
+        "x-async": false
       }
     },
     "/api/boxes/{id}/startup-command": {
@@ -10921,7 +10905,6 @@
         "x-kind": "read",
         "x-scope": "box:exec",
         "x-async": false,
-        "x-cli": "exec get",
         "x-mcp": {
           "name": "exec_get",
           "toolset": "core"
@@ -11078,7 +11061,6 @@
         "x-kind": "write",
         "x-scope": "box:exec",
         "x-async": false,
-        "x-cli": "exec kill",
         "x-mcp": {
           "name": "exec_kill",
           "toolset": "core"
@@ -11233,8 +11215,7 @@
         },
         "x-kind": "read",
         "x-scope": "box:exec",
-        "x-async": false,
-        "x-cli": "exec output"
+        "x-async": false
       }
     },
     "/api/boxes/{id}/ports": {
@@ -11387,7 +11368,6 @@
         "x-kind": "read",
         "x-scope": "box:read",
         "x-async": false,
-        "x-cli": "port list",
         "x-mcp": {
           "name": "list_ports",
           "toolset": "network"
@@ -11570,7 +11550,6 @@
         "x-kind": "write",
         "x-scope": "port:expose",
         "x-async": false,
-        "x-cli": "port expose",
         "x-mcp": {
           "name": "expose_port",
           "toolset": "network"
@@ -11723,8 +11702,7 @@
         },
         "x-kind": "destructive",
         "x-scope": "port:expose",
-        "x-async": false,
-        "x-cli": "port unexpose"
+        "x-async": false
       }
     },
     "/api/volumes/{id}/files/content": {
@@ -14036,7 +14014,6 @@
         "x-kind": "read",
         "x-scope": "volume:read",
         "x-async": false,
-        "x-cli": "volume ls",
         "x-mcp": {
           "name": "list_volumes",
           "toolset": "storage"
@@ -14435,7 +14412,6 @@
         "x-kind": "write",
         "x-scope": "volume:write",
         "x-async": false,
-        "x-cli": "volume create",
         "x-mcp": {
           "name": "create_volume",
           "toolset": "storage"
@@ -14788,7 +14764,6 @@
         "x-kind": "read",
         "x-scope": "volume:read",
         "x-async": false,
-        "x-cli": "volume get",
         "x-mcp": {
           "name": "get_volume",
           "toolset": "storage"
@@ -14990,7 +14965,6 @@
         "x-kind": "destructive",
         "x-scope": "volume:write",
         "x-async": false,
-        "x-cli": "volume rm",
         "x-mcp": {
           "name": "delete_volume",
           "toolset": "storage"
@@ -16368,7 +16342,6 @@
         "x-kind": "write",
         "x-scope": "volume:attach",
         "x-async": false,
-        "x-cli": "volume attach",
         "x-mcp": {
           "name": "attach_volume",
           "toolset": "storage"
@@ -17036,7 +17009,6 @@
         "x-kind": "write",
         "x-scope": "volume:attach",
         "x-async": false,
-        "x-cli": "volume detach",
         "x-mcp": {
           "name": "detach_volume",
           "toolset": "storage"
@@ -17399,7 +17371,6 @@
         "x-kind": "write",
         "x-scope": "volume:read",
         "x-async": false,
-        "x-cli": "volume usage",
         "x-mcp": {
           "name": "measure_volume",
           "toolset": "storage"
@@ -17808,7 +17779,6 @@
         "x-kind": "write",
         "x-scope": "volume:limit",
         "x-async": false,
-        "x-cli": "volume limits",
         "x-mcp": {
           "name": "set_volume_limits",
           "toolset": "storage"
@@ -18576,7 +18546,6 @@
         "x-kind": "read",
         "x-scope": "pool:read",
         "x-async": false,
-        "x-cli": "pool ls",
         "x-mcp": {
           "name": "list_pools",
           "toolset": "storage"
@@ -18994,7 +18963,6 @@
         "x-kind": "write",
         "x-scope": "pool:admin",
         "x-async": false,
-        "x-cli": "pool apply",
         "x-mcp": {
           "name": "replace_pools",
           "toolset": "storage"
@@ -19396,7 +19364,6 @@
         "x-kind": "read",
         "x-scope": "box:read",
         "x-async": false,
-        "x-cli": "tool list",
         "x-mcp": {
           "name": "list_tools",
           "toolset": "tools"
@@ -19600,7 +19567,6 @@
           ],
           "additionalProperties": false
         },
-        "x-cli": "tool install",
         "x-mcp": {
           "name": "install_tool",
           "toolset": "tools"
@@ -19804,7 +19770,6 @@
           ],
           "additionalProperties": false
         },
-        "x-cli": "tool upgrade",
         "x-mcp": {
           "name": "upgrade_tool",
           "toolset": "tools"
@@ -20000,7 +19965,6 @@
           ],
           "additionalProperties": false
         },
-        "x-cli": "tool uninstall",
         "x-mcp": {
           "name": "uninstall_tool",
           "toolset": "tools"
@@ -20193,7 +20157,6 @@
           ],
           "additionalProperties": false
         },
-        "x-cli": "tool reconcile",
         "x-mcp": {
           "name": "reconcile_tools",
           "toolset": "tools"
@@ -21041,8 +21004,7 @@
         },
         "x-kind": "read",
         "x-scope": "secret:manage",
-        "x-async": false,
-        "x-cli": "secret ls"
+        "x-async": false
       }
     },
     "/api/secrets/{name}": {
@@ -21232,8 +21194,7 @@
         },
         "x-kind": "write",
         "x-scope": "secret:manage",
-        "x-async": false,
-        "x-cli": "secret set"
+        "x-async": false
       },
       "delete": {
         "operationId": "secret.delete",
@@ -21397,8 +21358,7 @@
         },
         "x-kind": "destructive",
         "x-scope": "secret:manage",
-        "x-async": false,
-        "x-cli": "secret rm"
+        "x-async": false
       }
     },
     "/api/ssh-keys": {
@@ -21548,8 +21508,7 @@
         },
         "x-kind": "read",
         "x-scope": "sshkey:manage",
-        "x-async": false,
-        "x-cli": "ssh-key ls"
+        "x-async": false
       },
       "post": {
         "operationId": "sshkey.add",
@@ -21740,8 +21699,7 @@
         },
         "x-kind": "write",
         "x-scope": "sshkey:manage",
-        "x-async": false,
-        "x-cli": "ssh-key add"
+        "x-async": false
       }
     },
     "/api/ssh-keys/{id}": {
@@ -21917,8 +21875,7 @@
         },
         "x-kind": "destructive",
         "x-scope": "sshkey:manage",
-        "x-async": false,
-        "x-cli": "ssh-key rm"
+        "x-async": false
       }
     },
     "/api/boxes/{id}/sessions": {
@@ -23031,8 +22988,7 @@
         },
         "x-kind": "read",
         "x-scope": "snapshot:read",
-        "x-async": false,
-        "x-cli": "snapshot list"
+        "x-async": false
       }
     },
     "/api/boxes/{id}/snapshots": {
@@ -23232,8 +23188,7 @@
             "snapshot"
           ],
           "additionalProperties": false
-        },
-        "x-cli": "snapshot create"
+        }
       }
     },
     "/api/snapshots/{ref}/boxes": {
@@ -23917,8 +23872,7 @@
         },
         "x-kind": "write",
         "x-scope": "box:write",
-        "x-async": false,
-        "x-cli": "snapshot fork"
+        "x-async": false
       }
     },
     "/api/snapshots/{ref}": {
@@ -24075,8 +24029,7 @@
         },
         "x-kind": "destructive",
         "x-scope": "snapshot:delete",
-        "x-async": false,
-        "x-cli": "snapshot rm"
+        "x-async": false
       }
     },
     "/api/checkpoints": {
@@ -24444,8 +24397,7 @@
         },
         "x-kind": "read",
         "x-scope": "checkpoint:read",
-        "x-async": false,
-        "x-cli": "checkpoint list"
+        "x-async": false
       }
     },
     "/api/checkpoints/usage": {
@@ -24586,8 +24538,7 @@
         },
         "x-kind": "read",
         "x-scope": "checkpoint:usage",
-        "x-async": false,
-        "x-cli": "checkpoint usage"
+        "x-async": false
       }
     },
     "/api/checkpoints/{id}": {
@@ -24971,8 +24922,7 @@
         },
         "x-kind": "read",
         "x-scope": "checkpoint:read",
-        "x-async": false,
-        "x-cli": "checkpoint get"
+        "x-async": false
       },
       "patch": {
         "operationId": "checkpoint.update",
@@ -25407,8 +25357,7 @@
             "checkpoint"
           ],
           "additionalProperties": false
-        },
-        "x-cli": "checkpoint update"
+        }
       },
       "delete": {
         "operationId": "checkpoint.delete",
@@ -25565,8 +25514,7 @@
             "ok"
           ],
           "additionalProperties": false
-        },
-        "x-cli": "checkpoint rm"
+        }
       }
     },
     "/api/boxes/{id}/checkpoints": {
@@ -26042,8 +25990,7 @@
             "checkpoint"
           ],
           "additionalProperties": false
-        },
-        "x-cli": "checkpoint create"
+        }
       }
     },
     "/api/checkpoints/{id}/fork": {
@@ -26702,8 +26649,7 @@
             "box"
           ],
           "additionalProperties": false
-        },
-        "x-cli": "checkpoint fork"
+        }
       }
     },
     "/api/boxes/{id}/rollback": {
@@ -27392,8 +27338,7 @@
             "safety"
           ],
           "additionalProperties": false
-        },
-        "x-cli": "box rollback"
+        }
       },
       "get": {
         "operationId": "box.rollback.get",
@@ -27613,8 +27558,7 @@
         },
         "x-kind": "read",
         "x-scope": "checkpoint:read",
-        "x-async": false,
-        "x-cli": "box rollback-status"
+        "x-async": false
       }
     },
     "/api/rollbacks": {
@@ -28041,8 +27985,7 @@
             "removed"
           ],
           "additionalProperties": false
-        },
-        "x-cli": "box rollback-confirm"
+        }
       }
     },
     "/api/boxes/{id}/rollback/undo": {
@@ -28686,8 +28629,7 @@
             "box"
           ],
           "additionalProperties": false
-        },
-        "x-cli": "box rollback-undo"
+        }
       }
     },
     "/api/checkpoints/{id}/export": {
@@ -28914,7 +28856,6 @@
           ],
           "additionalProperties": false
         },
-        "x-cli": "checkpoint export",
         "x-mcp": {
           "name": "export_checkpoint",
           "toolset": "storage"
@@ -29361,7 +29302,6 @@
           ],
           "additionalProperties": false
         },
-        "x-cli": "checkpoint import",
         "x-mcp": {
           "name": "import_checkpoint",
           "toolset": "storage"
@@ -30077,7 +30017,6 @@
         "x-kind": "read",
         "x-scope": "checkpoint:schedule",
         "x-async": false,
-        "x-cli": "checkpoint schedule",
         "x-mcp": {
           "name": "get_checkpoint_schedule",
           "toolset": "storage"
@@ -30371,7 +30310,6 @@
         "x-kind": "write",
         "x-scope": "checkpoint:schedule",
         "x-async": false,
-        "x-cli": "checkpoint schedule-set",
         "x-mcp": {
           "name": "set_checkpoint_schedule",
           "toolset": "storage"
@@ -30511,7 +30449,6 @@
         "x-kind": "write",
         "x-scope": "checkpoint:schedule",
         "x-async": false,
-        "x-cli": "checkpoint schedule-clear",
         "x-mcp": {
           "name": "clear_checkpoint_schedule",
           "toolset": "storage"
@@ -34760,7 +34697,6 @@
         "x-kind": "read",
         "x-scope": "template:read",
         "x-async": false,
-        "x-cli": "template list",
         "x-mcp": {
           "name": "list_templates",
           "toolset": "tools"
@@ -35200,8 +35136,7 @@
         },
         "x-kind": "write",
         "x-scope": "template:write",
-        "x-async": false,
-        "x-cli": "template promote"
+        "x-async": false
       }
     },
     "/api/boxes/{id}/template": {
@@ -35410,7 +35345,6 @@
           ],
           "additionalProperties": false
         },
-        "x-cli": "template save",
         "x-mcp": {
           "name": "save_template",
           "toolset": "tools"
@@ -36293,8 +36227,7 @@
         },
         "x-kind": "destructive",
         "x-scope": "template:delete",
-        "x-async": false,
-        "x-cli": "template rm"
+        "x-async": false
       }
     },
     "/api/templates/{ref}/rebuild": {
@@ -36649,8 +36582,7 @@
             "ref"
           ],
           "additionalProperties": false
-        },
-        "x-cli": "template build"
+        }
       }
     },
     "/api/templates/{ref}/sync": {
@@ -39255,8 +39187,7 @@
         },
         "x-kind": "read",
         "x-scope": "token:manage",
-        "x-async": false,
-        "x-cli": "token list"
+        "x-async": false
       },
       "post": {
         "operationId": "token.create",
@@ -40316,8 +40247,7 @@
         },
         "x-kind": "destructive",
         "x-scope": "token:manage",
-        "x-async": false,
-        "x-cli": "token revoke"
+        "x-async": false
       }
     },
     "/api/tokens/{id}/record": {
@@ -41182,7 +41112,6 @@
         "x-kind": "read",
         "x-scope": "host:manage",
         "x-async": false,
-        "x-cli": "host list",
         "x-mcp": {
           "name": "list_hosts",
           "toolset": "meta"
@@ -41541,7 +41470,6 @@
         "x-kind": "write",
         "x-scope": "host:manage",
         "x-async": false,
-        "x-cli": "host add",
         "x-mcp": {
           "name": "add_host",
           "toolset": "meta"
@@ -41755,7 +41683,6 @@
         "x-kind": "read",
         "x-scope": "host:manage",
         "x-async": false,
-        "x-cli": "host usage",
         "x-mcp": {
           "name": "get_host_usage",
           "toolset": "meta"
@@ -42477,7 +42404,6 @@
         "x-kind": "write",
         "x-scope": "host:manage",
         "x-async": false,
-        "x-cli": "host test",
         "x-mcp": {
           "name": "test_host",
           "toolset": "meta"
@@ -43134,7 +43060,6 @@
         "x-kind": "destructive",
         "x-scope": "host:manage",
         "x-async": false,
-        "x-cli": "host remove",
         "x-mcp": {
           "name": "remove_host",
           "toolset": "meta"
@@ -43817,7 +43742,6 @@
         "x-kind": "read",
         "x-scope": "notify:manage",
         "x-async": false,
-        "x-cli": "notify channel ls",
         "x-mcp": {
           "name": "list_notify_channels",
           "toolset": "meta"
@@ -44180,7 +44104,6 @@
         "x-kind": "write",
         "x-scope": "notify:manage",
         "x-async": false,
-        "x-cli": "notify channel set",
         "x-mcp": {
           "name": "set_notify_channel",
           "toolset": "meta"
@@ -44322,7 +44245,6 @@
         "x-kind": "destructive",
         "x-scope": "notify:manage",
         "x-async": false,
-        "x-cli": "notify channel rm",
         "x-mcp": {
           "name": "delete_notify_channel",
           "toolset": "meta"
@@ -44493,7 +44415,6 @@
         "x-kind": "write",
         "x-scope": "notify:manage",
         "x-async": false,
-        "x-cli": "notify channel test",
         "x-mcp": {
           "name": "test_notify_channel",
           "toolset": "meta"
@@ -44707,7 +44628,6 @@
         "x-kind": "read",
         "x-scope": "notify:manage",
         "x-async": false,
-        "x-cli": "notify deliveries",
         "x-mcp": {
           "name": "list_notify_deliveries",
           "toolset": "meta"

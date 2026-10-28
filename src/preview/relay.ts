@@ -11,7 +11,8 @@ import { log, logEnabled } from "../lib/logger";
 import { msg } from "../lib/messages";
 import type { ExecSession } from "../runtime";
 import type { Box } from "../services/box-model";
-import { placeRelay, relayArgv } from "./relay-binary";
+import { relayArgv } from "./relay-binary";
+import { type RelayKind, RelayPlacements } from "./relay-placement";
 
 /**
  * The relay that runs inside a box as `dev`. It connects to the port on the box's loopback, answers `ok` or `err <why>` on
@@ -333,45 +334,8 @@ async function openBridge(host: HostCtx, boxId: string, port: number): Promise<B
   return startRelay(host, spec.id, containerId, spec.template.digest, port);
 }
 
-/** The two ways a preview relay runs in a box: the placed static binary, or the python3 script it falls back to. */
-type RelayKind = "binary" | "python3";
-
-/** Completed placements and rejected binaries, scoped to their engine and container. */
-const placedRelays = new Map<string, string>();
-const relayRejected = new Set<string>();
-/** The implementation a container's relay settled on, which the debug line below reports once per container. */
-const relayChosen = new Map<string, RelayKind>();
-/** Active placements are shared by all first connections and removed when the write settles. */
-const placingRelays = new Map<string, Promise<string | null>>();
-/** Image IDs are immutable; tags can point at different architectures on different engines or after a pull. */
-const imageArchs = new Map<string, string | null>();
-const CACHE_LIMIT = 1024;
-
-function trimRelayCaches(): void {
-  for (const cache of [placedRelays, relayRejected, relayChosen, imageArchs]) {
-    while (cache.size > CACHE_LIMIT) {
-      const oldest = cache.keys().next().value;
-      if (oldest === undefined) break;
-      cache.delete(oldest);
-    }
-  }
-}
-
-/** Reads the container's actual image ID for legacy specs without a digest, never its mutable template tag. */
-async function archOf(host: HostCtx, containerId: string, imageId: string | null): Promise<string | undefined> {
-  try {
-    const image = imageId ?? (await host.runtime.inspectContainer(containerId)).imageId;
-    const key = `${host.host.id}:${image}`;
-    if (imageArchs.has(key)) return imageArchs.get(key) ?? undefined;
-    const arch = (await host.runtime.inspectImage(image)).arch;
-    const known = arch === "" || arch === "unknown" ? null : arch;
-    imageArchs.set(key, known);
-    trimRelayCaches();
-    return known ?? undefined;
-  } catch {
-    return undefined;
-  }
-}
+/** What this process remembers about the containers it has placed a relay in. See `RelayPlacements`. */
+const placements = new RelayPlacements();
 
 /** A wrapper shell can start successfully while its child cannot execute, so success includes the relay handshake. */
 async function connectRelay(started: Promise<ExecSession>): Promise<Bridged> {
@@ -393,10 +357,9 @@ async function startRelay(
   imageId: string | null,
   port: number,
 ): Promise<Bridged> {
-  const key = `${host.host.id}:${containerId}`;
-  if (!relayRejected.has(key)) {
+  if (!placements.isRejected(host, containerId)) {
     for (let attempt = 0; attempt < 2; attempt += 1) {
-      const placed = await place(host, containerId, imageId, key);
+      const placed = await placements.place(host, containerId, imageId);
       if (placed === null) break;
       try {
         const bridged = await connectRelay(
@@ -408,64 +371,34 @@ async function startRelay(
             tty: false,
           }),
         );
-        noteRelay(host, key, boxId, port, "binary");
+        noteRelay(host, containerId, boxId, port, "binary");
         return bridged;
       } catch (error) {
         // A valid err line means the relay works, but the app's port is unavailable. Retrying cannot fix that.
         if (error instanceof AppError && error.key === "preview_upstream_failed") {
-          noteRelay(host, key, boxId, port, "binary");
+          noteRelay(host, containerId, boxId, port, "binary");
           throw error;
         }
-        placedRelays.delete(key);
+        placements.forget(host, containerId);
       }
     }
-    relayRejected.add(key);
-    trimRelayCaches();
+    placements.reject(host, containerId);
   }
   const bridged = await connectRelay(runScript(host, containerId, port));
-  noteRelay(host, key, boxId, port, "python3");
+  noteRelay(host, containerId, boxId, port, "python3");
   return bridged;
 }
 
 /**
  * Says once per container which relay implementation its preview traffic actually uses. Every later connection to the
  * same engine and container stays silent, and so does a repeated answer for the same implementation; a container that
- * is rebuilt under the same box id, or a binary that fails and falls back, is a new line. The key is the one the
- * placement caches already use, so a connection that is already silent pays no string work, and the fields are built
- * only when a debug line would be written.
+ * is rebuilt under the same box id, or a binary that fails and falls back, is a new line. The record keys on the same
+ * engine and container the placements do, and the fields are built only when a debug line would be written.
  */
-function noteRelay(host: HostCtx, key: string, boxId: string, port: number, relay: RelayKind): void {
-  if (relayChosen.get(key) === relay) return;
-  relayChosen.set(key, relay);
-  trimRelayCaches();
+function noteRelay(host: HostCtx, containerId: string, boxId: string, port: number, relay: RelayKind): void {
+  if (!placements.select(host, containerId, relay)) return;
   if (!logEnabled("debug")) return;
   log.debug("preview.relay_selected", { box: boxId, port, relay, host: host.host.id });
-}
-
-/** Shares the entire architecture lookup and atomic file write among concurrent connections to one container. */
-async function place(host: HostCtx, containerId: string, imageId: string | null, key: string): Promise<string | null> {
-  const pending = placingRelays.get(key);
-  if (pending) return pending;
-  const placed = placedRelays.get(key);
-  if (placed !== undefined) return placed;
-  const work = (async () => {
-    try {
-      const relay = placeRelay(await archOf(host, containerId, imageId));
-      if (relay === null) return null;
-      await host.runtime.writeContainerFile(containerId, relay.path, relay.bytes, { user: "dev", mode: 0o755 });
-      placedRelays.set(key, relay.path);
-      trimRelayCaches();
-      return relay.path;
-    } catch {
-      return null;
-    }
-  })();
-  placingRelays.set(key, work);
-  try {
-    return await work;
-  } finally {
-    placingRelays.delete(key);
-  }
 }
 
 /** Runs the python3 relay script, the fallback for a box with no usable binary. */

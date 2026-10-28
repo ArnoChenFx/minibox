@@ -403,7 +403,6 @@ export const tokenList = defineOperation({
   input: z.object({}),
   output: z.object({ tokens: z.array(TokenInfoSchema) }),
   rest: [{ method: "GET", path: "/api/tokens" }],
-  cli: "token list",
   run: async ({ tokens }) => ({ tokens: tokens.list() }),
 });
 
@@ -439,7 +438,6 @@ export const tokenRevoke = defineOperation({
     }),
   }),
   rest: [{ method: "DELETE", path: "/api/tokens/:id", query: ["deleteCreated"] }],
-  cli: "token revoke",
   activity: { action: () => "token.revoke", target: (input) => input.id },
   audit: {
     target: ({ id }, _resolved, result) => ({ kind: "token", id, name: result?.token.name ?? id }),

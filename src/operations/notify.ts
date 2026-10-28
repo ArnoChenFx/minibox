@@ -391,7 +391,6 @@ export const notifyChannelList = defineOperation({
   input: z.object({}),
   output: z.object({ channels: z.array(ChannelSchema) }),
   rest: [{ method: "GET", path: "/api/notify/channels" }],
-  cli: "notify channel ls",
   mcp: {
     toolset: "meta",
     name: "list_notify_channels",
@@ -415,7 +414,6 @@ export const notifyChannelSet = defineOperation({
   input: ChannelInput,
   output: ChannelSetOutput,
   rest: [{ method: "PUT", path: "/api/notify/channels/:id", body: true }],
-  cli: "notify channel set",
   mcp: {
     toolset: "meta",
     name: "set_notify_channel",
@@ -450,7 +448,6 @@ export const notifyChannelDelete = defineOperation({
   input: z.object({ id: channelId() }),
   output: z.object({ id: z.string() }),
   rest: [{ method: "DELETE", path: "/api/notify/channels/:id" }],
-  cli: "notify channel rm",
   mcp: {
     toolset: "meta",
     name: "delete_notify_channel",
@@ -479,7 +476,6 @@ export const notifyChannelTest = defineOperation({
   input: z.object({ id: channelId() }),
   output: TestSchema,
   rest: [{ method: "POST", path: "/api/notify/channels/:id/test" }],
-  cli: "notify channel test",
   mcp: {
     toolset: "meta",
     name: "test_notify_channel",
@@ -512,7 +508,6 @@ export const notifyDeliveryList = defineOperation({
   }),
   output: z.object({ deliveries: z.array(DeliverySchema) }),
   rest: [{ method: "GET", path: "/api/notify/deliveries", query: ["limit"] }],
-  cli: "notify deliveries",
   mcp: {
     toolset: "meta",
     name: "list_notify_deliveries",

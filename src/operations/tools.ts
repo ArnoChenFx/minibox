@@ -79,7 +79,6 @@ export const toolList = defineOperation({
   }),
   output: z.object({ tools: z.array(ToolStatusSchema) }),
   rest: [{ method: "GET", path: "/api/tools", query: ["id"] }],
-  cli: "tool list",
   mcp: {
     toolset: "tools",
     name: "list_tools",
@@ -104,7 +103,6 @@ export const toolInstall = defineOperation({
     installedVersion: z.string().nullable(),
   }),
   rest: [{ method: "POST", path: "/api/boxes/:id/tools/install", body: true, status: 202 }],
-  cli: "tool install",
   mcp: {
     toolset: "tools",
     name: "install_tool",
@@ -136,7 +134,6 @@ export const toolUpgrade = defineOperation({
     installedVersion: z.string().nullable(),
   }),
   rest: [{ method: "POST", path: "/api/boxes/:id/tools/upgrade", body: true, status: 202 }],
-  cli: "tool upgrade",
   mcp: {
     toolset: "tools",
     name: "upgrade_tool",
@@ -167,7 +164,6 @@ export const toolUninstall = defineOperation({
     installedVersion: z.string().nullable(),
   }),
   rest: [{ method: "POST", path: "/api/boxes/:id/tools/uninstall", body: true, status: 202 }],
-  cli: "tool uninstall",
   mcp: {
     toolset: "tools",
     name: "uninstall_tool",
@@ -198,7 +194,6 @@ export const toolReconcile = defineOperation({
     failed: z.array(z.object({ id: z.string(), detail: z.string() })),
   }),
   rest: [{ method: "POST", path: "/api/boxes/:id/tools/reconcile", status: 202 }],
-  cli: "tool reconcile",
   mcp: {
     toolset: "tools",
     name: "reconcile_tools",
