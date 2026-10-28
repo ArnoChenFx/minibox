@@ -18,6 +18,8 @@ export const AGENT_CLOSE = {
   helloTimeout: 4408,
   replaced: 4409,
   silent: 4410,
+  /** Too many sockets were already waiting for a hello, so this one was closed before it was challenged. */
+  tooManyPending: 4411,
   protocolMismatch: 4426,
 } as const;
 

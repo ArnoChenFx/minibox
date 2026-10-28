@@ -35,6 +35,14 @@ export const AGENT_SILENT_MS = 3 * AGENT_HEARTBEAT_MS;
 
 const NOT_CONNECTED = "the agent is not connected";
 
+/**
+ * How many sockets may be open without a verified hello at once, counted across the control plane. Each of them holds a
+ * challenge, a 15 s timer and a descriptor, and none has proved who it is, so the door is a caller's to exhaust. A paired
+ * agent holds one socket at a time and a fleet reconnecting after a restart opens one each, so 64 leaves room for a few
+ * dozen agents retrying at once while a crowd of strangers is refused.
+ */
+export const AGENT_PENDING_MAX = 64;
+
 /** What the hub needs from a WebSocket. The Bun socket fits it; a test passes a recorder. */
 export interface AgentSocket {
   send(text: string): void;
@@ -67,6 +75,8 @@ export interface AgentHubOptions {
   readonly pairing: PairingBook;
   readonly serverVersion: string;
   readonly now?: () => Date;
+  /** How many sockets may wait for a hello at once. Defaults to `AGENT_PENDING_MAX`. */
+  readonly pendingMax?: number;
 }
 
 type Refusal = { readonly code: "auth_failed" | "protocol_mismatch" | "revoked"; readonly message: string };
@@ -103,6 +113,9 @@ function inertHandle(id: string, opened: Promise<unknown>): StreamHandle {
   return { id, opened, input: () => {}, inputEnd: () => {}, cancel: () => {} };
 }
 
+/** The hub's end of a socket it refused before it became a session: nothing arrives, and there is nothing to detach. */
+const NO_SESSION: AgentSession = { receive: () => {}, detach: () => {} };
+
 /**
  * The control plane's side of the agent connections. It verifies each agent's key, keeps one live connection per agent,
  * and carries requests and streams over it. It implements `AgentLink`, so an `AgentRuntime` reaches a host through it.
@@ -114,9 +127,11 @@ export class AgentHub implements AgentLink {
   private readonly seen = new Map<string, string>();
   private readonly listeners = new Set<(event: AgentEvent) => void>();
   private readonly now: () => Date;
+  private readonly pendingMax: number;
 
   constructor(private readonly options: AgentHubOptions) {
     this.now = options.now ?? (() => new Date());
+    this.pendingMax = options.pendingMax ?? AGENT_PENDING_MAX;
   }
 
   /** A pairing code for a host that does not exist yet. */
@@ -164,8 +179,18 @@ export class AgentHub implements AgentLink {
     };
   }
 
-  /** Takes a socket that just opened. The challenge is sent at once, and the socket must answer it with a hello in time. */
+  /**
+   * Takes a socket that just opened. The challenge is sent at once, and the socket must answer it with a hello in time.
+   * A socket that arrives while `pendingMax` others still wait for a hello is closed instead: it never becomes a session,
+   * so it holds no nonce, no timer and no entry in `all`.
+   */
   attach(socket: AgentSocket): AgentSession {
+    const pending = this.pendingCount();
+    if (pending >= this.pendingMax) {
+      log.warn("agent.pending_limit", { pending, max: this.pendingMax });
+      socket.close(AGENT_CLOSE.tooManyPending, "too many sockets waiting for a hello");
+      return NO_SESSION;
+    }
     const session: Session = { socket, nonce: newId(), agentId: null, done: false, timer: undefined };
     this.all.add(session);
     this.send(session, {
@@ -292,6 +317,8 @@ export class AgentHub implements AgentLink {
       });
       return;
     }
+    // From here the session is authenticated, so `pendingCount` no longer counts it: the pending slot is given back
+    // here, at the one moment authentication succeeds, rather than in each of the ending paths below.
     session.agentId = frame.agentId;
     this.seen.set(frame.agentId, this.now().toISOString());
     this.save(frame.agentId, { version: frame.version, protocol: frame.protocol });
@@ -342,6 +369,16 @@ export class AgentHub implements AgentLink {
     this.calls.delete(id);
     if (call.sink && call.opened) call.sink.end(error, exit);
     else call.settle({ ok: false, error: runtimeErrorOf(failureOf(error)) });
+  }
+
+  /**
+   * The sockets open without a verified hello. It is read from `all` rather than kept as a counter, so a session gives its
+   * slot back the moment its hello verifies, and no ending path can leak one or give one back twice.
+   */
+  private pendingCount(): number {
+    let pending = 0;
+    for (const session of this.all) if (session.agentId === null) pending += 1;
+    return pending;
   }
 
   private detach(session: Session): void {

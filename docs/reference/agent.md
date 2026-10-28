@@ -54,7 +54,7 @@ Keep the volume to keep the agent's identity. If the key file is lost, the agent
 
 ## Connection
 
-The agent opens a WebSocket to `/api/agent/connect` on the MiniBox address, using `wss://` for `https://` and `ws://` for `http://`. It proves its identity by signing a challenge that the server sends on each connection with its private key. The server must receive that hello within 15 seconds, or it closes the connection.
+The agent opens a WebSocket to `/api/agent/connect` on the MiniBox address, using `wss://` for `https://` and `ws://` for `http://`. It proves its identity by signing a challenge that the server sends on each connection with its private key. The server must receive that hello within 15 seconds, or it closes the connection. A connection that is not yet authenticated holds one of a limited number of places (`AGENT_PENDING_MAX`, 64), so a flood of sockets that never say hello is refused rather than kept open; an authenticated agent holds no such place.
 
 While connected, the agent sends a heartbeat every 10 seconds. The server closes a connection that stays silent for 30 seconds. After a disconnect, the agent reconnects with exponential backoff, starting at 1 second, doubling to at most 30 seconds, with about 20 percent of jitter either way.
 
@@ -67,6 +67,7 @@ The server closes a connection with one of these codes:
 | `4408` | No valid hello arrived within 15 seconds. |
 | `4409` | A newer connection from the same agent replaced this one. |
 | `4410` | The connection was silent for 30 seconds. |
+| `4411` | Too many connections were already waiting for a hello, so this one was closed without being challenged. |
 | `4426` | The agent speaks another protocol version. Update the image. |
 
 ## Protocol version
