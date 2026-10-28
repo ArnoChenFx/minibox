@@ -133,7 +133,9 @@ async function provisionRoleMountsLocked(
       mounts.push(mountFor(plan.role, kept.engineName));
       continue;
     }
-    if (plan.role === "workspace") {
+    // A leftover volume sits on whatever pool it was made on, so adopting one would put the workspace somewhere other
+    // than the pool this create picked. A create that names no pool for the workspace still adopts it.
+    if (plan.role === "workspace" && !pools.has("workspace")) {
       const legacy = await adoptLegacyWorkspace(host, box.name, box.id, box.createdBy, changes);
       if (legacy) {
         mounts.push(mountFor("workspace", legacy.engineName));
