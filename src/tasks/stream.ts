@@ -1,10 +1,6 @@
-import { FrameBuffer } from "../events/frames";
-import { HEARTBEAT_MS, PENDING_BYTES, PENDING_LIMIT, REPLAY_LIMIT, RETRY_MS } from "../events/stream";
+import { sseStream } from "../events/sse-body";
+import { REPLAY_LIMIT } from "../events/stream";
 import type { TaskStreamEvent } from "./types";
-
-const HEARTBEAT = ": keep-alive\n\n";
-const FRAMES_PER_CHUNK = 100;
-const encoder = new TextEncoder();
 
 export interface TaskEventSource {
   after(taskId: string, after: number, limit: number): TaskStreamEvent[];
@@ -39,57 +35,33 @@ const resetFrame = (after: number) => `event: reset\ndata: ${JSON.stringify({ af
  * writes do not extend it.
  */
 export function taskStream(options: TaskStreamOptions): ReadableStream<Uint8Array> {
-  const { taskId, store, signal } = options;
+  const { taskId, store } = options;
   const replayLimit = options.replayLimit ?? REPLAY_LIMIT;
-  const frames = new FrameBuffer({
-    frames: options.pendingLimit ?? PENDING_LIMIT,
-    bytes: options.pendingBytes ?? PENDING_BYTES,
-  });
   const sent = new Set<number>();
   let last = 0;
-  let done = false;
-  let cancelled = false;
-  let wake: (() => void) | undefined;
-  let unsubscribe: (() => void) | undefined;
-  let heartbeat: ReturnType<typeof setInterval> | undefined;
 
-  const notify = () => {
-    wake?.();
-    wake = undefined;
-  };
+  return sseStream(options, (shell) => {
+    const { frames, notify } = shell;
 
-  const queueEvent = (event: TaskStreamEvent) => {
-    if (sent.has(event.seq)) return;
-    sent.add(event.seq);
-    last = Math.max(last, event.seq);
-    if (!frames.push(eventFrame(event))) {
-      frames.clear();
-      frames.force(resetFrame(last));
-    }
-    notify();
-  };
+    const queueEvent = (event: TaskStreamEvent) => {
+      if (sent.has(event.seq)) return;
+      sent.add(event.seq);
+      last = Math.max(last, event.seq);
+      if (!frames.push(eventFrame(event))) {
+        frames.clear();
+        frames.force(resetFrame(last));
+      }
+      notify();
+    };
 
-  const onLive = (event: TaskStreamEvent) => {
-    if (done || event.taskId !== taskId || event.seq <= last) return;
-    queueEvent(event);
-  };
+    const onLive = (event: TaskStreamEvent) => {
+      if (shell.done || event.taskId !== taskId || event.seq <= last) return;
+      queueEvent(event);
+    };
 
-  const stop = () => {
-    if (done) return;
-    done = true;
-    unsubscribe?.();
-    unsubscribe = undefined;
-    clearInterval(heartbeat);
-    signal?.removeEventListener("abort", stop);
-    options.onEnd?.();
-    notify();
-  };
-
-  return new ReadableStream<Uint8Array>({
-    start() {
-      try {
-        unsubscribe = options.subscribe(onLive);
-        frames.force(`retry: ${RETRY_MS}\n\n`);
+    return {
+      attach: () => options.subscribe(onLive),
+      begin: () => {
         if (options.after !== undefined) {
           const oldest = store.oldest(taskId);
           const missed = store.after(taskId, options.after, replayLimit + 1);
@@ -97,37 +69,7 @@ export function taskStream(options: TaskStreamOptions): ReadableStream<Uint8Arra
           else for (const event of missed) queueEvent(event);
         }
         last = Math.max(last, store.head(taskId));
-        heartbeat = setInterval(() => {
-          if (frames.push(HEARTBEAT)) notify();
-        }, options.heartbeatMs ?? HEARTBEAT_MS);
-        heartbeat.unref();
-        if (signal?.aborted) stop();
-        else signal?.addEventListener("abort", stop);
-      } catch (e) {
-        stop();
-        throw e;
-      }
-    },
-    async pull(controller) {
-      try {
-        if (frames.length === 0 && !done) {
-          await new Promise<void>((resolve) => {
-            wake = resolve;
-          });
-        }
-        if (done) {
-          if (!cancelled) controller.close();
-          return;
-        }
-        if (frames.length > 0) controller.enqueue(encoder.encode(frames.take(FRAMES_PER_CHUNK).join("")));
-      } catch (e) {
-        stop();
-        throw e;
-      }
-    },
-    cancel() {
-      cancelled = true;
-      stop();
-    },
+      },
+    };
   });
 }
