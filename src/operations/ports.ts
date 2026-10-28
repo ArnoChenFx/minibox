@@ -31,7 +31,6 @@ export const portList = defineOperation({
   input: z.object({ id: boxId() }),
   output: z.object({ ports: z.array(PortSchema) }),
   rest: [{ method: "GET", path: "/api/boxes/:id/ports" }],
-  cli: "port list",
   mcp: {
     toolset: "network",
     name: "list_ports",
@@ -56,7 +55,6 @@ export const portExpose = defineOperation({
   input: z.object({ id: boxId(), port: portNumber() }),
   output: z.object({ port: PortSchema }),
   rest: [{ method: "POST", path: "/api/boxes/:id/ports", body: true }],
-  cli: "port expose",
   mcp: {
     toolset: "network",
     name: "expose_port",
@@ -83,7 +81,6 @@ export const portUnexpose = defineOperation({
   input: z.object({ id: boxId(), port: portNumber() }),
   output: z.object({ port: z.number().int() }),
   rest: [{ method: "DELETE", path: "/api/boxes/:id/ports/:port" }],
-  cli: "port unexpose",
   hostFor: (ctx, input) => hostOfBox(ctx, input.id),
   resolve: ({ host }, input) => getBox(host, input.id),
   activity: { action: () => "port.unexpose", target: (_input, box) => box.name },

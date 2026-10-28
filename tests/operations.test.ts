@@ -8,6 +8,7 @@ import { ActivityLog } from "../src/activity";
 import { generateKeyPairPem } from "../src/agent/identity";
 import { AGENT_PROTOCOL } from "../src/agent/protocol";
 import type { App } from "../src/app";
+import { runCli } from "../src/cli";
 import type { RawBody } from "../src/lib/body";
 import { isByteStream } from "../src/lib/body";
 import { AppError } from "../src/lib/errors";
@@ -32,6 +33,59 @@ import type { FakeRuntime } from "./support/fake-runtime";
 import { type S3Double, startS3Double } from "./support/s3-double";
 
 const OWNER: Principal = { type: "owner", id: "owner", name: "owner" };
+
+const PATH_PARAM = /:[A-Za-z]\w*/g;
+
+/**
+ * Every command `src/cli.ts` dispatches, with the arguments that reach its REST call. The registry's `cli` field names
+ * one of these, so a `cli:` value with no entry here is metadata for a command that does not exist. A family with no
+ * subcommand (`backup`, `exec`) is keyed by the family alone; `box startup-command get` is the three-level form.
+ */
+const CLI_COMMANDS: Record<string, { argv: string[]; stdin?: string }> = {
+  backup: { argv: [] },
+  "backup ls": { argv: [] },
+  "backup rm": { argv: ["backup-1"] },
+  "box create": { argv: ["alpha"] },
+  "box list": { argv: [] },
+  "box startup-command get": { argv: ["alpha"] },
+  "box startup-command rm": { argv: ["alpha"] },
+  "box startup-command run": { argv: ["alpha"] },
+  "box startup-command set": { argv: ["alpha", "--stdin"], stdin: "echo ready\n" },
+  "checkpoint copy": { argv: ["checkpoint-1", "--host", "lab"] },
+  exec: { argv: ["alpha", "--", "true"] },
+  "files cp": { argv: ["volume-1", "from.txt", "to.txt"] },
+  "files download": { argv: ["volume-1"] },
+  "files ls": { argv: ["volume-1"] },
+  "files read": { argv: ["volume-1", "notes.txt"] },
+  "files upload": { argv: ["volume-1"] },
+  "files write": { argv: ["volume-1", "notes.txt", "--content", "hello"] },
+  "image pull": { argv: ["alpine:3.20"] },
+  "session close": { argv: ["alpha", "work"] },
+  "session ls": { argv: ["alpha"] },
+  "session read": { argv: ["alpha", "work"] },
+  "session send": { argv: ["alpha", "work", "--text", "echo hi"] },
+  "session start": { argv: ["alpha", "work"] },
+  "template build-official": { argv: ["node"] },
+  "template create": { argv: ["sample", "--repo", "https://example.com/sample.git"] },
+  "template edit": { argv: ["sample", "--description", "Ours"] },
+  "template fork": { argv: ["sample", "copy"] },
+  "template get": { argv: ["sample"] },
+  "template rebuild": { argv: ["sample"] },
+  "template sync": { argv: ["sample", "--host", "lab"] },
+  "token create": { argv: ["ci"] },
+  "token delete": { argv: ["token-1"] },
+  "token prune": { argv: [] },
+  "tool custom delete": { argv: ["tool-1"] },
+  "tool custom list": { argv: [] },
+  "tool custom put": { argv: ["tool-1", "--stdin"], stdin: `{"id":"tool-1"}` },
+  "trash empty": { argv: ["--yes"] },
+  "trash ls": { argv: [] },
+  "trash purge": { argv: ["entry-1"] },
+  "trash restore": { argv: ["entry-1"] },
+  "volume delete": { argv: ["volume-1", "--yes"] },
+  "volume prune": { argv: [] },
+  "volume snapshot": { argv: ["volume-1"] },
+};
 
 /**
  * The executor's own contract, not production policy: a hook decides who acts, and the executor honours the answer.
@@ -1312,11 +1366,62 @@ describe("projections", () => {
   test("each CLI command names one operation, and the registry keeps the names unique", () => {
     const named = OPERATIONS.filter((operation) => operation.cli);
     const byCommand = new Map(named.map((operation) => [operation.cli as string, operation]));
-    expect(byCommand.get("box rm")?.name).toBe("box.delete");
-    expect(byCommand.get("snapshot fork")?.name).toBe("snapshot.fork");
+    expect(byCommand.get("box list")?.name).toBe("box.list");
+    expect(byCommand.get("template fork")?.name).toBe("template.fork");
     // A duplicate command name is a registry problem, not something the CLI can resolve at run time.
     expect(registryProblems(OPERATIONS)).toEqual([]);
-    const twin = { ...opNamed("box.list"), cli: "box rm" };
-    expect(registryProblems([...OPERATIONS, twin]).join("\n")).toContain("duplicate CLI command: box rm");
+    const twin = { ...opNamed("box.list"), cli: "box create" };
+    expect(registryProblems([...OPERATIONS, twin]).join("\n")).toContain("duplicate CLI command: box create");
   });
+
+  test("every CLI command the metadata names is one the CLI actually dispatches", () => {
+    // A name the CLI does not serve is worse than no metadata: `x-cli` promises a command that does not exist.
+    const declared = OPERATIONS.filter((operation) => operation.cli).map((operation) => operation.cli as string);
+    expect(declared.filter((command) => !(command in CLI_COMMANDS))).toEqual([]);
+  });
+
+  test.each(Object.entries(CLI_COMMANDS))(
+    "the CLI reaches the operation it is named after: minibox %s",
+    async (command, invocation) => {
+      const operation = OPERATIONS.find((op) => op.cli === command);
+      expect(operation).toBeDefined();
+      // The CLI's REST client would otherwise need a server, and a task it started would poll for its end.
+      const calls: { method: string; path: string }[] = [];
+      const realFetch = globalThis.fetch;
+      globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+        const url = new URL(String(input));
+        calls.push({ method: (init?.method ?? "GET").toUpperCase(), path: url.pathname });
+        const accepted = JSON.stringify({ taskId: "task", status: "succeeded", id: "id", revision: 1 });
+        return new Response(accepted, { status: 200, headers: { "content-type": "application/json" } });
+      }) as typeof fetch;
+      try {
+        await runCli(
+          [...command.split(" "), ...invocation.argv],
+          {
+            MINIBOX_ACCESS_KEY: "test",
+            MINIBOX_URL: "http://127.0.0.1:9",
+            MINIBOX_BACKUP_PASSPHRASE: "test-passphrase",
+            HOME: "/nonexistent",
+          },
+          {
+            stdout: () => {},
+            stderr: () => {},
+            stdoutBytes: () => {},
+            stdinBytes: async function* () {
+              if (invocation.stdin) yield new TextEncoder().encode(invocation.stdin);
+            },
+          },
+        );
+      } finally {
+        globalThis.fetch = realFetch;
+      }
+      // The command must send the request its operation binds, not merely send some request.
+      const sent = calls.map((call) => `${call.method} ${call.path}`);
+      const bound = operation?.rest.map(
+        (binding) =>
+          new RegExp(`^${binding.method} ${binding.path.replace(PATH_PARAM, "[^/]+").replace(/[.]/g, "\\.")}$`),
+      );
+      expect(sent.filter((call) => bound?.some((pattern) => pattern.test(call)))).not.toEqual([]);
+    },
+  );
 });

@@ -117,7 +117,6 @@ export const checkpointList = defineOperation({
   input: z.object({}),
   output: z.object({ checkpoints: z.array(CheckpointSchema) }),
   rest: [{ method: "GET", path: "/api/checkpoints" }],
-  cli: "checkpoint list",
   run: async ({ host, principal, allHosts }) => {
     const checkpoints = await fromEveryHost(allHosts?.() ?? [host], listCheckpoints);
     if (principal.type === "owner") return { checkpoints };
@@ -144,7 +143,6 @@ export const checkpointUsage = defineOperation({
   input: z.object({}),
   output: CheckpointUsageSchema,
   rest: [{ method: "GET", path: "/api/checkpoints/usage" }],
-  cli: "checkpoint usage",
   run: async ({ host }) => usageOf(host),
 });
 
@@ -158,7 +156,6 @@ export const checkpointGet = defineOperation({
   input: z.object({ id: checkpointId() }),
   output: z.object({ checkpoint: CheckpointSchema }),
   rest: [{ method: "GET", path: "/api/checkpoints/:id" }],
-  cli: "checkpoint get",
   hostFor: (ctx, input) => hostOfCheckpoint(ctx, input.id),
   resolve: ({ host }, input) => getCheckpoint(host, input.id),
   run: async (_ctx, _input, checkpoint) => ({ checkpoint }),
@@ -175,7 +172,6 @@ export const checkpointCreate = defineOperation({
   input: checkpointCreateInput,
   output: z.object({ checkpoint: CheckpointSchema }),
   rest: [{ method: "POST", path: "/api/boxes/:id/checkpoints", body: true, status: 202 }],
-  cli: "checkpoint create",
   hostFor: (ctx, input) => hostOfBox(ctx, input.id),
   resolve: ({ host }, input) => getBox(host, input.id),
   beforeTask: async (ctx, input, box) => {
@@ -215,7 +211,6 @@ export const checkpointFork = defineOperation({
   }),
   output: z.object({ box: BoxSchema }),
   rest: [{ method: "POST", path: "/api/checkpoints/:id/fork", body: true, status: 202 }],
-  cli: "checkpoint fork",
   precondition: ({ host }, input) => assertNewBox(host, input),
   hostFor: (ctx, input) => hostOfCheckpoint(ctx, input.id),
   resolve: ({ host }, input) => getCheckpoint(host, input.id),
@@ -266,7 +261,6 @@ export const checkpointUpdate = defineOperation({
   }),
   output: z.object({ checkpoint: CheckpointSchema }),
   rest: [{ method: "PATCH", path: "/api/checkpoints/:id", body: true, status: 202 }],
-  cli: "checkpoint update",
   hostFor: (ctx, input) => hostOfCheckpoint(ctx, input.id),
   resolve: ({ host }, input) => getCheckpoint(host, input.id),
   beforeTask: async (_ctx, _input, checkpoint) => {
@@ -291,7 +285,6 @@ export const checkpointDelete = defineOperation({
   input: z.object({ id: checkpointId() }),
   output: OkSchema,
   rest: [{ method: "DELETE", path: "/api/checkpoints/:id", status: 202 }],
-  cli: "checkpoint rm",
   hostFor: (ctx, input) => hostOfCheckpoint(ctx, input.id),
   resolve: ({ host }, input) => getCheckpoint(host, input.id),
   beforeTask: async ({ host }, _input, checkpoint) => {
@@ -329,7 +322,6 @@ export const boxRollback = defineOperation({
     }),
   }),
   rest: [{ method: "POST", path: "/api/boxes/:id/rollback", body: true, ifMatch: true, status: 202 }],
-  cli: "box rollback",
   precondition: (ctx) => assertCanWrite(ctx),
   hostFor: (ctx, input) => hostOfBox(ctx, input.id),
   resolve: ({ host }, input) => getBox(host, input.id),
@@ -367,7 +359,6 @@ export const boxRollbackGet = defineOperation({
   input: z.object({ id: boxId() }),
   output: z.object({ rollback: PendingRollbackSchema.nullable() }),
   rest: [{ method: "GET", path: "/api/boxes/:id/rollback" }],
-  cli: "box rollback-status",
   hostFor: (ctx, input) => hostOfBox(ctx, input.id),
   resolve: ({ host }, input) => getBox(host, input.id),
   run: async ({ host }, _input, box) => ({ rollback: pendingRollbackView(host, box.boxId) }),
@@ -454,7 +445,6 @@ export const boxRollbackConfirm = defineOperation({
   }),
   output: z.object({ removed: replacedVolumes }),
   rest: [{ method: "POST", path: "/api/boxes/:id/rollback/confirm", body: true, status: 202 }],
-  cli: "box rollback-confirm",
   hostFor: (ctx, input) => hostOfBox(ctx, input.id),
   resolve: ({ host }, input) => getBox(host, input.id),
   beforeTask: async ({ host }, input, box) => {
@@ -486,7 +476,6 @@ export const boxRollbackUndo = defineOperation({
   }),
   output: z.object({ box: BoxSchema }),
   rest: [{ method: "POST", path: "/api/boxes/:id/rollback/undo", body: true, ifMatch: true, status: 202 }],
-  cli: "box rollback-undo",
   precondition: (ctx) => assertCanWrite(ctx),
   hostFor: (ctx, input) => hostOfBox(ctx, input.id),
   resolve: ({ host }, input) => getBox(host, input.id),
