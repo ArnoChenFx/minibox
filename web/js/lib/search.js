@@ -17,9 +17,6 @@ const matchesTerms = (terms, fields) => {
   return terms.every((term) => text.some((field) => field.includes(term)));
 };
 
-/** Whether the fields match the query. Missing and empty fields are skipped. */
-export const matchesSearch = (query, fields) => matchesTerms(searchTerms(query), fields);
-
 /** The items that match the query. `fieldsOf` lists the strings each item is searched by. */
 export function filterBySearch(items, query, fieldsOf) {
   const terms = searchTerms(query);

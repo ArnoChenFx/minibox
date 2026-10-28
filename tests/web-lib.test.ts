@@ -268,17 +268,23 @@ describe("format helpers", () => {
 });
 
 describe("search matching", () => {
+  /** Whether one item with these fields survives the query: the same question `filterBySearch` answers for a list. */
+  const HIT = `const hit = (query, fields) => search.filterBySearch([fields], query, (f) => f).length === 1;`;
+
   test("a blank query matches every item, and a term matches any field whatever its case", () => {
     expect(
       inBrowser(
         { languages: ["en-US"] },
-        `({
-          blank: search.matchesSearch("   ", ["alpha"]),
-          noFields: search.matchesSearch("", []),
-          caseless: search.matchesSearch("VOL_AB", ["vol_abc"]),
-          anyField: search.matchesSearch("pool", ["alpha", "local pool"]),
-          miss: search.matchesSearch("zzz", ["alpha"]),
-        })`,
+        `(() => {
+          ${HIT}
+          return {
+            blank: hit("   ", ["alpha"]),
+            noFields: hit("", []),
+            caseless: hit("VOL_AB", ["vol_abc"]),
+            anyField: hit("pool", ["alpha", "local pool"]),
+            miss: hit("zzz", ["alpha"]),
+          };
+        })()`,
       ),
     ).toEqual({ blank: true, noFields: true, caseless: true, anyField: true, miss: false });
   });
@@ -287,11 +293,14 @@ describe("search matching", () => {
     expect(
       inBrowser(
         { languages: ["en-US"] },
-        `({
-          both: search.matchesSearch("dev workspace", ["dev", "/workspace"]),
-          spaced: search.matchesSearch("  Dev   WORK ", ["dev", "/workspace"]),
-          oneMissing: search.matchesSearch("dev missing", ["dev", "/workspace"]),
-        })`,
+        `(() => {
+          ${HIT}
+          return {
+            both: hit("dev workspace", ["dev", "/workspace"]),
+            spaced: hit("  Dev   WORK ", ["dev", "/workspace"]),
+            oneMissing: hit("dev missing", ["dev", "/workspace"]),
+          };
+        })()`,
       ),
     ).toEqual({ both: true, spaced: true, oneMissing: false });
   });
@@ -300,10 +309,13 @@ describe("search matching", () => {
     expect(
       inBrowser(
         { languages: ["en-US"] },
-        `({
-          nothing: search.matchesSearch("x", [null, undefined, ""]),
-          something: search.matchesSearch("abc", [null, "abc"]),
-        })`,
+        `(() => {
+          ${HIT}
+          return {
+            nothing: hit("x", [null, undefined, ""]),
+            something: hit("abc", [null, "abc"]),
+          };
+        })()`,
       ),
     ).toEqual({ nothing: false, something: true });
   });
@@ -312,7 +324,10 @@ describe("search matching", () => {
     expect(
       inBrowser(
         { languages: ["en-US"] },
-        `({ hit: search.matchesSearch("内置", ["内置模板"]), miss: search.matchesSearch("自定义", ["内置模板"]) })`,
+        `(() => {
+          ${HIT}
+          return { hit: hit("内置", ["内置模板"]), miss: hit("自定义", ["内置模板"]) };
+        })()`,
       ),
     ).toEqual({ hit: true, miss: false });
   });
