@@ -22,13 +22,16 @@ process.on("exit", () => rmSync(DATA_ROOT, { recursive: true, force: true }));
  */
 export function testConfig(overrides: Partial<Config> = {}): Config {
   const labelPrefix = overrides.labelPrefix ?? "mbtest";
+  const dataDir = overrides.dataDir ?? mkdtempSync(join(DATA_ROOT, "app-"));
   memoizeScryptSync();
   return {
     host: "127.0.0.1",
     port: 0,
     accessKey: TEST_KEY,
     accessKeySource: "env",
-    dataDir: mkdtempSync(join(DATA_ROOT, "app-")),
+    dataDir,
+    backupDir: join(dataDir, "backups"),
+    backupKeep: 0,
     dockerSocket: "/nonexistent-minibox-test.sock",
     labelPrefix,
     baseTemplateTag: `${labelPrefix}-template:base`,

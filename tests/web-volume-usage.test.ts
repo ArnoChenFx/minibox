@@ -7,7 +7,6 @@ import {
   levelLabelKey,
   limitDraft,
   limitsBody,
-  trendValues,
   usageSummary,
   type VolumeLimitsView,
   type VolumeUsageView,
@@ -58,16 +57,6 @@ describe("a volume's usage figures in the console", () => {
     expect(fillPercent(9 * MB, 4 * MB)).toBe(100);
     expect(fillPercent(MB, null)).toBeNull();
     expect(fillPercent(null, 4 * MB)).toBeNull();
-  });
-
-  test("the trend is drawn against the limit, or against its own largest point when there is no limit", () => {
-    const points = [
-      { at: "2026-10-22T10:00:00.000Z", bytes: MB },
-      { at: "2026-10-22T10:10:00.000Z", bytes: 2 * MB },
-    ];
-    expect(trendValues(points, 4 * MB)).toEqual([25, 50]);
-    expect(trendValues(points, null)).toEqual([50, 100]);
-    expect(trendValues([{ at: "2026-10-22T10:00:00.000Z", bytes: 0 }], null)).toEqual([0]);
   });
 
   test("the bar's colour and the badge follow the level, and an ok or unknown volume has neither", () => {

@@ -330,6 +330,12 @@ export default {
   "st.agentCopyCode": "复制配对码",
   "st.agentExpires": "只能使用一次，有效至 {time}。",
   "st.agentServer": "Agent 将连接到 {server}。请使用该机器能够访问的地址。",
+  "st.agentInsecure":
+    "此控制台用的是纯 http。只有最初的握手带签名，同一网络里的人可以读到配对码，并在之后注入命令。添加这类宿主机之前，请先把 MiniBox 放到 https 后面。",
+  "st.agentImage": "镜像：{image}",
+  "st.agentImagePinned": "与本 MiniBox 自身版本一致（{tag}）。",
+  "st.agentImageLatest": "当前构建（{version}）不是正式发布版，没有自己的镜像标签，因此命令里用 latest。",
+  "st.agentImageLatestUnknown": "此控制台读不到自己的版本，因此命令里用 latest。升级之后请重新拉取镜像。",
   "st.agentBash": "Linux 或 macOS（bash）",
   "st.agentPowerShell": "Windows（PowerShell）",
   "st.agentCopy": "复制",

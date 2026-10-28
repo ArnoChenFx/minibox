@@ -10,6 +10,22 @@ A box can also have its own agent, which reaches MiniBox with a token that works
 
 Use an agent token for each agent, not the access key. The access key is the owner's key. An agent with it can run commands as root in any box that does not use the `strict` profile, and it can delete and rebuild boxes. An agent token gives only the permissions that you choose.
 
+## The first-run guide
+
+While the console has no box at all, **Overview** shows a **Get started** card with three steps, and it leaves once a box exists.
+
+1. **Build the base template.** When no host holds it, the step says so and offers **Build base template**, which runs the same build as **Library → Templates** and opens its log in the Tasks panel. A host that holds it shows the step as done.
+2. **Create your first box.** The button opens the usual create dialog, so every option of a normal create is there.
+3. **Connect an agent.** Pick the client you use — **Claude Code**, **Codex** or **Other clients** — and the token preset, then click **Create token and show configuration**. MiniBox creates an agent token through the same endpoint as **Settings → Agent API tokens**, and shows the configuration to paste:
+
+   - **Claude Code** gets a `.mcp.json` entry with `"type": "http"`.
+   - **Codex** gets a `[mcp_servers.minibox]` table for `~/.codex/config.toml`.
+   - **Other clients** get the plain `mcpServers` JSON that the token dialog shows too.
+
+   The token's secret appears once, above the snippet, and MiniBox never shows it again: **Copy configuration** puts the whole snippet, secret included, on the clipboard, **Copy token only** copies the bare `mbx_…` secret, and **Done, hide this** ends the guide. If you lose the secret, revoke the token in **Settings → Agent API tokens** and create another.
+
+The guide is remembered per browser: **Hide** dismisses it, and finishing it hides it for good. The box list is still the judge — a console that has a box never shows it, whatever this browser saved — and a page that opened the guide keeps the agent step reachable when the first box appears, so a checklist in progress can be finished.
+
 ## Create a token for an agent
 
 1. Open **Settings**, and click **New token** in **Agent API tokens**.

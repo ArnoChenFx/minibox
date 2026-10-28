@@ -1,10 +1,10 @@
 import { randomBytes } from "node:crypto";
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, unlinkSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, renameSync, rmSync, statSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 
 import { z } from "zod";
 
-import { DIR_MODE, ensureDataDir, writeFileAtomic } from "../data-dir";
+import { ensureDataDir, ensurePrivateDir, isWithinDir, writeFileAtomic } from "../data-dir";
 import { log } from "../lib/logger";
 import { isEnoent } from "./io";
 
@@ -39,16 +39,34 @@ export const BackupRecordSchema = z.strictObject({
 
 export type BackupRecord = z.infer<typeof BackupRecordSchema>;
 
+export interface BackupStoreOptions {
+  /** The folder the archives and records live in. Defaults to `DATA_DIR/backups`. */
+  readonly dir?: string;
+}
+
 /**
- * Backups kept under `DATA_DIR/backups`. An archive is written under a dot-prefixed name and renamed into place, and its
- * record is written last, so a listing never shows an archive that is still being written. Nothing expires: a backup
- * stays until it is deleted.
+ * Backups kept in one folder: `DATA_DIR/backups` by default, or `BACKUP_DIR` when that is set. An archive is written under
+ * a dot-prefixed name and renamed into place, and its record is written last, so a listing never shows an archive that is
+ * still being written. Nothing expires on its own: a backup stays until it is deleted, or until `BACKUP_KEEP` removes it.
  */
 export class BackupStore {
-  constructor(private readonly dataDir: string) {}
+  private readonly archiveDir: string;
 
+  constructor(
+    private readonly dataDir: string,
+    options: BackupStoreOptions = {},
+  ) {
+    this.archiveDir = options.dir ?? join(dataDir, "backups");
+  }
+
+  /** The folder the archives live in, which is `BACKUP_DIR` when that is set. */
   dir(): string {
-    return join(this.dataDir, "backups");
+    return this.archiveDir;
+  }
+
+  /** Whether the archives sit in `DATA_DIR/backups`, and so are left out of a backup of `DATA_DIR`. */
+  insideDataDir(): boolean {
+    return isWithinDir(this.archiveDir, join(this.dataDir, "backups"));
   }
 
   pathFor(id: string): string {
@@ -61,10 +79,10 @@ export class BackupStore {
     return join(this.dir(), `.${id}.part`);
   }
 
-  /** The directory exists before anything is written into it. */
+  /** The directory exists before anything is written into it, and holds nothing but backups: mode 700. */
   ensureDir(): void {
     ensureDataDir(this.dataDir);
-    mkdirSync(this.dir(), { recursive: true, mode: DIR_MODE });
+    ensurePrivateDir(this.dir());
   }
 
   allocateId(): string {

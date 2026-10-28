@@ -25,5 +25,3 @@ export const QUESTION_ANSWER_MAX = 1000;
 export const QUESTION_PENDING_PER_BOX = 20;
 /** Every question the store keeps. Past this, the oldest answered ones go first. */
 export const QUESTION_TOTAL_MAX = 500;
-
-export const QUESTION_ID_RE = /^q_[0-9A-HJKMNP-TV-Z]{26}$/;

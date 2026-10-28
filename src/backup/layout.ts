@@ -1,6 +1,7 @@
 import { readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 
+import { isWithinDir } from "../data-dir";
 import { log } from "../lib/logger";
 
 /** Top-level folders a backup leaves out: exec output, staged packages, the regenerable CLI cache and backups themselves. */
@@ -9,6 +10,14 @@ export const EXCLUDED_FOLDERS: ReadonlySet<string> = new Set(["backups", "cli", 
 export const DATABASE_FILES = ["events.db", "tasks.db"] as const;
 const SQLITE_JOURNAL = /^(events|tasks)\.db-(wal|shm|journal)$/;
 const MAX_DEPTH = 16;
+
+export interface ListOptions {
+  /**
+   * Folders under DATA_DIR that are left out, with everything in them. Used for a `BACKUP_DIR` that sits inside DATA_DIR,
+   * so an archive never archives the archives beside it.
+   */
+  readonly exclude?: readonly string[];
+}
 
 export interface ArchiveEntry {
   /** The path inside the archive, relative to DATA_DIR, with `/` between parts. */
@@ -31,7 +40,7 @@ export function includedEntry(rel: string): boolean {
 }
 
 /** Every directory and regular file under DATA_DIR that a backup includes, in archive order: parents before children. */
-export async function listEntries(dataDir: string): Promise<ArchiveEntry[]> {
+export async function listEntries(dataDir: string, options: ListOptions = {}): Promise<ArchiveEntry[]> {
   const entries: ArchiveEntry[] = [];
   const walk = async (rel: string, depth: number): Promise<void> => {
     if (depth > MAX_DEPTH) throw new Error(`${rel} is nested too deeply to back up`);
@@ -40,6 +49,7 @@ export async function listEntries(dataDir: string): Promise<ArchiveEntry[]> {
       const child = rel === "" ? dirent.name : `${rel}/${dirent.name}`;
       if (!includedEntry(child)) continue;
       const abs = join(dataDir, child);
+      if (options.exclude?.some((path) => isWithinDir(abs, path))) continue;
       const info = dirent.isSymbolicLink() ? await stat(abs).catch(() => null) : dirent;
       if (info === null) {
         log.warn("backup.entry_skipped", { path: child, reason: "dangling link" });

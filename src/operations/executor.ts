@@ -53,9 +53,6 @@ export interface ExecutorHooks {
   audit(event: AuditEvent): void;
 }
 
-/** The phase-0 hook: any owner principal, and nobody else. Production uses `authorizeOperation` instead. */
-export const ownerOnly = ({ principal }: AuthorizeRequest): boolean => principal.type === "owner";
-
 export function logAudit(event: AuditEvent): void {
   const fields = {
     event: event.id,

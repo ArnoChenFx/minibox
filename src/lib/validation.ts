@@ -44,12 +44,6 @@ export function checkName(value: unknown, label: LabelKey): Checked<string> {
   return accept(v);
 }
 
-export function validateName(value: unknown, field = "name", label: LabelKey = "name"): string {
-  const checked = checkName(value, label);
-  if (!checked.ok) throw badRequest(checked.failure.message, { field });
-  return checked.value;
-}
-
 export const DESCRIPTION_MAX = 200;
 
 /** Optional one-line description. Control characters are refused, newlines above all: they would start a new Dockerfile instruction. */
@@ -58,10 +52,4 @@ export function checkDescription(value: unknown): Checked<string | undefined> {
   if (/\p{Cc}/u.test(value)) return reject(msg("description_invalid"), "description");
   const v = value.trim();
   return accept(v ? [...v].slice(0, DESCRIPTION_MAX).join("") : undefined);
-}
-
-export function validateDescription(value: unknown): string | undefined {
-  const checked = checkDescription(value);
-  if (!checked.ok) throw badRequest(checked.failure.message, { field: "description" });
-  return checked.value;
 }

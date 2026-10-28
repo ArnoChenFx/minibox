@@ -31,11 +31,6 @@ export function mountPointOf(mount: CreateMount): { path: string; mode: MountMod
   return { path: mount.path ?? fixed.path, mode: mount.mode ?? fixed.mode };
 }
 
-/** The roles a create mount list would create a volume for, in the order it lists them. */
-export function rolesToCreate(mounts: readonly CreateMount[]): VolumeRole[] {
-  return roleRequests(mounts).map((request) => request.role);
-}
-
 /** The role volumes a create mount list asks for, in the order it lists them, each with the pool it picked. */
 export function roleRequests(mounts: readonly CreateMount[]): RoleRequest[] {
   return mounts
@@ -48,14 +43,6 @@ export function rolePoolsOf(requests: readonly RoleRequest[]): Map<VolumeRole, s
   const pools = new Map<VolumeRole, string>();
   for (const request of requests) if (request.pool) pools.set(request.role, request.pool);
   return pools;
-}
-
-/** The roles that mount a volume read-write, so a create hands a new one to the box user. */
-export function writableRoleMounts(mounts: readonly CreateMount[]): { role: VolumeRole; path: string }[] {
-  return mounts
-    .filter(isRoleMount)
-    .map((mount) => ({ role: mount.role, ...mountPointOf(mount) }))
-    .filter((mount) => mount.mode === "rw");
 }
 
 /** True for a role name the volume model knows. */

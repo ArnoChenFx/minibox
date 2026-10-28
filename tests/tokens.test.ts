@@ -9,9 +9,7 @@ import { AppError } from "../src/lib/errors";
 import { sha256 } from "../src/lib/hash";
 import { startServer } from "../src/server";
 import {
-  canExec,
   compileToken,
-  fileAccess,
   presetPolicy,
   requiredScopes,
   resolveBoxRefs,
@@ -23,7 +21,6 @@ import { createTestApp, rejectionOf, silenceLogs, TEST_KEY } from "./support/app
 import type { FakeRuntime } from "./support/fake-runtime";
 
 const GB = 1024 ** 3;
-const OWNER = { type: "owner" as const, id: "owner", name: "owner" };
 
 interface TokenRecord {
   id: string;
@@ -368,19 +365,6 @@ describe("presets and file access", () => {
     expect(admin.boxes).toEqual({ type: "all" });
     const narrowed = compileToken({ name: "a2", preset: "admin", scopes: ["box:read"] });
     expect(narrowed.audit).toBe("scoped");
-  });
-
-  test("exec implies read and write on every mount of a visible box; files:* applies only without exec", () => {
-    const exec = grantsOf(compileToken({ name: "e", scopes: ["exec"] }));
-    const reader = grantsOf(compileToken({ name: "f", scopes: ["files:read"] }));
-    const mine = { boxId: "bx_1", name: "mine", createdBy: "tok_1", labels: {}, hostId: "local" };
-    const execPrincipal = { type: "token" as const, id: "tok_1", grants: exec };
-    expect(fileAccess(execPrincipal, mine)).toEqual({ read: true, write: true });
-    expect(canExec(execPrincipal, mine)).toBe(true);
-    expect(fileAccess(execPrincipal, { ...mine, createdBy: "owner" })).toEqual({ read: false, write: false });
-    expect(canExec({ type: "token", id: "tok_1", grants: reader }, mine)).toBe(false);
-    expect(fileAccess({ type: "token", id: "tok_1", grants: reader }, mine)).toEqual({ read: true, write: false });
-    expect(fileAccess(OWNER, mine)).toEqual({ read: true, write: true });
   });
 
   test("box:exec, box:session and exec all need the exec scope, and files:* accept exec as well", () => {

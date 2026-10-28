@@ -38,7 +38,6 @@ export interface LimitForm {
 
 export declare function usageSummary(volume: VolumeUsageView): UsageSummary;
 export declare function fillPercent(bytes: number | null, scale: number | null): number | null;
-export declare function trendValues(points: readonly UsagePointView[], scale: number | null): number[];
 export declare function levelClass(level: string): "crit" | "warn" | "";
 export declare function levelLabelKey(level: string): "vol.overHard" | "vol.overSoft" | null;
 export declare function bytesOfGb(

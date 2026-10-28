@@ -11,6 +11,7 @@ import { icon } from "./lib/icons.js";
 import { setCrumbs } from "./lib/layout.js";
 import { resolveRoute } from "./lib/routes.js";
 import { onHost } from "./lib/store.js";
+import { readSystemVersion } from "./lib/system.js";
 import { applyTheme, currentTheme, toggleTheme } from "./lib/theme.js";
 import { confirmDialog } from "./lib/ui.js";
 import * as about from "./pages/about.js";
@@ -180,11 +181,9 @@ function init() {
   mountTasks();
   mountOwnerKeyBanner($("#ownerKeyBanner"));
   initHostFilter();
-  api("/api/system")
-    .then((s) => {
-      $("#sidebarVersion").textContent = `MiniBox v${s.version}`;
-    })
-    .catch(() => {});
+  readSystemVersion().then((version) => {
+    if (version) $("#sidebarVersion").textContent = `MiniBox v${version}`;
+  });
 
   window.addEventListener("hashchange", route);
   route();

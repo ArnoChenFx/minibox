@@ -23,6 +23,8 @@ An agent is a small program that runs in a container on the machine and connects
 4. Run the command on the machine. The agent exchanges the code for its own credentials, which it keeps in the `minibox-agent` volume, and it reconnects by itself after a restart.
 5. The dialog closes when the agent connects. The host then shows as online, with the agent's version and when it was last seen.
 
+The command runs the agent image at the tag of this MiniBox's own version, so the agent always speaks the protocol the console expects; a development build, which has no image tag of its own, uses `latest` and says so above the commands. Pair over https: over plain http only the agent's first handshake is signed, so anyone on the network path can read the code and inject commands afterwards. The dialog warns when the console is not on https.
+
 A pairing code works once and expires after 10 minutes. MiniBox spends it as soon as it receives it, so if the agent loses the reply and cannot save its credentials, the code is no longer valid. Then remove the agent's container and create a new code. Only the first start needs the code. For the options, the data volume and the operations an agent allows, see the [agent reference](../reference/agent.md).
 
 ## Add a host with a Docker address

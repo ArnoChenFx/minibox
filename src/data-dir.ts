@@ -13,7 +13,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve, sep } from "node:path";
 
 import { log } from "./lib/logger";
 
@@ -28,8 +28,45 @@ export const DATA_SUBDIRS = ["boxes", "checkpoints", "exec", "secrets", "templat
 export function resolveDataDir(value: string | undefined, root: string, home = homedir()): string {
   const raw = value?.trim();
   if (!raw) return join(root, "data");
+  return resolvePath(raw, root, home);
+}
+
+/**
+ * A folder from a setting, resolved the way `DATA_DIR` is: a leading `~/` expands to `home`, and a relative path resolves
+ * from `root`. Unset or blank means `fallback`.
+ */
+export function resolvePath(value: string | undefined, root: string, home = homedir(), fallback = ""): string {
+  const raw = value?.trim() || fallback;
   const expanded = raw === "~" || raw.startsWith("~/") ? join(home, raw.slice(1)) : raw;
   return resolve(root, expanded);
+}
+
+/**
+ * The folder that holds the backup archives: `BACKUP_DIR` when it is set, `DATA_DIR/backups` otherwise. A relative value
+ * resolves from the project root, as `DATA_DIR` does, and a leading `~/` expands to the home directory.
+ */
+export function resolveBackupDir(value: string | undefined, dataDir: string, root: string, home = homedir()): string {
+  return resolvePath(value, root, home, join(dataDir, "backups"));
+}
+
+/** Whether `path` is `dir` or sits under it, compared on resolved paths so `..` and symlinks cannot slip out. */
+export function isWithinDir(path: string, dir: string): boolean {
+  const target = resolve(path);
+  const base = resolve(dir);
+  return target === base || target.startsWith(base.endsWith(sep) ? base : `${base}${sep}`);
+}
+
+/**
+ * Why `dir` cannot hold the archives of `dataDir`, or `null` when it can.
+ *
+ * The archives of a folder inside DATA_DIR are left out of the backup, so that a backup never contains backups. That rule
+ * turns into a trap for a folder that *holds* DATA_DIR instead: everything in the data directory counts as "inside the
+ * backup folder", and the backup comes out empty while reporting success. So a folder that is DATA_DIR itself, or a
+ * folder above it, is refused rather than silently producing empty archives.
+ */
+export function backupDirRefusal(dir: string, dataDir: string): string | null {
+  if (!isWithinDir(dataDir, dir)) return null;
+  return resolve(dir) === resolve(dataDir) ? "it is the data directory itself" : "it holds the data directory";
 }
 
 /** The auto-generated access key lives directly in DATA_DIR. It is never written to `.env`. */
@@ -127,9 +164,17 @@ function syncDirectory(dir: string): void {
 /** Create DATA_DIR and its documented subdirectories, enforcing mode 700 on each. Idempotent. */
 export function ensureDataDir(dataDir: string): void {
   for (const dir of [dataDir, ...DATA_SUBDIRS.map((name) => join(dataDir, name))]) {
-    mkdirSync(dir, { recursive: true, mode: DIR_MODE });
-    enforceMode(dir, DIR_MODE);
+    ensurePrivateDir(dir);
   }
+}
+
+/**
+ * Create `dir`, and every folder above it, with mode 700. An existing folder is tightened to 700 when the filesystem
+ * allows it, since a backup folder holds archives that carry secrets. Idempotent.
+ */
+export function ensurePrivateDir(dir: string): void {
+  mkdirSync(dir, { recursive: true, mode: DIR_MODE });
+  enforceMode(dir, DIR_MODE);
 }
 
 /** Trimmed contents of a secret file, or `null` when it is missing or blank. A looser mode is tightened to 600. */

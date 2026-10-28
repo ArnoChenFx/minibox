@@ -13,8 +13,6 @@ import { EdgeBuffer, EXEC_INLINE_EDGE_BYTES } from "./exec-buffer";
 
 const MAX_LIVE = 200;
 
-/** How long `exec_get` may wait. Stays under the server's 60s idle timeout. */
-export const EXEC_WAIT_MAX_MS = 25_000;
 /** Background execs that may run at once. Each holds a process and its output until it ends. */
 export const EXEC_BACKGROUND_PER_BOX = 8;
 export const EXEC_BACKGROUND_TOTAL = 64;
