@@ -58,7 +58,6 @@ export const checkpointExport = defineOperation({
   }),
   output: z.object({ package: CheckpointPackageSchema }),
   rest: [{ method: "POST", path: "/api/checkpoints/:id/export", body: true, status: 202 }],
-  cli: "checkpoint export",
   mcp: {
     toolset: "storage",
     name: "export_checkpoint",
@@ -100,7 +99,6 @@ export const checkpointImport = defineOperation({
   }),
   output: z.object({ checkpoint: CheckpointSchema }),
   rest: [{ method: "POST", path: "/api/packages/:id/import", body: true, status: 202 }],
-  cli: "checkpoint import",
   mcp: {
     toolset: "storage",
     name: "import_checkpoint",
@@ -193,7 +191,6 @@ export const checkpointScheduleGet = defineOperation({
   input: z.object({ id: boxId() }),
   output: z.object({ schedule: CheckpointScheduleSchema.nullable() }),
   rest: [{ method: "GET", path: "/api/boxes/:id/checkpoint-schedule" }],
-  cli: "checkpoint schedule",
   mcp: {
     toolset: "storage",
     name: "get_checkpoint_schedule",
@@ -215,7 +212,6 @@ export const checkpointScheduleSet = defineOperation({
   input: scheduleInput,
   output: z.object({ schedule: CheckpointScheduleSchema }),
   rest: [{ method: "PUT", path: "/api/boxes/:id/checkpoint-schedule", body: true }],
-  cli: "checkpoint schedule-set",
   mcp: {
     toolset: "storage",
     name: "set_checkpoint_schedule",
@@ -251,7 +247,6 @@ export const checkpointScheduleClear = defineOperation({
   input: z.object({ id: boxId() }),
   output: OkSchema,
   rest: [{ method: "DELETE", path: "/api/boxes/:id/checkpoint-schedule" }],
-  cli: "checkpoint schedule-clear",
   mcp: {
     toolset: "storage",
     name: "clear_checkpoint_schedule",

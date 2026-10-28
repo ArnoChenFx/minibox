@@ -189,7 +189,6 @@ const volumeList = defineOperation({
   input: z.object({}),
   output: z.object({ volumes: z.array(VolumeSchema) }),
   rest: [{ method: "GET", path: "/api/volumes" }],
-  cli: "volume ls",
   mcp: {
     toolset: "storage",
     name: "list_volumes",
@@ -221,7 +220,6 @@ const volumeGet = defineOperation({
   }),
   output: z.object({ volume: VolumeSchema }),
   rest: [{ method: "GET", path: "/api/volumes/:id" }],
-  cli: "volume get",
   mcp: {
     toolset: "storage",
     name: "get_volume",
@@ -252,7 +250,6 @@ const volumeCreate = defineOperation({
   }),
   output: z.object({ volume: VolumeSchema }),
   rest: [{ method: "POST", path: "/api/volumes", body: true, status: 201 }],
-  cli: "volume create",
   mcp: {
     toolset: "storage",
     name: "create_volume",
@@ -290,7 +287,6 @@ const volumeDelete = defineOperation({
     }),
   }),
   rest: [{ method: "DELETE", path: "/api/volumes/:id", query: ["confirm", "skipTrash"] }],
-  cli: "volume rm",
   mcp: {
     toolset: "storage",
     name: "delete_volume",
@@ -504,7 +500,6 @@ const volumeAttach = defineOperation({
     }),
   }),
   rest: [{ method: "POST", path: "/api/volumes/:id/attach", body: true, ifMatch: true }],
-  cli: "volume attach",
   mcp: {
     toolset: "storage",
     name: "attach_volume",
@@ -558,7 +553,6 @@ const volumeDetach = defineOperation({
     }),
   }),
   rest: [{ method: "POST", path: "/api/volumes/:id/detach", body: true, ifMatch: true }],
-  cli: "volume detach",
   mcp: {
     toolset: "storage",
     name: "detach_volume",
@@ -599,7 +593,6 @@ const volumeUsage = defineOperation({
   }),
   output: z.object({ volume: VolumeSchema }),
   rest: [{ method: "POST", path: "/api/volumes/:id/usage" }],
-  cli: "volume usage",
   mcp: {
     toolset: "storage",
     name: "measure_volume",
@@ -623,7 +616,6 @@ const poolList = defineOperation({
   input: z.object({ refresh: refreshFlag() }),
   output: PoolsSchema,
   rest: [{ method: "GET", path: "/api/pools", query: ["refresh"] }],
-  cli: "pool ls",
   mcp: {
     toolset: "storage",
     name: "list_pools",
@@ -653,7 +645,6 @@ const poolReplace = defineOperation({
   }),
   output: PoolsSchema,
   rest: [{ method: "PUT", path: "/api/pools", body: true }],
-  cli: "pool apply",
   mcp: {
     toolset: "storage",
     name: "replace_pools",
@@ -692,7 +683,6 @@ const volumeLimitsSet = defineOperation({
   }),
   output: z.object({ volume: VolumeSchema }),
   rest: [{ method: "PUT", path: "/api/volumes/:id/limits", body: true }],
-  cli: "volume limits",
   mcp: {
     toolset: "storage",
     name: "set_volume_limits",

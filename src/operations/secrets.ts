@@ -34,7 +34,6 @@ export const secretList = defineOperation({
   input: z.object({}),
   output: z.object({ secrets: z.array(SecretSchema) }),
   rest: [{ method: "GET", path: "/api/secrets" }],
-  cli: "secret ls",
   run: async ({ host }) => ({
     secrets: host.secrets
       .list()
@@ -56,7 +55,6 @@ export const secretSet = defineOperation({
     created: z.boolean().meta({ description: "True when the secret is new, false when its value was replaced." }),
   }),
   rest: [{ method: "PUT", path: "/api/secrets/:name", body: true }],
-  cli: "secret set",
   activity: { action: () => "secret.set", target: (input) => input.name },
   audit: {
     target: ({ name }) => ({ kind: "secret", name }),
@@ -85,7 +83,6 @@ export const secretDelete = defineOperation({
     }),
   }),
   rest: [{ method: "DELETE", path: "/api/secrets/:name", query: ["force"] }],
-  cli: "secret rm",
   resolve: async ({ host }, input) => {
     const meta = host.secrets.meta(input.name);
     if (!meta) throw notFound(msg("secret_not_found", { name: input.name }));
