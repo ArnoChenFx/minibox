@@ -48,6 +48,8 @@ MiniBox 启动时不构建官方模板。模板在某台宿主机上首次被 Bo
 
 只有所有者可以构建官方模板或列出目录。令牌只能在所有者已于该宿主机上构建模板之后，用它创建 Box。
 
+CI 在每次推送和 Pull Request 上构建全部四个官方模板，既构建 `linux/amd64`，也在 QEMU 模拟下构建 `linux/arm64`，并对每个镜像运行 `scripts/check-box-image.sh`。某个 Dockerfile 的改动若破坏其中任一架构，`official-templates` 任务就会失败。
+
 ## 将 Box 存为模板
 
 当你在 Box 中安装了软件，并希望新 Box 也自带这些软件时，可将 Box 存为模板。

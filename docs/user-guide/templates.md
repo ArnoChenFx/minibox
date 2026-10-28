@@ -48,6 +48,8 @@ A box rebuild does not build a missing official template, so build it first. Reb
 
 Only the owner can build an official template or list the catalog. A token can create a box from an official template after the owner has built it on that host.
 
+CI builds all four official templates on every push and pull request, for `linux/amd64` and, under QEMU emulation, for `linux/arm64`, and runs `scripts/check-box-image.sh` on each image. A change to one of the Dockerfiles that breaks either architecture fails the `official-templates` job.
+
 ## Save a box as a template
 
 Save a box as a template when you have installed software into the box, and you want new boxes to start with it.
