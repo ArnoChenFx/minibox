@@ -10,6 +10,7 @@ import { BackupScheduleStore } from "../src/backup/schedule-store";
 import { ruleOf } from "../src/checkpoints/schedule";
 import { type Config, loadConfig } from "../src/config";
 import { SECRET_FILE_MODE } from "../src/data-dir";
+import { ulid } from "../src/events/ulid";
 import { AppError } from "../src/lib/errors";
 import { setLogSink } from "../src/lib/logger";
 import { msg } from "../src/lib/messages";
@@ -165,6 +166,25 @@ describe("a due backup schedule over the scheduler", () => {
     expect(message).toContain("process environment");
     expect(message).toContain("does not help");
     expect(message).not.toContain("escape dotenv expansion");
+  });
+
+  test("the backup passphrase is masked in recorded events, like the access key", () => {
+    const secret = "a passphrase only the redactor knows";
+    const { app: sealed } = createTestApp({ backupPassphrase: secret });
+    const { event } = sealed.events.append({
+      id: ulid(),
+      ts: Date.now(),
+      durationMs: 1,
+      status: "error",
+      op: "backup.scheduled",
+      kind: "write",
+      principal: { type: "owner", id: "owner", name: "owner" },
+      source: "rest",
+      hostId: "local",
+      summary: `Scheduled backup failed while sealing with ${secret}`,
+      detail: { note: `sealed with ${secret}` },
+    });
+    expect(JSON.stringify(event)).not.toContain(secret);
   });
 
   test("Bun-expanded dotenv passphrases are refused at startup", () => {
