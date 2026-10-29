@@ -302,10 +302,16 @@ export default {
   "rb.doneText":
     "{name} is running from the new container. Its id changed; volumes, the stable id and the name were kept.",
   "rb.failed": "Rebuild failed",
+  "mv.viaLabel": "How the box travels",
+  "mv.via": "Path: {via}",
+  "mv.via.direct": "direct: the template image is sent and the volumes are copied as archives",
+  "mv.via.checkpoint": "checkpoint: a checkpoint carries the box's data, and the box is made from it on {to}",
+  "mv.action.checkpoint": "Carried in the checkpoint and restored on {to}",
+  "mv.action.empty": "Made again on {to}, empty",
   "mv.title": "Move box",
   "mv.desc": "Copy the box to another host, then remove it from this one.",
   "mv.help":
-    "Preview first. Nothing changes until you apply. The box keeps its id, name, volumes, env and history. Checkpoints stay on the source host.",
+    "Preview first; nothing changes until you apply. The box keeps its id, name, volumes, env and history. With the direct path its checkpoints stay on the source host; with the checkpoint path the move takes its own and removes it afterwards.",
   "mv.host": "Target host",
   "mv.noHosts": "There is no other online host to move this box to. Add a host first.",
   "mv.preview": "Preview",

@@ -104,7 +104,7 @@ Listing and closing sessions are REST and CLI only (`GET`/`DELETE /api/boxes/{id
 | Tool | Needs | What it does |
 |---|---|---|
 | `rebuild_box` | `box:write` | `id`, `template`, `mounts`, `env`, `network`, `egress`, `profile`, `confirm`, `safetyCheckpoint` |
-| `move_box` | owner or admin credential | `id`, `host`, `confirm`, `expectedRevision` |
+| `move_box` | owner or admin credential | `id`, `host`, `confirm`, `via` (`direct` or `checkpoint`), `expectedRevision` |
 
 Both need `confirm: true`; without it the call changes nothing and returns `confirmation_required` with `details.preview`.
 

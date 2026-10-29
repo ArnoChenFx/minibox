@@ -154,7 +154,7 @@ Above the wire, the operations refuse the features an agent host cannot run, in 
 
 The rest of the checkpoint operations (`checkpoint.create`, `checkpoint.fork`, `checkpoint.export`, `checkpoint.import`, the file operations and the recycle bin) have no such precondition: they reach the engine and are refused there, because the work runs restic in a helper container, or reads an archive or writes a file, and those are all in `REFUSED_OPERATIONS` (`src/checkpoints/restic.ts`, `src/services/checkpoint-layers.ts`). The agent answers `unsupported` and `toAppError` turns it into `501 unsupported` with the `runtime_unsupported` key (`src/lib/errors.ts`). A few callers refuse an agent host on their own:
 
-- moving a box to or from an agent host (`src/services/move.ts`);
+- moving a box to or from an agent host, by either path (`assertMovable` in `src/services/move.ts`, which both `planMove` and `planCheckpointMove` call). The checkpoint path is the one that needs no image transfer, but it still packs and unpacks with restic in a helper container and reads volume owners, and an agent refuses all three, so a move that reached one would fail half way;
 - port previews on an agent host (`src/preview/proxy.ts`, `src/routes/preview.ts`);
 - a box `self` token on an agent host (`src/services/self-token.ts`);
 - `docker system df` reads, which are reported as unsupported rather than thrown (`src/host/manager.ts`);

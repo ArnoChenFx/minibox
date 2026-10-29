@@ -90,6 +90,8 @@ Create requests are checked against a strict schema. Bind mounts are refused, so
 
 These operations are refused with an `unsupported` error and never run: commit a container, put or get an archive, stat a path, remove, save, load or build an image, run a helper container, and read the engine's disk usage, either the host filesystem's (`diskUsage`) or what the engine itself holds (`diskBreakdown`, which is what `docker system df` reports).
 
+A box therefore cannot be moved to or from an agent host, by either the direct path or the checkpoint path: both need an image, an archive or a helper container, and the checkpoint path additionally reads the owner of every volume it restores. MiniBox answers `501 unsupported` with `move_agent_unsupported` before the move starts. Create the box on the agent host instead.
+
 Failures are reported with one of these kinds: `not_found`, `conflict`, `invalid`, `unsupported`, `unavailable`, `engine` and `aborted`.
 
 ## Revoke, upgrade and re-pair

@@ -316,12 +316,18 @@ export default {
   "err.agent_refused_protocol": "当前 MiniBox 使用 Agent 协议 {protocol}。请更新 Agent 镜像。",
   "err.runtime_unsupported": "该宿主机无法执行此操作：{detail}",
   "err.move_agent_unsupported":
-    "箱子暂时不能迁移到 Agent 宿主机或从其迁出，因为 Agent 不复制镜像和卷。请直接在 Agent 宿主机上创建箱子。",
+    "Box 无法通过任一方式迁移到 Agent 宿主机或从其迁出：Agent 不复制镜像、卷和归档，两种方式所需的辅助容器在它上面也会被拒绝。请直接在 Agent 宿主机上创建 Box。",
   "err.preview_agent_unsupported": "Agent 宿主机暂不支持端口预览。",
   "err.box_moving": "此 Box 正在迁移到另一台宿主机，请等迁移完成后再试。",
   "err.box_changing": "此 Box 正在重建或更新，请等它完成后再迁移。",
   "err.move_confirm":
     "迁移会把 Box 的卷复制到 {to}，若它正在运行则在那里启动，然后从 {from} 移除。请发送 confirm: true 以继续。",
+  "err.move_confirm_checkpoint":
+    "通过检查点迁移 {box} 会先为它创建检查点，把该检查点复制到 {to}，在那里用它创建 Box，并在其运行后从 {from} 移除。请发送 confirm: true 以继续。",
+  "err.move_checkpoint_template_missing":
+    "宿主机 {host} 上没有模板 {image}，也没有其他宿主机可以发送它，因此无法在那里创建 Box。请先把模板复制到 {host}，或改用 via direct 迁移。",
+  "err.move_checkpoint_volume_unrepresentable":
+    "卷 {volume}（挂载在 {path}）含有检查点无法读取的数据，因此 Box 无法通过检查点迁移。请改用 via direct（按原样复制卷），或先卸载该卷。",
   "err.move_same_host": "Box 已在宿主机 {host} 上运行，无需迁移到该宿主机。",
   "err.move_owner_only": "只有所有者或管理员凭据可以迁移 Box。",
   "err.move_changed": "Box 在迁移过程中发生了变化，因此已撤销迁移。请刷新 Box 后重试。",

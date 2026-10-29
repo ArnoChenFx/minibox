@@ -6,7 +6,7 @@ A checkpoint includes the box's `/workspace` folder and its home folder. A templ
 
 Checkpoints are available in the console, and in the [REST API](../reference/api.md). The [MCP](../reference/mcp.md) storage toolset also exports, imports, copies and schedules them, for the owner only. The command-line tool copies them to another host with `minibox checkpoint copy`.
 
-Checkpoints are not a backup of the whole server. They are stored on the host the box was on when the checkpoint was taken, and they stay there when the box moves. With more than one host, a checkpoint's row names its host. A rollback uses the checkpoint from the box's own host, so to roll back to a checkpoint on another host, [copy](#copy-to-another-host) it there, or move the box there first. Keep an off-host copy of anything you cannot lose. [Export](#export-and-import) a checkpoint to make a copy you can carry elsewhere, or push the package to an [off-site target](#off-site-targets). To back up the whole server, see [Backups](../admin/backups.md).
+Checkpoints are not a backup of the whole server. They are stored on the host the box was on when the checkpoint was taken, and they stay there when the box moves by the direct path (the default). A move by the checkpoint path takes its own checkpoint for the transfer and removes it afterwards, so it leaves nothing behind either way. With more than one host, a checkpoint's row names its host. A rollback uses the checkpoint from the box's own host, so to roll back to a checkpoint on another host, [copy](#copy-to-another-host) it there, or move the box there first. Keep an off-host copy of anything you cannot lose. [Export](#export-and-import) a checkpoint to make a copy you can carry elsewhere, or push the package to an [off-site target](#off-site-targets). To back up the whole server, see [Backups](../admin/backups.md).
 
 ## Create a checkpoint
 
@@ -118,6 +118,8 @@ The data is packed on the source host into a sealed package, with a passphrase m
 A copy is refused for the same reasons as an export. These are a snapshot from before checkpoints, a checkpoint that holds no volume data, and a checkpoint that includes its system layer. It is also refused when the target is the host the checkpoint is already on, when that host already holds a copy of it, and when the checkpoint is being exported or copied. The package must fit in `CHECKPOINT_PACKAGE_MAX_MB`, as an export does.
 
 `GET /api/checkpoints` lists the copy with its host. Forking from the copy creates the box on that host.
+
+A copy is also what a [move by the checkpoint path](hosts.md#move-a-box-to-another-host) uses: the move takes a checkpoint, copies it to the target, makes the box there from the copy, and removes both checkpoints once the box runs on the target. That is why a checkpoint move needs no image transfer, and why a volume a checkpoint cannot read refuses it.
 
 ## Export and import
 

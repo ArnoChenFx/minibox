@@ -726,7 +726,13 @@ const boxMove = defineOperation({
     const target = hostById(ctx, input.host);
     const preview =
       input.via === "checkpoint"
-        ? await previewCheckpointMove(ctx.host, target, input.id, requireRevision(input.expectedRevision), imageHosts(ctx))
+        ? await previewCheckpointMove(
+            ctx.host,
+            target,
+            input.id,
+            requireRevision(input.expectedRevision),
+            imageHosts(ctx),
+          )
         : await previewMove(ctx.host, target, input.id, requireRevision(input.expectedRevision));
     if (!input.confirm) {
       throw input.via === "checkpoint" ? checkpointMoveConfirmation(preview) : moveConfirmation(preview);

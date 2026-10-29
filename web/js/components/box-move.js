@@ -14,6 +14,13 @@ const ACTION_KEY = {
   copy: "mv.action.copy",
   remount: "mv.action.remount",
   tools: "mv.action.tools",
+  checkpoint: "mv.action.checkpoint",
+  empty: "mv.action.empty",
+};
+
+const VIA_KEY = {
+  direct: "mv.via.direct",
+  checkpoint: "mv.via.checkpoint",
 };
 
 function volumeLine(volume, to) {
@@ -32,10 +39,14 @@ export function movePreviewHtml(preview) {
   const loses = LOSES.map((name) => t(`rebuild.lose.${name}`)).join(", ");
   const checkpointKey = preview.checkpoints === 1 ? "mv.checkpoint" : "mv.checkpoints";
   const checkpoints =
-    preview.checkpoints > 0
+    preview.checkpoints > 0 && preview.via !== "checkpoint"
       ? `<p class="help">${esc(t(checkpointKey, { count: String(preview.checkpoints), from, to }))}</p>`
       : "";
+  const via = preview.via
+    ? `<div class="help">${esc(t("mv.via", { via: t(VIA_KEY[preview.via] ?? "mv.via.direct", { to }), from, to }))}</div>`
+    : "";
   return `<div class="rebuild-preview"><strong>${esc(t("mv.previewTitle"))}</strong>
+    ${via}
     <div class="help" style="margin-top:8px">${esc(t("mv.volumes"))}</div>
     <ul class="move-volumes">${volumes || `<li class="help">${esc(t("mv.noVolumes"))}</li>`}</ul>
     <div class="help">${esc(t("mv.image", { image: preview.image?.ref ?? "" }))}: ${esc(image)}</div>
@@ -69,6 +80,11 @@ export async function openMove(box) {
       ? `<p class="help">${esc(t("mv.help"))}</p>
         <div class="field"><label class="label" for="mvHost">${esc(t("mv.host"))}</label>
           <select class="select" id="mvHost">${options}</select></div>
+        <div class="field"><label class="label" for="mvVia">${esc(t("mv.viaLabel"))}</label>
+          <select class="select" id="mvVia">
+            <option value="direct">${esc(t("mv.via.direct"))}</option>
+            <option value="checkpoint">${esc(t("mv.via.checkpoint"))}</option>
+          </select></div>
         <div class="error-text" id="mvErr"></div>
         <div class="move-preview" id="mvPreview" hidden></div>`
       : `<p class="help">${esc(t("mv.noHosts"))}</p>`,
@@ -91,7 +107,7 @@ export async function openMove(box) {
     root.querySelector("#mvErr").textContent = "";
     root.querySelector("#mvApply").hidden = true;
     try {
-      await withBusy(event.currentTarget, () => send({ host: to }));
+      await withBusy(event.currentTarget, () => send({ host: to, via: root.querySelector("#mvVia").value }));
       root.querySelector("#mvErr").textContent = t("mv.noPreview");
     } catch (err) {
       if (err?.code === "confirmation_required" && err.details?.preview) {
@@ -108,7 +124,9 @@ export async function openMove(box) {
     const to = root.querySelector("#mvHost").value;
     root.querySelector("#mvErr").textContent = "";
     try {
-      const started = await withBusy(event.currentTarget, () => send({ host: to, confirm: true }));
+      const started = await withBusy(event.currentTarget, () =>
+        send({ host: to, via: root.querySelector("#mvVia").value, confirm: true }),
+      );
       close();
       toast(t("mv.started"), { message: t("mv.startedText", { name: box.name, to: hostName(to) }) });
       openTasks(started.taskId);

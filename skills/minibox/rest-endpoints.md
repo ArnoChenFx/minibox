@@ -25,7 +25,7 @@ Conventions in the tables below:
 | `POST` | `/api/boxes/{id}/restart` | `box:write` | |
 | `PATCH` | `/api/boxes/{id}/resources` | `box:write` | If-Match. `cpus`, `memoryMb`, `pids` |
 | `POST` | `/api/boxes/{id}/rebuild` | `box:write` | If-Match, `confirm`. `template`, `mounts`, `env`, `network`, `egress`, `profile`, `safetyCheckpoint` |
-| `POST` | `/api/boxes/{id}/move` | `box:write` + every host granted | If-Match, `confirm`, `host`. `202` |
+| `POST` | `/api/boxes/{id}/move` | `box:write` + every host granted | If-Match, `confirm`, `host`, `via` (`direct` or `checkpoint`, default `direct`). `202` |
 | `GET` | `/api/boxes/{id}/logs` | `box:read` | `?tail=` 1–5000 |
 | `GET` | `/api/boxes/{id}/stats` | `box:read` | `?history=true` |
 | `GET` | `/api/boxes/{id}/ports` | `box:read` | Listening and manually exposed ports, each with `url` |

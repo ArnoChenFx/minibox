@@ -11,7 +11,6 @@ import type { BoxMount, BoxSpec } from "../specs/types";
 import { VolumeChanges } from "../volumes/changes";
 import { assertVolumesPresent, mountedByAnotherBox } from "../volumes/engine";
 import { createRestoredVolume, removeEngine } from "../volumes/provision";
-
 import { type Box, ensureBoxNetwork, getBox, refuseExpired } from "./boxes";
 import { restoreLayer, type PlannedLayer } from "./checkpoint-layers";
 import { deleteCheckpoint } from "./checkpoint-manage";
@@ -228,12 +227,7 @@ async function firstHolder(holders: readonly HostCtx[], image: string): Promise<
   return null;
 }
 
-function volumePlanOf(
-  from: HostCtx,
-  to: HostCtx,
-  spec: BoxSpec,
-  layers: readonly PlannedLayer[],
-): CheckpointVolume[] {
+function volumePlanOf(from: HostCtx, to: HostCtx, spec: BoxSpec, layers: readonly PlannedLayer[]): CheckpointVolume[] {
   const atPath = new Map(layers.map((layer) => [layer.path, layer]));
   return spec.mounts.map((mount) => {
     const source = from.volumes.findByEngine(from.host.id, mount.volume);
@@ -406,11 +400,13 @@ async function restoreMounts(
     }
     const layer = layers.get(volume.mount.path);
     if (volume.action === "checkpoint" && !layer) {
-      throw conflict(msg("move_checkpoint_volume_unrepresentable", {
-        volume: volume.source.name,
-        path: volume.mount.path,
-        host: to.host.id,
-      }));
+      throw conflict(
+        msg("move_checkpoint_volume_unrepresentable", {
+          volume: volume.source.name,
+          path: volume.mount.path,
+          host: to.host.id,
+        }),
+      );
     }
     say(
       layer
@@ -531,7 +527,12 @@ async function finishCheckpointMove(
   if (copy) {
     await deleteCheckpoint(to, copy.id).catch((e: unknown) => {
       leftovers.push({ kind: "checkpoint", name: copy.label });
-      log.warn("box.move_checkpoint_remove_failed", { id: spec.id, host: to.host.id, checkpoint: copy.id, error: String(e) });
+      log.warn("box.move_checkpoint_remove_failed", {
+        id: spec.id,
+        host: to.host.id,
+        checkpoint: copy.id,
+        error: String(e),
+      });
     });
   }
   if (sourceCheckpoint) {

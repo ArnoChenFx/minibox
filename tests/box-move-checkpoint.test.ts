@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
 import { AppError } from "../src/lib/errors";
+import { msg } from "../src/lib/messages";
 import { RuntimeError } from "../src/runtime";
-import { moveBoxByCheckpoint } from "../src/services/move-checkpoint";
 import type { CheckpointView } from "../src/services/checkpoint-model";
+import { moveBoxByCheckpoint } from "../src/services/move-checkpoint";
 import { type Cluster, bootCluster, boxOn, errorOf } from "./support/cluster";
 import type { FakeRuntime } from "./support/fake-runtime";
 import { finishedTask } from "./support/tokens";
@@ -39,8 +40,6 @@ interface TaskResult {
   };
   error?: { key?: string };
 }
-
-const MB = 1024 * 1024;
 
 /** The containers of one box on one host. Each host labels its boxes with its own key, so the key is read per host. */
 function containersOf(cluster: Cluster, host: "local" | "small", boxId: string) {
@@ -84,6 +83,25 @@ function checkpointsOn(cluster: Cluster, host: "local" | "small", boxId: string)
     }));
 }
 
+/** A volume named `data` on the local host with one file in it, for a box to mount at `/data`. */
+async function dataVolume(cluster: Cluster): Promise<string> {
+  const created = await cluster.post("/api/volumes", { name: "data", confirm: true });
+  if (created.status !== 201) throw new Error(`create data: ${created.status} ${await created.text()}`);
+  const record = cluster.app.hosts
+    .get()
+    .volumes.list()
+    .find((volume) => volume.name === "data");
+  if (!record) throw new Error("the data volume has no record");
+  cluster.engines.local.seedVolumeFile(record.engineName, "notes.txt", {
+    type: "file",
+    content: Buffer.from("kept"),
+    mode: 0o644,
+    uid: 1000,
+    gid: 1000,
+  });
+  return record.engineName;
+}
+
 describe("moving a box through a checkpoint", () => {
   let cluster: Cluster;
 
@@ -114,25 +132,6 @@ describe("moving a box through a checkpoint", () => {
     return (await finishedTask(cluster.base, started.taskId)) as TaskResult;
   }
 
-  /** A volume named `data` on the local host with one file in it, for a box to mount at `/data`. */
-  async function dataVolume(cluster: Cluster): Promise<string> {
-    const created = await cluster.post("/api/volumes", { name: "data", confirm: true });
-    if (created.status !== 201) throw new Error(`create data: ${created.status} ${await created.text()}`);
-    const record = cluster.app.hosts
-      .get()
-      .volumes.list()
-      .find((volume) => volume.name === "data");
-    if (!record) throw new Error("the data volume has no record");
-    cluster.engines.local.seedVolumeFile(record.engineName, "notes.txt", {
-      type: "file",
-      content: Buffer.from("kept"),
-      mode: 0o644,
-      uid: 1000,
-      gid: 1000,
-    });
-    return record.engineName;
-  }
-
   test("without confirm, the answer is a 409 preview of the checkpoint path, and nothing changes", async () => {
     const box = await boxOn(cluster, undefined, "dev", { mounts: undefined });
     const res = await move(box.boxId, { host: "small", via: "checkpoint" }, box.revision);
@@ -160,7 +159,12 @@ describe("moving a box through a checkpoint", () => {
       ["/home/dev/.cache", "empty"],
     ]);
     expect(containersOf(cluster, "small", box.boxId)).toEqual([]);
-    expect(cluster.app.hosts.get().checkpoints.list().filter((record) => record.boxId === box.boxId)).toEqual([]);
+    expect(
+      cluster.app.hosts
+        .get()
+        .checkpoints.list()
+        .filter((record) => record.boxId === box.boxId),
+    ).toEqual([]);
     expect((await viewOf(box.boxId)).hostId).toBe("local");
   });
 
@@ -256,9 +260,9 @@ describe("moving a box through a checkpoint", () => {
     expect((await viewOf(box.boxId)).hostId).toBe("local");
     expect(containersOf(cluster, "small", box.boxId)).toEqual([]);
     expect(checkpointsOn(cluster, "local", box.boxId)).toEqual([]);
-    expect(containersOf(cluster, "local", box.boxId).map((container) => [container.running, container.paused])).toEqual([
-      [true, false],
-    ]);
+    expect(containersOf(cluster, "local", box.boxId).map((container) => [container.running, container.paused])).toEqual(
+      [[true, false]],
+    );
   });
 
   test("a box that cannot be created on the target leaves the source box and its volumes untouched", async () => {
@@ -270,14 +274,19 @@ describe("moving a box through a checkpoint", () => {
     expect(done.status).toBe("failed");
     expect((await viewOf(box.boxId)).hostId).toBe("local");
     expect(containersOf(cluster, "small", box.boxId)).toEqual([]);
-    expect(containersOf(cluster, "local", box.boxId).map((container) => [container.running, container.paused])).toEqual([
-      [true, false],
-    ]);
+    expect(containersOf(cluster, "local", box.boxId).map((container) => [container.running, container.paused])).toEqual(
+      [[true, false]],
+    );
     expect(cluster.engines.local.volumes.has(source)).toBe(true);
     expect(filesOf(cluster.engines.local, source)).toEqual({ "notes.txt": "kept" });
     expect(checkpointsOn(cluster, "local", box.boxId)).toEqual([]);
     expect(checkpointsOn(cluster, "small", box.boxId)).toEqual([]);
-    expect(cluster.app.hosts.get("small").volumes.list().filter((record) => record.hostId === "small")).toEqual([]);
+    expect(
+      cluster.app.hosts
+        .get("small")
+        .volumes.list()
+        .filter((record) => record.hostId === "small"),
+    ).toEqual([]);
   });
 
   test("a start that fails on the target undoes the move and resumes the source", async () => {
@@ -288,9 +297,9 @@ describe("moving a box through a checkpoint", () => {
     expect(done.status).toBe("failed");
     expect((await viewOf(box.boxId)).hostId).toBe("local");
     expect(containersOf(cluster, "small", box.boxId)).toEqual([]);
-    expect(containersOf(cluster, "local", box.boxId).map((container) => [container.running, container.paused])).toEqual([
-      [true, false],
-    ]);
+    expect(containersOf(cluster, "local", box.boxId).map((container) => [container.running, container.paused])).toEqual(
+      [[true, false]],
+    );
     expect(checkpointsOn(cluster, "local", box.boxId)).toEqual([]);
   });
 
@@ -309,7 +318,9 @@ describe("moving a box through a checkpoint", () => {
     const error = await errorOf(res);
     expect(error.key).toBe("move_checkpoint_volume_unrepresentable");
     expect(error.params).toMatchObject({ volume: record.name, path: "/data" });
-    expect(error.message).toContain("via direct");
+    expect(msg("move_checkpoint_volume_unrepresentable", { volume: record.name, path: "/data" }).text).toContain(
+      "via direct",
+    );
     expect(cluster.app.hosts.get().checkpoints.list()).toEqual([]);
     expect((await viewOf(box.boxId)).hostId).toBe("local");
   });
@@ -357,7 +368,7 @@ describe("moving a box through a checkpoint", () => {
     expect(error.status).toBe(501);
     expect(error.code).toBe("unsupported");
     expect(error.key).toBe("move_agent_unsupported");
-    expect(error.message).toContain("An agent does not copy images, volumes or archives");
+    expect(msg("move_agent_unsupported").text).toContain("An agent does not copy images, volumes or archives");
     expect(checkpointsOn(cluster, "local", box.boxId)).toEqual([]);
     expect(containersOf(cluster, "local", box.boxId).map((container) => container.paused)).toEqual([false]);
   });

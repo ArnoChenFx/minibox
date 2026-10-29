@@ -61,4 +61,22 @@ describe("the move preview's checkpoint line", () => {
   test("a box with no checkpoints has no checkpoint line", () => {
     expect(movePreviewHtml(preview(0))).not.toContain("source host");
   });
+
+  test("a checkpoint move names its path, its restored volumes, and has no leftover-checkpoint line", () => {
+    const html = movePreviewHtml({
+      ...preview(2),
+      via: "checkpoint",
+      volumes: [
+        { path: "/workspace", role: "workspace", name: "web-workspace", action: "checkpoint", target: "web-workspace" },
+        { path: "/home/dev/.cache", role: "cache", name: "web-cache", action: "empty", target: "web-cache" },
+      ],
+    });
+    expect(html).toContain(
+      "Path: checkpoint: a checkpoint carries the box&#39;s data, and the box is made from it on lab",
+    );
+    expect(html).toContain("Carried in the checkpoint and restored on lab");
+    expect(html).toContain("Made again on lab, empty");
+    // The move's own checkpoint is removed afterwards, so the count is not something that stays behind.
+    expect(html).not.toContain("source host");
+  });
 });
