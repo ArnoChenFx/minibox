@@ -1,13 +1,4 @@
-export type {
-  CreateBoxInput,
-  BoxUpdate,
-  Box,
-  BoxMountView,
-  StartOptions,
-  EnsureResult,
-  DeleteBoxOptions,
-  DeleteBoxResult,
-} from "./box-model";
+export type { BoxUpdate, Box, BoxMountView, DeleteBoxResult } from "./box-model";
 export {
   getBox,
   readBox,
@@ -30,7 +21,6 @@ export {
   startBox,
   ensureRunning,
   wakeIfSleeping,
-  stopLocked,
   stopBox,
   sleepBox,
   restartBox,

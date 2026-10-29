@@ -19,7 +19,7 @@ import { icon } from "../lib/icons.js";
  * Pages change selects in three ways, and each has a hook: a body-wide observer enhances the selects that are added and
  * destroys the ones that leave the document; a per-select observer follows options and attributes; and the `value` and
  * `selectedIndex` setters are wrapped, because a programmatic write fires no mutation record. A `change` event re-reads
- * the selection too, which covers an option whose `selected` flag is set directly. `refreshSelect()` covers the rest.
+ * the selection too, which covers an option whose `selected` flag is set directly.
  */
 
 const MENU_ID = "dd-menu";
@@ -458,11 +458,6 @@ export function enhanceSelect(select) {
 export function enhanceSelects(root = document) {
   if (root instanceof Element && root.matches("select.select")) enhanceSelect(root);
   for (const select of root.querySelectorAll("select.select")) enhanceSelect(select);
-}
-
-/** Brings an enhanced select's trigger up to date after its options or selection changed without a mutation. */
-export function refreshSelect(select) {
-  controls.get(select)?.sync();
 }
 
 /** Starts the central hook. Safe to call once at boot; later calls do nothing. */

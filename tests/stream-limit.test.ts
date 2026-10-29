@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 
 import type { App } from "../src/app";
-import { FrameBuffer } from "../src/events/frames";
+import { sseStream } from "../src/events/sse-body";
 import type { OperationContext } from "../src/operations/types";
 import { startServer } from "../src/server";
 import { createTestApp, silenceLogs, TEST_KEY } from "./support/app";
@@ -98,16 +98,27 @@ describe("the cap on live streams", () => {
     expect(app.streams.count).toBe(2);
   });
 
-  test("a stream whose read throws gives its slot back, so the streams after it are admitted", async () => {
-    const take = spyOn(FrameBuffer.prototype, "take").mockImplementationOnce(() => {
-      throw new Error("frames unavailable");
+  test("a failing SSE body releases its shared slot, so later HTTP streams are admitted", async () => {
+    const release = app.streams.acquire();
+    // Target this body only: a prototype spy can otherwise throw in a different app's pending HTTP response.
+    let restore: (() => void) | undefined;
+    const body = sseStream({ onEnd: release }, ({ frames }) => {
+      const take = spyOn(frames, "take").mockImplementationOnce(() => {
+        throw new Error("frames unavailable");
+      });
+      restore = () => take.mockRestore();
+      return {
+        attach: () => () => {},
+        begin: () => {
+          frames.force("event: probe\ndata: {}\n\n");
+        },
+      };
     });
     try {
-      await fetch(`${base}/api/events/stream`, { headers: auth }).catch(() => undefined);
-      await waitFor(() => take.mock.calls.length === 1);
-      await waitFor(() => app.streams.count === 0);
+      await expect(body.getReader().read()).rejects.toThrow("frames unavailable");
+      expect(app.streams.count).toBe(0);
     } finally {
-      take.mockRestore();
+      restore?.();
     }
     await open("/api/events/stream");
     await open("/api/events/stream");

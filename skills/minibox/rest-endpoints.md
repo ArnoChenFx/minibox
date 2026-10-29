@@ -19,7 +19,7 @@ Conventions in the tables below:
 | `POST` | `/api/boxes` | `box:write` | `name`, `template`, `cpus`, `memoryMb`, `profile`, `egress`, `mounts`, `env`, `idleTimeoutSec`, `ttlSec`, `host`, `tools`, `startupCommand`, `selfToken`, `repo`. A `mounts` entry is `{ volume, path, mode }` for a volume that exists, or `{ role }` (`workspace`, `home`, `tools`, `cache`) for one MiniBox creates for the box; a role the list omits is not created, and `tools` mounts the shared tools volume. `201`; `setup.taskId`, `clone.taskId` |
 | `GET` | `/api/boxes/{id}` | `box:read` | The `ETag` is the revision |
 | `PATCH` | `/api/boxes/{id}` | `box:write` | If-Match. In place: `name`, `cpus`, `memoryMb`, `pids`, `labels`, `idleTimeoutSec`, `ttlSec` |
-| `DELETE` | `/api/boxes/{id}` | `box:delete` | `?deleteVolume=true`, `?skipTrash=true` |
+| `DELETE` | `/api/boxes/{id}` | `box:delete` | `?deleteVolume=true` (owner or unmodified admin token), `?skipTrash=true` |
 | `POST` | `/api/boxes/{id}/start` | `box:write` | |
 | `POST` | `/api/boxes/{id}/stop` | `box:write` | Keeps the volumes |
 | `POST` | `/api/boxes/{id}/restart` | `box:write` | |
@@ -97,17 +97,17 @@ All paths are jailed inside the volume. `{id}` is a `vol_…` or a volume name; 
 | Method | Path | Scope | Notes |
 |---|---|---|---|
 | `GET` | `/api/volumes` | `volume:read` | |
-| `POST` | `/api/volumes` | `volume:write` | `name`, `pool`, `role`, `confirm`. `201` |
+| `POST` | `/api/volumes` | `volume:write` | `name`, `pool`, `role`, `confirm`. `201`. Owner or unmodified admin only |
 | `GET` | `/api/volumes/{id}` | `volume:read` | Includes the boxes that mount it |
-| `DELETE` | `/api/volumes/{id}` | `volume:write` | `?confirm=true`, `?skipTrash=true` |
-| `POST` | `/api/volumes/delete` | `volume:delete` | `ids`, `confirm`. One result per volume |
-| `POST` | `/api/volumes/prune` | owner | `dryRun` (default `true`), `ids`, `olderThan` |
+| `DELETE` | `/api/volumes/{id}` | `volume:write` | `?confirm=true`, `?skipTrash=true`. Owner or unmodified admin only |
+| `POST` | `/api/volumes/delete` | `volume:delete` | `ids`, `confirm`. One result per volume. Owner or unmodified admin only |
+| `POST` | `/api/volumes/prune` | `volume:prune` | `dryRun` (default `true`), `ids`, `olderThan`. Owner or unmodified admin only |
 | `POST` | `/api/volumes/{id}/attach` | `volume:attach` (+ `volume:write` for `mode: "rw"`) | If-Match, `confirm`. `box`, `path`, `mode`. Rebuilds the box |
 | `POST` | `/api/volumes/{id}/detach` | `volume:attach` | If-Match, `confirm`. `box`, `path`. Rebuilds the box |
 | `POST` | `/api/volumes/{id}/usage` | `volume:read` | Refreshes the cached size |
 | `PUT` | `/api/volumes/{id}/limits` | owner | Soft and hard limits, and `warn` or `stop` |
-| `GET` | `/api/pools` | owner | Storage pools |
-| `PUT` | `/api/pools` | owner | Replaces the pool configuration; needs `confirm` |
+| `GET` | `/api/pools` | `pool:read` | Storage pools. Owner or unmodified admin only |
+| `PUT` | `/api/pools` | `pool:admin` | Replaces the pool configuration; needs `confirm`. Owner or unmodified admin only |
 
 ## Checkpoints
 

@@ -245,102 +245,150 @@ describe.skipIf(!executablePath)("the overview's first-run guide (real browser)"
     TIMEOUT_MS,
   );
 
-  test(
-    "the whole guide fits a phone without scrolling sideways, in both themes",
-    async () => {
-      // A fresh browser, and a console with no box: the state a new install starts in.
-      for (const box of await boxesNow()) {
-        await fetch(`${consoleUrl}/api/boxes/${encodeURIComponent(box.boxId)}`, { method: "DELETE", headers: bearer });
-      }
-      const phone = await browser.newContext({ viewport: PHONE, permissions: ["clipboard-read", "clipboard-write"] });
-      const login = await phone.request.post(`${consoleUrl}/api/auth/login`, {
-        data: { key: TEST_KEY },
-        headers: { origin: consoleUrl },
-      });
-      expect(login.status()).toBe(200);
-      const small = await phone.newPage();
-      try {
-        await small.goto(`${consoleUrl}/#/overview`);
-        const guide = small.locator("#onboarding");
-        await webExpect(guide).toBeVisible();
-        // The first step is done from the desktop walkthrough above, so this one opens on the box step.
-        await webExpect(guide.locator('[data-step="box"]')).toHaveClass(/is-open/);
-
-        // Step two from the phone itself: the create dialog, then the guide moves to its last step.
-        await guide.locator('[data-action="create-box"]').click();
-        const dialog = small.getByRole("dialog");
-        await webExpect(dialog).toBeVisible();
-        await dialog.locator("#cbName").fill("phone-box");
-        await dialog.locator("#cbSubmit").click();
-        await webExpect(dialog).toHaveCount(0);
-        await webExpect(guide.locator('[data-step="agent"]')).toHaveClass(/is-open/);
-
-        // Every control of the agent step, before the token and after it, stays inside each phone window.
-        for (const viewport of [PHONE, NARROW]) {
-          await small.setViewportSize(viewport);
-          const before = await insideOf(guide, ".onboarding-client, #obPreset, .onboarding-actions .btn");
-          // Three client buttons, the preset select and the button that creates the token.
-          expect([viewport.width, before.length]).toEqual([viewport.width, 5]);
-          expect(before.filter((rect) => !rect.inside)).toEqual([]);
-          expect(before.filter((rect) => rect.width <= 0)).toEqual([]);
-        }
-
-        // Step three from the phone: the token, then the snippet.
-        await guide.locator('[data-action="create-token"]').click();
-        await webExpect(guide.locator("#obSnippet")).toBeVisible();
-        for (const viewport of [PHONE, NARROW]) {
-          await small.setViewportSize(viewport);
-          const overflow = await overflowOf(small);
-          expect([viewport.width, overflow.scrollWidth <= overflow.clientWidth]).toEqual([viewport.width, true]);
-          const after = await insideOf(guide, ".onboarding-actions .btn, .token-secret");
-          // The two copy buttons, the one that ends the guide, and the secret itself.
-          expect([viewport.width, after.length]).toEqual([viewport.width, 4]);
-          expect(after.filter((rect) => !rect.inside)).toEqual([]);
-          // The snippet scrolls inside its own box rather than pushing the page sideways.
-          const snippet = await guide.locator("#obSnippet").evaluate((node) => {
-            const el = node as unknown as { scrollWidth: number; clientWidth: number };
-            return { scrollWidth: el.scrollWidth, clientWidth: el.clientWidth };
-          });
-          expect(snippet.scrollWidth).toBeGreaterThanOrEqual(snippet.clientWidth);
-        }
-
-        // Dark mode, chosen in the console itself: the guide draws its text in a colour that is not its own background.
-        await small.locator("#themeBtn").click();
-        await webExpect(small.locator("#onboarding")).toBeVisible();
-        const colors = await small.evaluate(() => {
-          interface El {
-            textContent: string | null;
-          }
-          const view = globalThis as unknown as {
-            document: {
-              documentElement: { dataset: Record<string, string>; querySelector(selector: string): El | null };
-            };
-            getComputedStyle(el: El): { color: string; backgroundColor: string };
-          };
-          const root = view.document.documentElement;
-          const name = root.querySelector("#onboarding .onboarding-name");
-          const card = root.querySelector("#onboarding");
-          return {
-            theme: root.dataset.theme,
-            name: name ? view.getComputedStyle(name).color : "",
-            card: card ? view.getComputedStyle(card).backgroundColor : "",
-          };
-        });
-        expect(colors.theme).toBe("dark");
-        expect(colors.name).not.toBe(colors.card);
-      } finally {
-        await phone.close();
+  for (const locale of ["en", "zh-CN"])
+    test(
+      `the whole guide fits a phone in both themes and representative fonts (${locale})`,
+      async () => {
+        // A fresh browser, and a console with no box: the state a new install starts in.
         for (const box of await boxesNow()) {
-          if (box.name !== "phone-box") continue;
           await fetch(`${consoleUrl}/api/boxes/${encodeURIComponent(box.boxId)}`, {
             method: "DELETE",
             headers: bearer,
           });
         }
-      }
-    },
-    TIMEOUT_MS,
-  );
+        const phone = await browser.newContext({
+          locale,
+          viewport: PHONE,
+          permissions: ["clipboard-read", "clipboard-write"],
+        });
+        const login = await phone.request.post(`${consoleUrl}/api/auth/login`, {
+          data: { key: TEST_KEY },
+          headers: { origin: consoleUrl },
+        });
+        expect(login.status()).toBe(200);
+        const small = await phone.newPage();
+        try {
+          await small.goto(`${consoleUrl}/#/overview`);
+          const guide = small.locator("#onboarding");
+          await webExpect(guide).toBeVisible();
+          const fitMatrix = async (selector: string, count: number) => {
+            for (const theme of ["light", "dark"]) {
+              if ((await small.locator("html").getAttribute("data-theme")) !== theme)
+                await small.locator("#themeBtn").click();
+              for (const font of ["system-ui, sans-serif", "Arial, sans-serif", "serif"]) {
+                await small.evaluate(
+                  `document.documentElement.style.setProperty('--font-sans', ${JSON.stringify(font)})`,
+                );
+                await small.evaluate("document.fonts.ready");
+                for (const viewport of [PHONE, NARROW]) {
+                  await small.setViewportSize(viewport);
+                  const controls = await insideOf(guide, selector);
+                  expect({ locale, theme, font, width: viewport.width, count: controls.length }).toEqual({
+                    locale,
+                    theme,
+                    font,
+                    width: viewport.width,
+                    count,
+                  });
+                  expect(controls.filter((rect) => !rect.inside || rect.width <= 0)).toEqual([]);
+                  const page = await overflowOf(small);
+                  expect({
+                    locale,
+                    theme,
+                    font,
+                    width: viewport.width,
+                    overflow: page.scrollWidth > page.clientWidth,
+                  }).toEqual({ locale, theme, font, width: viewport.width, overflow: false });
+                }
+              }
+            }
+            console.info(
+              `onboarding layout: Chromium ${browser.version()}, locale=${locale}, fonts=system-ui/Arial/serif, themes=light/dark, widths=320/390`,
+            );
+            await small.evaluate("document.documentElement.style.removeProperty('--font-sans')");
+            if ((await small.locator("html").getAttribute("data-theme")) !== "light")
+              await small.locator("#themeBtn").click();
+          };
+          // The first step is done from the desktop walkthrough above, so this one opens on the box step.
+          await webExpect(guide.locator('[data-step="box"]')).toHaveClass(/is-open/);
+
+          // Step two from the phone itself: the create dialog, then the guide moves to its last step.
+          await guide.locator('[data-action="create-box"]').click();
+          const dialog = small.getByRole("dialog");
+          await webExpect(dialog).toBeVisible();
+          await dialog.locator("#cbName").fill("phone-box");
+          await dialog.locator("#cbSubmit").click();
+          await webExpect(dialog).toHaveCount(0);
+          await webExpect(guide.locator('[data-step="agent"]')).toHaveClass(/is-open/);
+
+          // Every control of the agent step, before the token and after it, stays inside each phone window.
+          for (const viewport of [PHONE, NARROW]) {
+            await small.setViewportSize(viewport);
+            const before = await insideOf(guide, ".onboarding-client, #obPreset, .onboarding-actions .btn");
+            // Three client buttons, the preset select and the button that creates the token.
+            expect([viewport.width, before.length]).toEqual([viewport.width, 5]);
+            expect(before.filter((rect) => !rect.inside)).toEqual([]);
+            expect(before.filter((rect) => rect.width <= 0)).toEqual([]);
+          }
+          await fitMatrix(".onboarding-client, #obPreset, .onboarding-actions .btn", 5);
+
+          // Step three from the phone: the token, then the snippet.
+          await guide.locator('[data-action="create-token"]').click();
+          await webExpect(guide.locator("#obSnippet")).toBeVisible();
+          for (const viewport of [PHONE, NARROW]) {
+            await small.setViewportSize(viewport);
+            const overflow = await overflowOf(small);
+            expect([viewport.width, overflow.scrollWidth <= overflow.clientWidth]).toEqual([viewport.width, true]);
+            const after = await insideOf(guide, ".onboarding-actions .btn, .token-secret");
+            // The two copy buttons, the one that ends the guide, and the secret itself.
+            expect([viewport.width, after.length]).toEqual([viewport.width, 4]);
+            expect(after.filter((rect) => !rect.inside)).toEqual([]);
+            // The snippet scrolls inside its own box rather than pushing the page sideways.
+            const snippet = await guide.locator("#obSnippet").evaluate((node) => {
+              const el = node as unknown as { scrollWidth: number; clientWidth: number };
+              return { scrollWidth: el.scrollWidth, clientWidth: el.clientWidth };
+            });
+            expect(snippet.scrollWidth).toBeGreaterThanOrEqual(snippet.clientWidth);
+          }
+          await fitMatrix(".onboarding-actions .btn, .token-secret", 4);
+
+          // Dark mode, chosen in the console itself: the guide draws its text in a colour that is not its own background.
+          await small.locator("#themeBtn").click();
+          await webExpect(small.locator("#onboarding")).toBeVisible();
+          const colors = await small.evaluate(() => {
+            interface El {
+              textContent: string | null;
+            }
+            const view = globalThis as unknown as {
+              document: {
+                documentElement: { dataset: Record<string, string>; querySelector(selector: string): El | null };
+              };
+              getComputedStyle(el: El): { color: string; backgroundColor: string };
+            };
+            const root = view.document.documentElement;
+            const name = root.querySelector("#onboarding .onboarding-name");
+            const card = root.querySelector("#onboarding");
+            return {
+              theme: root.dataset.theme,
+              name: name ? view.getComputedStyle(name).color : "",
+              card: card ? view.getComputedStyle(card).backgroundColor : "",
+            };
+          });
+          expect(colors.theme).toBe("dark");
+          expect(colors.name).not.toBe(colors.card);
+        } finally {
+          await phone.close();
+          for (const box of await boxesNow()) {
+            if (box.name !== "phone-box") continue;
+            await fetch(`${consoleUrl}/api/boxes/${encodeURIComponent(box.boxId)}`, {
+              method: "DELETE",
+              headers: bearer,
+            });
+          }
+        }
+      },
+      TIMEOUT_MS,
+    );
 
   test(
     "the guide speaks Chinese when the console does",

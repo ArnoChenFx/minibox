@@ -92,7 +92,7 @@ export interface TaskReader {
 }
 
 /** Who started a task. Stored with the task; the audit event records the same principal. */
-export interface TaskPrincipal {
+interface TaskPrincipal {
   readonly type: string;
   readonly id: string;
   readonly name: string;

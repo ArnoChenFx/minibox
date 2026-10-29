@@ -1,11 +1,13 @@
 /**
  * Which volumes a batch delete can select, and the state of the checkboxes that select them. Pure, so the page and the
  * tests share one rule. A volume a box mounts, and the shared tools volume, cannot be selected: the server refuses both.
+ * The server marks the shared tools volume (`sharedTools`); a spare tools-role volume beside it can be deleted like any
+ * other volume.
  */
 
 /** Why a volume cannot be selected, as a key the page translates, or null when it can be selected. */
 export function unselectableReason(volume) {
-  if (volume.role === "tools") return "tools";
+  if (volume.sharedTools) return "tools";
   if (volume.mounts.length > 0) return "mounted";
   return null;
 }

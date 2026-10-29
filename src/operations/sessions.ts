@@ -118,7 +118,7 @@ function requireTerminals(terminals: TerminalService | undefined): asserts termi
   if (!terminals) throw new AppError(500, "internal", "terminal service is not configured");
 }
 
-export const sessionList = defineOperation({
+const sessionList = defineOperation({
   name: "session.list",
   tag: "sessions",
   summary: "List the terminal sessions of a box",
@@ -150,7 +150,7 @@ export const sessionList = defineOperation({
   },
 });
 
-export const sessionStart = defineOperation({
+const sessionStart = defineOperation({
   name: "session.start",
   tag: "sessions",
   summary: "Start a terminal session in a box",
@@ -175,7 +175,7 @@ export const sessionStart = defineOperation({
   },
 });
 
-export const sessionRead = defineOperation({
+const sessionRead = defineOperation({
   name: "session.read",
   tag: "sessions",
   summary: "Read a terminal session",
@@ -210,7 +210,7 @@ export const sessionRead = defineOperation({
   },
 });
 
-export const sessionSend = defineOperation({
+const sessionSend = defineOperation({
   name: "session.send",
   tag: "sessions",
   summary: "Send keys or text to a terminal session",
@@ -263,7 +263,7 @@ export const sessionSend = defineOperation({
   },
 });
 
-export const sessionClose = defineOperation({
+const sessionClose = defineOperation({
   name: "session.close",
   tag: "sessions",
   summary: "Close a terminal session",

@@ -245,7 +245,7 @@ function targetsOf(targets: TargetService | undefined): TargetService {
   return targets;
 }
 
-export const targetList = defineOperation({
+const targetList = defineOperation({
   name: "target.list",
   tag: "targets",
   summary: "List off-site targets",
@@ -264,7 +264,7 @@ export const targetList = defineOperation({
   run: async ({ targets }) => ({ targets: targetsOf(targets).list() }),
 });
 
-export const targetTest = defineOperation({
+const targetTest = defineOperation({
   name: "target.test",
   tag: "targets",
   summary: "Test an off-site target",
@@ -292,7 +292,7 @@ export const targetTest = defineOperation({
   },
 });
 
-export const targetAdd = defineOperation({
+const targetAdd = defineOperation({
   name: "target.add",
   tag: "targets",
   summary: "Add an off-site target",
@@ -321,7 +321,7 @@ export const targetAdd = defineOperation({
   run: async ({ targets }, input) => ({ target: targetsOf(targets).add(input.name, draftOf(input)) }),
 });
 
-export const targetCheck = defineOperation({
+const targetCheck = defineOperation({
   name: "target.check",
   tag: "targets",
   summary: "Check that an off-site target answers",
@@ -343,7 +343,7 @@ export const targetCheck = defineOperation({
   },
 });
 
-export const targetObjects = defineOperation({
+const targetObjects = defineOperation({
   name: "target.objects",
   tag: "targets",
   summary: "List the packages and backups on an off-site target",
@@ -362,7 +362,7 @@ export const targetObjects = defineOperation({
   run: async ({ targets }, input) => ({ objects: await targetsOf(targets).objects(input.id) }),
 });
 
-export const targetRemove = defineOperation({
+const targetRemove = defineOperation({
   name: "target.remove",
   tag: "targets",
   summary: "Remove an off-site target",
@@ -390,7 +390,7 @@ export const targetRemove = defineOperation({
   },
 });
 
-export const targetPush = defineOperation({
+const targetPush = defineOperation({
   name: "target.push",
   tag: "targets",
   summary: "Push a package or backup to an off-site target",
@@ -423,7 +423,7 @@ export const targetPush = defineOperation({
   run: async ({ targets, task }, input) => targetsOf(targets).push(input.id, input.object, (line) => task?.log(line)),
 });
 
-export const targetPull = defineOperation({
+const targetPull = defineOperation({
   name: "target.pull",
   tag: "targets",
   summary: "Pull a package or backup from an off-site target",

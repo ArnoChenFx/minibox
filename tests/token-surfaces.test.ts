@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { OPERATIONS } from "../src/operations/registry";
 import { type TokenPrincipal, OWNER } from "../src/operations/types";
 import { createVolume } from "../src/services/volumes";
-import { scopeAllowed } from "../src/tokens/model";
+import { scopeAllowed, mayManageStorage, STORAGE_ADMIN_OPERATIONS } from "../src/tokens/model";
 import { silenceLogs } from "./support/app";
 import { SseReader } from "./support/sse";
 import { call, type Harness, mint, principalOf, refused, startHarness } from "./support/tokens";
@@ -88,7 +88,11 @@ async function toolCall(token: string, session: string, name: string, args: unkn
 /** The MCP tool names a principal's scopes reach, computed from the operation registry rather than hand-written. */
 function reachableTools(principal: TokenPrincipal): string[] {
   return OPERATIONS.flatMap((op) =>
-    op.mcp && scopeAllowed(principal.grants, op.scope) ? [op.mcp.name] : [],
+    op.mcp &&
+    scopeAllowed(principal.grants, op.scope) &&
+    (!STORAGE_ADMIN_OPERATIONS.has(op.name) || mayManageStorage(principal))
+      ? [op.mcp.name]
+      : [],
   ).toSorted();
 }
 
@@ -224,14 +228,15 @@ describe("volumes a token may mount", () => {
       body: { confirm: true, mounts },
       headers,
     });
-    expect(refused(byToken)).toEqual({ status: 403, key: "volume_reserved" });
+    // The pool root has no volume record, so naming it asks for a new independent volume: volume administration.
+    expect(refused(byToken)).toEqual({ status: 403, key: "storage_admin_required" });
 
     const byOwner = await call(harness.base, `/api/boxes/${id}/rebuild`, { body: { confirm: true, mounts }, headers });
     expect(refused(byOwner)).toEqual({ status: 403, key: "volume_reserved" });
   });
 
   test("a token cannot attach another token's volume by id, even when every volume is granted", async () => {
-    const maker = mint(harness.app, { name: "maker", preset: "operator" });
+    const maker = mint(harness.app, { name: "maker", preset: "admin" });
     const mounter = mint(harness.app, { name: "mounter", preset: "operator", volumes: { type: "all" } });
     const made = await call(harness.base, "/api/volumes", {
       token: maker.secret,

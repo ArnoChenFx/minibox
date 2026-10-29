@@ -184,9 +184,11 @@ Give the token the fewest scopes that do the job. The operation's own scope (in 
 | Use a host secret or a box's startup command | `secret:use` (+ `exec` to set, delete or run it) |
 | Delete without the recycle bin | `trash:skip` |
 
+Storage pool selection/configuration, explicit volume creation/deletion and orphan pruning require the owner or an unmodified admin token. Volume scopes alone do not grant this identity.
+
 A `create_box` that mounts an existing volume needs `volume:attach`, and a read-write mount — or the workspace, home and cache volumes a new box creates — needs `volume:write` too.
 
-Owner-only, no token scope reaches them: tokens, hosts, notification channels, storage pools, template builds and image pulls, the recycle bin, backups and off-site targets, custom tools, task cancellation, checkpoint export/import/copy/schedule, volume limits, and pruning orphaned volumes. A token also sees only the boxes, volumes and hosts it was granted, and only the boxes it created by default.
+Owner-only, no token scope reaches them: tokens, hosts, notification channels, template builds and image pulls, the recycle bin, backups and off-site targets, custom tools, task cancellation, checkpoint export/import/copy/schedule, volume limits. A token also sees only the boxes, volumes and hosts it was granted, and only the boxes it created by default.
 
 ## 3. Common pitfalls
 

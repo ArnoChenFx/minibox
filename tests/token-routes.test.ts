@@ -135,7 +135,12 @@ function isOwnerOnly(route: Route): boolean {
 }
 
 /** What the scope mapping says a route should admit: a route that names a scope the principal holds. */
-function expectedAllowed(route: Route, scopes: readonly Scope[]): boolean {
+function expectedAllowed(route: Route, scopes: readonly Scope[], admin = false): boolean {
+  if (
+    admin &&
+    ["GET /api/pools", "PUT /api/pools", "POST /api/volumes/prune"].includes(`${route.method} ${templateOf(route)}`)
+  )
+    return true;
   if (route.public) return true;
   if (route.access.kind !== "scope") return false;
   const need = requiredScopes(route.access.scope);
@@ -180,7 +185,10 @@ describe("default-deny route table", () => {
     for (const subject of subjects) {
       for (const route of routes.filter(isOwnerOnly)) {
         expect(routeAllows(route, subject.principal), `${subject.name} ${route.method} ${templateOf(route)}`).toBe(
-          false,
+          subject.name === "admin" &&
+            ["GET /api/pools", "PUT /api/pools", "POST /api/volumes/prune"].includes(
+              `${route.method} ${templateOf(route)}`,
+            ),
         );
       }
     }
@@ -204,7 +212,7 @@ describe("default-deny route table", () => {
     for (const subject of subjects) {
       for (const route of routes) {
         const allowed = routeAllows(route, subject.principal);
-        if (allowed !== expectedAllowed(route, subject.principal.grants.scopes)) {
+        if (allowed !== expectedAllowed(route, subject.principal.grants.scopes, subject.name === "admin")) {
           mismatches.push(`${subject.name}: ${route.method} ${templateOf(route)} admitted=${allowed}`);
         }
       }
@@ -236,7 +244,10 @@ describe("default-deny route table", () => {
     const expectedRefusals = subjects.reduce(
       (total, subject) =>
         total +
-        routes.filter((route) => !route.public && !expectedAllowed(route, subject.principal.grants.scopes)).length,
+        routes.filter(
+          (route) =>
+            !route.public && !expectedAllowed(route, subject.principal.grants.scopes, subject.name === "admin"),
+        ).length,
       0,
     );
     expect(refusedCalls).toBe(expectedRefusals);

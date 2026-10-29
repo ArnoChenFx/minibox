@@ -411,7 +411,10 @@ export const tail = () =>
 export const deleteVolumeFlag = () =>
   field(checkDeleteVolume, {
     type: "boolean",
-    description: withDefault("Also delete the box's workspace volume. Accepts true, false, 1 or 0.", false),
+    description: withDefault(
+      "Also delete the volumes the box owns. Needs the owner or an unmodified admin token. Accepts true, false, 1 or 0.",
+      false,
+    ),
   }).default(false);
 
 export const skipTrashFlag = () =>
@@ -606,7 +609,7 @@ export const userLabels = () =>
 const MOUNT_MAX = 16;
 const ENV_MAX = 64;
 /** Also the longest secret value: a secret is injected through the same env entry a plain value would be. */
-export const ENV_VALUE_MAX = 8192;
+const ENV_VALUE_MAX = 8192;
 const ENV_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/;
 
 function checkMounts(value: unknown): Checked<BoxMount[] | undefined> {
@@ -892,7 +895,7 @@ export const rebuildMounts = () =>
     type: "array",
     maxItems: MOUNT_MAX,
     description:
-      "Mounts that replace the box's mount list. Each entry is { volume, path, mode } with mode rw or ro. Omitted, the current mounts stay. Adding or removing a mount rebuilds the box. A recorded volume can be mounted by several boxes unless another box owns it. A new or changed mount needs volume:attach on its volume, and a read-write one also needs volume:write. A name that does not exist yet creates a standalone volume, which needs volume:write. Refused: minibox-data, volumes without the MiniBox label, internal helper volumes, pool roots, volumes another box owns, and names that start with the label prefix followed by -ws- or -pool-.",
+      "Mounts that replace the box's mount list. Each entry is { volume, path, mode } with mode rw or ro. Omitted, the current mounts stay. Adding or removing a mount rebuilds the box. A recorded volume can be mounted by several boxes unless another box owns it. A new or changed mount needs volume:attach on its volume, and a read-write one also needs volume:write. A name that does not exist yet creates a standalone volume: that is volume administration, so only the owner or an unmodified admin token may do it (others get 403 storage_admin_required), and it needs volume:write. Refused: minibox-data, volumes without the MiniBox label, internal helper volumes, pool roots, volumes another box owns, and names that start with the label prefix followed by -ws- or -pool-.",
   }).optional();
 
 const CREATE_MOUNT_ITEMS: Meta = {
@@ -931,7 +934,7 @@ const CREATE_MOUNT_ITEMS: Meta = {
 };
 
 const CREATE_MOUNTS_HELP =
-  "Mounts this box gets. An entry is { volume, path, mode } to mount a volume that exists, or { role } to have MiniBox create that role's volume for this box: workspace at /workspace read-write, home at /home/dev read-write, tools at /opt/minibox/tools read-only, cache at /home/dev/.cache read-write. A role the list omits is not created. The tools role mounts the host's shared tools volume, and creates it when the host has none. Omitted, MiniBox creates workspace, home, tools and cache. An empty list creates a box with no mounts. Mounting an existing volume needs volume:attach, and a read-write one also needs volume:write. A role volume is new, so every role mount needs volume:write, and the tools role also needs volume:attach when the shared volume already exists. A role mount may also name pool, the storage pool its new volume goes to instead of the one the role's rule picks; a pool this host does not have is refused with pool_not_found, and the tools role's shared volume is one per pool.";
+  "Mounts this box gets. An entry is { volume, path, mode } to mount a volume that exists, or { role } to have MiniBox create that role's volume for this box: workspace at /workspace read-write, home at /home/dev read-write, tools at /opt/minibox/tools read-only, cache at /home/dev/.cache read-write. A role the list omits is not created. The tools role mounts the host's shared tools volume, and creates it when the host has none. Omitted, MiniBox creates workspace, home, tools and cache. An empty list creates a box with no mounts. Mounting an existing volume needs volume:attach, and a read-write one also needs volume:write. A role volume is new, so every role mount needs volume:write, and the tools role also needs volume:attach when the shared volume already exists. Only the owner or an unmodified admin token may select a pool. A role mount may also name pool, the storage pool its new volume goes to instead of the one the role's rule picks; a pool this host does not have is refused with pool_not_found, and the tools role's shared volume is one per pool.";
 
 export const createMounts = () =>
   field(checkCreateMounts, {

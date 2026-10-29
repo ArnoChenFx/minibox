@@ -23,9 +23,9 @@ const FILLING_OPS: ReadonlySet<string> = new Set([
   "trash.restore",
 ]);
 
-export type PruneStatus = "candidate" | "removed" | "refused" | "failed";
+type PruneStatus = "candidate" | "removed" | "refused" | "failed";
 
-export interface PrunedVolume {
+interface PrunedVolume {
   id: string;
   name: string;
   /** Null only for an id the request named that matches no volume. */
@@ -45,7 +45,7 @@ export interface PrunedVolume {
   error: OutcomeError | null;
 }
 
-export interface PrunedHost {
+interface PrunedHost {
   hostId: string;
   name: string;
   status: "checked" | "offline" | "failed";
@@ -68,7 +68,7 @@ export interface PruneOptions {
   readonly olderThanMs: number | null;
   /** The principal that removes the volumes. It is recorded on each recycle bin entry a removal keeps. */
   readonly principal: string;
-  /** Whether the caller may delete one volume. A token may delete only the volumes it created. */
+  /** Whether the caller may delete one volume: one its resource grants cover (the owner may delete any). */
   readonly may: (volume: VolumeRecord) => Promise<boolean>;
   readonly tasks?: TaskReader;
   readonly record?: RecordNote;
@@ -78,7 +78,7 @@ export interface PruneOptions {
 }
 
 /** When a volume was last used: the last time a box stopped mounting it, or its creation when none ever did. */
-export function lastUsedAt(volume: Pick<VolumeRecord, "createdAt" | "lastMount">): string {
+function lastUsedAt(volume: Pick<VolumeRecord, "createdAt" | "lastMount">): string {
   return volume.lastMount?.at ?? volume.createdAt;
 }
 

@@ -97,6 +97,14 @@ describe("backup store", () => {
     expect(store.list().map((record) => record.id)).toEqual([finished]);
   });
 
+  test("sweepPartial preserves unrelated hidden files", () => {
+    store.ensureDir();
+    writeFileSync(join(store.dir(), ".operator-settings"), "keep");
+    writeFileSync(join(store.dir(), ".env"), "keep");
+    expect(store.sweepPartial()).toBe(0);
+    expect(readdirSync(store.dir()).toSorted()).toEqual([".env", ".operator-settings"]);
+  });
+
   test("sweepPartial removes an archive whose record was never written", () => {
     const finished = store.allocateId();
     finish(finished, "2026-10-07T00:00:00.000Z");

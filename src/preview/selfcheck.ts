@@ -38,7 +38,7 @@ export const systemProbe: PreviewProbe = {
   },
 };
 
-export type PreviewCheckId = "console" | "same_site" | "dns" | "https";
+type PreviewCheckId = "console" | "same_site" | "dns" | "https";
 
 export interface PreviewCheck {
   readonly id: PreviewCheckId;

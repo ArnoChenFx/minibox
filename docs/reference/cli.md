@@ -150,7 +150,7 @@ A session that a person has taken over in the console refuses `session send` wit
 | `minibox volume delete <id\|name>... [--skip-trash] [--yes] [--json]` | Deletes volumes on any host. Without `--yes`, only the preview prints. Each volume is deleted as `DELETE /api/volumes/{id}` deletes one: its data is kept in the recycle bin unless `--skip-trash` is set, and a volume that a box or container uses is refused. Exits `1` when a volume is not removed |
 | `minibox volume prune [id\|name...] [--older-than 30d] [--yes] [--json]` | Lists the orphaned volumes, which are MiniBox volumes that no box or container uses. `--yes` removes exactly the volumes it listed. Naming volumes limits the list to them. `--older-than` keeps the volumes used more recently. A volume created or used in the last five minutes is never listed |
 
-`--skip-trash` needs the owner, or a token with the `trash:skip` scope. `volume delete` needs the `volume:delete` scope, which no preset includes, and a token acts only on the volumes it created. `volume prune` is for the owner only. See [Volumes and storage](../user-guide/volumes-and-storage.md#delete-several-volumes-or-clean-up-orphans).
+Explicit volume creation/deletion and orphan pruning require the owner or an unmodified admin token. Batch deletion uses `volume:delete`, which the admin preset includes. `--skip-trash` also requires `trash:skip`, or the owner; the skip option does not grant storage administrator identity. See [Volumes and storage](../user-guide/volumes-and-storage.md#delete-several-volumes-or-clean-up-orphans).
 
 ## Files in volumes
 

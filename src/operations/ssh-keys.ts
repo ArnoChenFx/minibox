@@ -33,7 +33,7 @@ function storeOf(keys: SshKeyStore | undefined): SshKeyStore {
   return keys;
 }
 
-export const sshKeyList = defineOperation({
+const sshKeyList = defineOperation({
   name: "sshkey.list",
   tag: "ssh",
   summary: "List SSH keys",
@@ -46,7 +46,7 @@ export const sshKeyList = defineOperation({
   run: async ({ sshKeys }) => ({ keys: storeOf(sshKeys).list().map(view) }),
 });
 
-export const sshKeyAdd = defineOperation({
+const sshKeyAdd = defineOperation({
   name: "sshkey.add",
   tag: "ssh",
   summary: "Add an SSH key",
@@ -77,7 +77,7 @@ export const sshKeyAdd = defineOperation({
   run: async ({ sshKeys }, input) => ({ key: view(storeOf(sshKeys).add(input.publicKey, input.label)) }),
 });
 
-export const sshKeyDelete = defineOperation({
+const sshKeyDelete = defineOperation({
   name: "sshkey.delete",
   tag: "ssh",
   summary: "Delete an SSH key",

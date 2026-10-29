@@ -158,6 +158,8 @@ export function editRecipe(
       ...(declared.recipe.init?.forwardPorts === undefined ? {} : { forwardPorts: declared.recipe.init.forwardPorts }),
       ...(init.forwardPorts === undefined ? {} : { forwardPorts: init.forwardPorts }),
     };
+    if (merged.postCreate?.length === 0) delete merged.postCreate;
+    if (merged.forwardPorts?.length === 0) delete merged.forwardPorts;
     if (Object.keys(merged).length === 0) delete next.init;
     else next.init = merged;
   }
@@ -274,7 +276,7 @@ export async function templateSetupOf(host: HostCtx, ref: string): Promise<Templ
 }
 
 /** The description a template gets when none is given, so the label is never empty. */
-export function defaultDescription(source: TemplateSource): string {
+function defaultDescription(source: TemplateSource): string {
   if (source.kind === "dockerfile") return "Built from a Dockerfile";
   if (source.kind === "git") return `Built from ${source.url}${source.branch ? ` (${source.branch})` : ""}`;
   if (source.kind === "devcontainer")

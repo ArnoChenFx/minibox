@@ -103,4 +103,35 @@ describe.skipIf(!executablePath)("deleting tokens on the settings page (real bro
     },
     TIMEOUT_MS,
   );
+  test(
+    "storage deletion is disabled for scoped tokens while the admin preset remains usable",
+    async () => {
+      const page = await openTokens("en-US", [], []);
+      try {
+        await page.locator("#stTokenCreate").click();
+        const deletion = page.locator('input[name="scope"][value="volume:delete"]');
+        expect(await deletion.isDisabled()).toBe(true);
+        await page.locator('[data-preset="admin"]').click();
+        expect(await deletion.isDisabled()).toBe(false);
+        expect(await deletion.isChecked()).toBe(true);
+        await page.locator('select[name="boxes"]').selectOption("created-by-me");
+        expect(await deletion.isDisabled()).toBe(true);
+        // A scope that cannot count is cleared, not left ticked behind a disabled box.
+        expect(await deletion.isChecked()).toBe(false);
+        await page.locator('select[name="boxes"]').selectOption("*");
+        expect(await deletion.isDisabled()).toBe(false);
+        expect(await deletion.isChecked()).toBe(true);
+        // Unticking it under the admin preset leaves it usable, so it can be ticked again without re-choosing the preset.
+        await page.locator("#stPermsToggle").click();
+        await deletion.uncheck();
+        expect(await deletion.isDisabled()).toBe(false);
+        await deletion.check();
+        expect(await deletion.isChecked()).toBe(true);
+        expect(await page.getByRole("dialog").innerText()).toContain("Only an unmodified admin token");
+      } finally {
+        await page.context().close();
+      }
+    },
+    TIMEOUT_MS,
+  );
 });

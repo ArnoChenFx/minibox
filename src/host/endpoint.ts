@@ -15,8 +15,8 @@ export type Endpoint =
   /** An agent that dials in. The agent id names its record; no address is involved. */
   | { readonly kind: "agent"; readonly agentId: string };
 
-export const DEFAULT_TLS_PORT = 2376;
-export const DEFAULT_SSH_PORT = 22;
+const DEFAULT_TLS_PORT = 2376;
+const DEFAULT_SSH_PORT = 22;
 /** The Docker socket of a system-wide daemon, as the SSH host's own filesystem sees it. */
 export const DEFAULT_REMOTE_SOCKET = "/var/run/docker.sock";
 

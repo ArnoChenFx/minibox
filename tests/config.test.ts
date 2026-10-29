@@ -553,6 +553,21 @@ describe("backup folder and retention", () => {
     expect(() => load({ ACCESS_KEY: KEY, BACKUP_DIR: `${dataDir}/..` })).toThrow(/BACKUP_DIR/);
   });
 
+  test.skipIf(process.getuid?.() === 0)(
+    "a BACKUP_DIR under a folder the server cannot search still loads, as it did before symlinks were resolved",
+    () => {
+      const locked = join(root, "locked");
+      mkdirSync(join(locked, "inner"), { recursive: true });
+      chmodSync(locked, 0o000);
+      try {
+        const target = join(locked, "inner", "backups");
+        expect(load({ ACCESS_KEY: KEY, BACKUP_DIR: target }).backupDir).toBe(target);
+      } finally {
+        chmodSync(locked, 0o700);
+      }
+    },
+  );
+
   test("BACKUP_KEEP is 0 when unset, which keeps every backup", () => {
     expect(load({ ACCESS_KEY: KEY }).backupKeep).toBe(0);
     expect(load({ ACCESS_KEY: KEY, BACKUP_KEEP: "" }).backupKeep).toBe(0);

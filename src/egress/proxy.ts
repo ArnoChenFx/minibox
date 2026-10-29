@@ -1,5 +1,5 @@
 /** The proxy listens here on both of its networks. The box reaches it by the alias on its internal network. */
-export const PROXY_PORT = 3128;
+const PROXY_PORT = 3128;
 export const PROXY_ALIAS = "minibox-proxy";
 
 /** Entry point for `node -e`. A proxy run never writes a request path or body, only the host and the byte counts. */

@@ -21,7 +21,7 @@ const portNumber = () =>
     .max(65535)
     .meta({ description: "TCP port inside the box (1–65535). Not published on the host." });
 
-export const portList = defineOperation({
+const portList = defineOperation({
   name: "port.list",
   tag: "ports",
   summary: "List listening and manually exposed ports on a box",
@@ -45,7 +45,7 @@ export const portList = defineOperation({
   },
 });
 
-export const portExpose = defineOperation({
+const portExpose = defineOperation({
   name: "port.expose",
   tag: "ports",
   summary: "Remember a port for preview",
@@ -71,7 +71,7 @@ export const portExpose = defineOperation({
   },
 });
 
-export const portUnexpose = defineOperation({
+const portUnexpose = defineOperation({
   name: "port.unexpose",
   tag: "ports",
   summary: "Remove a manually exposed preview port",

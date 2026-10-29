@@ -198,7 +198,7 @@ describe.skipIf(!executablePath)("the storage checkpoints page on a phone (real 
       expect(shape.overlaps).toEqual([]);
       expect(shape.contentsLabel).toContain("Contents");
       // Only the contents cell is labelled, so no other field repeats its column's name on the card.
-      expect([...new Set(shape.labelled)]).toEqual(["sck-contents", "sck-contents sck-empty"]);
+      expect([...new Set(shape.labelled)].toSorted()).toEqual(["sck-contents", "sck-contents sck-empty"]);
       expect(shape.labelled.length).toBeGreaterThan(1);
       // The first field starts where the card's padding ends, rather than being pushed out by the table's own padding.
       expect(shape.padding.first - shape.padding.cardLeft).toBe(shape.padding.card);

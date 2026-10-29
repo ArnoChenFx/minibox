@@ -32,7 +32,7 @@ import {
 import { checkSshKey, HostKeyMismatchError, HostKeyUnconfirmedError, probeHostKey, SshKeyError } from "./ssh";
 import { AUTO_HOST, HOST_ID_RE, type HostStore, hostLabelsProblem, type StoredHost } from "./store";
 
-export const PROBE_INTERVAL_MS = 30_000;
+const PROBE_INTERVAL_MS = 30_000;
 /** The most ticks an offline host sits out between two checks. At the interval above, that is about five minutes. */
 const MAX_SKIPPED_PROBES = 9;
 /** Longest one connection check takes: the link, a ping and the engine's version and capacity. */
@@ -104,7 +104,7 @@ export interface HostUsage {
 }
 
 /** Why a host has no `docker system df` reading. Null when it has one. */
-export type DiskBreakdownReason = "agent_host" | "offline" | "timeout" | "engine";
+type DiskBreakdownReason = "agent_host" | "offline" | "timeout" | "engine";
 
 /**
  * What one host's engine holds, as `docker system df` reports it. An agent host cannot answer, and an engine that is

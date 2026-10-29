@@ -89,16 +89,8 @@ export const REFUSED_OPERATIONS = [
   "diskBreakdown",
 ] as const;
 
-export const ERROR_KINDS = [
-  "not_found",
-  "conflict",
-  "invalid",
-  "unavailable",
-  "engine",
-  "unsupported",
-  "aborted",
-] as const;
-export type AgentErrorKind = (typeof ERROR_KINDS)[number];
+const ERROR_KINDS = ["not_found", "conflict", "invalid", "unavailable", "engine", "unsupported", "aborted"] as const;
+type AgentErrorKind = (typeof ERROR_KINDS)[number];
 
 export interface AgentErrorInfo {
   kind: AgentErrorKind;
@@ -115,7 +107,7 @@ const ErrorInfoSchema = z.object({
 });
 
 /** An exec's state once it has ended. It travels with the `end` frame, so its exit code outlives the agent's session. */
-export const ExecExitSchema = z.object({
+const ExecExitSchema = z.object({
   running: z.boolean(),
   exitCode: z.number().int().nullable(),
   pid: z.number().int().nullable(),
@@ -188,7 +180,7 @@ export const PairResponseSchema = z.object({
 export type PairResponse = z.infer<typeof PairResponseSchema>;
 
 /** The bytes an agent signs to prove it holds the key. The nonce is per connection, so a signature cannot be replayed. */
-export function helloMessage(nonce: string, agentId: string, protocol: number): Buffer {
+function helloMessage(nonce: string, agentId: string, protocol: number): Buffer {
   return Buffer.from(`minibox-agent-hello\n${nonce}\n${agentId}\n${protocol}`);
 }
 

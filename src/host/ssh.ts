@@ -9,12 +9,12 @@ import { Client, utils } from "ssh2";
 
 import { log } from "../lib/logger";
 
-export const SSH_CONNECT_TIMEOUT_MS = 10_000;
+const SSH_CONNECT_TIMEOUT_MS = 10_000;
 const KEEPALIVE_MS = 15_000;
 const KEEPALIVE_MISSES = 3;
 
 /** `SHA256:` and the unpadded base64 digest of an SSH host key blob, the form `ssh-keygen -l` prints. */
-export function fingerprintOf(blob: Buffer): string {
+function fingerprintOf(blob: Buffer): string {
   return `SHA256:${createHash("sha256").update(blob).digest("base64").replace(/=+$/, "")}`;
 }
 

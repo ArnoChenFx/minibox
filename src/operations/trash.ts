@@ -21,7 +21,7 @@ import { BoxSchema, OkSchema, OutcomeSchema, TrashEntrySchema } from "./schemas"
 import { optionalCpus, optionalMemoryMb, restoredName, storageConfirmFlag } from "./validation";
 import { VolumeSchema } from "./volumes";
 
-export const trashId = () => z.string().meta({ description: "Recycle bin entry id (ck_…), as trash.list shows it." });
+const trashId = () => z.string().meta({ description: "Recycle bin entry id (ck_…), as trash.list shows it." });
 
 const trashTarget = (entry: TrashRecord): EventTarget => ({
   kind: "trash",
@@ -29,7 +29,7 @@ const trashTarget = (entry: TrashRecord): EventTarget => ({
   name: entry.trash.sourceName,
 });
 
-export const trashList = defineOperation({
+const trashList = defineOperation({
   name: "trash.list",
   tag: "trash",
   summary: "List the recycle bin",
@@ -49,7 +49,7 @@ export const trashList = defineOperation({
   run: async ({ host, allHosts }) => ({ trash: await fromEveryHost(allHosts?.() ?? [host], listTrash) }),
 });
 
-export const trashRestore = defineOperation({
+const trashRestore = defineOperation({
   name: "trash.restore",
   tag: "trash",
   summary: "Restore a recycle bin entry as a new box or volume",
@@ -96,7 +96,7 @@ export const trashRestore = defineOperation({
   },
 });
 
-export const trashPurge = defineOperation({
+const trashPurge = defineOperation({
   name: "trash.purge",
   tag: "trash",
   summary: "Purge a recycle bin entry now",
@@ -157,7 +157,7 @@ const tally = (entries: readonly PurgedEntry[]) => {
   };
 };
 
-export const trashEmpty = defineOperation({
+const trashEmpty = defineOperation({
   name: "trash.empty",
   tag: "trash",
   summary: "Empty the recycle bin",

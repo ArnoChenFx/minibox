@@ -15,7 +15,7 @@ export type ObjectKind = (typeof OBJECT_KINDS)[number];
  * Secrets whose names start with this prefix hold a target's credentials. A box, a clone and the secret API never read
  * or write them, so a credential for a target cannot reach a container.
  */
-export const TARGET_SECRET_PREFIX = "target.";
+const TARGET_SECRET_PREFIX = "target.";
 const TARGET_ID_RE = /^tgt_[0-9a-z]{8,32}$/;
 const TARGET_SECRET_RE = /^target\.(tgt_[0-9a-z]{8,32})\.(access-key|secret-key|private-key)$/;
 const ID_ALPHABET = "0123456789abcdefghjkmnpqrstvwxyz";
@@ -79,7 +79,7 @@ export function objectIdOf(kind: ObjectKind, fileName: string): string | null {
   return objectKindOf(object) === kind ? object : null;
 }
 
-export const SyncSchema = z.strictObject({
+const SyncSchema = z.strictObject({
   at: z.iso.datetime(),
   direction: z.enum(["push", "pull"]),
   kind: z.enum(OBJECT_KINDS),
@@ -104,7 +104,7 @@ const TargetBase = {
  * named `target.<id>.<field>`. The file is mode 600 all the same, because the host key pin and the last sync are kept
  * there too.
  */
-export const S3TargetSchema = z.strictObject({
+const S3TargetSchema = z.strictObject({
   ...TargetBase,
   kind: z.literal("s3"),
   endpoint: z.string().min(1).max(512),
@@ -112,7 +112,7 @@ export const S3TargetSchema = z.strictObject({
   bucket: z.string().min(1).max(63),
 });
 
-export const SftpTargetSchema = z.strictObject({
+const SftpTargetSchema = z.strictObject({
   ...TargetBase,
   kind: z.literal("sftp"),
   host: z.string().min(1).max(255),
@@ -121,7 +121,7 @@ export const SftpTargetSchema = z.strictObject({
   hostKeyFingerprint: z.string().min(1).max(128),
 });
 
-export const TargetRecordSchema = z.discriminatedUnion("kind", [S3TargetSchema, SftpTargetSchema]);
+const TargetRecordSchema = z.discriminatedUnion("kind", [S3TargetSchema, SftpTargetSchema]);
 
 export type TargetRecord = z.infer<typeof TargetRecordSchema>;
 export type S3TargetRecord = z.infer<typeof S3TargetSchema>;

@@ -27,7 +27,7 @@ const AgentViewSchema = z.object({
   revoked: z.boolean(),
 });
 
-export const HostViewSchema = z.object({
+const HostViewSchema = z.object({
   id: z.string().meta({ description: "Host id, such as local or lab. A box names its host in box.host." }),
   name: z.string(),
   transport: z.enum(["local", "unix", "tcp", "ssh", "agent"]).meta({
@@ -130,7 +130,7 @@ function hostsOf(ctx: OperationContext): HostManager {
   return ctx.hostAdmin;
 }
 
-export const hostList = defineOperation({
+const hostList = defineOperation({
   name: "host.list",
   tag: "hosts",
   summary: "List hosts",
@@ -170,7 +170,7 @@ const HostUsageSchema = z.object({
   }),
 });
 
-export const hostUsage = defineOperation({
+const hostUsage = defineOperation({
   name: "host.usage",
   tag: "hosts",
   summary: "Show what each host runs and uses",
@@ -210,7 +210,7 @@ const DiskBreakdownSchema = z.object({
 
 const DiskUnsupportedSchema = z.enum(["agent_host", "offline", "timeout", "engine"]);
 
-export const hostDisk = defineOperation({
+const hostDisk = defineOperation({
   name: "host.disk",
   tag: "hosts",
   summary: "Show what a host's engine holds",
@@ -248,7 +248,7 @@ export const hostDisk = defineOperation({
   run: (ctx, input) => hostsOf(ctx).disk(input.id),
 });
 
-export const hostAdd = defineOperation({
+const hostAdd = defineOperation({
   name: "host.add",
   tag: "hosts",
   summary: "Add a host",
@@ -273,7 +273,7 @@ export const hostAdd = defineOperation({
   run: async (ctx, input) => ({ host: await hostsOf(ctx).add(input) }),
 });
 
-export const hostTest = defineOperation({
+const hostTest = defineOperation({
   name: "host.test",
   tag: "hosts",
   summary: "Test a host connection",
@@ -297,7 +297,7 @@ export const hostTest = defineOperation({
   run: async (ctx, input) => hostsOf(ctx).test(input),
 });
 
-export const hostLabelsSet = defineOperation({
+const hostLabelsSet = defineOperation({
   name: "host.labels.set",
   tag: "hosts",
   summary: "Set the labels of a host",
@@ -327,7 +327,7 @@ export const hostLabelsSet = defineOperation({
   }),
 });
 
-export const hostRemove = defineOperation({
+const hostRemove = defineOperation({
   name: "host.remove",
   tag: "hosts",
   summary: "Remove a host",
@@ -354,7 +354,7 @@ export const hostRemove = defineOperation({
   run: async (ctx, input): Promise<{ host: HostView }> => ({ host: await hostsOf(ctx).remove(input.id) }),
 });
 
-export const hostPairingCreate = defineOperation({
+const hostPairingCreate = defineOperation({
   name: "host.pairing.create",
   tag: "hosts",
   summary: "Create a pairing code for an agent host",
@@ -378,7 +378,7 @@ export const hostPairingCreate = defineOperation({
   run: async (ctx, input) => hostsOf(ctx).createPairing(input),
 });
 
-export const hostRevoke = defineOperation({
+const hostRevoke = defineOperation({
   name: "host.revoke",
   tag: "hosts",
   summary: "Revoke an agent host",

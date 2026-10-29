@@ -6,10 +6,10 @@
 export function initOf(command, ports) {
   const text = String(command ?? "").trim();
   const init = {
-    ...(text === "" ? {} : { postCreate: ["/bin/sh", "-c", text] }),
-    ...(ports.length === 0 ? {} : { forwardPorts: [...ports] }),
+    postCreate: text === "" ? [] : ["/bin/sh", "-c", text],
+    forwardPorts: [...ports],
   };
-  return Object.keys(init).length === 0 ? null : init;
+  return text === "" && ports.length === 0 ? null : init;
 }
 
 /**
@@ -36,5 +36,5 @@ export function commandText(command) {
   if (command === undefined || command.length === 0) return "";
   return command.length === 3 && command[0] === "/bin/sh" && command[1] === "-c"
     ? command[2]
-    : command.map((part) => (/[\s"']/.test(part) ? JSON.stringify(part) : part)).join(" ");
+    : command.map((part) => `'${part.replaceAll("'", "'\\''")}'`).join(" ");
 }

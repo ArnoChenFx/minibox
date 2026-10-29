@@ -7,7 +7,7 @@ import { msg } from "../lib/messages";
 import { type ExecSession, type ExecSpec, RuntimeError } from "../runtime";
 import { isUnrunnableExec } from "../tmux/format";
 
-export const TMUX_TIMEOUT_MS = 10_000;
+const TMUX_TIMEOUT_MS = 10_000;
 export const TMUX_ENV = ["TERM=xterm-256color", "LANG=C.UTF-8"];
 
 /** The most output one tmux command is read for. Past it the oldest bytes are dropped, so the newest screen still shows. */

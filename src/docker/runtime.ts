@@ -14,7 +14,7 @@ import { systemMethods } from "./system";
 import { volumeMethods } from "./volumes";
 
 export { KILL_TREE_SCRIPT, RUN_WRAPPER } from "./exec";
-export { parseChanges, toContainerInfo, toCreateOptions, toUpdateOptions } from "./containers";
+export { toContainerInfo, toCreateOptions } from "./containers";
 export { toHelperOptions } from "./helpers";
 
 /** Longest a TLS engine may take to answer the connection before the request fails as unavailable. */

@@ -67,7 +67,7 @@ const toolVersion = () =>
       "Desired package version, or latest. Letters, digits, dots, underscores, plus and hyphen only (optional leading v).",
   });
 
-export const toolList = defineOperation({
+const toolList = defineOperation({
   name: "tool.list",
   tag: "tools",
   summary: "List tool catalog and install status",
@@ -88,7 +88,7 @@ export const toolList = defineOperation({
   run: async ({ host }, input) => ({ tools: await listToolStatuses(host, input.id) }),
 });
 
-export const toolInstall = defineOperation({
+const toolInstall = defineOperation({
   name: "tool.install",
   tag: "tools",
   summary: "Install a tool into the shared tools volume",
@@ -119,7 +119,7 @@ export const toolInstall = defineOperation({
   run: async ({ host, task }, input) => installTool(host, input.id, input.tool, input.version, task),
 });
 
-export const toolUpgrade = defineOperation({
+const toolUpgrade = defineOperation({
   name: "tool.upgrade",
   tag: "tools",
   summary: "Upgrade a tool on the shared tools volume",
@@ -149,7 +149,7 @@ export const toolUpgrade = defineOperation({
   run: async ({ host, task }, input) => upgradeTool(host, input.id, input.tool, input.version, task),
 });
 
-export const toolUninstall = defineOperation({
+const toolUninstall = defineOperation({
   name: "tool.uninstall",
   tag: "tools",
   summary: "Uninstall a tool from the shared tools volume",
@@ -179,7 +179,7 @@ export const toolUninstall = defineOperation({
   run: async ({ host, task }, input) => uninstallTool(host, input.id, input.tool, task),
 });
 
-export const toolReconcile = defineOperation({
+const toolReconcile = defineOperation({
   name: "tool.reconcile",
   tag: "tools",
   summary: "Install missing tools from the box spec",
@@ -223,7 +223,7 @@ export function catalogSummary(dataDir: string) {
   }));
 }
 
-export const toolCatalog = defineOperation({
+const toolCatalog = defineOperation({
   name: "tool.catalog",
   tag: "tools",
   summary: "List the tool catalog without install status",
@@ -472,7 +472,7 @@ function customOutput(entry: CustomEntry) {
   return { ...entry, requires: entry.requires ?? null, stop: entry.stop ?? null };
 }
 
-export const toolCustomList = defineOperation({
+const toolCustomList = defineOperation({
   name: "tool.custom.list",
   tag: "tools",
   summary: "List the custom tool entries in DATA_DIR/tools.d",
@@ -495,7 +495,7 @@ export const toolCustomList = defineOperation({
   },
 });
 
-export const toolCustomPut = defineOperation({
+const toolCustomPut = defineOperation({
   name: "tool.custom.put",
   tag: "tools",
   summary: "Create or replace a custom tool entry in DATA_DIR/tools.d",
@@ -533,7 +533,7 @@ export const toolCustomPut = defineOperation({
   },
 });
 
-export const toolCustomDelete = defineOperation({
+const toolCustomDelete = defineOperation({
   name: "tool.custom.delete",
   tag: "tools",
   summary: "Delete a custom tool entry from tools.d. Nothing is uninstalled from the shared tools volume.",

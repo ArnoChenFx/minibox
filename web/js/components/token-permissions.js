@@ -55,6 +55,9 @@ export function permissionsHtml(catalog) {
   });
 }
 
+/** The scopes other than `volume:delete`, which the form judges apart. */
+const withoutDeletion = (scopes) => scopes.filter((scope) => scope !== "volume:delete");
+
 /**
  * Connects the preset list and the permission checkboxes under `root`. Choosing a preset ticks its scopes and calls
  * `onPreset(preset)`; ticking a scope by hand makes the token custom. Returns what the form submits.
@@ -71,6 +74,21 @@ export function bindPermissions(root, catalog, { onPreset = () => {} } = {}) {
 
   function paint() {
     const preset = presetOf(current);
+    const deletion = boxes.find((box) => box.value === "volume:delete");
+    if (deletion) {
+      // volume:delete counts only on an unmodified admin token, so it is judged on the other scopes, and a box that
+      // cannot count is cleared rather than left ticked. When it becomes usable again it takes the preset's value back.
+      const form = root.querySelector("#stTokenForm");
+      const admin =
+        current === "admin" &&
+        sameScopes(withoutDeletion(chosen()), withoutDeletion(preset.scopes)) &&
+        form?.elements.boxes.value === "*" &&
+        form?.elements.hosts.value === "*";
+      if (!admin) deletion.checked = false;
+      else if (deletion.disabled) deletion.checked = preset.scopes.includes("volume:delete");
+      deletion.disabled = !admin;
+      deletion.closest("label").title = admin ? "" : t("st.storageAdminPolicy");
+    }
     const scopes = chosen();
     const custom = !sameScopes(scopes, preset.scopes);
     for (const button of buttons) {
@@ -99,9 +117,11 @@ export function bindPermissions(root, catalog, { onPreset = () => {} } = {}) {
     button.addEventListener("click", () => {
       apply(button.dataset.preset);
       onPreset(presetOf(button.dataset.preset));
+      paint();
     });
   }
   for (const box of boxes) box.addEventListener("change", paint);
+  root.querySelector("#stTokenForm")?.addEventListener("change", paint);
   root.querySelector("#stPermReset").addEventListener("click", () => apply(current));
   apply(current);
   return { preset: () => current, scopes: chosen };

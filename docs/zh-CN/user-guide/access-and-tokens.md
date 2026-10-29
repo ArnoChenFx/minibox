@@ -53,9 +53,9 @@ Box 内 Agent 使用的是另一种令牌，即自助令牌。所有者在创建
 | 预设 | 允许的操作 |
 |---|---|
 | `readonly` | 在本宿主机上读取 Box 和文件。默认只能看到它创建的 Box，且不能创建 Box。指定具体 Box 或全部 Box 后才有用。 |
-| `operator` | 除使用密钥外的一切操作，仅限本宿主机。仅限该令牌创建的 Box。 |
+| `operator` | 在本宿主机创建和管理自己的 Box，包括终端、文件、检查点、工具和 SSH；不允许使用密钥或管理存储。 |
 | `sandboxed-agent` | 类似 `operator`，但不能挂载已有卷、安装工具或使用 SSH。适用配额：5 个 Box、合计 8 核 CPU 和 16 GB 内存、4 小时 TTL、每分钟 60 次请求、20 个手动检查点。 |
-| `admin` | 全部 scope，全部 Box 和全部宿主机。仅用于可信工具。 |
+| `admin` | 全部 Box 和宿主机，可使用密钥和管理存储。删除默认保留回收站副本。仅用于可信工具。 |
 
 ### scope
 
@@ -73,9 +73,9 @@ Box 内 Agent 使用的是另一种令牌，即自助令牌。所有者在创建
 | `checkpoint:create` | 创建检查点和快照，并修改或删除该令牌创建的检查点 |
 | `checkpoint:restore` | 将 Box 回滚到某个检查点 |
 | `volume:read` | 查看卷 |
-| `volume:write` | 创建卷 |
+| `volume:write` | 创建 Box 的默认角色卷，以读写方式挂载可访问卷；显式创建或删除独立卷还需要存储管理员身份 |
 | `volume:attach` | 将已有卷挂载到 Box |
-| `volume:delete` | 批量删除卷。令牌只能操作它创建的卷。任何预设都不包含它。清理孤立卷只有所有者可以操作。 |
+| `volume:delete` | 批量删除卷，需要存储管理员身份；admin 预设包含此 scope。单独添加 scope 不授予管理员身份。 |
 | `tool:install` | 安装、升级和卸载工具；把 Box 存为模板、删除模板 |
 | `secret:use` | 让 Box 引用密钥，包括代码仓库克隆使用的密钥 |
 | `trash:skip` | 删除 Box 或卷时不在回收站中保留副本。没有任何预设包含它。 |
@@ -83,6 +83,19 @@ Box 内 Agent 使用的是另一种令牌，即自助令牌。所有者在创建
 只有所有者可以创建、修改或吊销令牌。令牌不能创建其他令牌。构建或重新构建模板、拉取镜像只限所有者，任何 scope 都不能允许。
 
 删除 Box 或卷时，除非请求设置了 `skipTrash`，否则会在[回收站](checkpoints.md#回收站)中保留数据副本；设置 `skipTrash` 需要 `trash:skip`。回收站本身，包括列出、恢复与彻底删除，只限所有者使用。
+
+### 存储管理权限
+
+只有所有者和**未收窄的 admin 令牌**可以选择存储池、列出或修改存储池，以及显式创建或删除卷，包括批量删除和清理孤立卷。admin 预设的 scope、Box 和宿主机范围必须保持完整；自定义 scope、令牌名称或单独持有卷 scope 不授予管理员身份。此规则适用于所有已保存的令牌。
+
+| 调用者 | 存储池与独立卷管理 | Box 功能 |
+| --- | --- | --- |
+| 所有者 | 允许 | 允许 |
+| 未收窄 admin | 按资源授权、确认与审计规则执行 | 按 scope 执行 |
+| operator、sandboxed-agent、自定义或收窄的 admin | 拒绝 | 按 Box/资源范围及 scope 执行 |
+| Box self-token | 拒绝 | 仅该 Box 的 self 操作 |
+
+不指定 pool 时，服务器为有权创建的 Box 配备默认角色卷。删除 Box 时同时删除其卷（`deleteVolume=true`）属于显式删卷：非存储管理员令牌会得到 `403 storage_admin_required`，Box 也不会被删除；不带该参数删除 Box 时卷保留。重建或修改挂载时写入一个尚不存在的卷名会新建独立卷，同样返回 `403 storage_admin_required`。创建 Box 不会按名称新建卷，因此创建时写入不存在的卷名，无论哪个令牌都返回 `404 volume_not_found`。任何令牌（包括未收窄的 admin 令牌）都不能创建 tools 角色卷，只有所有者可以（`403 volume_tools_create_forbidden`）。授权 Box 的文件、终端、端口、检查点与活动分别按对应 scope 检查，SSH 需要 `box:ssh`。令牌管理等 owner-only 功能只允许所有者调用。
 
 ### 吊销令牌
 

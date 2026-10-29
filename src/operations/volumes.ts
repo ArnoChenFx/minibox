@@ -171,6 +171,10 @@ export const VolumeSchema = z.object({
     description:
       "The box that owned this volume was deleted and kept it. Deleting the volume frees its space once no box mounts it.",
   }),
+  sharedTools: z.boolean().meta({
+    description:
+      "This is the shared tools volume, the one boxes on its host mount at /opt/minibox/tools, so it cannot be deleted. A spare tools-role volume beside it is false and can be deleted by name. Prune skips every tools-role volume.",
+  }),
 });
 
 const volumeTarget = (volume: Pick<VolumeView, "id" | "name">): EventTarget => ({
@@ -241,11 +245,14 @@ const volumeCreate = defineOperation({
   conflicts: true,
   input: z.object({
     name: volumeName(),
-    pool: z
-      .string()
-      .optional()
-      .meta({ description: "Storage pool. Omitted, the role rule or the default pool is used." }),
-    role: z.enum(ROLES).nullable().optional().meta({ description: "Optional role. Null is a general volume." }),
+    pool: z.string().optional().meta({
+      description:
+        "Storage pool (owner or unmodified admin token only). Omitted, the role rule or the default pool is used.",
+    }),
+    role: z.enum(ROLES).nullable().optional().meta({
+      description:
+        "Optional role. Null is a general volume. Only the owner may create a tools volume; a token gets 403.",
+    }),
     confirm: storageConfirmFlag(),
   }),
   output: z.object({ volume: VolumeSchema }),
@@ -254,13 +261,14 @@ const volumeCreate = defineOperation({
     toolset: "storage",
     name: "create_volume",
     description:
-      "Create an independent volume. It is not deleted when a box is deleted. New local volumes are chowned to uid 1000 when the base template image exists. Send confirm true; without it the call changes nothing and returns confirmation_required with details.preview.",
+      "Create an independent volume (owner or unmodified admin token only). It is not deleted when a box is deleted. New local volumes are chowned to uid 1000 when the base template image exists. Send confirm true; without it the call changes nothing and returns confirmation_required with details.preview.",
   },
   activity: { action: () => "volume.create", target: (input) => input.name },
   audit: { target: ({ name }, _resolved, result) => ({ kind: "volume", id: result?.volume.id, name }) },
   run: async ({ host, principal }, input) => {
     const request = { name: input.name, pool: input.pool, role: input.role ?? null, createdBy: principal.id };
-    if (principal.type === "token" && request.role === "tools") throw refusal("volume_create_forbidden");
+    // A tools volume is mounted into the owner's boxes, so only the owner may make one by hand, not even an admin token.
+    if (principal.type !== "owner" && request.role === "tools") throw refusal("volume_tools_create_forbidden");
     if (!input.confirm) throw confirmationRequired(previewCreateVolume(host, request));
     return { volume: await createVolume(host, request) };
   },
@@ -291,7 +299,7 @@ const volumeDelete = defineOperation({
     toolset: "storage",
     name: "delete_volume",
     description:
-      "Delete a volume and its engine data. The data is first kept in the recycle bin for the retention period, and restore_trash brings it back as a new volume. Cache and tools volumes keep nothing. The shared tools volume, a system volume, and a volume that a box or a container uses are refused. Pass skipTrash true to delete without keeping a copy; that needs the owner, or a token with the trash:skip scope. Send confirm true; without it the call changes nothing and returns confirmation_required with details.preview.",
+      "Delete a volume and its engine data. The data is first kept in the recycle bin for the retention period, and restore_trash brings it back as a new volume. Cache and tools volumes keep nothing. The shared tools volume (the one boxes mount), a system volume, and a volume that a box or a container uses are refused; a spare tools-role volume that boxes do not get may be deleted. Pass skipTrash true to delete without keeping a copy; that needs the owner, or a token with the trash:skip scope. Send confirm true; without it the call changes nothing and returns confirmation_required with details.preview.",
   },
   hostFor: (ctx, input) => hostOfVolume(ctx, input.id),
   resolve: ({ host }, input) => getVolume(host, input.id),
@@ -302,7 +310,7 @@ const volumeDelete = defineOperation({
   audit: { target: (_input, volume) => volume && volumeTarget(volume) },
   run: async ({ host, principal, record }, input, volume) => {
     if (!input.confirm) throw confirmationRequired(previewDeleteVolume(volume, input.skipTrash));
-    return deleteVolume(host, input.id, { skipTrash: input.skipTrash, createdBy: principal.id, record });
+    return deleteVolume(host, input.id, { skipTrash: input.skipTrash, createdBy: principal.id, record, named: true });
   },
 });
 
@@ -396,7 +404,7 @@ const volumeDeleteBatch = defineOperation({
     toolset: "storage",
     name: "delete_volumes",
     description:
-      "Delete several volumes, on any host, in one call. Each is deleted as delete_volume deletes it: its data is kept in the recycle bin unless skipTrash is true, and a volume that a box or container uses is refused. Each volume gets its own result, and one failure does not stop the others. A token deletes only the volumes it created. Send confirm true; without it the call changes nothing and returns confirmation_required with details.preview.",
+      "Delete several volumes, on any host, in one call. Each is deleted as delete_volume deletes it: its data is kept in the recycle bin unless skipTrash is true, and a volume that a box or container uses is refused. Each volume gets its own result, and one failure does not stop the others. Only the owner or an unmodified admin token can delete volumes, within the token’s resource grants. Send confirm true; without it the call changes nothing and returns confirmation_required with details.preview.",
   },
   precondition: async (ctx, input) => {
     if (input.skipTrash) await assertCanSkipTrash(ctx);
@@ -454,7 +462,7 @@ const volumePrune = defineOperation({
     toolset: "storage",
     name: "prune_volumes",
     description:
-      "Find or remove orphaned volumes: volumes MiniBox made that no box spec mounts or owns and no container mounts. The shared tools volume and MiniBox's internal volumes are never orphans, and a volume created or last used within the last five minutes is left alone. dryRun defaults to true and only lists the orphans. To remove them, send dryRun false with ids set to the ids the dry run listed: only those are removed, and one that is no longer an orphan is refused. olderThan such as 30d keeps the volumes used more recently. A removed volume's data is kept in the recycle bin, except a cache volume's, which cannot be restored. Only the owner may prune.",
+      "Find or remove orphaned volumes: volumes MiniBox made that no box spec mounts or owns and no container mounts. The shared tools volume and MiniBox's internal volumes are never orphans, and a volume created or last used within the last five minutes is left alone. dryRun defaults to true and only lists the orphans. To remove them, send dryRun false with ids set to the ids the dry run listed: only those are removed, and one that is no longer an orphan is refused. olderThan such as 30d keeps the volumes used more recently. A removed volume's data is kept in the recycle bin, except a cache volume's, which cannot be restored. Only the owner or an unmodified admin token may prune, and an admin token removes only the orphans within its resource grants.",
   },
   activity: { action: () => "volume.prune", target: () => "volumes", when: (input) => !input.dryRun },
   run: async (ctx, input) => {

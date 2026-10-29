@@ -152,7 +152,7 @@ function toChange(change: { Path?: string; Kind?: number }): ContainerChange[] {
  * body counts the same way. Any other body is an error: an empty diff for a container that could not be read would
  * let a rebuild be confirmed without showing the writable-layer changes it throws away.
  */
-export function parseChanges(body: unknown): ContainerChange[] {
+function parseChanges(body: unknown): ContainerChange[] {
   if (Array.isArray(body)) return body.flatMap(toChange);
   if (body === null) return [];
   if (Buffer.isBuffer(body)) {
@@ -167,7 +167,7 @@ function describeBody(body: unknown): string {
   return text.length > 80 ? `${text.slice(0, 80)}…` : text;
 }
 
-export function toUpdateOptions(limits: ContainerUpdate): Record<string, unknown> {
+function toUpdateOptions(limits: ContainerUpdate): Record<string, unknown> {
   const opts: Record<string, unknown> = {};
   if (limits.cpus !== undefined) opts.NanoCpus = Math.round(limits.cpus * NANO_CPUS_PER_CPU);
   if (limits.memoryBytes !== undefined) opts.Memory = limits.memoryBytes;
@@ -238,7 +238,18 @@ export function containerMethods(engine: Engine): ContainerMethods {
       for (const id of inspected.keys()) {
         if (!listed.has(id)) inspected.delete(id);
       }
-      const infos = await Promise.all(list.map((c) => inspectListed(c.Id, c.State, signal)));
+      const infos: Array<ContainerInfo | null> = Array.from({ length: list.length }, () => null);
+      let next = 0;
+      await Promise.all(
+        Array.from({ length: Math.min(12, list.length) }, async () => {
+          while (next < list.length) {
+            signal?.throwIfAborted();
+            const index = next++;
+            const c = list[index];
+            if (c) infos[index] = await inspectListed(c.Id, c.State, signal);
+          }
+        }),
+      );
       return infos.filter((info): info is ContainerInfo => info !== null);
     },
 

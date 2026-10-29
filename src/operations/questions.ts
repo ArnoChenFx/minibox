@@ -20,7 +20,7 @@ import { boxId, field } from "./validation";
 const BRIEF_MAX = 60;
 
 /** The text as an activity or event target shows it: its first characters, with an ellipsis when cut. */
-export function briefOf(text: string): string {
+function briefOf(text: string): string {
   const chars = [...text];
   return chars.length > BRIEF_MAX ? `${chars.slice(0, BRIEF_MAX).join("")}…` : text;
 }
@@ -90,7 +90,7 @@ const answerField = () =>
     description: `The answer, at most ${QUESTION_ANSWER_MAX} characters. It must be one of the question's options when it has any.`,
   });
 
-export const boxQuestions = defineOperation({
+const boxQuestions = defineOperation({
   name: "box.questions",
   tag: "questions",
   summary: "List the questions a box's agent asked",
@@ -106,7 +106,7 @@ export const boxQuestions = defineOperation({
   run: async ({ host }, _input, box) => ({ questions: host.questions.forBox(box.boxId) }),
 });
 
-export const questionAnswer = defineOperation({
+const questionAnswer = defineOperation({
   name: "question.answer",
   tag: "questions",
   summary: "Answer a question a box's agent asked",

@@ -7,7 +7,7 @@ import type { ContainerChange } from "../runtime";
 import type { BoxEnv, BoxMount, BoxSpec } from "./types";
 
 /** What a rebuild keeps. The writable layer is not in this list. */
-export const REBUILD_KEEPS = ["volumes", "id", "name", "history"] as const;
+const REBUILD_KEEPS = ["volumes", "id", "name", "history"] as const;
 
 /** What a rebuild drops. Checkpointing the writable layer is issue #11 and is not part of this step. */
 export const REBUILD_LOSES = ["writableLayer", "processes", "ip"] as const;

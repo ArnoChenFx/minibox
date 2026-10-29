@@ -15,7 +15,6 @@ export function bytes(n, digits = 1) {
   return `${v.toFixed(i === 0 ? 0 : v >= 100 ? 0 : digits)} ${u[i]}`;
 }
 
-export const gb = (n) => (n == null ? "—" : `${(n / 1024 ** 3).toFixed(n >= 10 * 1024 ** 3 ? 0 : 1)} GB`);
 export const pct = (n, d = 1) => (n == null || Number.isNaN(n) ? "—" : `${Number(n).toFixed(d)}%`);
 /** English counts one core and many cores; Chinese has one form, so its `unit.core` matches `unit.cores`. */
 export const cpus = (c) =>
@@ -73,9 +72,3 @@ export function dateTime(iso) {
 }
 
 export const shortId = (id) => (id ? id.replace(/^sha256:/, "").slice(0, 12) : "—");
-
-export function level(p) {
-  if (p >= 90) return "crit";
-  if (p >= 75) return "warn";
-  return "";
-}

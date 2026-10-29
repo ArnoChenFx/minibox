@@ -195,7 +195,7 @@ If you want to keep software that you installed by hand, save the box as a templ
 ## Delete a box
 
 1. Open the box, and click **Delete box**.
-2. To remove the volumes that only this box uses, tick **Also delete the volumes this box owns**.
+2. To remove the volumes that only this box uses, tick **Also delete the volumes this box owns**. Only the owner, or an unmodified admin token, can do that; other token sessions do not see the option.
 3. Click **Delete box**.
 
 Deleting a box keeps a copy of its workspace and home data in the [recycle bin](checkpoints.md#recycle-bin), whether or not you tick the volumes option. The copy is kept for `TRASH_RETENTION_DAYS` days, 7 by default. To bring the box back, restore the entry from the **Recycle bin** page, which creates a new box. To delete without keeping a copy, tick **Delete without keeping a copy**. Only the owner, or a token with the `trash:skip` scope, can do that.

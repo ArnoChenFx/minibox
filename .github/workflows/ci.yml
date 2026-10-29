@@ -26,6 +26,7 @@ jobs:
       - run: bun run fmt:check
       - run: bun run lint
       - run: bun run typecheck
+      - run: bun run check:unused
       - run: bunx playwright install --with-deps chromium
       - name: Test
         run: bun test --timings="$RUNNER_TEMP/test-timings.json" --update-timings

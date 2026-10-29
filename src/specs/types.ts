@@ -35,7 +35,7 @@ export interface BoxEnv {
   secretRef?: string;
 }
 
-export interface BoxTool {
+interface BoxTool {
   id: string;
   version: string;
 }

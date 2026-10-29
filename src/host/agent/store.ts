@@ -3,7 +3,7 @@ import { z } from "zod";
 import { agentsPath, readSecretFile, SECRET_FILE_MODE, writeFileAtomic } from "../../data-dir";
 import { AGENT_ID_RE } from "../endpoint";
 
-export const AgentRecordSchema = z
+const AgentRecordSchema = z
   .object({
     agentId: z.string().regex(AGENT_ID_RE),
     hostId: z.string().min(1).max(32),

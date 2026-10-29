@@ -26,7 +26,7 @@ export function newKeyPair(): KeyPair {
 }
 
 /** `SHA256:` and the unpadded base64 digest of a key blob, the form `ssh-keygen -lf` prints. */
-export function fingerprintOfBlob(blob: Buffer): string {
+function fingerprintOfBlob(blob: Buffer): string {
   return `SHA256:${createHash("sha256").update(blob).digest("base64").replace(/=+$/, "")}`;
 }
 

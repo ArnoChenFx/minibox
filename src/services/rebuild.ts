@@ -66,7 +66,7 @@ interface SwapState {
 }
 
 /** A checkpoint a rebuild takes before it changes anything. It is discarded when the rebuild fails and the box is restored. */
-export interface SafetyPoint {
+interface SafetyPoint {
   id: string;
   label: string;
   discard(): Promise<void>;

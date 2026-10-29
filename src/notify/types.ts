@@ -63,7 +63,7 @@ export interface StoredChannel {
   readonly updatedAt: string;
 }
 
-export const StoredChannelSchema = z
+const StoredChannelSchema = z
   .object({
     id: z.string().regex(CHANNEL_ID_RE),
     type: z.enum(CHANNEL_TYPES),

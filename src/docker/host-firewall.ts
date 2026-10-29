@@ -10,13 +10,13 @@ import { imageMethods } from "./images";
  * Carries iptables, which the base template does not. Pinned to a release line; the helper pulls it on first use. A
  * remote agent host pulls it on its own engine.
  */
-export const HOST_FIREWALL_IMAGE = "alpine:3.20";
+const HOST_FIREWALL_IMAGE = "alpine:3.20";
 
 /**
  * The chains MiniBox owns start with this. Each install has its own, named after a hash of its label prefix, so two
  * installs on one host, such as a test instance next to a live one, never replace each other's rules.
  */
-export const HOST_FIREWALL_CHAIN_PREFIX = "MINIBOX-EGRESS-";
+const HOST_FIREWALL_CHAIN_PREFIX = "MINIBOX-EGRESS-";
 
 /** An install's chain: the prefix and 8 hex digits, well inside iptables' 28-character limit. */
 export function hostFirewallChain(owner: string): string {

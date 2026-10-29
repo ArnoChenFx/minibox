@@ -29,7 +29,7 @@ const FAILURE_EVENTS_PER_MINUTE = 60;
 const USER_MAX = 64;
 
 /** Refused logins have no principal. This one is owner-typed, so only the owner reads its events, and named apart. */
-export const SSH_ANONYMOUS: OwnerPrincipal = { type: "owner", id: "anonymous", name: "anonymous" };
+const SSH_ANONYMOUS: OwnerPrincipal = { type: "owner", id: "anonymous", name: "anonymous" };
 
 export interface DirectSshDeps {
   readonly gateway: SshGateway;

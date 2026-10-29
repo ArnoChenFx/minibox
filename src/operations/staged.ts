@@ -103,7 +103,7 @@ const StagedBoxRefSchema = z.object({
  * are listed: a box that has none is left out. A box that cannot be read is logged and skipped, so one failing box does
  * not fail the list. A token sees only the boxes its grants cover.
  */
-export const boxStagedList = defineOperation({
+const boxStagedList = defineOperation({
   name: "box.staged.list",
   tag: "boxes",
   summary: "Read the staged changes of every box",
@@ -147,7 +147,7 @@ export const boxStagedList = defineOperation({
   },
 });
 
-export const boxStagedGet = defineOperation({
+const boxStagedGet = defineOperation({
   name: "box.staged.get",
   tag: "boxes",
   summary: "Read a box's staged changes",
@@ -162,7 +162,7 @@ export const boxStagedGet = defineOperation({
   run: async ({ host }, _input, box) => ({ staged: await readStaged(host, box) }),
 });
 
-export const boxStagedSet = defineOperation({
+const boxStagedSet = defineOperation({
   name: "box.staged.set",
   tag: "boxes",
   summary: "Stage changes that rebuild a box",
@@ -209,7 +209,7 @@ export const boxStagedSet = defineOperation({
   },
 });
 
-export const boxStagedDiscard = defineOperation({
+const boxStagedDiscard = defineOperation({
   name: "box.staged.discard",
   tag: "boxes",
   summary: "Discard a box's staged changes",
@@ -229,7 +229,7 @@ export const boxStagedDiscard = defineOperation({
   },
 });
 
-export const boxStagedPreview = defineOperation({
+const boxStagedPreview = defineOperation({
   name: "box.staged.preview",
   tag: "boxes",
   summary: "Preview applying a box's staged changes",
@@ -247,7 +247,7 @@ export const boxStagedPreview = defineOperation({
   },
 });
 
-export const boxStagedApply = defineOperation({
+const boxStagedApply = defineOperation({
   name: "box.staged.apply",
   tag: "boxes",
   summary: "Apply a box's staged changes",

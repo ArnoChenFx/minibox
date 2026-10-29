@@ -5,7 +5,7 @@ const BLOCK = 512;
 const octal = (value: number, width: number): string => `${value.toString(8).padStart(width - 1, "0")}\0`;
 
 /** A PAX record, `<length> <key>=<value>\n`. The length counts the whole record, including its own digits. */
-export function paxRecord(key: string, value: string): string {
+function paxRecord(key: string, value: string): string {
   const rest = ` ${key}=${value}\n`;
   let length = rest.length + 1;
   while (String(length).length + rest.length !== length) length += 1;
@@ -102,7 +102,7 @@ export interface TarEntry {
   badChecksum?: boolean;
 }
 
-export const POSIX_MAGIC = Buffer.from("ustar\u000000", "latin1");
+const POSIX_MAGIC = Buffer.from("ustar\u000000", "latin1");
 export const GNU_MAGIC = Buffer.from("ustar  \u0000", "latin1");
 
 function putText(block: Buffer, offset: number, length: number, text: string): void {

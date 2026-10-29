@@ -2,7 +2,7 @@
  * User-facing error messages. The server always answers in English and also returns a stable
  * `key` + `params` so the web UI can show a translated message (see web/js/i18n/*.js, `err.*`).
  */
-export const LABELS = {
+const LABELS = {
   name: "Name",
   boxName: "Box name",
   templateName: "Template name",
@@ -468,7 +468,7 @@ export const MESSAGES = {
   volume_host_offline: "Host {host} is offline, so its volumes were not checked.",
   volume_host_failed: "Host {host} could not list its containers, so its volumes were not checked: {detail}",
   volume_older_than_invalid: "olderThan must be a whole number followed by s, m, h, d or w, such as 30d.",
-  volume_delete_forbidden: "This credential may delete only the volumes it created: {volume}.",
+  volume_delete_forbidden: "Volume {volume} is outside this credential's resource grants, so it was not deleted.",
   volume_shared_tools:
     "Volume {volume} is the shared tools volume. It holds the tools of every box, so it is not deleted.",
   volume_system: "Volume {volume} is a MiniBox system volume, so it is not deleted.",
@@ -477,7 +477,10 @@ export const MESSAGES = {
     "A prune that removes volumes must name them: send the ids its dry run listed, and only those are removed.",
   volume_attach_forbidden: "This credential may not attach volume {volume}.",
   volume_write_forbidden: "This credential may not write volume {volume}.",
+  storage_admin_required:
+    "Storage pool selection and volume administration require the owner or an unmodified admin token.",
   volume_create_forbidden: "This credential may not create volumes.",
+  volume_tools_create_forbidden: "Only the owner may create a tools volume; a token may not, not even an admin token.",
   volume_chown_failed: "Could not change ownership of a new volume: {detail}",
   volume_prepare_failed: "Could not prepare the volume directory: {detail}",
   storage_permission_denied: "Storage pool {pool} denied permission to create the volume directory: {detail}",

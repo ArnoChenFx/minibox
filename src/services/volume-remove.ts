@@ -2,7 +2,7 @@ import type { TrashRef } from "../checkpoints/types";
 import type { HostCtx } from "../host/registry";
 import { msg } from "../lib/messages";
 import { volumeSnapshotting } from "../volumes/activity";
-import { inspectVolumeOrNull } from "../volumes/engine";
+import { findSharedTools, inspectVolumeOrNull } from "../volumes/engine";
 import { removeEngine } from "../volumes/provision";
 import type { VolumeRecord } from "../volumes/types";
 import { discardCopy, keepsVolume, trashVolume } from "./trash";
@@ -12,14 +12,17 @@ import { errorOutcome, messageOutcome, type OutcomeError, volumesInUse } from ".
 /**
  * Why MiniBox never deletes a volume in a batch or a prune, whatever the request says: the shared tools volume (by role
  * or by its `<prefix>-tools-<host>` name), or null — unless `teardown` clears a host's tools volume as part of removing
- * that host. A system volume is caught by its engine label, under the spec lock, whatever the flags say.
+ * that host. A delete that names a volume (`named`) may remove a tools-role volume that is not its pool's shared one,
+ * such as a spare made by hand; boxes never get it, and the in-use checks still apply. A prune never does. A system
+ * volume is caught by its engine label, under the spec lock, whatever the flags say.
  */
 export function protectedReason(
   host: HostCtx,
-  volume: Pick<VolumeRecord, "name" | "role" | "engineName" | "ownership">,
-  teardown = false,
+  volume: Pick<VolumeRecord, "id" | "name" | "role" | "engineName" | "ownership" | "pool">,
+  opts: { teardown?: boolean; named?: boolean } = {},
 ): OutcomeError | null {
-  if (teardown && volume.role === "tools" && volume.ownership === "independent") return null;
+  if (opts.teardown && volume.role === "tools" && volume.ownership === "independent") return null;
+  if (opts.named && volume.role === "tools" && findSharedTools(host, volume.pool)?.id !== volume.id) return null;
   if (volume.role === "tools" || volume.engineName.startsWith(`${host.prefix}-tools-`)) {
     return messageOutcome(msg("volume_shared_tools", { volume: volume.name }));
   }
@@ -38,6 +41,8 @@ export interface GuardedRemoval {
   readonly keep?: (current: VolumeRecord, inUse: Set<string>) => OutcomeError | null;
   /** A host teardown: the tools volume may go, so removing the host is not blocked by the volume it cannot lose. */
   readonly teardown?: boolean;
+  /** A delete that names the volume, not a prune: a spare tools volume may go (see `protectedReason`). */
+  readonly named?: boolean;
 }
 
 /**
@@ -51,7 +56,7 @@ export async function removeGuarded(
   volume: VolumeRecord,
   opts: GuardedRemoval,
 ): Promise<GuardedOutcome> {
-  const early = protectedReason(host, volume, opts.teardown === true) ?? snapshotReason(host, volume);
+  const early = protectedReason(host, volume, opts) ?? snapshotReason(host, volume);
   if (early) return { status: "refused", trash: null, error: early };
   let trash: TrashRef | null = null;
   let settled: GuardedOutcome;
@@ -71,7 +76,7 @@ async function removeIfAllowed(host: HostCtx, volume: VolumeRecord, opts: Guarde
   if (!current || !sameVolume(current, volume)) {
     return refuse(messageOutcome(msg("volume_prune_changed", { volume: volume.name })));
   }
-  const shielded = protectedReason(host, current, opts.teardown === true) ?? snapshotReason(host, current);
+  const shielded = protectedReason(host, current, opts) ?? snapshotReason(host, current);
   if (shielded) return refuse(shielded);
   const info = await inspectVolumeOrNull(host, current.engineName);
   if (info && info.labels[host.keys.internal] === "true") {

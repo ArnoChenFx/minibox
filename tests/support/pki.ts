@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-export interface PemFiles {
+interface PemFiles {
   /** PEM bundle of the CA that signed the certificate. */
   readonly ca: string;
   /** PEM certificate. */

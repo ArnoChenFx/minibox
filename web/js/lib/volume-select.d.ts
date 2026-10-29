@@ -1,7 +1,10 @@
-/** A volume as the selection reads it: its id, its role, and the boxes that mount it. */
+/**
+ * A volume as the selection reads it: its id, whether it is the shared tools volume the server will not delete, and the
+ * boxes that mount it.
+ */
 export interface SelectableVolume {
   id: string;
-  role: string | null;
+  sharedTools: boolean;
   mounts: readonly unknown[];
 }
 
