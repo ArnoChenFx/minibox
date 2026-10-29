@@ -40911,7 +40911,7 @@
                           },
                           "name": {
                             "type": "string",
-                            "description": "The label the console shows. It is not a key: every call addresses a host by id. No two hosts may share one, so host.add and the pairing endpoints refuse a name another host already holds (409 host_name_taken)."
+                            "description": "The label the console shows. It is not a key: every call addresses a host by id. No two hosts may share one, so host.add and the pairing endpoints refuse a name another host already holds (409 host_name_taken) or a waiting pairing code holds (409 host_name_pending)."
                           },
                           "transport": {
                             "type": "string",
@@ -41182,7 +41182,7 @@
                     "description": "Host id: lowercase letters, digits and hyphens, starting with a letter. local and auto are taken."
                   },
                   "name": {
-                    "description": "Name shown in the UI. Defaults to the id. It is only a label, and no other host may hold it: a taken name is a 409 host_name_taken. Names are compared trimmed and without case.",
+                    "description": "Name shown in the UI. Defaults to the id. It is only a label, and no other host may hold it: a taken name is a 409 host_name_taken (host_name_taken_by_id when the defaulted id is the taken name), and a name a waiting pairing code holds is a 409 host_name_pending. Names are compared in NFC, trimmed and without case.",
                     "type": "string",
                     "maxLength": 64
                   },
@@ -41251,7 +41251,7 @@
                         },
                         "name": {
                           "type": "string",
-                          "description": "The label the console shows. It is not a key: every call addresses a host by id. No two hosts may share one, so host.add and the pairing endpoints refuse a name another host already holds (409 host_name_taken)."
+                          "description": "The label the console shows. It is not a key: every call addresses a host by id. No two hosts may share one, so host.add and the pairing endpoints refuse a name another host already holds (409 host_name_taken) or a waiting pairing code holds (409 host_name_pending)."
                         },
                         "transport": {
                           "type": "string",
@@ -42191,7 +42191,7 @@
                     "description": "Host id: lowercase letters, digits and hyphens, starting with a letter. local and auto are taken."
                   },
                   "name": {
-                    "description": "Name shown in the UI. Defaults to the id. It is only a label, and no other host may hold it: a taken name is a 409 host_name_taken. Names are compared trimmed and without case.",
+                    "description": "Name shown in the UI. Defaults to the id. It is only a label, and no other host may hold it: a taken name is a 409 host_name_taken (host_name_taken_by_id when the defaulted id is the taken name), and a name a waiting pairing code holds is a 409 host_name_pending. Names are compared in NFC, trimmed and without case.",
                     "type": "string",
                     "maxLength": 64
                   },
@@ -42519,7 +42519,7 @@
                         },
                         "name": {
                           "type": "string",
-                          "description": "The label the console shows. It is not a key: every call addresses a host by id. No two hosts may share one, so host.add and the pairing endpoints refuse a name another host already holds (409 host_name_taken)."
+                          "description": "The label the console shows. It is not a key: every call addresses a host by id. No two hosts may share one, so host.add and the pairing endpoints refuse a name another host already holds (409 host_name_taken) or a waiting pairing code holds (409 host_name_pending)."
                         },
                         "transport": {
                           "type": "string",
@@ -42833,7 +42833,7 @@
                         },
                         "name": {
                           "type": "string",
-                          "description": "The label the console shows. It is not a key: every call addresses a host by id. No two hosts may share one, so host.add and the pairing endpoints refuse a name another host already holds (409 host_name_taken)."
+                          "description": "The label the console shows. It is not a key: every call addresses a host by id. No two hosts may share one, so host.add and the pairing endpoints refuse a name another host already holds (409 host_name_taken) or a waiting pairing code holds (409 host_name_pending)."
                         },
                         "transport": {
                           "type": "string",
@@ -43135,7 +43135,7 @@
                     "description": "Host id the agent joins as: lowercase letters, digits and hyphens. Same rules as host.add."
                   },
                   "name": {
-                    "description": "Name shown in the UI. Defaults to the id. It is only a label, and no other host may hold it: a taken name is a 409 host_name_taken. Names are compared trimmed and without case.",
+                    "description": "Name shown in the UI. Defaults to the id. It is only a label, and no other host may hold it: a taken name is a 409 host_name_taken (host_name_taken_by_id when the defaulted id is the taken name), and a name a waiting pairing code for another host holds is a 409 host_name_pending. A new code for the same id replaces the waiting one. Names are compared in NFC, trimmed and without case.",
                     "type": "string",
                     "maxLength": 64
                   }
@@ -43316,7 +43316,7 @@
                         },
                         "name": {
                           "type": "string",
-                          "description": "The label the console shows. It is not a key: every call addresses a host by id. No two hosts may share one, so host.add and the pairing endpoints refuse a name another host already holds (409 host_name_taken)."
+                          "description": "The label the console shows. It is not a key: every call addresses a host by id. No two hosts may share one, so host.add and the pairing endpoints refuse a name another host already holds (409 host_name_taken) or a waiting pairing code holds (409 host_name_pending)."
                         },
                         "transport": {
                           "type": "string",

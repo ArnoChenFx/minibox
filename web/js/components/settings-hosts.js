@@ -2,7 +2,7 @@ import { api, enc } from "../lib/api.js";
 import { esc, copyText } from "../lib/dom.js";
 import { bytes, cpus, mem, relTime } from "../lib/format.js";
 import { diskReading } from "../lib/host-disk.js";
-import { HOST_BADGE, accessWarningShown, agentState } from "../lib/host-list.js";
+import { HOST_BADGE, accessWarningShown, agentState, hostLabel } from "../lib/host-list.js";
 import { refreshHosts } from "../lib/hosts.js";
 import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
@@ -78,7 +78,7 @@ function drawHosts(view, card, { hosts, readDisk }) {
         <th>${t("st.hostColName")}</th><th class="hide-sm">${t("st.hostColEndpoint")}</th><th>${t("st.hostColStatus")}</th>
         <th class="hide-sm">${t("st.hostColCapacity")}</th><th class="hide-sm">${t("st.hostColBoxes")}</th><th></th>
       </tr></thead>
-      <tbody>${shown.map(hostRow).join("")}</tbody>
+      <tbody>${shown.map((host) => hostRow(host, hosts)).join("")}</tbody>
     </table></div>
     <div class="list-more">${toggle}</div>`;
   card.querySelector("#stHostAdd").addEventListener("click", () => addHost(view));
@@ -94,7 +94,7 @@ function drawHosts(view, card, { hosts, readDisk }) {
   return shown;
 }
 
-function hostRow(host) {
+function hostRow(host, hosts) {
   const capacity = host.capacity
     ? `${cpus(host.capacity.cpus)} · ${mem(host.capacity.memoryBytes)}`
     : t("common.unknown");
@@ -111,7 +111,7 @@ function hostRow(host) {
     <td class="${host.agent ? "" : "nowrap"}"><span class="badge ${HOST_BADGE[host.status] ?? ""}"><span class="dot"></span>${esc(t(`st.hostStatus.${host.status}`))}</span>${latency}${error}${agent}</td>
     <td class="hide-sm nowrap">${capacity}</td>
     <td class="hide-sm">${host.boxes}</td>
-    <td class="nowrap"><div class="actions">${hostActions(host)}</div></td>
+    <td class="nowrap"><div class="actions">${hostActions(host, hosts)}</div></td>
   </tr>
   <tr class="host-disk-row">
     <td colspan="6" data-disk-host="${esc(host.id)}">${diskLines(null)}</td>
@@ -149,13 +149,18 @@ function hostLabelsLine(labels) {
   return `<div class="help mono">${badges}</div>`;
 }
 
-function hostActions(host) {
+/**
+ * A host's revoke and remove buttons. Each carries the host's label for its confirm dialog and toast, so a name two hosts
+ * share is asked about with its id, and the operator can tell which of them goes.
+ */
+function hostActions(host, hosts) {
   if (host.transport === "local") return `<span class="subtle">${t("st.hostLocal")}</span>`;
+  const label = hostLabel(host, hosts);
   const revoke =
     host.agent && !host.agent.revoked
-      ? `<button class="btn btn-sm" data-revoke-host="${esc(host.id)}" data-host-name="${esc(host.name)}">${icon("alert")}${t("st.agentRevoke")}</button>`
+      ? `<button class="btn btn-sm" data-revoke-host="${esc(host.id)}" data-host-name="${esc(label)}">${icon("alert")}${t("st.agentRevoke")}</button>`
       : "";
-  const remove = `<button class="btn btn-sm btn-danger" data-remove-host="${esc(host.id)}" data-host-name="${esc(host.name)}">${icon("x")}${t("st.hostRemove")}</button>`;
+  const remove = `<button class="btn btn-sm btn-danger" data-remove-host="${esc(host.id)}" data-host-name="${esc(label)}">${icon("x")}${t("st.hostRemove")}</button>`;
   return `${revoke}${remove}`;
 }
 

@@ -2,6 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 
 import { AppError } from "../../lib/errors";
 import { msg } from "../../lib/messages";
+import { foldName } from "../label";
 
 const PAIRING_TTL_MS = 10 * 60_000;
 const PAIRING_MAX_OUTSTANDING = 50;
@@ -25,6 +26,14 @@ export interface PairingGrant {
 interface Entry extends PairingGrant {
   readonly expiresAt: number;
   spent: boolean;
+  /** A newer code for the same host took this one's place, so it no longer pairs. */
+  replaced: boolean;
+}
+
+/** A waiting code that holds a name: the name it will give its host, and that host's id. */
+export interface WaitingName {
+  readonly hostId: string;
+  readonly name: string;
 }
 
 /** Writes a code as the operator reads it. */
@@ -62,17 +71,24 @@ export class PairingBook {
     private readonly now: () => number = () => Date.now(),
   ) {}
 
-  /** A new code for a host that does not exist yet. Refused when too many codes are waiting. */
+  /**
+   * A new code for a host that does not exist yet. It replaces any code still waiting for the same host, so an operator
+   * who lost a code can ask for another at once, and only the newest code for a host pairs. Refused when too many codes
+   * are waiting.
+   */
   create(hostId: string, name: string): PairingCode {
     const now = this.now();
     this.prune(now);
-    const waiting = [...this.entries.values()].filter((entry) => !entry.spent && entry.expiresAt > now).length;
+    for (const entry of this.entries.values()) {
+      if (entry.hostId === hostId && this.waiting(entry, now)) entry.replaced = true;
+    }
+    const waiting = [...this.entries.values()].filter((entry) => this.waiting(entry, now)).length;
     if (waiting >= this.maxOutstanding) {
       throw new AppError(429, "too_many_requests", msg("agent_pairing_limit", { max: this.maxOutstanding }));
     }
     let code = newCode();
     while (this.entries.has(keyOf(code))) code = newCode();
-    this.entries.set(keyOf(code), { hostId, name, expiresAt: now + this.ttlMs, spent: false });
+    this.entries.set(keyOf(code), { hostId, name, expiresAt: now + this.ttlMs, spent: false, replaced: false });
     return { code: formatCode(code), expiresAt: new Date(now + this.ttlMs).toISOString() };
   }
 
@@ -81,23 +97,29 @@ export class PairingBook {
     const entry = this.entries.get(keyOf(normalizeCode(raw)));
     if (!entry) throw new AppError(401, "unauthorized", msg("agent_pairing_unknown"));
     if (entry.spent) throw new AppError(401, "unauthorized", msg("agent_pairing_used"));
+    if (entry.replaced) throw new AppError(401, "unauthorized", msg("agent_pairing_replaced"));
     if (entry.expiresAt <= this.now()) throw new AppError(401, "unauthorized", msg("agent_pairing_expired"));
     entry.spent = true;
     return { hostId: entry.hostId, name: entry.name };
   }
 
   /**
-   * The name an outstanding code will give its host, trimmed and folded, or null when no waiting code carries one. A code
-   * that is waiting holds its name the way a host does: it names the host that is about to exist, so a second add or code
-   * cannot take it in the meantime and leave two hosts reading as one machine.
+   * The waiting code that holds `name`, or null when none does. A waiting code holds its name the way a host does: it
+   * names the host that is about to exist, so another host cannot take the name in the meantime. A code for `forHost`
+   * is not counted, since a new code for that host replaces it and an added host of that id makes it unusable.
    */
-  waitingName(folded: string): string | null {
+  waitingName(name: string, forHost: string): WaitingName | null {
     const now = this.now();
+    const folded = foldName(name);
     for (const entry of this.entries.values()) {
-      if (entry.spent || entry.expiresAt <= now) continue;
-      if (entry.name.trim().toLowerCase() === folded) return entry.name;
+      if (entry.hostId === forHost || !this.waiting(entry, now)) continue;
+      if (foldName(entry.name) === folded) return { hostId: entry.hostId, name: entry.name };
     }
     return null;
+  }
+
+  private waiting(entry: Entry, now: number): boolean {
+    return !entry.spent && !entry.replaced && entry.expiresAt > now;
   }
 
   private prune(now: number): void {

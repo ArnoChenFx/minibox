@@ -3,6 +3,7 @@ import { api, enc } from "../lib/api.js";
 import { esc } from "../lib/dom.js";
 import { countTag, describe, iconOf, isFailed, isRoutine, opLabel, statusBadge } from "../lib/event-view.js";
 import { dateTime, relTime } from "../lib/format.js";
+import { hostTargetName } from "../lib/hosts.js";
 import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
 import { pollWhileDown, subscribe } from "../lib/live.js";
@@ -18,7 +19,7 @@ const STATUSES = ["ok", "error", "denied", "started"];
 function targetCell(event) {
   const target = event.target;
   if (!target) return '<span class="subtle">—</span>';
-  const name = target.name ?? target.id ?? "";
+  const name = target.kind === "host" ? hostTargetName(target) : (target.name ?? target.id ?? "");
   if (target.kind === "box" && target.id) {
     return `<a href="#/boxes/${enc(target.id)}" class="truncate" title="${esc(name)}"><strong>${esc(name)}</strong></a>`;
   }

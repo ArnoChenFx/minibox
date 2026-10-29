@@ -92,14 +92,43 @@ describe("pairing codes", () => {
     let now = 1_000;
     const book = new PairingBook(60_000, 50, () => now);
     const first = book.create("edge", " Edge Lab ");
-    // The name is held trimmed and folded, so a second code under any spelling of it is refused.
-    expect(book.waitingName("edge lab")).toBe(" Edge Lab ");
-    expect(book.waitingName("edge-lab")).toBeNull();
+    // The name is held trimmed, folded and in NFC, so a second code under any spelling of it is refused.
+    expect(book.waitingName("edge lab", "other")).toEqual({ hostId: "edge", name: " Edge Lab " });
+    expect(book.waitingName("EDGE LAB ", "other")?.hostId).toBe("edge");
+    expect(book.waitingName("edge-lab", "other")).toBeNull();
     book.redeem(first.code);
-    expect(book.waitingName("edge lab")).toBeNull();
+    expect(book.waitingName("edge lab", "other")).toBeNull();
     book.create("other", "Other");
     now += 60_001;
-    expect(book.waitingName("other")).toBeNull();
+    expect(book.waitingName("other", "edge")).toBeNull();
+  });
+
+  test("a name spelt with a combining accent is the same name as its precomposed spelling", () => {
+    const book = new PairingBook();
+    book.create("cafe", "Cafe\u0301");
+    expect(book.waitingName("Caf\u00e9", "other")?.hostId).toBe("cafe");
+  });
+
+  test("a code does not hold its name against its own host", () => {
+    const book = new PairingBook();
+    book.create("edge", "Edge");
+    expect(book.waitingName("Edge", "edge")).toBeNull();
+    expect(book.waitingName("Edge", "lab")?.hostId).toBe("edge");
+  });
+
+  test("a new code for a host replaces the one still waiting: only the newest pairs", () => {
+    const book = new PairingBook();
+    const lost = book.create("edge", "Edge");
+    const fresh = book.create("edge", "Edge");
+    expect(() => book.redeem(lost.code)).toThrow("A newer pairing code was created for this host");
+    expect(book.redeem(fresh.code)).toEqual({ hostId: "edge", name: "Edge" });
+  });
+
+  test("a replaced code no longer counts against the limit of waiting codes", () => {
+    const book = new PairingBook(60_000, 2);
+    for (let i = 0; i < 5; i += 1) book.create("edge", "Edge");
+    book.create("lab", "Lab");
+    expect(() => book.create("third", "Third")).toThrow();
   });
 });
 

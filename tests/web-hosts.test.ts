@@ -81,6 +81,15 @@ describe("a host's label in the console", () => {
     expect(hostLabel(hosts[1], hosts)).toBe(" lab  · edge");
   });
 
+  test("a name spelt with a combining accent is the same name as its precomposed spelling", () => {
+    const hosts = [
+      { id: "cafe", name: "Cafe\u0301" },
+      { id: "bar", name: "caf\u00e9" },
+    ];
+    expect(hostLabel(hosts[0], hosts)).toBe("Cafe\u0301 · cafe");
+    expect(hostLabel(hosts[1], hosts)).toBe("caf\u00e9 · bar");
+  });
+
   test("a host the console does not hold falls back to what it was given", () => {
     expect(hostLabel(undefined, [])).toBe("");
     expect(hostLabel({ id: "nowhere" }, [])).toBe("nowhere");

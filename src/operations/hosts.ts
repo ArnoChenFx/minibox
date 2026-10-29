@@ -31,7 +31,7 @@ const HostViewSchema = z.object({
   id: z.string().meta({ description: "Host id, such as local or lab. A box names its host in box.host." }),
   name: z.string().meta({
     description:
-      "The label the console shows. It is not a key: every call addresses a host by id. No two hosts may share one, so host.add and the pairing endpoints refuse a name another host already holds (409 host_name_taken).",
+      "The label the console shows. It is not a key: every call addresses a host by id. No two hosts may share one, so host.add and the pairing endpoints refuse a name another host already holds (409 host_name_taken) or a waiting pairing code holds (409 host_name_pending).",
   }),
   transport: z.enum(["local", "unix", "tcp", "ssh", "agent"]).meta({
     description:
@@ -92,7 +92,7 @@ const hostFieldsInput = z.object({
   }),
   name: z.string().max(64).optional().meta({
     description:
-      "Name shown in the UI. Defaults to the id. It is only a label, and no other host may hold it: a taken name is a 409 host_name_taken. Names are compared trimmed and without case.",
+      "Name shown in the UI. Defaults to the id. It is only a label, and no other host may hold it: a taken name is a 409 host_name_taken (host_name_taken_by_id when the defaulted id is the taken name), and a name a waiting pairing code holds is a 409 host_name_pending. Names are compared in NFC, trimmed and without case.",
   }),
   endpoint: z.string().min(1).max(512).meta({
     description:
@@ -374,7 +374,7 @@ const hostPairingCreate = defineOperation({
     }),
     name: z.string().max(64).optional().meta({
       description:
-        "Name shown in the UI. Defaults to the id. It is only a label, and no other host may hold it: a taken name is a 409 host_name_taken. Names are compared trimmed and without case.",
+        "Name shown in the UI. Defaults to the id. It is only a label, and no other host may hold it: a taken name is a 409 host_name_taken (host_name_taken_by_id when the defaulted id is the taken name), and a name a waiting pairing code for another host holds is a 409 host_name_pending. A new code for the same id replaces the waiting one. Names are compared in NFC, trimmed and without case.",
     }),
   }),
   output: PairingIssueSchema,

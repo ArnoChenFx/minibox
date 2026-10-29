@@ -1,13 +1,18 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { createServer, type Server } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { generateKeyPairPem } from "../src/agent/identity";
+import { AGENT_PROTOCOL } from "../src/agent/protocol";
 import type { App } from "../src/app";
 import { hostsPath } from "../src/data-dir";
+import { labelOf } from "../src/host/label";
 import { HostStore, type StoredHost } from "../src/host/store";
 import { AppError } from "../src/lib/errors";
 import { createTestApp, silenceLogs } from "./support/app";
+import { newKeyPair } from "./support/engines";
 
 const apps: App[] = [];
 const dirs: string[] = [];
@@ -36,6 +41,29 @@ afterEach(() => {
   }
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
+
+/** Pairs an agent with `code`, as the agent's first call does. */
+function pairWith(app: App, code: string) {
+  return app.hostAdmin.pairAgent({
+    code,
+    publicKey: generateKeyPairPem().publicKeyPem,
+    version: "0.4.0",
+    protocol: AGENT_PROTOCOL,
+  });
+}
+
+/** A TCP port that counts the connections made to it and answers none, standing in for an SSH host. */
+async function countingPort(): Promise<{ port: number; dials: () => number; close: () => void }> {
+  let dials = 0;
+  const server: Server = createServer((socket) => {
+    dials += 1;
+    socket.destroy();
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  if (address === null || typeof address === "string") throw new Error("no port");
+  return { port: address.port, dials: () => dials, close: () => server.close() };
+}
 
 /** The error a call was refused with, or a failure when it was not refused at all. */
 async function refusalOf(call: Promise<unknown>): Promise<AppError> {
@@ -98,13 +126,56 @@ describe("a host's display name is unique", () => {
     const error = await refusalOf(app.hostAdmin.add({ id: "edge", endpoint: "unix:///run/edge.sock", name: "lab" }));
     expect(error.key).toBe("host_name_taken");
 
-    // A host whose id another host already uses as its name is refused, and the same fallback is what refuses it.
+    // A host whose id another host already uses as its name is refused when it has no name of its own; the next test
+    // covers that. A name equal to another host's id is fine.
     const other = boot();
     await other.hostAdmin.add({ id: "box", endpoint: "unix:///run/box.sock", name: "box-two" });
     await other.hostAdmin.add({ id: "second", endpoint: "unix:///run/second.sock", name: "second-two" });
     // A name equal to another host's id is allowed: ids identify a host, names only label it.
     await other.hostAdmin.add({ id: "third", endpoint: "unix:///run/third.sock", name: "box" });
     expect(other.hostAdmin.list().map((host) => host.name)).toContain("box");
+  });
+
+  test("a host with no name whose id another host uses as its name is told to give it a name", async () => {
+    const app = boot();
+    await app.hostAdmin.add({ id: "lab", endpoint: "unix:///run/lab.sock", name: "edge" });
+    const error = await refusalOf(app.hostAdmin.add({ id: "edge", endpoint: "unix:///run/edge.sock" }));
+    expect(error.status).toBe(409);
+    expect(error.key).toBe("host_name_taken_by_id");
+    expect(error.params).toEqual({ name: "edge", host: "lab" });
+    expect(error.message).toContain("Give this host a name");
+    const code = await refusalOf(app.hostAdmin.createPairing({ id: "edge" }));
+    expect(code.key).toBe("host_name_taken_by_id");
+  });
+
+  test("a name is compared in Unicode NFC, so a combining accent and a precomposed one are one name", async () => {
+    const app = boot();
+    await app.hostAdmin.add({ id: "cafe", endpoint: "unix:///run/cafe.sock", name: "Cafe\u0301" });
+    const error = await refusalOf(
+      app.hostAdmin.add({ id: "edge", endpoint: "unix:///run/edge.sock", name: "CAF\u00c9" }),
+    );
+    expect(error.key).toBe("host_name_taken");
+    expect(error.params).toEqual({ name: "CAF\u00c9", host: "cafe" });
+  });
+
+  test("an SSH host under a taken name is refused before the machine is dialled for its key", async () => {
+    const app = boot();
+    await app.hostAdmin.add({ id: "lab", endpoint: "unix:///run/lab.sock", name: "Lab" });
+    const ssh = await countingPort();
+    try {
+      const error = await refusalOf(
+        app.hostAdmin.add({
+          id: "edge",
+          name: "lab",
+          endpoint: `ssh://minibox@127.0.0.1:${ssh.port}/var/run/docker.sock`,
+          privateKey: newKeyPair().privateKey,
+        }),
+      );
+      expect(error.key).toBe("host_name_taken");
+      expect(ssh.dials()).toBe(0);
+    } finally {
+      ssh.close();
+    }
   });
 
   test("the local host keeps its name, and the first host added under a free name takes it", async () => {
@@ -138,13 +209,44 @@ describe("a pairing code carries a unique name", () => {
     const error = await refusalOf(app.hostAdmin.createPairing({ id: "edge2", name: "edge lab" }));
     expect(error.status).toBe(409);
     expect(error.key).toBe("host_name_pending");
-    expect(error.params).toEqual({ name: "edge lab" });
-    // The same code still pairs: nothing about the refused second code touched the first.
-    expect(waiting.name).toBe("Edge lab");
+    expect(error.params).toEqual({ name: "edge lab", host: "edge" });
     const added = await refusalOf(
       app.hostAdmin.add({ id: "other", endpoint: "unix:///run/other.sock", name: "EDGE LAB" }),
     );
     expect(added.key).toBe("host_name_pending");
+    // The waiting code still pairs: nothing about the refused calls touched it.
+    await pairWith(app, waiting.code);
+    expect(app.hostAdmin.list().find((host) => host.id === "edge")?.name).toBe("Edge lab");
+  });
+
+  test("a new code for the same host replaces the waiting one at once, and only the new code pairs", async () => {
+    const app = boot();
+    // An operator who lost a code asks for another under the same id and name, without waiting for the first to expire.
+    const lost = await app.hostAdmin.createPairing({ id: "edge", name: "Edge" });
+    const fresh = await app.hostAdmin.createPairing({ id: "edge", name: "Edge" });
+    expect(fresh.code).not.toBe(lost.code);
+    const stale = await refusalOf(pairWith(app, lost.code));
+    expect(stale.status).toBe(401);
+    expect(stale.key).toBe("agent_pairing_replaced");
+    await pairWith(app, fresh.code);
+    expect(app.hostAdmin.list().find((host) => host.id === "edge")?.name).toBe("Edge");
+  });
+
+  test("a new code for the same host may change the name, and the old name is free again", async () => {
+    const app = boot();
+    await app.hostAdmin.createPairing({ id: "edge", name: "Edge" });
+    const renamed = await app.hostAdmin.createPairing({ id: "edge", name: "Edge two" });
+    expect(renamed.name).toBe("Edge two");
+    await app.hostAdmin.createPairing({ id: "other", name: "Edge" });
+  });
+
+  test("a waiting code does not stop its own id from being added another way", async () => {
+    const app = boot();
+    const waiting = await app.hostAdmin.createPairing({ id: "edge", name: "Edge" });
+    await app.hostAdmin.add({ id: "edge", endpoint: "unix:///run/edge.sock", name: "Edge" });
+    // The code now names a host that exists, so it pairs nothing.
+    const error = await refusalOf(pairWith(app, waiting.code));
+    expect(error.key).toBe("host_exists");
   });
 });
 
@@ -169,6 +271,23 @@ describe("a hosts file that already holds duplicate names still loads", () => {
     ]);
     // Every listing names the host by its id beside its name, so two hosts of one name never look identical.
     expect(new Set(listed.map((host) => host.id)).size).toBe(listed.length);
+  });
+
+  test("a message about one of them quotes its name with its id, and a unique name alone", async () => {
+    const dir = tempDir();
+    const created = "2026-10-22T00:00:00.000Z";
+    const hosts: StoredHost[] = [
+      { id: "lab", name: "Lab", endpoint: "unix:///run/lab.sock", hostKeyFingerprint: null, createdAt: created },
+      { id: "edge", name: "Lab", endpoint: "unix:///run/edge.sock", hostKeyFingerprint: null, createdAt: created },
+    ];
+    writeFileSync(hostsPath(dir), `${JSON.stringify({ version: 1, hosts }, null, 2)}\n`);
+    const app = boot(dir);
+    expect(labelOf(app.hosts.get("lab").host)).toBe("Lab · lab");
+    expect(labelOf(app.hosts.get("edge").host)).toBe("Lab · edge");
+    expect(labelOf(app.hosts.get().host)).toBe("Local");
+    // Once one of the pair is gone, the other's name is unique again and is quoted alone.
+    await app.hostAdmin.remove("edge");
+    expect(labelOf(app.hosts.get("lab").host)).toBe("Lab");
   });
 
   test("a host added later under a name the file already repeats is still refused", async () => {

@@ -555,6 +555,33 @@ describe.skipIf(!executablePath)("the console's top navigation (real browser)", 
       },
       TIMEOUT_MS,
     );
+
+    test(
+      "removing one of two hosts of one name asks about it by its label, so the operator knows which one goes",
+      async () => {
+        const duplicated = await signedIn({ viewport: VIEWPORT });
+        try {
+          await duplicated.route("**/api/hosts", async (route) => {
+            if (route.request().method() !== "GET") return route.continue();
+            const response = await route.fetch();
+            const body = (await response.json()) as { hosts: Record<string, unknown>[] };
+            const [local = {}] = body.hosts;
+            const twin = { ...local, id: "lab", name: "Local", transport: "unix", endpoint: "unix:///run/lab.sock" };
+            await route.fulfill({ response, json: { ...body, hosts: [...body.hosts, twin] } });
+          });
+          const hostsPage = await duplicated.newPage();
+          await hostsPage.goto(`${consoleUrl}/#/settings/hosts`);
+          const remove = hostsPage.locator('[data-remove-host="lab"]');
+          await webExpect(remove).toHaveAttribute("data-host-name", "Local · lab");
+          await remove.click();
+          await webExpect(hostsPage.locator("#cfm-ok")).toBeVisible();
+          await webExpect(hostsPage.getByText("Local · lab", { exact: false }).last()).toBeVisible();
+        } finally {
+          await duplicated.close();
+        }
+      },
+      TIMEOUT_MS,
+    );
   });
 
   describe("the engine storage line on the hosts settings card", () => {

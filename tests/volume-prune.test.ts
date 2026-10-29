@@ -38,6 +38,11 @@ const newBox = (name: string) => boxes.createBox(host, { name, cpus: 1, memoryMb
 /** A clock at which everything the test made is past the grace period. */
 const pastGrace = () => Date.now() + 2 * PRUNE_GRACE_MS;
 
+/** An offline SSH host called `NAS`, a copy of the test host under another id. */
+function offlineNas(id: string): HostCtx {
+  return { ...host, host: { ...host.host, id, name: "NAS", transport: "ssh", status: "offline" } };
+}
+
 function pruning(overrides: Partial<PruneOptions> = {}): PruneOptions {
   const options = {
     dryRun: true,
@@ -319,6 +324,15 @@ describe("dry run and removal", () => {
     );
     expect(result.volumes.length).toBeGreaterThan(0);
     expect(result.volumes.every((volume) => volume.hostId === host.host.id)).toBe(true);
+  });
+
+  test("two hosts of one name keep their own name in the report, and the message tells them apart by id", async () => {
+    // A hosts file written before names had to be unique can still hold two hosts of one name.
+    const result = await pruneVolumes([offlineNas("nas-1"), offlineNas("nas-2")], pruning());
+    expect(result.hosts.map((item) => [item.hostId, item.name, item.error?.message])).toEqual([
+      ["nas-1", "NAS", expect.stringContaining("NAS · nas-1")],
+      ["nas-2", "NAS", expect.stringContaining("NAS · nas-2")],
+    ]);
   });
 
   test("a host that cannot list its containers is reported failed, and the next host is still pruned", async () => {

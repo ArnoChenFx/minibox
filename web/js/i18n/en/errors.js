@@ -348,8 +348,10 @@ export default {
     "hostLabels selects a host for host: auto. Either set host to auto and let the labels choose, or name one host and leave hostLabels out.",
   "err.host_exists": "A host with the id “{host}” already exists.",
   "err.host_name_taken": "The name “{name}” is already used by host “{host}”. Give this host another name.",
+  "err.host_name_taken_by_id":
+    "This host has no name, so it would be named after its id “{name}”, but host “{host}” already uses that name. Give this host a name.",
   "err.host_name_pending":
-    "The name “{name}” is held by a pairing code that has not been used yet. Use that code, or wait for it to expire.",
+    "The name “{name}” is held by a pairing code for host “{host}” that has not been used yet. Use that code, or wait for it to expire.",
   "err.host_not_found": "Host “{host}” was not found.",
   "err.host_is_local": "The local host cannot be removed.",
   "err.host_in_use": "Host “{host}” still holds {count} boxes, volumes or checkpoints. Remove them first.",
@@ -370,6 +372,8 @@ export default {
   "err.agent_pairing_unknown": "The pairing code is not valid. Create a new one under Settings, Hosts.",
   "err.agent_pairing_used": "This pairing code has already been used. Create a new one under Settings, Hosts.",
   "err.agent_pairing_expired": "This pairing code has expired. Create a new one under Settings, Hosts.",
+  "err.agent_pairing_replaced":
+    "A newer pairing code was created for this host and replaced this one. Use the newest code.",
   "err.agent_pairing_limit":
     "At most {max} pairing codes can wait at once. Pair an agent or let a code expire, then try again.",
   "err.agent_pairing_request_invalid":

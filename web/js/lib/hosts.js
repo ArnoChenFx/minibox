@@ -29,6 +29,13 @@ export const hostName = (id) => {
   return host ? hostLabel(host, hosts) : id;
 };
 
+/**
+ * The name an activity entry shows for a host it is about: the host's label while it is listed, so a name two hosts share
+ * reads with its id, or the name the entry recorded once the host is gone.
+ */
+export const hostTargetName = (target) =>
+  hosts.some((host) => host.id === target.id) ? hostName(target.id) : (target.name ?? target.id ?? "");
+
 export function setHostFilter(id) {
   filter = hosts.some((host) => host.id === id) ? id : "";
   try {

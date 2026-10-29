@@ -1,4 +1,5 @@
 import type { TrashKind, TrashRef } from "../checkpoints/types";
+import { labelOf } from "../host/label";
 import type { HostCtx } from "../host/registry";
 import { AppError, badRequest, conflict, notFound } from "../lib/errors";
 import { log } from "../lib/logger";
@@ -456,7 +457,7 @@ async function deleteOne(
 
 function blockOf(plan: DeletePlan, block: DeleteBlock): OutcomeError {
   const name = plan.volume?.name ?? plan.ref;
-  const hostName = plan.host?.host.name ?? plan.volume?.hostId ?? "";
+  const hostName = plan.host ? labelOf(plan.host.host) : (plan.volume?.hostId ?? "");
   switch (block) {
     case "in_use":
       return messageOutcome(msg("volume_in_use_by_box", { volume: name }));

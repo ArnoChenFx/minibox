@@ -290,7 +290,9 @@ export default {
     "hostLabels 只用于 host: auto 选择宿主机。请把 host 设为 auto 由标签挑选，或指定一台宿主机并去掉 hostLabels。",
   "err.host_exists": "已存在 id 为「{host}」的宿主机。",
   "err.host_name_taken": "名称「{name}」已被宿主机「{host}」使用。请给这台宿主机换一个名称。",
-  "err.host_name_pending": "名称「{name}」正被一个尚未使用的配对码占用。请使用那个配对码，或等它过期。",
+  "err.host_name_taken_by_id":
+    "这台宿主机没有填名称，会以标识「{name}」作名称，但宿主机「{host}」已在用这个名称。请给这台宿主机填一个名称。",
+  "err.host_name_pending": "名称「{name}」正被宿主机「{host}」一个尚未使用的配对码占用。请使用那个配对码，或等它过期。",
   "err.host_not_found": "找不到宿主机「{host}」。",
   "err.host_is_local": "不能移除本机宿主机。",
   "err.host_in_use": "宿主机「{host}」仍有 {count} 个 Box、卷或检查点。请先移除它们。",
@@ -308,6 +310,7 @@ export default {
   "err.agent_pairing_unknown": "配对码无效。请到「设置 → 宿主机」重新生成。",
   "err.agent_pairing_used": "这个配对码已经用过。请到「设置 → 宿主机」重新生成。",
   "err.agent_pairing_expired": "这个配对码已过期。请到「设置 → 宿主机」重新生成。",
+  "err.agent_pairing_replaced": "这台宿主机已生成了更新的配对码，这个码已作废。请使用最新的配对码。",
   "err.agent_pairing_limit": "最多同时保留 {max} 个配对码。请等待其中一个配对或过期后再试。",
   "err.agent_pairing_request_invalid": "配对请求无效。请用当前版本的 MiniBox 重新运行 Agent 镜像。",
   "err.agent_key_invalid": "Agent 的公钥必须是 PEM 格式的 Ed25519 密钥。",
