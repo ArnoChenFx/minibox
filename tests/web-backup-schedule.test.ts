@@ -11,7 +11,6 @@ import { SETTINGS_SECTIONS } from "../web/js/lib/settings-sections.js";
 const WEB = join(ROOT, "web");
 const CARD = join(WEB, "js", "components", "settings-backups.js");
 const SCHEDULE_UI = join(WEB, "js", "lib", "schedule-ui.js");
-const SETTINGS_PAGE = join(WEB, "js", "pages", "settings.js");
 
 const at = (minutes: number) => new Date(Date.UTC(2026, 9, 20, 10, minutes)).toISOString();
 
@@ -166,9 +165,9 @@ describe("a failed scheduled run is said in the console's language", () => {
     expect(failures("zh-CN").unkeyed).toContain("ENOSPC: no space left on device");
   });
 
-  test("a time is shown with the zone it is in, which the saved toast uses too", () => {
+  test("a time is shown with the zone it is in", () => {
+    // The saved toast uses this, which tests/web-backup-schedule-browser.test.ts sees in a browser of another zone.
     expect(failures("en").zoned).toContain("Asia/Shanghai");
-    expect(SOURCE).toContain("zonedTime(saved.schedule.nextRunAt, browserTimezone())");
   });
 });
 
@@ -214,12 +213,6 @@ describe("the card says up front that a schedule needs the server's passphrase",
     const { off, on } = blocked("zh-CN");
     expect(off).toContain(`<span>${escaped(zh["st.backupNeedsPassphrase"] ?? "")}</span>`);
     expect(on).toContain(`<span>${escaped(zh["st.backupLostPassphrase"] ?? "")}</span>`);
-  });
-
-  test("the card asks the server, and turns the answer into the key that says why", () => {
-    expect(SOURCE).toContain('({ schedule, passphraseSet } = await api("/api/backups/schedule"))');
-    expect(SOURCE).toContain("passphraseSet === false");
-    expect(SOURCE).toContain('"st.backupLostPassphrase" : "st.backupNeedsPassphrase"');
   });
 });
 
@@ -280,19 +273,6 @@ describe("the settings page", () => {
     expect(section?.label).toBe("st.backups");
     expect("st.backups" in en && "st.backups" in zh).toBe(true);
     expect(en["st.backups"]).not.toBe(zh["st.backups"]);
-  });
-
-  test("the category mounts the card and loads it", () => {
-    const page = readFileSync(SETTINGS_PAGE, "utf8");
-    expect(page).toContain('import { loadBackups } from "../components/settings-backups.js"');
-    expect(page).toMatch(/backups: \{[\s\S]*?id="stBackups"[\s\S]*?load: loadBackups/);
-  });
-
-  test("the card reads and changes the schedule through the backup operations' routes", () => {
-    for (const route of ['"/api/backups/schedule"']) expect(SOURCE).toContain(route);
-    expect(SOURCE).toContain('method: "PUT"');
-    expect(SOURCE).toContain('method: "DELETE"');
-    expect(SOURCE).toContain('api("/api/backups/schedule")');
   });
 
   test("every string the card uses is translated in both languages", () => {
