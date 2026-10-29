@@ -2,7 +2,7 @@ import { errorText } from "./api.js";
 import { browserTimezone, SCHEDULE_HOURS, scheduleBody, scheduleZone } from "./checkpoint-state.js";
 import { esc } from "./dom.js";
 import { dateTime } from "./format.js";
-import { t } from "./i18n.js";
+import { has, t } from "./i18n.js";
 import { icon } from "./icons.js";
 
 /**
@@ -25,26 +25,39 @@ export function ruleText(schedule) {
 /**
  * The last run in words: `labels.ok` or `labels.failed` with the time, or `labels.none` when nothing has run yet.
  * `labels.ok` and `labels.failed` take `{ time }` and `{ time, error }`. A failure that came from a message is said in
- * the console's language, and one that did not is shown as the server wrote it.
+ * the console's language, and one that did not is shown as the server wrote it. A schedule whose runs can be skipped
+ * names `labels.skipped`, which takes `{ time, reason }`, and `labels.skipPrefix`, the dictionary prefix of each reason
+ * code the server names; a code it has no words for is shown as it is.
  */
 export function lastRunText(run, zone, labels) {
   if (!run) return t(labels.none);
   const time = zonedTime(run.at, zone);
   if (run.status === "ok") return t(labels.ok, { time });
+  if (run.status === "skipped" && labels.skipped) {
+    const key = `${labels.skipPrefix ?? ""}${run.reason}`;
+    return t(labels.skipped, { time, reason: labels.skipPrefix && has(key) ? t(key) : (run.reason ?? "") });
+  }
   const error = errorText({ key: run.errorKey, params: run.errorParams, message: run.error ?? "" });
   return t(labels.failed, { time, error });
 }
 
 /**
  * The card's line: off, or the rule with its next and last run, and the buttons that change it. `action` prefixes the
- * `data-action` names, so a page binds each card's buttons without them colliding.
+ * `data-action` names, so a page binds each card's buttons without them colliding. `blocked` is the dictionary key of
+ * why a schedule cannot be set or changed right now: the card says so, and its set and change buttons are disabled
+ * with that as their title, so the reason is read before a click and not after it. Turning a schedule off stays open.
  */
-export function scheduleCardHtml(schedule, { zone = browserTimezone(), labels, action, lastRun = lastRunText }) {
+export function scheduleCardHtml(
+  schedule,
+  { zone = browserTimezone(), labels, action, lastRun = lastRunText, blocked = null },
+) {
+  const why = blocked ? `<div class="callout warn">${icon("alert")}<span>${esc(t(blocked))}</span></div>` : "";
+  const shut = blocked ? ` disabled title="${esc(t(blocked))}"` : "";
   if (!schedule) {
     return `<div class="ck-schedule"><div class="ck-schedule-info">
       <div class="ck-schedule-line"><strong>${esc(t(labels.title))}</strong><span class="badge">${esc(t("ck.scheduleOff"))}</span></div>
-      <div class="help">${esc(t(labels.offHelp))}</div></div>
-      <div class="ck-schedule-actions"><button class="btn btn-sm" data-action="${esc(action)}">${icon("clock")}${esc(t("ck.scheduleSet"))}</button></div>
+      <div class="help">${esc(t(labels.offHelp))}</div>${why}</div>
+      <div class="ck-schedule-actions"><button class="btn btn-sm" data-action="${esc(action)}"${shut}>${icon("clock")}${esc(t("ck.scheduleSet"))}</button></div>
     </div>`;
   }
   return `<div class="ck-schedule"><div class="ck-schedule-info">
@@ -53,9 +66,10 @@ export function scheduleCardHtml(schedule, { zone = browserTimezone(), labels, a
     <div class="help">${esc(t("ck.lastRun"))}: ${esc(lastRun(schedule.lastRun, zone, labels))}</div>
     <div class="help">${esc(t(labels.note))}</div>
     ${schedule.timezoneUnknown ? `<div class="callout warn">${icon("alert")}<span>${esc(t("ck.scheduleZoneUnknown", { zone: schedule.timezone ?? "" }))}</span></div>` : ""}
+    ${why}
     </div>
     <div class="ck-schedule-actions">
-      <button class="btn btn-sm" data-action="${esc(action)}">${icon("clock")}${esc(t("ck.scheduleEdit"))}</button>
+      <button class="btn btn-sm" data-action="${esc(action)}"${shut}>${icon("clock")}${esc(t("ck.scheduleEdit"))}</button>
       <button class="btn btn-sm" data-action="${esc(`${action}-off`)}">${icon("x")}${esc(t("ck.scheduleTurnOff"))}</button>
     </div>
   </div>`;

@@ -580,7 +580,6 @@ export default {
   "err.backup_running": "已有一个备份正在运行。请等它结束后再试。",
   "err.backup_schedule_passphrase_unset":
     "按计划备份使用 BACKUP_PASSPHRASE 中的口令封装，但服务器上没有设置。请在 .env 中设置（12 到 1024 个字符）并重启 MiniBox。",
-  "err.backup_schedule_busy": "到点时已有备份在运行，所以这一次被跳过。计划会在下一个时间点再次运行。",
   "err.backup_invalid": "备份无效：{reason}",
   "err.backup_passphrase_invalid": "口令长度须为 12 到 1024 个字符，不能以空格开头或结尾，也不能包含换行。",
   "err.secret_name_reserved": "以 target. 开头的名称保留给目标的凭据使用。请在设置中管理目标。",

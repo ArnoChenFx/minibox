@@ -203,6 +203,8 @@ BACKUP_PASSPHRASE=correct horse battery staple
 
 规则与手动输入的口令相同：12 至 1024 个字符，首尾不能有空格，也不能包含换行符。留空表示没有设置口令：MiniBox 会拒绝保存计划并说明原因，而不是存下一个到第一个时间点就会失败的计划。在口令丢失之前就已保存的计划，会在下一个时间点失败一次，给出同样的说明。值不合法会让 MiniBox 拒绝启动，而不是让每次运行都失败。
 
+控制台会在你动手之前就说明，而不是等你点了保存才报错：服务器上没有口令时，**设置 → 备份** 的卡片会显示警告，**设置计划** 不可点（此前已保存的计划，**修改计划** 同样不可点；**关闭** 仍然可用）。`minibox backup schedule get` 会打印同样的提示，`GET /api/backups/schedule` 用 `passphraseSet` 报告这一点。
+
 不要在 `.env` 的口令里写 `$`。Bun 会展开 `.env` 值里的 `$`，即使它在引号里也一样，所以 `'ab$cd'` 到 MiniBox 手里是 `ab`；无引号的值遇到 `#` 也会被截断，口令里有 `#` 时请加引号。如果口令确实需要 `$`，就不要写进 `.env`，改在进程环境里设置 `BACKUP_PASSPHRASE`，例如 compose 文件的 `environment:` 或 systemd 的 `Environment=`。MiniBox 自己也会读 `.env`，两种读法不一致时拒绝启动，因为它不会用一个你没有写过的口令封装归档。把 `$` 转义成 `\$` 绕不过去：Bun 认这种写法，但两种读法仍然不一致。
 
 在 **设置 → 备份** 的 **计划** 中点击 **设置计划**：
@@ -221,13 +223,14 @@ minibox backup schedule get
 minibox backup schedule clear
 ```
 
-`PUT /api/backups/schedule` 用 `{ "everyHours": 6 }` 或 `{ "at": "02:30", "timezone": "Asia/Shanghai" }` 设置，两者只能给一个。同一路径的 `GET` 读取，`DELETE` 移除，计划为 `null` 表示没有设置。服务器没有 `BACKUP_PASSPHRASE` 时，`PUT` 返回 `409`。每天的时间可带 IANA 时区名（如 `Asia/Shanghai`），不带时按 UTC 计算，不接受 `+08:00` 这类偏移。MCP 的存储工具集提供 `get_backup_schedule`、`set_backup_schedule` 与 `clear_backup_schedule`。这些操作仅限所有者。
+`PUT /api/backups/schedule` 用 `{ "everyHours": 6 }` 或 `{ "at": "02:30", "timezone": "Asia/Shanghai" }` 设置，两者只能给一个。同一路径的 `GET` 读取，`DELETE` 移除，计划为 `null` 表示没有设置。`GET` 还会用 `passphraseSet` 说明服务器有没有 `BACKUP_PASSPHRASE`，没有时 `PUT` 返回 `409`。`lastRun` 里的 `status` 是 `ok`、带 `reason` 的 `skipped`（`busy`：当时已有别的备份占着备份文件夹），或带 `error` 的 `failed`。每天的时间可带 IANA 时区名（如 `Asia/Shanghai`），不带时按 UTC 计算，不接受 `+08:00` 这类偏移。MCP 的存储工具集提供 `get_backup_schedule`、`set_backup_schedule` 与 `clear_backup_schedule`。这些操作仅限所有者。
 
 一次运行会做什么：
 
 - 到点的运行会做一份备份，走与 `minibox backup` 相同的服务。归档落在服务器的备份文件夹（`DATA_DIR/backups/` 或 `BACKUP_DIR`），因此按计划备份与手动备份是同一种归档。
 - 之后应用 `BACKUP_KEEP`，与手动备份完全一样。因此计划本身不会把磁盘塞满：例如 `BACKUP_KEEP=7` 时保留最新的七份并删除更旧的。见[只保留最新的几份备份](#只保留最新的几份备份)。
 - 失败的运行记录在计划上并只写一次日志，之后等到下一个时间点才再次运行，不会反复重试。
+- 到点时如果已有别的备份占着备份文件夹（例如手动备份还没做完），这次运行不做备份，记为**已跳过**而不是失败：**上次运行**会写明原因，日志里有一行 `backup.scheduled_skipped`，不产生审计事件，因为并没有出错。计划会在下一个时间点再次运行。
 - MiniBox 停机期间到点的运行会在启动后执行一次，而不是把错过的每一次都补上。每隔几小时的计划保持原来的时间网格，晚跑一次不会移动后续时间；每天的计划则在下一次时间运行。
 - 计划每分钟检查一次。按计划做好的备份会像其他备份一样出现在 `GET /api/backups` 中，并记录 `backup.scheduled` 审计事件。
 

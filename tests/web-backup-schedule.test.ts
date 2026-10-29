@@ -16,7 +16,12 @@ const SETTINGS_PAGE = join(WEB, "js", "pages", "settings.js");
 const at = (minutes: number) => new Date(Date.UTC(2026, 9, 20, 10, minutes)).toISOString();
 
 const escaped = (text: string) =>
-  text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 
 /**
  * The labels the backup card passes to the shared markup, copied here so a test can check them without a browser. The
@@ -57,11 +62,27 @@ const keyedFailure = {
     status: "failed",
     backupId: null,
     bytes: null,
-    error: "A backup was already running when this one was due, so it was skipped.",
-    errorKey: "backup_schedule_busy",
+    reason: null,
+    error: "Scheduled backups are sealed with the passphrase in BACKUP_PASSPHRASE, and the server has none.",
+    errorKey: "backup_schedule_passphrase_unset",
     errorParams: null,
   },
 };
+/** A run that made no backup because another held the folder, as the server records it. */
+const skippedRun = {
+  ...intervalSchedule,
+  lastRun: {
+    at: at(0),
+    status: "skipped",
+    backupId: null,
+    bytes: null,
+    reason: "busy",
+    error: null,
+    errorKey: null,
+    errorParams: null,
+  },
+};
+const unknownSkip = { ...skippedRun, lastRun: { ...skippedRun.lastRun, reason: "some_new_reason" } };
 const unkeyedFailure = {
   ...intervalSchedule,
   lastRun: { ...keyedFailure.lastRun, error: "ENOSPC: no space left on device", errorKey: null },
@@ -113,15 +134,32 @@ const failures = (language: string) =>
     `return {
       keyed: ui.scheduleCardHtml(${JSON.stringify(keyedFailure)}, { labels: ${JSON.stringify(LABELS)}, action: "a" }),
       unkeyed: ui.scheduleCardHtml(${JSON.stringify(unkeyedFailure)}, { labels: ${JSON.stringify(LABELS)}, action: "a" }),
+      skipped: ui.scheduleCardHtml(${JSON.stringify(skippedRun)}, { labels: ${JSON.stringify(LABELS)}, action: "a" }),
+      unknownSkip: ui.scheduleCardHtml(${JSON.stringify(unknownSkip)}, { labels: ${JSON.stringify(LABELS)}, action: "a" }),
       zoned: ui.zonedTime(${JSON.stringify(at(60))}, "Asia/Shanghai"),
     };`,
   );
 
 describe("a failed scheduled run is said in the console's language", () => {
   test("a reason the server has a message for is translated, in each language", () => {
-    expect(failures("en").keyed).toContain(escaped(en["err.backup_schedule_busy"] ?? ""));
-    expect(failures("zh-CN").keyed).toContain(escaped(zh["err.backup_schedule_busy"] ?? ""));
-    expect(failures("zh-CN").keyed).not.toContain("was already running");
+    expect(failures("en").keyed).toContain(escaped(en["err.backup_schedule_passphrase_unset"] ?? ""));
+    expect(failures("zh-CN").keyed).toContain(escaped(zh["err.backup_schedule_passphrase_unset"] ?? ""));
+    expect(failures("zh-CN").keyed).not.toContain("sealed with the passphrase");
+  });
+
+  test("a run that was skipped says skipped, not failed, and why, in each language", () => {
+    const english = failures("en").skipped;
+    expect(english).toContain(escaped((en["st.backupSkip.busy"] ?? "").trim()));
+    expect(english).toContain("skipped: ");
+    expect(english).not.toContain("failed");
+    const chinese = failures("zh-CN").skipped;
+    expect(chinese).toContain(escaped(zh["st.backupSkip.busy"] ?? ""));
+    expect(chinese).toContain("已跳过：");
+    expect(chinese).not.toContain("失败");
+  });
+
+  test("a skip reason the console has no words for is shown as the server named it", () => {
+    expect(failures("en").unknownSkip).toContain("skipped: some_new_reason");
   });
 
   test("a reason that has only the server's English text is shown as it is", () => {
@@ -131,6 +169,57 @@ describe("a failed scheduled run is said in the console's language", () => {
   test("a time is shown with the zone it is in, which the saved toast uses too", () => {
     expect(failures("en").zoned).toContain("Asia/Shanghai");
     expect(SOURCE).toContain("zonedTime(saved.schedule.nextRunAt, browserTimezone())");
+  });
+});
+
+/** The card as it reads when the server has no BACKUP_PASSPHRASE, with and without a schedule. */
+const blocked = (language: string) =>
+  runConsole<{ off: string; on: string; free: string }>(
+    language,
+    `const off = { labels: ${JSON.stringify(LABELS)}, action: "st-backup-schedule", blocked: "st.backupNeedsPassphrase" };
+    const lost = { labels: ${JSON.stringify(LABELS)}, action: "st-backup-schedule", blocked: "st.backupLostPassphrase" };
+    return {
+      off: ui.scheduleCardHtml(null, off),
+      on: ui.scheduleCardHtml(${JSON.stringify(intervalSchedule)}, lost),
+      free: ui.scheduleCardHtml(null, { labels: ${JSON.stringify(LABELS)}, action: "st-backup-schedule" }),
+    };`,
+  );
+
+/** The opening tag of the button that carries a `data-action`, so a test can read its attributes. */
+const buttonOf = (html: string, action: string): string =>
+  html.match(new RegExp(`<button[^>]*data-action="${action}"[^>]*>`))?.[0] ?? "";
+
+describe("the card says up front that a schedule needs the server's passphrase", () => {
+  test("with none, the card says so, and the button that would set a schedule is disabled with that as its title", () => {
+    const { off, free } = blocked("en");
+    // Said in the card itself, in a callout of its own, and not only in the button's title.
+    expect(off).toContain(`<span>${escaped(en["st.backupNeedsPassphrase"] ?? "")}</span>`);
+    const button = buttonOf(off, "st-backup-schedule");
+    expect(button).toContain(" disabled");
+    expect(button).toContain(`title="${escaped(en["st.backupNeedsPassphrase"] ?? "")}"`);
+    // With a passphrase nothing is said and nothing is disabled.
+    expect(buttonOf(free, "st-backup-schedule")).not.toContain("disabled");
+    expect(free).not.toContain(escaped(en["st.backupNeedsPassphrase"] ?? ""));
+    expect(free).not.toContain("callout");
+  });
+
+  test("a schedule saved before the passphrase went missing cannot be changed, but can still be turned off", () => {
+    const { on } = blocked("en");
+    expect(on).toContain(`<span>${escaped(en["st.backupLostPassphrase"] ?? "")}</span>`);
+    expect(buttonOf(on, "st-backup-schedule")).toContain(" disabled");
+    expect(buttonOf(on, "st-backup-schedule-off")).not.toContain("disabled");
+  });
+
+  test("it is said in Chinese too", () => {
+    const { off, on } = blocked("zh-CN");
+    expect(off).toContain(`<span>${escaped(zh["st.backupNeedsPassphrase"] ?? "")}</span>`);
+    expect(on).toContain(`<span>${escaped(zh["st.backupLostPassphrase"] ?? "")}</span>`);
+  });
+
+  test("the card asks the server, and turns the answer into the key that says why", () => {
+    expect(SOURCE).toContain('({ schedule, passphraseSet } = await api("/api/backups/schedule"))');
+    expect(SOURCE).toContain("passphraseSet === false");
+    expect(SOURCE).toContain('"st.backupLostPassphrase" : "st.backupNeedsPassphrase"');
   });
 });
 

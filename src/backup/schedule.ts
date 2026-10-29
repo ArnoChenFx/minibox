@@ -18,15 +18,18 @@ export const BACKUP_SCHEDULE_HOURS_MAX = SCHEDULE_HOURS_MAX;
 const TIMEZONE_MAX = 64;
 
 /**
- * One scheduled run. `ok` means an archive was made and `failed` means the run did not make one, such as a missing
- * passphrase or another backup holding the folder. `error` is the English text; `errorKey` and `errorParams` are the
- * message it came from, so a console can say the reason in its own language instead of showing the English.
+ * One scheduled run. `ok` means an archive was made. `skipped` means the run made none and nothing went wrong, as when a
+ * manual backup held the folder: `reason` says why, as a code a console puts in its own words, and the schedule runs
+ * again at its next time. `failed` means the run could not make one, such as a missing passphrase: `error` is the
+ * English text, and `errorKey` and `errorParams` are the message it came from, so a console can say the reason in its
+ * own language instead of showing the English.
  */
 const BackupScheduleRunSchema = z.strictObject({
   at: z.iso.datetime(),
-  status: z.enum(["ok", "failed"]),
+  status: z.enum(["ok", "skipped", "failed"]),
   backupId: z.string().refine(isBackupId, "not a backup id").nullable(),
   bytes: z.number().int().min(0).nullable(),
+  reason: z.string().nullable().default(null),
   error: z.string().nullable(),
   errorKey: z.string().nullable().default(null),
   errorParams: z

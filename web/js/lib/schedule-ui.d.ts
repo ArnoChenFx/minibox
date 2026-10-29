@@ -8,6 +8,7 @@ export interface ScheduleLike {
   lastRun: {
     at: string;
     status: string;
+    reason?: string | null;
     error?: string | null;
     errorKey?: string | null;
     errorParams?: Record<string, string | number> | null;
@@ -22,6 +23,10 @@ export interface ScheduleLabels {
   ok: string;
   failed: string;
   none: string;
+  /** How a skipped run reads, with `{ time, reason }`. A schedule whose runs cannot be skipped leaves it out. */
+  skipped?: string;
+  /** The dictionary prefix of each reason code a skipped run names, such as `st.backupSkip.` for `busy`. */
+  skipPrefix?: string;
 }
 
 export interface ScheduleFieldIds {
@@ -35,7 +40,7 @@ export declare function ruleText(schedule: ScheduleLike): string;
 export declare function lastRunText(
   run: ScheduleLike["lastRun"],
   zone: string,
-  labels: Pick<ScheduleLabels, "ok" | "failed" | "none">,
+  labels: Pick<ScheduleLabels, "ok" | "failed" | "none" | "skipped" | "skipPrefix">,
 ): string;
 export declare function scheduleCardHtml(
   schedule: ScheduleLike | null | undefined,
@@ -45,6 +50,8 @@ export declare function scheduleCardHtml(
     action: string;
     /** Overrides the last-run line, for a schedule whose skipped runs say why. */
     lastRun?: typeof lastRunText;
+    /** The dictionary key of why the schedule cannot be set or changed now. The card says it and disables those buttons. */
+    blocked?: string | null;
   },
 ): string;
 export declare function scheduleFieldsHtml(

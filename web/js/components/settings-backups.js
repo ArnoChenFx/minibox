@@ -18,6 +18,8 @@ const LABELS = {
   note: "st.backupScheduleNote",
   ok: "st.backupRunOk",
   failed: "st.backupRunFailed",
+  skipped: "st.backupRunSkipped",
+  skipPrefix: "st.backupSkip.",
   none: "ck.lastRunNone",
 };
 
@@ -27,8 +29,9 @@ export async function loadBackups(view) {
   const card = view.querySelector("#stBackups");
   if (!card) return;
   let schedule;
+  let passphraseSet;
   try {
-    ({ schedule } = await api("/api/backups/schedule"));
+    ({ schedule, passphraseSet } = await api("/api/backups/schedule"));
   } catch (e) {
     if (e.status === 401) {
       location.href = "/login";
@@ -38,12 +41,15 @@ export async function loadBackups(view) {
       <div class="card-body"><div class="callout danger">${icon("alert")}<span>${esc(e.message)}</span></div></div>`;
     return;
   }
+  // Without a passphrase on the server a schedule cannot be saved, so the card says so up front, and does not wait for
+  // a click on Save to find out.
+  const blocked = passphraseSet === false ? (schedule ? "st.backupLostPassphrase" : "st.backupNeedsPassphrase") : null;
   card.innerHTML = `
     <div class="card-head">
       <div><h3>${t("st.backups")}</h3><p class="help">${t("st.backupsHelp")}</p></div>${icon("disk")}
     </div>
     <div class="card-body">
-      ${scheduleCardHtml(schedule, { labels: LABELS, action: "st-backup-schedule" })}
+      ${scheduleCardHtml(schedule, { labels: LABELS, action: "st-backup-schedule", blocked })}
     </div>`;
   card
     .querySelector('[data-action="st-backup-schedule"]')

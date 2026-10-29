@@ -142,16 +142,25 @@ const backupScheduleGet = defineOperation({
   scope: "backup:manage",
   async: false,
   input: z.object({}),
-  output: z.object({ schedule: BackupScheduleSchema.nullable() }),
+  output: z.object({
+    schedule: BackupScheduleSchema.nullable(),
+    passphraseSet: z.boolean().meta({
+      description:
+        "Whether the server has a BACKUP_PASSPHRASE. Without one a schedule cannot be saved, and one saved before it went missing fails at its next time.",
+    }),
+  }),
   rest: [{ method: "GET", path: "/api/backups/schedule" }],
   cli: "backup schedule get",
   mcp: {
     toolset: "storage",
     name: "get_backup_schedule",
     description:
-      "Read the backup schedule of this instance, with its next and last run. A null schedule means none is set, which is the default. Owner only.",
+      "Read the backup schedule of this instance, with its next and last run (a run is ok, skipped with a reason such as busy, or failed with an error). A null schedule means none is set, which is the default. passphraseSet says whether the server has a BACKUP_PASSPHRASE: without one a schedule cannot be saved. Owner only.",
   },
-  run: async ({ backupSchedule }) => ({ schedule: readBackupSchedule(scheduleStoreOf(backupSchedule)) }),
+  run: async ({ backupSchedule, backupPassphraseSet }) => ({
+    schedule: readBackupSchedule(scheduleStoreOf(backupSchedule)),
+    passphraseSet: backupPassphraseSet !== false,
+  }),
 });
 
 const backupScheduleSet = defineOperation({

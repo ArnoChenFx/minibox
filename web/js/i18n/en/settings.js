@@ -439,6 +439,12 @@ export default {
     "A run that fell due while MiniBox was down happens once when it comes back, not once per missed slot. BACKUP_KEEP keeps only the newest few.",
   "st.backupRunOk": "{time}, backup made",
   "st.backupRunFailed": "{time}, failed: {error}",
+  "st.backupRunSkipped": "{time}, skipped: {reason}",
+  "st.backupSkip.busy": "another backup was already running; the schedule runs again at its next time",
+  "st.backupNeedsPassphrase":
+    "The server has no BACKUP_PASSPHRASE, so a schedule cannot be saved yet. Set it in .env (12 to 1024 characters) and restart MiniBox.",
+  "st.backupLostPassphrase":
+    "The server has no BACKUP_PASSPHRASE, so this schedule's runs fail and it cannot be changed. Set it in .env (12 to 1024 characters) and restart MiniBox, or turn the schedule off.",
   "st.backupScheduleTitle": "Backup schedule",
   "st.backupScheduleDesc": "Backs up the data directory in the background.",
   "st.backupScheduleHelp":

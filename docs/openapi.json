@@ -30968,8 +30968,10 @@
                                       "type": "string",
                                       "enum": [
                                         "ok",
+                                        "skipped",
                                         "failed"
-                                      ]
+                                      ],
+                                      "description": "ok made a backup. skipped made none and nothing went wrong: reason says why, and the schedule runs again at its next time. failed could not make one: error says why."
                                     },
                                     "backupId": {
                                       "type": [
@@ -30987,6 +30989,12 @@
                                         {
                                           "type": "null"
                                         }
+                                      ]
+                                    },
+                                    "reason": {
+                                      "type": [
+                                        "string",
+                                        "null"
                                       ]
                                     },
                                     "error": {
@@ -31026,6 +31034,7 @@
                                     "status",
                                     "backupId",
                                     "bytes",
+                                    "reason",
                                     "error",
                                     "errorKey",
                                     "errorParams"
@@ -31057,10 +31066,15 @@
                           "type": "null"
                         }
                       ]
+                    },
+                    "passphraseSet": {
+                      "type": "boolean",
+                      "description": "Whether the server has a BACKUP_PASSPHRASE. Without one a schedule cannot be saved, and one saved before it went missing fails at its next time."
                     }
                   },
                   "required": [
-                    "schedule"
+                    "schedule",
+                    "passphraseSet"
                   ],
                   "additionalProperties": false
                 }
@@ -31262,8 +31276,10 @@
                                   "type": "string",
                                   "enum": [
                                     "ok",
+                                    "skipped",
                                     "failed"
-                                  ]
+                                  ],
+                                  "description": "ok made a backup. skipped made none and nothing went wrong: reason says why, and the schedule runs again at its next time. failed could not make one: error says why."
                                 },
                                 "backupId": {
                                   "type": [
@@ -31281,6 +31297,12 @@
                                     {
                                       "type": "null"
                                     }
+                                  ]
+                                },
+                                "reason": {
+                                  "type": [
+                                    "string",
+                                    "null"
                                   ]
                                 },
                                 "error": {
@@ -31320,6 +31342,7 @@
                                 "status",
                                 "backupId",
                                 "bytes",
+                                "reason",
                                 "error",
                                 "errorKey",
                                 "errorParams"

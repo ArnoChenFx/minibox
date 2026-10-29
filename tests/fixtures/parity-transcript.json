@@ -2989,7 +2989,7 @@
     "path": "/api/backups/schedule",
     "status": 200,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"schedule\":null}"
+    "body": "{\"schedule\":null,\"passphraseSet\":true}"
   },
   {
     "step": "set an hourly backup schedule",
@@ -3037,7 +3037,7 @@
     "path": "/api/backups/schedule",
     "status": 200,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"schedule\":{\"version\":1,\"mode\":\"daily\",\"everyHours\":null,\"at\":\"02:30\",\"timezone\":\"Asia/Shanghai\",\"createdBy\":\"owner\",\"createdAt\":\"<time>\",\"updatedAt\":\"<time>\",\"nextRunAt\":\"<time>\",\"lastRun\":null,\"timezoneUnknown\":false}}"
+    "body": "{\"schedule\":{\"version\":1,\"mode\":\"daily\",\"everyHours\":null,\"at\":\"02:30\",\"timezone\":\"Asia/Shanghai\",\"createdBy\":\"owner\",\"createdAt\":\"<time>\",\"updatedAt\":\"<time>\",\"nextRunAt\":\"<time>\",\"lastRun\":null,\"timezoneUnknown\":false},\"passphraseSet\":true}"
   },
   {
     "step": "clear the backup schedule",

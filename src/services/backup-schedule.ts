@@ -105,19 +105,35 @@ export class BackupScheduler {
     if (this.passphrase === null) return failure(msg("backup_schedule_passphrase_unset"));
     try {
       const record = await this.backups.create(this.passphrase, OWNER.id);
-      return { status: "ok", backupId: record.id, bytes: record.bytes, error: null, errorKey: null, errorParams: null };
+      return {
+        status: "ok",
+        backupId: record.id,
+        bytes: record.bytes,
+        reason: null,
+        error: null,
+        errorKey: null,
+        errorParams: null,
+      };
     } catch (e) {
-      // A manual backup holds the folder. Its "wait, then try again" is no use to a schedule, which does not try again
-      // until its next slot, so the run says that instead.
-      if (e instanceof AppError && e.key === "backup_running") return failure(msg("backup_schedule_busy"));
+      // Another backup holds the folder, a manual one most likely. Nothing is wrong, and the schedule does not try again
+      // until its next slot, so the run is skipped and says why, not failed.
+      if (e instanceof AppError && e.key === "backup_running") return skipped("busy");
       if (e instanceof AppError && e.key !== undefined)
         return failure({ key: e.key, params: e.params, text: e.message });
       return failure(messageOf(e));
     }
   }
 
-  /** One audit event per run and one log line, so a failed run is reported once and does not repeat until its next slot. */
+  /**
+   * One audit event per run that made a backup or failed to, and one log line per run, so a failed run is reported once
+   * and does not repeat until its next slot. A skipped run did nothing and broke nothing, so it has a log line and no
+   * audit event.
+   */
   private note(outcome: Omit<BackupScheduleRun, "at">): void {
+    if (outcome.status === "skipped") {
+      log.info("backup.scheduled_skipped", { reason: outcome.reason });
+      return;
+    }
     const ok = outcome.status === "ok";
     const name = outcome.backupId ?? "DATA_DIR";
     this.record(LOCAL_HOST_ID, "scheduler", OWNER, {
@@ -196,6 +212,11 @@ interface Reason {
   readonly text: string;
 }
 
+/** A run that made no backup and broke nothing. `reason` is a code the console puts in its own words. */
+function skipped(reason: "busy"): Omit<BackupScheduleRun, "at"> {
+  return { status: "skipped", backupId: null, bytes: null, reason, error: null, errorKey: null, errorParams: null };
+}
+
 /** A failed run. A keyed reason lets the console say it in its own language; a plain one is shown as it is. */
 function failure(reason: string | Reason): Omit<BackupScheduleRun, "at"> {
   const plain = typeof reason === "string";
@@ -203,6 +224,7 @@ function failure(reason: string | Reason): Omit<BackupScheduleRun, "at"> {
     status: "failed",
     backupId: null,
     bytes: null,
+    reason: null,
     error: plain ? reason : reason.text,
     errorKey: plain ? null : reason.key,
     errorParams: plain ? null : (reason.params ?? null),

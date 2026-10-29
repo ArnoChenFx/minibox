@@ -208,7 +208,7 @@ describe("a due backup schedule over the scheduler", () => {
     clock = new Date(clock.getTime() + HOUR);
     const manual = app.backups.create(PASSPHRASE, "owner");
     expect(await scheduler.run()).toBeNull();
-    expect(app.backupSchedule.read()?.lastRun?.status).toBe("failed");
+    expect(app.backupSchedule.read()?.lastRun?.status).toBe("skipped");
     await manual;
     expect(app.backups.list()).toHaveLength(1);
     await app.backups.create(PASSPHRASE, "owner");
@@ -225,17 +225,34 @@ describe("a due backup schedule over the scheduler", () => {
     expect(run?.error).toContain("BACKUP_PASSPHRASE");
   });
 
-  test("a run that meets a manual backup says it was skipped until the next slot, not to try again", async () => {
+  test("a run that meets a manual backup is skipped, not failed: it says why, and waits for its next slot", async () => {
     setBackupSchedule(app.backupSchedule, rule({ everyHours: 1 }), "owner", clock);
-    const { scheduler } = schedulerOf(app, { clock: () => clock });
+    const lines: string[] = [];
+    const restore = setLogSink((_level, line) => lines.push(line));
+    const { scheduler, notes } = schedulerOf(app, { clock: () => clock });
     clock = new Date(clock.getTime() + HOUR);
     const manual = app.backups.create(PASSPHRASE, "owner");
-    expect(await scheduler.run()).toBeNull();
-    const run = app.backupSchedule.read()?.lastRun;
-    expect(run).toMatchObject({ status: "failed", errorKey: "backup_schedule_busy" });
-    // A schedule does not try again until its next slot, so the manual path's "wait, then try again" would be wrong here.
-    expect(run?.error).not.toContain("try again");
+    try {
+      expect(await scheduler.run()).toBeNull();
+    } finally {
+      restore();
+    }
+    const schedule = app.backupSchedule.read();
+    expect(schedule?.lastRun).toMatchObject({
+      status: "skipped",
+      reason: "busy",
+      backupId: null,
+      error: null,
+      errorKey: null,
+    });
+    // The schedule moved on to its next slot, as it does after any run, and the manual backup was left alone.
+    expect(Date.parse(schedule?.nextRunAt ?? "")).toBeGreaterThan(clock.getTime());
     await manual;
+    expect(app.backups.list()).toHaveLength(1);
+    // Nothing failed and nothing was made, so there is no audit event and no error line; the log says it was skipped.
+    expect(notes).toEqual([]);
+    expect(lines.filter((line) => line.includes('"level":"error"'))).toEqual([]);
+    expect(lines.filter((line) => line.includes("backup.scheduled_skipped"))).toHaveLength(1);
   });
 
   test("a failure with a message of its own keeps its key and parameters", async () => {

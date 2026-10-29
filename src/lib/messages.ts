@@ -303,8 +303,6 @@ export const MESSAGES = {
   backup_running: "A backup is already running. Wait for it to finish, then try again.",
   backup_schedule_passphrase_unset:
     "Scheduled backups are sealed with the passphrase in BACKUP_PASSPHRASE, and the server has none. Set it in .env (12 to 1024 characters) and restart MiniBox.",
-  backup_schedule_busy:
-    "A backup was already running when this one was due, so it was skipped. The schedule runs again at its next time.",
   backup_invalid: "The backup is not valid: {reason}",
   backup_passphrase_invalid:
     "The passphrase must be 12 to 1024 characters, with no leading or trailing spaces and no line breaks.",

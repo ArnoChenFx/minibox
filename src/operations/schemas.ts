@@ -246,12 +246,17 @@ export const CheckpointScheduleSchema = z.object({
   lastRun: ScheduleLastRunSchema.nullable(),
 });
 
-/** The outcome of one scheduled backup run. `backupId` is the archive it made, null when the run failed. */
+/** The outcome of one scheduled backup run. `backupId` is the archive it made, null when the run made none. */
 const BackupScheduleLastRunSchema = z.object({
   at: z.string(),
-  status: z.enum(["ok", "failed"]),
+  status: z.enum(["ok", "skipped", "failed"]).meta({
+    description:
+      "ok made a backup. skipped made none and nothing went wrong: reason says why, and the schedule runs again at its next time. failed could not make one: error says why.",
+  }),
   backupId: z.string().nullable(),
   bytes: z.number().int().nullable(),
+  /** Why a skipped run made no backup: `busy` when another backup held the backup folder. Null for any other run. */
+  reason: z.string().nullable(),
   /** Why the run failed, in English. */
   error: z.string().nullable(),
   /** The message the failure came from, so a console can say it in its own language. Null for an unkeyed error. */

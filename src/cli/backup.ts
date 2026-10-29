@@ -91,8 +91,24 @@ interface ScheduleRow {
   timezone: string | null;
   timezoneUnknown: boolean;
   nextRunAt: string;
-  lastRun: { at: string; status: string; backupId: string | null; bytes: number | null; error: string | null } | null;
+  lastRun: {
+    at: string;
+    status: string;
+    backupId: string | null;
+    bytes: number | null;
+    reason?: string | null;
+    error: string | null;
+  } | null;
 }
+
+/** What a skipped run says for each reason the server names. */
+const SKIP_REASONS: Record<string, string> = {
+  busy: "another backup was already running; the schedule runs again at its next time",
+};
+
+/** Said under the schedule when the server cannot seal a scheduled backup, since the console says the same. */
+const NO_PASSPHRASE =
+  "The server has no BACKUP_PASSPHRASE. Set it in .env (12 to 1024 characters) and restart MiniBox.";
 
 const SCHEDULE_HINT =
   "minibox backup schedule takes get, set or clear. set takes --every-hours N or --at HH:MM with --timezone ZONE.";
@@ -109,6 +125,7 @@ function lastRunText(schedule: ScheduleRow): string {
   const run = schedule.lastRun;
   if (!run) return "none yet";
   if (run.status === "ok") return `${run.at}, backup ${run.backupId ?? ""}`.trimEnd();
+  if (run.status === "skipped") return `${run.at}, skipped: ${SKIP_REASONS[run.reason ?? ""] ?? run.reason ?? ""}`;
   return `${run.at}, failed: ${run.error ?? ""}`;
 }
 
@@ -127,14 +144,18 @@ async function backupScheduleGetCommand(argv: string[], env: Env, io: CliIo): Pr
   const res = await request(env, "GET", "/api/backups/schedule");
   if (res.status >= 400) return fail(io, res.status, res.json, res.text);
   if (options.switches.has("--json")) return printJson(io, res.json);
-  const schedule = (res.json as { schedule?: ScheduleRow | null } | null)?.schedule ?? null;
+  const body = res.json as { schedule?: ScheduleRow | null; passphraseSet?: boolean } | null;
+  const schedule = body?.schedule ?? null;
+  const sealed = body?.passphraseSet !== false;
   if (!schedule) {
     io.stdout("No backup schedule is set.\n");
+    if (!sealed) io.stdout(`${NO_PASSPHRASE} Until then a schedule cannot be saved.\n`);
     return 0;
   }
   io.stdout(`Backup ${ruleText(schedule)}\n`);
   io.stdout(`Next run: ${schedule.nextRunAt}\n`);
   io.stdout(`Last run: ${lastRunText(schedule)}\n`);
+  if (!sealed) io.stdout(`${NO_PASSPHRASE} Until then this schedule's runs fail and it cannot be changed.\n`);
   return 0;
 }
 

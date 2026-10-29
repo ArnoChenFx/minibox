@@ -413,6 +413,12 @@ export default {
     "MiniBox 停机期间到点的运行会在启动后执行一次，不会把错过的每次都补上。BACKUP_KEEP 只保留最新的几份。",
   "st.backupRunOk": "{time}，已创建备份",
   "st.backupRunFailed": "{time}，失败：{error}",
+  "st.backupRunSkipped": "{time}，已跳过：{reason}",
+  "st.backupSkip.busy": "当时已有备份在运行；计划会在下一个时间点再次运行",
+  "st.backupNeedsPassphrase":
+    "服务器没有设置 BACKUP_PASSPHRASE，暂时无法保存计划。请在 .env 中设置（12 到 1024 个字符）并重启 MiniBox。",
+  "st.backupLostPassphrase":
+    "服务器没有设置 BACKUP_PASSPHRASE，所以这个计划的运行会失败，也无法修改。请在 .env 中设置（12 到 1024 个字符）并重启 MiniBox，或者关闭计划。",
   "st.backupScheduleTitle": "备份计划",
   "st.backupScheduleDesc": "在后台备份数据目录。",
   "st.backupScheduleHelp":

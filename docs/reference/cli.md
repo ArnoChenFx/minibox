@@ -263,7 +263,7 @@ The `backup` commands use the access key, and they are for the owner only. `rest
 | `minibox backup [--out FILE] [--overwrite] [--passphrase-stdin] [--json]` | Backs up DATA_DIR on the server into a sealed archive, while MiniBox runs. With `--out`, it also downloads the archive to `FILE`, and checks its size and checksum. Without `--out`, the backup stays on the server, and the command prints its ID. |
 | `minibox backup ls [--json]` | Lists the backups kept on the server |
 | `minibox backup rm <id> [--json]` | Deletes a backup kept on the server |
-| `minibox backup schedule get [--json]` | Prints the backup schedule, with its next and last run. A schedule that is off says so |
+| `minibox backup schedule get [--json]` | Prints the backup schedule, with its next and last run. A schedule that is off says so, and so does a server with no `BACKUP_PASSPHRASE` |
 | `minibox backup schedule set (--every-hours N \| --at HH:MM [--timezone ZONE]) [--json]` | Backs up on a schedule inside MiniBox, with no external cron. `--every-hours` is a whole number from 1 to 720; `--at` is a daily time, in `--timezone` or UTC when that is omitted. The passphrase comes from `BACKUP_PASSPHRASE` on the server |
 | `minibox backup schedule clear [--json]` | Removes the schedule. Backups it already made are kept |
 | `minibox restore <file> --data-dir DIR [--passphrase-stdin]` | Restores an archive into an empty `DIR`. Without `--data-dir`, it uses `DATA_DIR`. Stop MiniBox first. |

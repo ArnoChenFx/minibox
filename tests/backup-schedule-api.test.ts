@@ -3,11 +3,12 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { ruleOf, type ScheduleRule } from "../src/checkpoints/schedule";
 import { runCli } from "../src/cli";
 import { AppError } from "../src/lib/errors";
 import type { OperationContext, Principal } from "../src/operations/types";
 import { startServer } from "../src/server";
-import { BackupScheduler, readBackupSchedule } from "../src/services/backup-schedule";
+import { BackupScheduler, readBackupSchedule, setBackupSchedule } from "../src/services/backup-schedule";
 import { createTestApp, silenceLogs, TEST_KEY } from "./support/app";
 import { rejectionOf } from "./support/app";
 
@@ -129,6 +130,20 @@ describe("the backup schedule operations", () => {
     expect(readBackupSchedule(app.backupSchedule)).toBeNull();
   });
 
+  test("the read says whether the server has a passphrase, which is what a schedule needs", async () => {
+    const withOne = createTestApp().app;
+    const sealed = (await withOne.operations.run("backup.schedule.get", ctxOf(withOne), {})) as {
+      passphraseSet: boolean;
+    };
+    expect(sealed.passphraseSet).toBe(true);
+    const without = createTestApp({ backupPassphrase: null }).app;
+    const bare = (await without.operations.run("backup.schedule.get", ctxOf(without), {})) as {
+      schedule: unknown;
+      passphraseSet: boolean;
+    };
+    expect(bare).toEqual({ schedule: null, passphraseSet: false });
+  });
+
   test("setting a schedule records an activity entry, and clearing it records another", async () => {
     const { app } = createTestApp();
     const ctx = ctxOf(app);
@@ -208,6 +223,63 @@ describe("minibox backup schedule", () => {
       const none = io();
       expect(await runCli(["backup", "schedule", "get"], served.env, none)).toBe(0);
       expect(none.out).toContain("No backup schedule is set.");
+    } finally {
+      served.stop();
+    }
+  });
+
+  test("get says up front that the server cannot seal a schedule, and what to do", async () => {
+    const dataDir = mkdtempSync(join(scratch, "app-"));
+    const { app } = createTestApp({ dataDir, backupPassphrase: null });
+    const server = startServer(app);
+    const env = { MINIBOX_URL: `http://127.0.0.1:${server.port}`, MINIBOX_ACCESS_KEY: TEST_KEY };
+    try {
+      const none = io();
+      expect(await runCli(["backup", "schedule", "get"], env, none)).toBe(0);
+      expect(none.out).toContain("No backup schedule is set.");
+      expect(none.out).toContain("The server has no BACKUP_PASSPHRASE");
+      expect(none.out).toContain("a schedule cannot be saved");
+
+      // A schedule that was saved before the passphrase went missing is still read, with the same warning.
+      const store = app.backupSchedule;
+      setBackupSchedule(store, ruleOf({ everyHours: 6 }) as ScheduleRule, "owner");
+      const kept = io();
+      expect(await runCli(["backup", "schedule", "get"], env, kept)).toBe(0);
+      expect(kept.out).toContain("Backup every 6 hours");
+      expect(kept.out).toContain("this schedule's runs fail and it cannot be changed");
+
+      const json = io();
+      expect(await runCli(["backup", "schedule", "get", "--json"], env, json)).toBe(0);
+      expect(JSON.parse(json.out)).toMatchObject({ passphraseSet: false });
+    } finally {
+      server.stop(true);
+      app.throttle.stop();
+    }
+  });
+
+  test("get prints a skipped run as skipped, with the reason in words", async () => {
+    const served = serve(mkdtempSync(join(scratch, "app-")));
+    try {
+      const rule = ruleOf({ everyHours: 6 }) as ScheduleRule;
+      const set = setBackupSchedule(served.app.backupSchedule, rule, "owner");
+      const { timezoneUnknown: _view, ...record } = set;
+      served.app.backupSchedule.write({
+        ...record,
+        lastRun: {
+          at: "2026-10-29T10:00:00.000Z",
+          status: "skipped",
+          backupId: null,
+          bytes: null,
+          reason: "busy",
+          error: null,
+          errorKey: null,
+          errorParams: null,
+        },
+      });
+      const get = io();
+      expect(await runCli(["backup", "schedule", "get"], served.env, get)).toBe(0);
+      expect(get.out).toContain("Last run: 2026-10-29T10:00:00.000Z, skipped: another backup was already running");
+      expect(get.out).not.toContain("failed");
     } finally {
       served.stop();
     }
