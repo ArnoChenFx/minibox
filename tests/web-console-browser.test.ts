@@ -586,7 +586,7 @@ describe.skipIf(!executablePath)("the console's top navigation (real browser)", 
 
   describe("the hosts table's width", () => {
     test(
-      "an agent host's revoke and remove buttons fit without scrolling the table sideways, from a desktop to a phone",
+      "an agent host's remove button fits without scrolling the table sideways, from a desktop to a phone",
       async () => {
         for (const lang of ["en", "zh-CN"]) {
           const wide = await signedIn({ viewport: VIEWPORT });
@@ -615,7 +615,7 @@ describe.skipIf(!executablePath)("the console's top navigation (real browser)", 
             });
             const hostsPage = await wide.newPage();
             await hostsPage.goto(`${consoleUrl}/#/settings/hosts`);
-            await webExpect(hostsPage.locator('[data-revoke-host="gpu-box"]')).toBeVisible();
+            await webExpect(hostsPage.locator('[data-remove-host="gpu-box"]')).toBeVisible();
             for (const width of [1280, 1100, 1024, 900, 768, 600, 390]) {
               await hostsPage.setViewportSize({ width, height: 800 });
               const overflow = await hostsPage
@@ -629,6 +629,68 @@ describe.skipIf(!executablePath)("the console's top navigation (real browser)", 
         }
       },
       TIMEOUT_MS * 2,
+    );
+  });
+
+  describe("removing an agent host", () => {
+    test(
+      "offers only Remove, and its confirm says the agent is cut off and its idle container is left to docker rm -f",
+      async () => {
+        const said = {
+          en: ["disconnected at once and cannot reconnect", "deletes no container or volume", "docker rm -f"],
+          "zh-CN": ["立即断开，且无法再次连接", "不会删除机器上的任何容器或卷", "docker rm -f"],
+        };
+        for (const [lang, phrases] of Object.entries(said)) {
+          const context = await signedIn({ viewport: VIEWPORT });
+          try {
+            await context.addInitScript((value) => localStorage.setItem("minibox.lang", value), lang);
+            await withAgentHost(context, false);
+            const hostsPage = await context.newPage();
+            await hostsPage.goto(`${consoleUrl}/#/settings/hosts`);
+            const remove = hostsPage.locator('[data-remove-host="gpu-box"]');
+            await webExpect(remove).toBeVisible();
+            const actions = remove.locator("xpath=..");
+            await webExpect(actions.locator("button")).toHaveCount(1);
+            await webExpect(hostsPage.locator("[data-revoke-host]")).toHaveCount(0);
+            await remove.click();
+            const dialog = hostsPage.getByRole("dialog");
+            for (const phrase of phrases) await webExpect(dialog).toContainText(phrase);
+            await dialog.locator("[data-close]").last().click();
+            await webExpect(dialog).toHaveCount(0);
+          } finally {
+            await context.close();
+          }
+        }
+      },
+      TIMEOUT_MS * 2,
+    );
+
+    test(
+      "a host whose agent was already revoked is marked revoked and is removed with one DELETE",
+      async () => {
+        const context = await signedIn({ viewport: VIEWPORT });
+        try {
+          await withAgentHost(context, true);
+          const deleted: string[] = [];
+          await context.route("**/api/hosts/gpu-box", async (route) => {
+            if (route.request().method() !== "DELETE") return route.continue();
+            deleted.push(new URL(route.request().url()).pathname);
+            await route.fulfill({ json: { host: { id: "gpu-box", name: "GPU" } } });
+          });
+          const hostsPage = await context.newPage();
+          await hostsPage.goto(`${consoleUrl}/#/settings/hosts`);
+          const remove = hostsPage.locator('[data-remove-host="gpu-box"]');
+          const row = hostsPage.locator("#stHosts tbody tr", { has: remove });
+          await webExpect(row.locator(".agent-meta .badge-danger")).toHaveText("Revoked");
+          await remove.click();
+          await webExpect(hostsPage.getByRole("dialog")).toContainText("cannot reconnect");
+          await hostsPage.locator("#cfm-ok").click();
+          await webExpect.poll(() => deleted).toEqual(["/api/hosts/gpu-box"]);
+        } finally {
+          await context.close();
+        }
+      },
+      TIMEOUT_MS,
     );
   });
 
@@ -974,3 +1036,24 @@ describe.skipIf(!executablePath)("the console's top navigation (real browser)", 
     );
   });
 });
+
+/** Serves the real host list with one agent host added, so the console draws an agent row. */
+async function withAgentHost(context: BrowserContext, revoked: boolean): Promise<void> {
+  await context.route("**/api/hosts", async (route) => {
+    if (route.request().method() !== "GET") return route.continue();
+    const response = await route.fetch();
+    const body = (await response.json()) as { hosts: Record<string, unknown>[] };
+    const [local = {}] = body.hosts;
+    const agent = {
+      ...local,
+      id: "gpu-box",
+      name: "GPU",
+      transport: "agent",
+      endpoint: "agent://gpu-box",
+      status: revoked ? "offline" : "online",
+      boxes: 0,
+      agent: { connected: !revoked, revoked, version: "0.4.0", protocol: 1, lastSeenAt: new Date().toISOString() },
+    };
+    await route.fulfill({ response, json: { ...body, hosts: [...body.hosts, agent] } });
+  });
+}

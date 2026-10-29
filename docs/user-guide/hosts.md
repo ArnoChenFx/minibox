@@ -146,7 +146,9 @@ An **agent host has no such reading.** The agent carries the operations a box ne
 
 Click **Remove** next to the host, and confirm. A host that still has boxes, volumes or checkpoints cannot be removed. The **local** host cannot be removed.
 
-To stop an agent at once, click **Revoke** on its host first. Revoking disconnects the agent and blocks it from reconnecting. Its boxes and volumes stay on the machine, and the host stays listed as revoked until you remove it. Removing an agent host forgets its record, but the agent's container keeps running idle on the machine. Stop and remove that container on the machine with `docker rm -f`.
+An agent host has only **Remove**. Removing it revokes its agent first: the agent is disconnected at once and cannot reconnect, and MiniBox forgets its record. To use the machine again, pair it with a new code. Removing deletes no container or volume on the machine, and the agent's container keeps running idle there. Stop and remove that container on the machine with `docker rm -f`.
+
+To cut off an agent at once while its host still holds boxes, volumes or checkpoints, call `POST /api/hosts/{id}/revoke`. The endpoint is kept for this and for existing scripts. A revoked host stays listed, marked **Revoked**, until you remove it.
 
 ## Limits
 
@@ -155,5 +157,5 @@ To stop an agent at once, click **Revoke** on its host first. Revoking disconnec
 - **Auto** only considers hosts that already hold the template, unless an owner's official template may be built on one. To say which hosts it may use, give them labels and pass `hostLabels`; without them it considers every online host.
 - A box cannot move to or from an agent host yet, because an agent copies neither images nor volumes. With more than one host, the **Move to host** button of a box on an agent host is off, with the reason as its tooltip, and the API answers `501 move_agent_unsupported`. Create the box on the host you want it on. An agent host does not support templates, snapshots or port preview yet, so **Save as template** is off there too, and a box with a self token cannot be created on one, because an agent cannot write the token file.
 - Host-level CPU and memory use is shown for the local host only. A remote host shows the cores and memory that its engine reports, and the use of its own boxes.
-- The command-line tool's host commands read and set labels only: `minibox host labels get` and `minibox host labels set`. Adding, removing and revoking a host is done in the console or through the [REST API](../reference/api.md).
+- The command-line tool's host commands read and set labels only: `minibox host labels get` and `minibox host labels set`. Adding and removing a host is done in the console or through the [REST API](../reference/api.md), and revoking one through the REST API.
 - An [agent token](access-and-tokens.md) can be limited to specific hosts.

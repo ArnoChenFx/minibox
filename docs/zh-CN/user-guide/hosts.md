@@ -146,7 +146,9 @@ minibox box create trainer --host auto --host-label gpu=true --host-label org/ar
 
 点击该宿主机旁的 **移除** 并确认。仍持有 Box、卷或检查点的宿主机无法移除。**local** 宿主机无法移除。
 
-若要立即停止某个 Agent，请先在其宿主机上点击 **吊销**。吊销会断开该 Agent 并阻止其再次连接。它的 Box 和卷仍保留在该机器上，宿主机会保留在列表中并标记为已吊销，直到你移除它。移除 Agent 宿主机会删除其记录，但 Agent 的容器仍会在机器上空转。请在机器上使用 `docker rm -f` 停止并删除该容器。
+Agent 宿主机只有 **移除** 按钮。移除时会先吊销它的 Agent：Agent 立即断开且无法再次连接，MiniBox 随后删除其记录。要再用这台机器，请用新的配对码重新配对。移除不会删除机器上的任何容器或卷，Agent 的容器会在机器上空转。请在机器上使用 `docker rm -f` 停止并删除该容器。
+
+宿主机仍持有 Box、卷或检查点、又需要立即切断其 Agent 时，请调用 `POST /api/hosts/{id}/revoke`。这个接口为此保留，已有脚本也照常可用。被吊销的宿主机会留在列表中并标记为 **已吊销**，直到你移除它。
 
 ## 限制
 
@@ -155,5 +157,5 @@ minibox box create trainer --host auto --host-label gpu=true --host-label org/ar
 - **自动** 只考虑已持有模板镜像的宿主机，除非所有者的官方模板可以在某台上构建。要限定它可用的宿主机，请给宿主机加标签并传 `hostLabels`；不传时它会考虑所有在线宿主机。
 - Agent 宿主机暂不支持迁入或迁出 Box，因为 Agent 既不复制镜像，也不复制卷。因此有多台宿主机时，Agent 宿主机上的 Box **迁移到宿主机** 按钮不可用，原因写在悬停提示里，API 则返回 `501 move_agent_unsupported`。请直接在想要的位置创建 Box。Agent 宿主机暂不支持模板、快照与端口预览，**存为模板** 在那里同样不可用；也不能在其上创建带自助令牌的 Box，因为 Agent 无法写入令牌文件。
 - 宿主机级别的 CPU 与内存占用仅对本机宿主机显示。远程宿主机显示其引擎上报的核心数与内存，以及其上 Box 的占用。
-- 命令行工具的宿主机命令只读写标签：`minibox host labels get` 与 `minibox host labels set`。添加、移除和吊销宿主机请在控制台或通过 [REST API（英文）](../../reference/api.md) 完成。
+- 命令行工具的宿主机命令只读写标签：`minibox host labels get` 与 `minibox host labels set`。添加和移除宿主机请在控制台或通过 [REST API（英文）](../../reference/api.md) 完成，吊销宿主机请通过 REST API 完成。
 - [Agent 令牌](access-and-tokens.md) 可以限制为特定宿主机。
