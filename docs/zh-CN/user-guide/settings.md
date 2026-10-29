@@ -6,7 +6,7 @@
 |---|---|
 | **运行配置** | 查看监听地址、Docker 套接字、Box 上限及相关服务器设置。这些值在此为只读。 |
 | **端口预览** | 设置了 `PREVIEW_BASE_DOMAIN` 时，显示子域名预览的配置，并从 MiniBox 主机运行检查。路径模式没有需要检查的内容。见 [子域名预览](../admin/preview-subdomains.md)。 |
-| **宿主机** | 添加 Agent 宿主机或 Docker 宿主机，测试 Docker 宿主机，吊销 Agent 并移除宿主机。见 [宿主机](hosts.md)。 |
+| **宿主机** | 添加 Agent 宿主机或 Docker 宿主机，测试 Docker 宿主机，以及移除宿主机。移除 Agent 宿主机时会先吊销其 Agent。见 [宿主机](hosts.md)。 |
 | **外观** | 在浅色与深色之间切换。若未保存选择，主题跟随系统。手动选择会在该浏览器中记住。 |
 | **登录会话** | 查看已登录的浏览器并使其退出。见 [访问、会话与令牌](access-and-tokens.md)。 |
 | **Agent API 令牌** | 创建、查看并吊销供 Agent 与脚本使用的令牌。见 [访问、会话与令牌](access-and-tokens.md#agent-api-令牌)。 |

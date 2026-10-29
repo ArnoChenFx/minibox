@@ -1,3 +1,4 @@
+import { labelOf as hostLabelOf } from "../host/label";
 import type { HostCtx } from "../host/registry";
 import { badRequest, conflict } from "../lib/errors";
 import { log } from "../lib/logger";
@@ -37,7 +38,7 @@ function assertVolumeSnapshotable(volume: VolumeRecord): void {
 export async function assertVolumeReadable(host: HostCtx, volume: VolumeRecord): Promise<void> {
   assertVolumeSnapshotable(volume);
   if (hostOffline(host)) {
-    throw conflict(msg("volume_snapshot_host_offline", { host: host.host.name, volume: volume.name }));
+    throw conflict(msg("volume_snapshot_host_offline", { host: hostLabelOf(host.host), volume: volume.name }));
   }
   if ((await inspectVolumeOrNull(host, volume.engineName)) === null) {
     throw conflict(msg("volume_missing", { volume: volume.name }));

@@ -792,4 +792,24 @@ describe("across hosts", () => {
       cluster.close();
     }
   }, 20_000);
+
+  test("a hosts file that repeats a name still reports both hosts distinguishably, by id beside the name", async () => {
+    const cluster = await bootCluster();
+    try {
+      // `small` and `large` are stored under one display name, which an older hosts file may hold. Both are marked offline
+      // through the state the server keeps, so both conditions are listed in one answer and must not read as one host.
+      cluster.app.hosts.get("small").host.name = "Lab";
+      cluster.app.hosts.get("large").host.name = "Lab";
+      cluster.app.hosts.get("small").host.status = "offline";
+      cluster.app.hosts.get("large").host.status = "offline";
+      const view = await overview(cluster.base);
+      const offline = view.attention.filter((item) => item.kind === "host.offline");
+      expect(offline.map((item) => [item.hostId, item.subject]).toSorted()).toEqual([
+        ["large", "Lab · large"],
+        ["small", "Lab · small"],
+      ]);
+    } finally {
+      cluster.close();
+    }
+  }, 20_000);
 });

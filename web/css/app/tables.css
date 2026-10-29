@@ -66,6 +66,16 @@ table.table {
 .table .actions > .btn + .btn {
   margin-left: 6px;
 }
+/* The hosts table sits beside the settings menu, so its cells keep a tighter side padding to fit six columns. */
+.table.host-table th,
+.table.host-table td {
+  padding-left: 10px;
+  padding-right: 10px;
+}
+/* A socket path or URL has no space to break at, so it breaks anywhere rather than widen the table. */
+.table td.host-endpoint {
+  overflow-wrap: anywhere;
+}
 /* The checkbox column of a table whose rows can be selected: only as wide as its box. */
 .table .select-cell {
   width: 1%;
@@ -503,6 +513,18 @@ table.table {
   width: min(880px, 100%);
 }
 .vol-browse .fb-intro {
+  display: none;
+}
+/* One line above the volumes table: why the rows that sit on an agent host keep their browse, measure and snapshot
+   buttons off. The rows share one reason, so the table says it once rather than repeating it on every row. */
+.vol-agent-note {
+  padding: 10px 18px;
+  border-bottom: 1px solid var(--border);
+  background: var(--warning-soft);
+  color: var(--warning);
+  font-size: 13px;
+}
+.vol-agent-note[hidden] {
   display: none;
 }
 .bulk-bar[hidden] {

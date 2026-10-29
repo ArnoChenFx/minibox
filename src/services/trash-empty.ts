@@ -1,4 +1,5 @@
 import type { TrashKind } from "../checkpoints/types";
+import { hostLabel } from "../host/label";
 import type { HostCtx } from "../host/registry";
 import { msg } from "../lib/messages";
 import type { TaskReader } from "../tasks/types";
@@ -106,6 +107,13 @@ export async function scanTrash(hosts: readonly HostCtx[], opts: EmptyOptions): 
   for (const host of hosts) {
     const hostId = host.host.id;
     const name = host.host.name;
+    // The label a message quotes. A hosts file written before names had to be unique can still hold two hosts of one
+    // name, and this scan reports every host at once, so the id joins a shared name and a reader can tell them apart.
+    // The `name` field stays the host's own name; `hostId` already tells the hosts apart there.
+    const label = hostLabel(
+      host.host,
+      hosts.map((item) => item.host),
+    );
     let listed: TrashEntry[];
     try {
       listed = await listTrash(host);
@@ -114,7 +122,7 @@ export async function scanTrash(hosts: readonly HostCtx[], opts: EmptyOptions): 
       continue;
     }
     const offline = hostOffline(host);
-    const error = offline ? messageOutcome(msg("trash_host_offline", { host: name })) : null;
+    const error = offline ? messageOutcome(msg("trash_host_offline", { host: label })) : null;
     const gone: Block | null = error ? { code: "offline", error } : null;
     scan.hosts.push({ hostId, name, status: offline ? "offline" : "checked", error });
     for (const entry of listed) {

@@ -166,7 +166,7 @@ All paths are jailed inside the volume. `{id}` is a `vol_…` or a volume name; 
 | `GET` | `/api/overview` | owner | What agents are doing and what needs attention |
 | `GET` | `/api/hosts`, `/api/hosts/usage`, `/api/hosts/{id}/disk` | owner | Hosts, and what a host's engine holds (`docker system df`) |
 
-| `GET` | `/api/hosts`, `/api/hosts/usage` | owner | Hosts, with the labels each one carries |
+| `GET` | `/api/hosts`, `/api/hosts/usage` | owner | Hosts, with the labels each one carries. A host is addressed by `id` everywhere; `name` is only the label the console shows, and no two hosts may share one |
 | `PATCH` | `/api/hosts/{id}` | owner | `labels`. The local host included |
 | `GET` | `/api/secrets` | owner | Secret names, never values |
 | `GET` | `/api/trash` | owner | The recycle bin |

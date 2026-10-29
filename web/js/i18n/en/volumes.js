@@ -204,6 +204,10 @@ export default {
   "vol.snapshotSelfText": "Snapshots this volume on its own, as a checkpoint that holds it and no box.",
   "vol.snapshotSelfMountedText":
     "Snapshots this volume on its own, as a checkpoint that holds it and no box. The boxes that mount it keep running.",
+  "vol.agentHost":
+    "This volume is on an agent host, which runs boxes only: it cannot browse files, measure used space or take a snapshot.",
+  "vol.agentHostNote":
+    "The volumes on agent hosts run boxes only, so browsing files, measuring used space and taking snapshots are all off here. Volumes on the other hosts are unaffected.",
   "vol.snapshotExcluded": "This volume is left out of checkpoints",
   "vol.snapshotNoBox": "Its owner box was deleted",
   "vol.mountTo": "Mount to box",

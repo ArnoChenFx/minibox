@@ -63,6 +63,8 @@ MiniBox saves the container's system layer: files changed outside the volumes, s
 
 Saving can take a while. Follow the progress in the **Tasks** panel.
 
+A box on an agent host cannot be saved as a template: saving commits the container's system layer as an image, and an agent runs boxes only. The **Save as template** button is off there, with the reason as its tooltip, and the API answers `501 agent_host_unsupported`.
+
 A box whose environment references a host secret cannot be saved as a template, and the same rule applies to a snapshot or checkpoint that includes a system image. Remove that environment variable first. See [Environment variables and secrets](environment-and-secrets.md).
 
 ## Build a template from a source

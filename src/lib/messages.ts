@@ -397,6 +397,11 @@ export const MESSAGES = {
   host_labels_need_auto:
     "hostLabels selects a host for host: auto. Either set host to auto and let the labels choose, or name one host and leave hostLabels out.",
   host_exists: "A host with the id “{host}” already exists.",
+  host_name_taken: "The name “{name}” is already used by host “{host}”. Give this host another name.",
+  host_name_taken_by_id:
+    "This host has no name, so it would be named after its id “{name}”, but host “{host}” already uses that name. Give this host a name.",
+  host_name_pending:
+    "The name “{name}” is held by a pairing code for host “{host}” that has not been used yet. Use that code, or wait for it to expire.",
   host_not_found: "Host “{host}” was not found.",
   host_is_local: "The local host cannot be removed.",
   host_in_use: "Host “{host}” still holds {count} boxes, volumes or checkpoints. Remove them first.",
@@ -417,6 +422,7 @@ export const MESSAGES = {
   agent_pairing_unknown: "The pairing code is not valid. Create a new one under Settings, Hosts.",
   agent_pairing_used: "This pairing code has already been used. Create a new one under Settings, Hosts.",
   agent_pairing_expired: "This pairing code has expired. Create a new one under Settings, Hosts.",
+  agent_pairing_replaced: "A newer pairing code was created for this host and replaced this one. Use the newest code.",
   agent_pairing_limit:
     "At most {max} pairing codes can wait at once. Pair an agent or let a code expire, then try again.",
   agent_pairing_request_invalid:
@@ -427,9 +433,15 @@ export const MESSAGES = {
   agent_refused_auth: "The agent could not prove its identity. Pair it again under Settings, Hosts.",
   agent_refused_revoked: "This agent was revoked. Remove its host, then pair the agent again.",
   agent_refused_protocol: "This MiniBox speaks agent protocol {protocol}. Update the agent image.",
+  agent_pending_limit:
+    "Too many agent sockets are waiting to authenticate (at most {max} from one address). A real agent retries on its own; anything else should stop.",
+  agent_pending_total_limit:
+    "Too many agent sockets are waiting to authenticate across all addresses (at most {max} in total). A real agent retries on its own; anything else should stop.",
+  agent_pending_limit_hint:
+    "A socket that never sends a hello holds a place until it times out. If a real agent is refused, check for a proxy or tunnel in front of MiniBox: with TRUST_PROXY off, every client shares one address and one limit.",
   runtime_unsupported: "This host cannot run that operation: {detail}",
   move_agent_unsupported:
-    "A box cannot move to or from an agent host yet, because an agent does not copy images or volumes. Create the box on the agent host instead.",
+    "A box cannot move to or from an agent host yet, because an agent copies neither images nor volumes. Create the box on the host you want it on instead.",
   preview_agent_unsupported: "Port preview is not supported on agent hosts yet.",
   box_moving: "This box is moving to another host. Try again when the move finishes.",
   box_changing: "This box is being rebuilt or updated. Try the move again when that finishes.",
