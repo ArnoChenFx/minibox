@@ -77,7 +77,12 @@ interface Criterion {
   readonly negate: boolean;
 }
 
-type Target = { readonly kind: "accept" | "drop" | "return" | "chain" | "other"; readonly name: string };
+interface Target {
+  readonly kind: "accept" | "drop" | "return" | "chain" | "other";
+  readonly name: string;
+  /** `-g`: the packet does not come back, so when the chain it went to ends the chain that left is not walked on. */
+  readonly goto?: boolean;
+}
 
 interface ParsedRule {
   readonly criteria: readonly Criterion[];
@@ -95,11 +100,11 @@ interface Backend {
   readonly failed: boolean;
 }
 
-function targetOf(name: string): Target {
+function targetOf(name: string, goto: boolean): Target {
   if (name === "ACCEPT") return { kind: "accept", name };
   if (name === "DROP" || name === "REJECT") return { kind: "drop", name };
   if (name === "RETURN") return { kind: "return", name };
-  return { kind: "chain", name };
+  return { kind: "chain", name, goto };
 }
 
 /**
@@ -143,8 +148,14 @@ function parseRule(tokens: readonly string[]): ParsedRule | null {
     }
     const value = isValue(tokens[index + 1]) ? (tokens[index + 1] ?? null) : null;
     if (value !== null) index += 1;
-    if (option === "-j" || option === "-g") target = targetOf(value ?? "");
-    else criteria.push({ option, value, negate });
+    if (option === "-j" || option === "-g") {
+      target = targetOf(value ?? "", option === "-g");
+      // iptables prints the target last, and what follows it (`--reject-with`, `--log-prefix`, `--set-mark`) belongs to
+      // the target. Those are not conditions on the packet: read as criteria they made a plain REJECT look like a rule
+      // the check could not evaluate, so a host that rejects everything was reported as forwarding.
+      break;
+    }
+    criteria.push({ option, value, negate });
     negate = false;
   }
   return target === null ? null : { criteria, target };
@@ -214,6 +225,8 @@ function criterionMatch(criterion: Criterion, probe: ForwardProbe, source: numbe
       case "-m":
         return criterion.value !== null && SAFE_MODULES.has(criterion.value) ? "yes" : "unknown";
       case "--syn":
+      case "--comment":
+        // A comment is a label, never a condition, so a commented rule is read like the same rule without it.
         return "yes";
       default:
         return "unknown";
@@ -288,6 +301,9 @@ function decide(chains: Map<string, Chain>, name: string, probe: ForwardProbe, s
         if (inner.kind === "accept" || inner.kind === "drop") return inner;
         if (inner.kind === "none" && inner.unsure) unsure = true;
         if (inner.kind === "return") unsure = true;
+        // `-g` never comes back: when the chain it went to ends, the packet carries on from where this chain was called,
+        // so this chain's later rules are not walked. In `FORWARD` that leaves the packet to the policy.
+        if (rule.target.goto === true) return { kind: "none", unsure };
         break;
       }
       default:
@@ -523,6 +539,18 @@ export const FORWARD_REPAIR_SCRIPT = [
   'bridge="$MINIBOX_UPLINK_BRIDGE"',
   // A repair must not report success without changing anything, so a helper with no binary at all is a failure.
   "command -v iptables >/dev/null 2>&1 || { echo 'no iptables binary in the helper image' >&2; exit 4; }",
+  // The interface to allow is found before anything is touched: a host that has none keeps the rules it already has,
+  // instead of losing the jump the loop below removes first.
+  'egress=""',
+  'if [ -n "$bridge" ]; then',
+  '  egress="$(',
+  `    ${FORWARD_EGRESS_SNIPPET}`,
+  '  )"',
+  '  if [ -z "$egress" ]; then',
+  "    echo 'the host has no IPv4 default route, so there is no interface to allow' >&2",
+  "    exit 3",
+  "  fi",
+  "fi",
   "for bin in iptables iptables-legacy; do",
   '  command -v "$bin" >/dev/null 2>&1 || continue',
   // The legacy table is only touched when it already exists, since loading it would create one the host never had.
@@ -537,13 +565,6 @@ export const FORWARD_REPAIR_SCRIPT = [
   '    "$bin" -F "$chain" 2>/dev/null || true',
   '    "$bin" -X "$chain" 2>/dev/null || true',
   "    continue",
-  "  fi",
-  '  egress="$(',
-  `    ${FORWARD_EGRESS_SNIPPET}`,
-  '  )"',
-  '  if [ -z "$egress" ]; then',
-  "    echo 'the host has no IPv4 default route, so there is no interface to allow' >&2",
-  "    exit 3",
   "  fi",
   '  "$bin" -N "$chain" 2>/dev/null || true',
   '  "$bin" -F "$chain"',

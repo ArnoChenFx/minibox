@@ -367,6 +367,60 @@ describe("telling a host that was asked to drop from one that lost the rule by a
   });
 });
 
+/** The verdict for one `iptables -S` dump of the `FORWARD` chain and whatever chains it names. */
+const judge = (rules: string[]) => judgeForwardReport(report([BRIDGE], { iptables: rules }), PROBE);
+
+/** A `FORWARD` that sends the uplink to `ZONE` with `jump` (`-j` or `-g`), and has its own accept rule after it. */
+const zoneRules = (jump: string) => [
+  "-P FORWARD DROP",
+  `-A FORWARD -i ${BRIDGE} ${jump} ZONE`,
+  `-A FORWARD -i ${BRIDGE} -o ${ETH} -j ACCEPT`,
+  "-A ZONE -p udp -j ACCEPT",
+];
+
+describe("reading a rule the way iptables prints it", () => {
+  test("a REJECT's own option is not a condition, so a host that rejects everything is not called fine", () => {
+    // CentOS and RHEL ship exactly this as the last rule of FORWARD.
+    const verdict = judge(["-P FORWARD ACCEPT", "-A FORWARD -j REJECT --reject-with icmp-host-prohibited"]);
+    expect(verdict).toMatchObject({ dropped: true, cause: "rule" });
+  });
+
+  test("a reload that wiped Docker's rules and left the distribution's own is a drop by rule, which is not widened", () => {
+    const verdict = judge([
+      "-P FORWARD ACCEPT",
+      "-A FORWARD -m state --state RELATED,ESTABLISHED -j ACCEPT",
+      "-A FORWARD -j REJECT --reject-with icmp-host-prohibited",
+    ]);
+    expect(verdict).toMatchObject({ dropped: true, cause: "rule" });
+  });
+
+  test("the options of a LOG target are not conditions either, so logging does not make the reading unsure", () => {
+    const verdict = judge(["-P FORWARD DROP", `-A FORWARD -i ${BRIDGE} -j LOG --log-prefix "fwd: " --log-level 4`]);
+    expect(verdict).toMatchObject({ dropped: true, cause: "policy" });
+    expect(verdict.backends[0]?.unsure).toBe(false);
+  });
+
+  test("a goto does not come back: when its chain ends, the rules after it in FORWARD are not walked", () => {
+    // A jump comes back to the next rule, which accepts. A goto does not, so the policy decides.
+    expect(judge(zoneRules("-j")).dropped).toBe(false);
+    expect(judge(zoneRules("-g"))).toMatchObject({ dropped: true, cause: "policy" });
+  });
+
+  test("a goto to a chain that accepts is still an accept", () => {
+    const verdict = judge(["-P FORWARD DROP", `-A FORWARD -i ${BRIDGE} -g ZONE`, `-A ZONE -o ${ETH} -j ACCEPT`]);
+    expect(verdict.dropped).toBe(false);
+  });
+
+  test("a comment is a label, so a commented rule reads like the same rule without it", () => {
+    const verdict = judge([
+      "-P FORWARD DROP",
+      `-A FORWARD -i ${BRIDGE} -o ${ETH} -m comment --comment "uplink out" -j ACCEPT`,
+    ]);
+    expect(verdict.dropped).toBe(false);
+    expect(verdict.backends[0]?.unsure).toBe(false);
+  });
+});
+
 describe("the helper scripts", () => {
   test("the probe only reads: no -I, -A, -D or -X against the host's chains", () => {
     for (const line of FORWARD_PROBE_SCRIPT.split("\n")) {

@@ -91,7 +91,7 @@ Box 设置中**安全**一组的**网络出站**卡片列出最近被拒绝的�
 
 `proxy-only` 的 Box 在自己的网络上没有对外路由。它唯一的对端是出站代理，代理位于 `<prefix>-egress-uplink` 网桥上，并通过宿主机的 `FORWARD` 链访问互联网。这条规则 MiniBox 从不写入，而是依赖 Docker 自己的规则。因此当宿主机的 `FORWARD` 策略为 `DROP`，或残留的 `iptables-legacy` 表丢弃了这些流量，或 MiniBox 运行期间防火墙被重新加载时，该宿主机上每个 `proxy-only` 的 Box 都会静默失去互联网。Box 仍能启动，exec 与 SSH 仍然可用，而代理日志只说 `egress.failed … upstream`，读起来像是目标主机挂了。
 
-MiniBox 每十分钟检查一次（`EGRESS_FORWARD_CHECK_INTERVAL_SEC`，可在 60 到 86400 秒之间调整，见[配置（英文）](../../reference/configuration.md#boxes)），启动后不久也会检查，另外在 `proxy-only` 的 Box 启动时、宿主机重新上线时各检查一次。检查会运行一个在宿主机网络上带 `NET_ADMIN` 的短生命周期辅助容器，在其中读取 `iptables -S`，因此代价是一次容器启动，宿主机上什么都不改。没有 `proxy-only` Box 的宿主机完全不会被读取；规则正常的宿主机在这些时机到来之前也不会再被读取。辅助镜像只拉取一次，就是宿主机防火墙用的同一个 `alpine:3.20`。
+MiniBox 每十分钟检查一次（`EGRESS_FORWARD_CHECK_INTERVAL_SEC`，可在 60 到 86400 秒之间调整，见[配置（英文）](../../reference/configuration.md#boxes)），启动后不久也会检查，另外在 `proxy-only` 的 Box 启动时、宿主机重新上线时各检查一次。检查会运行一个在宿主机网络上带 `NET_ADMIN` 的短生命周期辅助容器，在其中读取 `iptables -S`，因此代价是一次容器启动，宿主机上什么都不改。没有 `proxy-only` Box 的宿主机完全不会被读取；有 `proxy-only` Box 的宿主机每一轮都会读，因为防火墙重新加载可能在没人注意时把规则清掉。辅助镜像只拉取一次，就是宿主机防火墙用的同一个 `alpine:3.20`。
 
 规则丢弃上行网络时，概览页的**需要关注**会显示**仅代理的 Box 无法上网**，其中给出宿主机、受影响的 `proxy-only` Box 数量与网桥名。同一时刻 MiniBox 日志会写一行 `error`（`egress.forward_blocked`），条件持续期间不会重复写，所以无人值守的运维只会看到一次。之后某次检查发现规则恢复，会写 `egress.forward_restored` 并清掉该条目。
 
@@ -146,6 +146,8 @@ sudo iptables -I FORWARD 1 -o "$BR" -m conntrack --ctstate RELATED,ESTABLISHED -
 - **原生 nftables 规则集。** 检查跑的是 `iptables -S`；如果宿主机上的包根本不经过 `iptables` 表（比如 firewalld 用 `nftables` 后端，或引擎被配置为直接写 nftables 规则），它看不到任何能决定该包的规则，于是会把这台宿主机读成 `FORWARD` 里没有针对该网桥的规则，也就是 `policy` 那种情况。这样的宿主机请按它自己的防火墙来判断，而不是按这个检查。
 - **已经建立的流量。** conntrack 条目会比放行它的规则活得更久，所以规则改动后 Box 可能还会正常工作一会儿。
 - **规则之外的原因。** 规则正常但上行网络无法解析或无法路由的宿主机，不会在这里被报告。
+
+如果规则是因为防火墙被重新加载而丢失的，重启 Docker 守护进程是另一条出路：Docker 会重新写入它自己的规则，下一次检查就会清掉这个条目，MiniBox 什么都不用加。除非开启了 `live-restore`，否则这会停掉宿主机上的所有容器，所以应当放进维护窗口，而不是点一下就做。
 
 ## 允许的主机超时
 
