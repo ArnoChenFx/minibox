@@ -114,6 +114,30 @@ describe("the pass reads the host only when it has something to read", () => {
   });
 });
 
+describe("when the passes happen", () => {
+  test("start runs a pass soon after it, and stop ends the passes", async () => {
+    await gated();
+    const fresh = new EgressForwardWatcher({ hosts: app.hosts, everyMs: 40 });
+    fresh.start();
+    await Bun.sleep(80);
+    expect(forwardCalls()).toBe(1);
+    fresh.stop();
+    await Bun.sleep(80);
+    expect(forwardCalls()).toBe(1);
+  });
+
+  test("a proxy-only box starting asks for a pass, and an open box starting does not", async () => {
+    await newBox("plain");
+    await boxes.startBox(host, "plain");
+    await watcher.tick();
+    expect(forwardCalls()).toBe(0);
+    await gated();
+    await boxes.startBox(host, "gated");
+    await watcher.tick();
+    expect(forwardCalls()).toBe(1);
+  });
+});
+
 describe("one error line when the condition appears, and silence after it", () => {
   test("a dropped uplink logs once, names the host and the boxes, and says what to do", async () => {
     runtime.forwardVerdict = DROPPED;
