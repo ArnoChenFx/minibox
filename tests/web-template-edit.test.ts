@@ -330,4 +330,20 @@ describe.skipIf(!executablePath)("editing a template from the Templates page (re
     },
     TIMEOUT_MS,
   );
+  test(
+    "opening focus never steals a field the operator already chose",
+    async () => {
+      const active = await page.evaluate<string>(`(async () => {
+      const { openDialog } = await import('/js/lib/ui.js');
+      const dialog = openDialog({ title: 'Focus', body: '<input id="focusFirst"><input id="focusSecond">' });
+      dialog.root.querySelector('#focusSecond').focus();
+      await new Promise(resolve => setTimeout(resolve, 50));
+      const active = document.activeElement.id;
+      dialog.close();
+      return active;
+    })()`);
+      expect(active).toBe("focusSecond");
+    },
+    TIMEOUT_MS,
+  );
 });

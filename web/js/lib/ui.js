@@ -75,14 +75,14 @@ export function openDialog({
   overlay.querySelectorAll("[data-close]").forEach((b) => b.addEventListener("click", close));
   document.addEventListener("keydown", onKey);
   document.body.append(overlay);
-  setTimeout(
-    () =>
-      (
-        overlay.querySelector("[autofocus]") ??
-        overlay.querySelector(".dialog-body input, .dialog-foot .btn-primary, .dialog-foot .btn-danger")
-      )?.focus(),
-    30,
-  );
+  setTimeout(() => {
+    // Opening focus is only a default: never steal focus from a field the user has already chosen.
+    if (closed || overlay.contains(document.activeElement)) return;
+    (
+      overlay.querySelector("[autofocus]") ??
+      overlay.querySelector(".dialog-body input, .dialog-foot .btn-primary, .dialog-foot .btn-danger")
+    )?.focus();
+  }, 30);
   return { root: overlay, close };
 }
 
