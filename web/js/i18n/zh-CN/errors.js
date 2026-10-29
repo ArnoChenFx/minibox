@@ -289,6 +289,8 @@ export default {
   "err.host_labels_need_auto":
     "hostLabels 只用于 host: auto 选择宿主机。请把 host 设为 auto 由标签挑选，或指定一台宿主机并去掉 hostLabels。",
   "err.host_exists": "已存在 id 为「{host}」的宿主机。",
+  "err.host_name_taken": "名称「{name}」已被宿主机「{host}」使用。请给这台宿主机换一个名称。",
+  "err.host_name_pending": "名称「{name}」正被一个尚未使用的配对码占用。请使用那个配对码，或等它过期。",
   "err.host_not_found": "找不到宿主机「{host}」。",
   "err.host_is_local": "不能移除本机宿主机。",
   "err.host_in_use": "宿主机「{host}」仍有 {count} 个 Box、卷或检查点。请先移除它们。",

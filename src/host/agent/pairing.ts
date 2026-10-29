@@ -86,6 +86,20 @@ export class PairingBook {
     return { hostId: entry.hostId, name: entry.name };
   }
 
+  /**
+   * The name an outstanding code will give its host, trimmed and folded, or null when no waiting code carries one. A code
+   * that is waiting holds its name the way a host does: it names the host that is about to exist, so a second add or code
+   * cannot take it in the meantime and leave two hosts reading as one machine.
+   */
+  waitingName(folded: string): string | null {
+    const now = this.now();
+    for (const entry of this.entries.values()) {
+      if (entry.spent || entry.expiresAt <= now) continue;
+      if (entry.name.trim().toLowerCase() === folded) return entry.name;
+    }
+    return null;
+  }
+
   private prune(now: number): void {
     for (const [key, entry] of this.entries) {
       if (now >= entry.expiresAt + this.ttlMs) this.entries.delete(key);

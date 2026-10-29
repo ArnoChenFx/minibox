@@ -18,6 +18,26 @@ export const isUnreachable = (box) => box.state === "unreachable";
 /** Badge class for the status of a host, as /api/hosts reports it. */
 export const HOST_BADGE = { online: "badge-success", offline: "badge-danger", unknown: "" };
 
+/**
+ * A host as a person reads it: its name, which is what the console shows. A name is unique on a host added since the rule
+ * existed, but a hosts file written before it can still hold two hosts of one name, and the console must not draw those
+ * identically. Only then is the id added beside the name, and the id is how every call addresses a host, so the label
+ * stays unambiguous without turning a name into a key. A name is compared trimmed and without its case, as the server
+ * compares it when a host is added.
+ */
+export function hostLabel(host, hosts) {
+  const name = host?.name ?? host?.id ?? "";
+  const folded = String(name).trim().toLowerCase();
+  const shared = hosts.some(
+    (other) =>
+      other.id !== host?.id &&
+      String(other.name ?? "")
+        .trim()
+        .toLowerCase() === folded,
+  );
+  return shared ? `${name} · ${host.id}` : name;
+}
+
 /** What an agent host's connection says, as one word: revoked, upgrade, online or offline. Null for any other host. */
 export function agentState(agent) {
   if (!agent) return null;

@@ -273,6 +273,14 @@ function hostErrorOf(error: Msg): HostError {
   return { key: error.key, params: error.params, message: error.text };
 }
 
+/**
+ * A host's name as compared for uniqueness: trimmed and without its case, so `Lab` and ` lab ` are the same name a reader
+ * would read as one machine. The name itself is kept as the operator typed it, since it is only what the console shows.
+ */
+function foldedName(name: string): string {
+  return name.trim().toLowerCase();
+}
+
 /** The agent a stored host is served by, or null for a host reached by address. */
 function agentIdOf(stored: StoredHost): string | null {
   const endpoint = parseEndpoint(stored.endpoint);
@@ -415,10 +423,13 @@ export class HostManager {
       const problem = keyProblem(prepared.presented, input.hostKeyFingerprint);
       if (problem) throw new AppError(409, "conflict", problem, { fingerprint: prepared.presented });
       const labels = labelsOf(input.labels);
+      // The name is checked once the request itself is valid, so a malformed credential still names its own field first.
+      // Nothing is written or dialled before this point, so a taken name leaves no credential file and no record behind.
+      const name = this.freeName(input.name?.trim() || id);
       await this.check(prepared);
       const host: StoredHost = {
         id,
-        name: input.name?.trim() || id,
+        name,
         endpoint: endpointLabel(prepared.endpoint),
         hostKeyFingerprint: prepared.presented,
         createdAt: this.now().toISOString(),
@@ -488,7 +499,8 @@ export class HostManager {
     return this.exclusive(async () => {
       const id = this.idOf(input.id);
       if (this.options.registry.has(id) || this.stored.has(id)) throw conflict(msg("host_exists", { host: id }));
-      const name = input.name?.trim() || id;
+      // A code carries the name the host will get, so a taken name is refused here, before a code is handed out.
+      const name = this.freeName(input.name?.trim() || id);
       const issued = this.options.agents.issueCode(id, name);
       return { id, name, code: issued.code, expiresAt: issued.expiresAt };
     });
@@ -508,6 +520,9 @@ export class HostManager {
       if (this.options.registry.has(grant.hostId) || this.stored.has(grant.hostId)) {
         throw conflict(msg("host_exists", { host: grant.hostId }));
       }
+      // The code was checked for its name when it was issued; a name another host has taken since then is refused here,
+      // as the id check above already answers after the code is spent.
+      const name = this.freeName(grant.name);
       const now = this.now().toISOString();
       const record = this.options.agents.enroll({
         hostId: grant.hostId,
@@ -518,7 +533,7 @@ export class HostManager {
       });
       const host: StoredHost = {
         id: grant.hostId,
-        name: grant.name,
+        name,
         endpoint: `agent://${record.agentId}`,
         hostKeyFingerprint: null,
         createdAt: now,
@@ -607,6 +622,24 @@ export class HostManager {
     if (raw === LOCAL_HOST_ID) throw conflict(msg("host_exists", { host: raw }));
     if (raw === AUTO_HOST) throw badRequest(msg("host_id_reserved", { host: raw }), { field: "id" });
     return raw;
+  }
+
+  /**
+   * The name a host may take: `name` itself when no other host holds it, else `409 host_name_taken`, which names the host
+   * that already has it. A name is compared without its case, since `Lab` and `lab` read as one machine. The registry is
+   * what the console lists, so it is checked first, the stored records cover a host that is not registered yet, and a
+   * waiting pairing code covers the host that is about to exist. A name is never compared with an id: ids are how a host
+   * is addressed, a name is only the label a person reads.
+   */
+  private freeName(raw: string): string {
+    const name = raw.trim();
+    const taken = foldedName(name);
+    const holder =
+      this.options.registry.list().find((ctx) => foldedName(ctx.host.name) === taken)?.host.id ??
+      [...this.stored.values()].find((host) => foldedName(host.name) === taken)?.id;
+    if (holder !== undefined) throw conflict(msg("host_name_taken", { name, host: holder }));
+    if (this.options.agents.waitingName(taken) !== null) throw conflict(msg("host_name_pending", { name }));
+    return name;
   }
 
   /** Validates the endpoint and the credentials the request carries. For SSH it also reads the host key it presents. */

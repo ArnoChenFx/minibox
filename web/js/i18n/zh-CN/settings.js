@@ -270,6 +270,8 @@ export default {
   "st.hostId": "标识",
   "st.hostIdHelp": "小写字母、数字和连字符，以字母开头。",
   "st.hostName": "名称",
+  "st.hostNameHelp":
+    "这只是给人看的标签：所有接口调用与记录都用宿主机 id 指名。两台宿主机不能共用同一个名称，这样控制台和日志里就不会出现分不清是哪台机器的条目。",
   "st.hostEndpoint": "端点",
   "st.hostEndpointHelp":
     "unix:///var/run/docker.sock、tcp://主机:2376（双向 TLS）或 ssh://用户@主机（密钥登录，套接字为 /var/run/docker.sock）。",

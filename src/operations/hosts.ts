@@ -29,7 +29,10 @@ const AgentViewSchema = z.object({
 
 const HostViewSchema = z.object({
   id: z.string().meta({ description: "Host id, such as local or lab. A box names its host in box.host." }),
-  name: z.string(),
+  name: z.string().meta({
+    description:
+      "The label the console shows. It is not a key: every call addresses a host by id. No two hosts may share one, so host.add and the pairing endpoints refuse a name another host already holds (409 host_name_taken).",
+  }),
   transport: z.enum(["local", "unix", "tcp", "ssh", "agent"]).meta({
     description:
       "local is the machine MiniBox runs on. unix is another socket, tcp is mutual TLS, ssh tunnels to the socket, and agent is a MiniBox agent that dials in.",
@@ -87,7 +90,10 @@ const hostFieldsInput = z.object({
   id: z.string().min(1).max(32).meta({
     description: "Host id: lowercase letters, digits and hyphens, starting with a letter. local and auto are taken.",
   }),
-  name: z.string().max(64).optional().meta({ description: "Name shown in the UI. Defaults to the id." }),
+  name: z.string().max(64).optional().meta({
+    description:
+      "Name shown in the UI. Defaults to the id. It is only a label, and no other host may hold it: a taken name is a 409 host_name_taken. Names are compared trimmed and without case.",
+  }),
   endpoint: z.string().min(1).max(512).meta({
     description:
       "unix:///var/run/docker.sock, tcp://host:2376 (mutual TLS) or ssh://user@host (key login, socket /var/run/docker.sock).",
@@ -366,7 +372,10 @@ const hostPairingCreate = defineOperation({
     id: z.string().min(1).max(32).meta({
       description: "Host id the agent joins as: lowercase letters, digits and hyphens. Same rules as host.add.",
     }),
-    name: z.string().max(64).optional().meta({ description: "Name shown in the UI. Defaults to the id." }),
+    name: z.string().max(64).optional().meta({
+      description:
+        "Name shown in the UI. Defaults to the id. It is only a label, and no other host may hold it: a taken name is a 409 host_name_taken. Names are compared trimmed and without case.",
+    }),
   }),
   output: PairingIssueSchema,
   rest: [{ method: "POST", path: "/api/hosts/pairing", body: true, status: 201 }],

@@ -195,7 +195,7 @@ function addHost(view) {
           <form id="stAgentForm" class="stack" autocomplete="off">
             <div class="grid grid-2 form-grid">
               <label class="field">${t("st.hostId")}<input class="input mono" name="id" required pattern="[a-z][a-z0-9\\-]{0,31}" placeholder="lab" /><span class="help">${t("st.hostIdHelp")}</span></label>
-              <label class="field">${t("st.hostName")}<input class="input" name="name" maxlength="64" placeholder="Lab" /></label>
+              <label class="field">${t("st.hostName")}<input class="input" name="name" maxlength="64" placeholder="Lab" /><span class="help">${t("st.hostNameHelp")}</span></label>
             </div>
             <p class="help">${t("st.agentFormHelp")}</p>
           </form>
@@ -206,7 +206,7 @@ function addHost(view) {
         <form id="stHostForm" class="stack" autocomplete="off">
           <div class="grid grid-2 form-grid">
             <label class="field">${t("st.hostId")}<input class="input mono" name="id" required pattern="[a-z][a-z0-9\\-]{0,31}" placeholder="lab" /><span class="help">${t("st.hostIdHelp")}</span></label>
-            <label class="field">${t("st.hostName")}<input class="input" name="name" maxlength="64" placeholder="Lab" /></label>
+            <label class="field">${t("st.hostName")}<input class="input" name="name" maxlength="64" placeholder="Lab" /><span class="help">${t("st.hostNameHelp")}</span></label>
           </div>
           <label class="field">${t("st.hostEndpoint")}<input class="input mono" name="endpoint" required placeholder="unix:///var/run/docker.sock" /><span class="help">${t("st.hostEndpointHelp")}</span></label>
           <div data-cred="tcp" hidden>

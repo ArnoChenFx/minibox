@@ -10,7 +10,7 @@ import { delegate, esc } from "../lib/dom.js";
 import { isRoutine } from "../lib/event-view.js";
 import { bytes, cpus, duration, gbOrMb, mem, pct } from "../lib/format.js";
 import { diskReading, diskReadings } from "../lib/host-disk.js";
-import { boxesOnHost, HOST_BADGE, isUnreachable } from "../lib/host-list.js";
+import { boxesOnHost, HOST_BADGE, hostLabel, isUnreachable } from "../lib/host-list.js";
 import { hostFilter, hostName, hostsNow, onHosts } from "../lib/hosts.js";
 import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
@@ -300,10 +300,10 @@ function renderHostCards(view, hosts, usageById, diskById = new Map()) {
   root.hidden = hosts.length < 2;
   root.innerHTML = root.hidden
     ? ""
-    : hosts.map((host) => hostCard(host, usageById.get(host.id), diskById.get(host.id))).join("");
+    : hosts.map((host) => hostCard(host, usageById.get(host.id), diskById.get(host.id), hosts)).join("");
 }
 
-function hostCard(host, usage, disk) {
+function hostCard(host, usage, disk, hosts) {
   const capacity = host.capacity
     ? `${cpus(host.capacity.cpus)} · ${mem(host.capacity.memoryBytes)}`
     : t("common.unknown");
@@ -312,7 +312,7 @@ function hostCard(host, usage, disk) {
     ? `<div class="metric-sub">${t("ov.hostContainers", usage.containers)}</div>`
     : "";
   return `<div class="card metric" data-host="${esc(host.id)}">
-    <div class="metric-top"><span>${esc(host.name)}</span>${icon("server")}</div>
+    <div class="metric-top"><span>${esc(hostLabel(host, hosts))}</span>${icon("server")}</div>
     <div class="metric-value">${host.boxes}<small>${t("ov.hostBoxes", { n: host.boxes })}</small></div>
     <div class="metric-sub">${esc(t(`st.transport.${host.transport}`))} · ${capacity}${latency}</div>
     ${containers}

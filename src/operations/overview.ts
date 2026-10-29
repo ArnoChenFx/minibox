@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import type { StoredEvent } from "../events/store";
+import { hostLabel } from "../host/label";
 import type { HostCapacity, HostCtx } from "../host/registry";
 import { untilAborted } from "../lib/abort";
 import { log } from "../lib/logger";
@@ -325,7 +326,7 @@ const round1 = (value: number): number => Math.round(value * 10) / 10;
  * read, and `host.offline` already covers it. A figure the host does not report is not checked, and a total that only
  * equals its limit is not over it.
  */
-async function overcommitAttention(host: HostCtx): Promise<Attention[]> {
+async function overcommitAttention(host: HostCtx, hosts: readonly HostCtx[]): Promise<Attention[]> {
   if (host.host.status === "offline") return [];
   let capacity: HostCapacity;
   let booked: Booking;
@@ -344,7 +345,10 @@ async function overcommitAttention(host: HostCtx): Promise<Attention[]> {
     severity: "warning" as const,
     hostId: host.host.id,
     at: null,
-    subject: host.host.name,
+    subject: hostLabel(
+      host.host,
+      hosts.map((item) => item.host),
+    ),
     box: null,
   };
   if (capacity.cpus !== null) {
@@ -421,7 +425,7 @@ async function stateAttention(ctx: OperationContext, boxes: readonly Box[], host
 
   const pools = ctx.host.volumes.readPools().pools;
   // Every host's booking is read at once, so a slow engine does not hold up the next host.
-  const overcommitted = await Promise.all(hosts.map((host) => overcommitAttention(host)));
+  const overcommitted = await Promise.all(hosts.map((host) => overcommitAttention(host, hosts)));
   for (const [position, host] of hosts.entries()) {
     const hostId = host.host.id;
     for (const pool of pools) {
@@ -444,7 +448,10 @@ async function stateAttention(ctx: OperationContext, boxes: readonly Box[], host
         severity: "error",
         hostId,
         at: null,
-        subject: host.host.name,
+        subject: hostLabel(
+          host.host,
+          hosts.map((item) => item.host),
+        ),
         box: null,
         params: {},
       });
@@ -458,7 +465,10 @@ async function stateAttention(ctx: OperationContext, boxes: readonly Box[], host
         severity: "warning",
         hostId,
         at: isoOf(disk.at),
-        subject: host.host.name,
+        subject: hostLabel(
+          host.host,
+          hosts.map((item) => item.host),
+        ),
         box: null,
         params: { free: Math.floor(freePercent(disk)), min: minFree },
       });

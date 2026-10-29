@@ -16,7 +16,7 @@ import {
 } from "../lib/checkpoint-state.js";
 import { esc } from "../lib/dom.js";
 import { bytes, dateTime, relTime } from "../lib/format.js";
-import { hostOfBox } from "../lib/host-list.js";
+import { hostOfBox, hostLabel } from "../lib/host-list.js";
 import { hostFilter, hostName, hostsNow, multiHost } from "../lib/hosts.js";
 import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
@@ -172,7 +172,7 @@ export async function forkCheckpoint(checkpoint, box) {
 export function copyFormHtml({ hosts, from }) {
   const options = hosts
     .filter((host) => host.id !== from)
-    .map((host) => `<option value="${esc(host.id)}">${esc(host.name)}</option>`)
+    .map((host) => `<option value="${esc(host.id)}">${esc(hostLabel(host, hosts))}</option>`)
     .join("");
   return `<div class="field"><label class="label" for="ckCopyHost">${esc(t("cb.host"))}</label>
       <select class="select" id="ckCopyHost">${options}</select>

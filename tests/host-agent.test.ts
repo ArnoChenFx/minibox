@@ -87,6 +87,20 @@ describe("pairing codes", () => {
   test("a code is issued in the shape the operator types: two groups of five", () => {
     expect(new PairingBook().create("edge", "Edge").code).toMatch(CODE_PATTERN);
   });
+
+  test("a waiting code holds its name until it is spent or expires, and a spent one holds nothing", () => {
+    let now = 1_000;
+    const book = new PairingBook(60_000, 50, () => now);
+    const first = book.create("edge", " Edge Lab ");
+    // The name is held trimmed and folded, so a second code under any spelling of it is refused.
+    expect(book.waitingName("edge lab")).toBe(" Edge Lab ");
+    expect(book.waitingName("edge-lab")).toBeNull();
+    book.redeem(first.code);
+    expect(book.waitingName("edge lab")).toBeNull();
+    book.create("other", "Other");
+    now += 60_001;
+    expect(book.waitingName("other")).toBeNull();
+  });
 });
 
 describe("the agents file", () => {
@@ -289,6 +303,29 @@ describe("the control plane's agent API, over HTTP and a real socket", () => {
   test("a host id that is taken cannot be issued a code", async () => {
     const res = await post("/api/hosts/pairing", { id: "local" });
     expect(res.status).toBe(409);
+  });
+
+  test("a name another host holds cannot be paired under, and the conflict names the host that has it", async () => {
+    const { code } = (await (await post("/api/hosts/pairing", { id: "edge", name: "Edge lab" })).json()) as {
+      code: string;
+    };
+    const paired = await pairWithCode(code, pairingKey());
+    expect(paired.status).toBe(201);
+    const again = await post("/api/hosts/pairing", { id: "edge2", name: "edge lab" });
+    expect(again.status).toBe(409);
+    expect(((await again.json()) as { error: { key: string; params: Record<string, string> } }).error).toMatchObject({
+      code: "conflict",
+      key: "host_name_taken",
+      params: { name: "edge lab", host: "edge" },
+    });
+  });
+
+  test("a code waiting under a name keeps that name for the host it will create", async () => {
+    const first = await post("/api/hosts/pairing", { id: "edge", name: "Edge lab" });
+    expect(first.status).toBe(201);
+    const second = await post("/api/hosts/pairing", { id: "edge2", name: "edge lab" });
+    expect(second.status).toBe(409);
+    expect(((await second.json()) as { error: { key: string } }).error.key).toBe("host_name_pending");
   });
 
   test("an agent dials in, the host goes online, and a box created on it runs on the agent's engine", async () => {

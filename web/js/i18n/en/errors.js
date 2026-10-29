@@ -347,6 +347,9 @@ export default {
   "err.host_labels_need_auto":
     "hostLabels selects a host for host: auto. Either set host to auto and let the labels choose, or name one host and leave hostLabels out.",
   "err.host_exists": "A host with the id “{host}” already exists.",
+  "err.host_name_taken": "The name “{name}” is already used by host “{host}”. Give this host another name.",
+  "err.host_name_pending":
+    "The name “{name}” is held by a pairing code that has not been used yet. Use that code, or wait for it to expire.",
   "err.host_not_found": "Host “{host}” was not found.",
   "err.host_is_local": "The local host cannot be removed.",
   "err.host_in_use": "Host “{host}” still holds {count} boxes, volumes or checkpoints. Remove them first.",

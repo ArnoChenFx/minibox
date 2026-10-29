@@ -14,6 +14,7 @@ import {
   agentState,
   boxesOnHost,
   hostFilterShown,
+  hostLabel,
   hostOfBox,
   isUnreachable,
 } from "../web/js/lib/host-list.js";
@@ -48,6 +49,41 @@ describe("the host filter in the top bar", () => {
     expect(hostFilterShown([])).toBe(false);
     expect(hostFilterShown([{ id: "local" }])).toBe(false);
     expect(hostFilterShown([{ id: "local" }, { id: "lab" }])).toBe(true);
+  });
+});
+
+describe("a host's label in the console", () => {
+  test("a host whose name no other host holds is shown by its name alone", () => {
+    const hosts = [
+      { id: "local", name: "Local" },
+      { id: "lab", name: "Lab" },
+    ];
+    expect(hostLabel(hosts[1], hosts)).toBe("Lab");
+    expect(hostLabel(hosts[0], hosts)).toBe("Local");
+  });
+
+  test("two hosts of one name are told apart by their ids, so a screen never draws them identically", () => {
+    // A hosts file written before a name had to be unique can still hold this, and MiniBox loads it rather than refusing.
+    const hosts = [
+      { id: "lab", name: "Lab" },
+      { id: "edge", name: "Lab" },
+    ];
+    expect(hostLabel(hosts[0], hosts)).toBe("Lab · lab");
+    expect(hostLabel(hosts[1], hosts)).toBe("Lab · edge");
+  });
+
+  test("a legacy pair that differs only by case or spacing is told apart too, as the server compares names", () => {
+    const hosts = [
+      { id: "lab", name: "Lab" },
+      { id: "edge", name: " lab " },
+    ];
+    expect(hostLabel(hosts[0], hosts)).toBe("Lab · lab");
+    expect(hostLabel(hosts[1], hosts)).toBe(" lab  · edge");
+  });
+
+  test("a host the console does not hold falls back to what it was given", () => {
+    expect(hostLabel(undefined, [])).toBe("");
+    expect(hostLabel({ id: "nowhere" }, [])).toBe("nowhere");
   });
 });
 

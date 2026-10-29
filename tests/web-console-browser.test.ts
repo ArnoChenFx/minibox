@@ -528,6 +528,33 @@ describe.skipIf(!executablePath)("the console's top navigation (real browser)", 
       },
       TIMEOUT_MS,
     );
+
+    test(
+      "a hosts file that repeats a name still lists both, each with its id so no two options read alike",
+      async () => {
+        const duplicated = await signedIn({ viewport: VIEWPORT });
+        try {
+          // A hosts file written before a name had to be unique: MiniBox loads it, and the console must not draw two hosts
+          // of one name as one option.
+          await duplicated.route("**/api/hosts", async (route) => {
+            const response = await route.fetch();
+            const body = (await response.json()) as { hosts: Record<string, unknown>[] };
+            const [local = {}] = body.hosts;
+            const twin = { ...local, id: "lab", name: "Local", transport: "unix", endpoint: "unix:///run/lab.sock" };
+            await route.fulfill({ response, json: { ...body, hosts: [...body.hosts, twin] } });
+          });
+          const hostsPage = await duplicated.newPage();
+          await hostsPage.goto(`${consoleUrl}/#/overview`);
+          const options = hostsPage.locator("#hostFilter option");
+          await webExpect(options).toHaveCount(3);
+          const texts = await options.allTextContents();
+          expect(texts).toEqual(["All hosts", "Local · local", "Local · lab"]);
+        } finally {
+          await duplicated.close();
+        }
+      },
+      TIMEOUT_MS,
+    );
   });
 
   describe("the engine storage line on the hosts settings card", () => {

@@ -129,6 +129,11 @@ export class AgentHub implements AgentLink {
     return this.options.pairing.redeem(code);
   }
 
+  /** The name a waiting pairing code holds, trimmed and folded, or null when no code carries it. */
+  waitingName(folded: string): string | null {
+    return this.options.pairing.waitingName(folded);
+  }
+
   /** Records a paired agent. The id is generated here, so no caller picks one. */
   enroll(fields: Pick<AgentRecord, "hostId" | "publicKeyPem" | "version" | "protocol" | "pairedAt">): AgentRecord {
     const record: AgentRecord = { ...fields, agentId: newId(), lastSeenAt: null, revokedAt: null };

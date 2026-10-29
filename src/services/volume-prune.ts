@@ -1,4 +1,5 @@
 import type { TrashRef } from "../checkpoints/types";
+import { hostLabel } from "../host/label";
 import type { HostCtx } from "../host/registry";
 import { badRequest, conflict } from "../lib/errors";
 import { msg } from "../lib/messages";
@@ -102,7 +103,11 @@ export async function pruneVolumes(hosts: readonly HostCtx[], opts: PruneOptions
   };
   for (const host of hosts) {
     const hostId = host.host.id;
-    const name = host.host.name;
+    // A shared name gets its id, so a result that lists several hosts never shows two of them under one name.
+    const name = hostLabel(
+      host.host,
+      hosts.map((item) => item.host),
+    );
     const wanted = named?.volumes.filter((volume) => volume.hostId === hostId) ?? null;
     if (hostOffline(host)) {
       const error = messageOutcome(msg("volume_host_offline", { host: name }));
