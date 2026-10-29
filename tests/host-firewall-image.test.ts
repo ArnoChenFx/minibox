@@ -10,6 +10,7 @@ interface Stub {
   readonly present: Set<string>;
   buildFails: boolean;
   builds: number;
+  labels: Record<string, string>[];
   started: string[];
 }
 
@@ -25,8 +26,9 @@ function engineOf(stub: Stub): Engine {
         return { Id: `sha256:${ref}`, RepoTags: [ref], Architecture: "amd64", Config: {} };
       },
     }),
-    buildImage: async (_context: unknown, options: { t: string }) => {
+    buildImage: async (_context: unknown, options: { t: string; labels: Record<string, string> }) => {
       stub.builds += 1;
+      stub.labels.push(options.labels);
       if (stub.buildFails) throw new Error("could not reach the registry");
       stub.present.add(options.t);
       return {};
@@ -48,6 +50,7 @@ const stubOf = (present: string[] = []): Stub => ({
   present: new Set(present),
   buildFails: false,
   builds: 0,
+  labels: [],
   started: [],
 });
 
@@ -94,6 +97,12 @@ describe("the image the forward check's helper runs in", () => {
     ]);
     expect(stub.builds).toBe(1);
     expect(stub.started).toEqual([BUILT, BUILT]);
+  });
+
+  test("the image it builds is marked as the install's own and internal", async () => {
+    const stub = stubOf();
+    await probe(engineOf(stub), "MbTest");
+    expect(stub.labels).toEqual([{ MbTest: "true", "MbTest.internal": "true" }]);
   });
 
   test("the name follows the install's label prefix, in lower case", async () => {

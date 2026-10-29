@@ -407,6 +407,10 @@ describe.skipIf(!enabled)("egress tiers on a real engine", () => {
     const before = await runtime.checkHostForward(prefix, uplink?.bridge ?? "", "240.0.0.0/24");
     expect(before.forwarding).toBe(true);
     expect(before.detail).toContain("iptables");
+    // The helper that read the rules runs in an image with iptables built in, made once on the first need. A build that
+    // failed would have fallen back to plain Alpine, installed the packages inside the helper and left no such image.
+    const helper = await runtime.inspectImage(`${prefix}-host-firewall:alpine3.20`);
+    expect(helper.labels[prefix]).toBe("true");
 
     // What the owner's confirmation does: MiniBox's own chain, jumped to from FORWARD, so the uplink is accepted whatever
     // the policy is. Run twice, since a second confirmation must not add a second rule.

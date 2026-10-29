@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { FORWARD_PROBE_SCRIPT, FORWARD_REPAIR_SCRIPT, judgeForwardReport } from "../egress/forward";
+import { labelKeys } from "../labels";
 import { formatIpv4Cidr, ipv4At, parseIpv4Cidr } from "../lib/cidr";
 import { isRuntimeError, RuntimeError, type Runtime } from "../runtime";
 import type { Engine } from "./engine";
@@ -80,11 +81,14 @@ export function hostFirewallMethods(
   let buildFailedAt = 0;
   let buildError = "";
 
-  async function buildHelperImage(tag: string): Promise<void> {
+  async function buildHelperImage(owner: string, tag: string): Promise<void> {
     const dir = mkdtempSync(join(tmpdir(), "minibox-fwimage-"));
     try {
       writeFileSync(join(dir, "Dockerfile"), HELPER_DOCKERFILE);
-      await images.buildImage({ contextDir: dir, dockerfile: "Dockerfile", tag, labels: {} });
+      // Marked as this install's and internal, so whoever clears the install's resources finds it.
+      const keys = labelKeys(owner);
+      const labels = { [keys.box]: "true", [keys.internal]: "true" };
+      await images.buildImage({ contextDir: dir, dockerfile: "Dockerfile", tag, labels });
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -105,7 +109,7 @@ export function hostFirewallMethods(
     }
     if (Date.now() - buildFailedAt >= BUILD_RETRY_MS) {
       try {
-        await buildHelperImage(tag);
+        await buildHelperImage(owner, tag);
         buildError = "";
         return tag;
       } catch (e) {
