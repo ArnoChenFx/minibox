@@ -92,7 +92,7 @@ export class BackupService {
   }
 
   async create(passphrase: string, createdBy: string | null, progress?: (line: string) => void): Promise<BackupRecord> {
-    if (this.creating) throw conflict("A backup is already running");
+    if (this.creating) throw conflict(msg("backup_running"));
     this.store.ensureDir();
     const id = this.store.allocateId();
     this.creating = true;

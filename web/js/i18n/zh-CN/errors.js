@@ -577,6 +577,7 @@ export default {
     "tools.d/{file} 定义的是“{other}”。在此保存“{id}”会替换那一条。请删除或重命名该文件后重试。",
   "err.backup_not_found": "找不到备份 {id}。",
   "err.backup_exists": "备份 {id} 已存在于此实例，因此没有再次保存。",
+  "err.backup_running": "已有一个备份正在运行。请等它结束后再试。",
   "err.backup_invalid": "备份无效：{reason}",
   "err.backup_passphrase_invalid": "口令长度须为 12 到 1024 个字符，不能以空格开头或结尾，也不能包含换行。",
   "err.secret_name_reserved": "以 target. 开头的名称保留给目标的凭据使用。请在设置中管理目标。",

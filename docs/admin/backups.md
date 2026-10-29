@@ -231,6 +231,8 @@ What a run does:
 
 Scheduled backups are sealed with the passphrase in `BACKUP_PASSPHRASE`, which stays in `.env` on the server. Keep it apart from the archives: it is what opens them.
 
+If `BACKUP_PASSPHRASE` differs between the process environment and `.env` (for example after Bun expands a `$` in it), startup refuses the ambiguous value rather than seal archives with a passphrase you did not type. Use one source, keep the exact passphrase somewhere else, and try a restore before you rely on the schedule.
+
 ### Cron, if you prefer it
 
 A schedule inside MiniBox covers the usual case, and cron is still fine for people who prefer it. Running `minibox backup` from cron or a task scheduler also works, and it can download the archive to another machine with `--out`, which an in-app schedule does not do:
@@ -274,5 +276,3 @@ Replace `vol_abc123` with the volume's ID. To restore the archive, see [Restore 
 ## Checkpoints and backups
 
 Checkpoints are copies of one box's data, and they are stored on the same host as the boxes. A backup holds the checkpoint records and schedules, but not the checkpoint data, which is in the repository volume. The recycle bin keeps the data of deleted boxes and volumes in the same repository volume, so a backup does not hold it either. To keep a checkpoint elsewhere, [export](../user-guide/checkpoints.md#export-and-import) it and download the package, or push the package to an [off-site target](#off-site-targets).
-
-If `BACKUP_PASSPHRASE` differs between the process environment and `.env` (for example after Bun expands `$`), startup refuses the ambiguous value. Use one unambiguous source; keep the exact passphrase separately and verify a restore.

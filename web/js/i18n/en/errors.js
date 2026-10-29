@@ -679,6 +679,7 @@ export default {
     "tools.d/{file} defines “{other}”. Saving “{id}” there would replace that entry. Remove or rename that file, then try again.",
   "err.backup_not_found": "Backup {id} was not found.",
   "err.backup_exists": "Backup {id} is already stored here, so it was not stored again.",
+  "err.backup_running": "A backup is already running. Wait for it to finish, then try again.",
   "err.backup_invalid": "The backup is not valid: {reason}",
   "err.backup_passphrase_invalid":
     "The passphrase must be 12 to 1024 characters, with no leading or trailing spaces and no line breaks.",
