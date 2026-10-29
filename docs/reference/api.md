@@ -393,6 +393,18 @@ An entry is kept for `TRASH_RETENTION_DAYS` days, see [Configuration](configurat
 
 Each host in `GET /api/hosts` carries `labels`: the labels it can be selected by, empty when it carries none.
 
+#### Host ids and names
+
+A host is identified by its **id** everywhere: every path, query, task, event, audit entry and CLI argument names a host by `id`, and no endpoint resolves a host by its display name. `name` is only the label the console shows and the server quotes in messages, so a client must send an id, never a name.
+
+Two hosts may not hold the same name. `POST /api/hosts` and `POST /api/hosts/pairing` refuse a name that another host already holds, and so does `POST /api/agent/pair` when it completes a pairing whose name has been taken since the code was issued. The answer is `409` with the key `host_name_taken`, whose `params` are `{ "name", "host" }`: the name asked for and the id of the host that already uses it. Names are compared in Unicode NFC, trimmed and without their case, so `Lab` and ` lab ` are the same name, and so are `Café` typed with a combining accent and with a precomposed one. A host sent without `name` falls back to its id, and that fallback is checked the same way: while another host is called `lab`, a host with id `lab` and no `name` is refused with `host_name_taken_by_id` (same `params`), which asks for a name. The check does not compare a name with an id, so a name that reads like another host's id is allowed.
+
+A pairing code that has not been used yet holds its name as well, since it names the host it will create. Another host or code asking for that name gets `409` `host_name_pending`, whose `params` are `{ "name", "host" }`, with `host` the id the waiting code is for. A code does not hold its name against its own id: a new `POST /api/hosts/pairing` for the same id is accepted at once, with the same or another name, and replaces the code still waiting, so only the newest code for a host pairs. The replaced code is refused at `POST /api/agent/pair` with `401` and the key `agent_pairing_replaced`.
+
+A result that reports several hosts at once, such as `hosts` in a volume prune or a recycle-bin empty, keeps each host's own `name` beside its `hostId`. Where an older hosts file still holds two hosts of one name, the messages that quote a host add its id to the name, as `Lab · edge`.
+
+A hosts file that already holds two hosts with one name still loads: the check runs when a name is given, not at startup. MiniBox has no rename endpoint, so the only way to free a name is `DELETE /api/hosts/{id}`.
+
 An agent connects on its own: it exchanges the pairing code at `POST /api/agent/pair`, then keeps a WebSocket open at `/api/agent/connect`. Both are used by the agent, not by clients. See [Agent](agent.md).
 
 #### Engine storage (`docker system df`)

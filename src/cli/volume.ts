@@ -1,3 +1,4 @@
+import { hostLabel } from "../host/label";
 import { type CliIo, fail, parseOptions, printJson, request } from "./shared";
 import { awaitStarted } from "./task";
 
@@ -17,6 +18,7 @@ interface VolumeRow {
 }
 
 interface HostRow {
+  hostId: string;
   name: string;
   status: string;
   error?: { message?: string } | null;
@@ -106,8 +108,11 @@ async function volumePruneCommand(argv: string[], env: Record<string, string | u
   if (options.switches.has("--json")) printJson(io, res.json);
   else {
     const volumes = rowsOf<VolumeRow>(res.json, "volumes");
-    for (const host of rowsOf<HostRow>(res.json, "hosts")) {
-      if (host.status !== "checked") io.stderr(`${host.name}: ${host.error?.message ?? host.status}\n`);
+    const hosts = rowsOf<HostRow>(res.json, "hosts");
+    const labelled = hosts.map((host) => ({ id: host.hostId, name: host.name }));
+    for (const host of hosts) {
+      const label = hostLabel({ id: host.hostId, name: host.name }, labelled);
+      if (host.status !== "checked") io.stderr(`${label}: ${host.error?.message ?? host.status}\n`);
     }
     io.stdout(line(["NAME", "HOST", "POOL", "BYTES", "LAST USED", "FORMER BOX", "STATUS"]));
     for (const row of volumes) {

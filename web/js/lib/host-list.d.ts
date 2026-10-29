@@ -16,6 +16,15 @@ export declare const isUnreachable: (box: HostedBox) => boolean;
 
 export declare const HOST_BADGE: Record<string, string>;
 
+export interface LabelledHost {
+  id?: string;
+  name?: string;
+  [key: string]: unknown;
+}
+
+/** A host's label: its name, with its id when another host in `hosts` holds the same name. */
+export declare function hostLabel(host: LabelledHost | undefined, hosts: readonly LabelledHost[]): string;
+
 export interface AgentConnection {
   connected: boolean;
   revoked: boolean;

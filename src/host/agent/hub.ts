@@ -19,7 +19,7 @@ import { abortError } from "../../lib/abort";
 import { log } from "../../lib/logger";
 import { msg } from "../../lib/messages";
 import type { Runtime } from "../../runtime";
-import type { PairingBook, PairingCode, PairingGrant } from "./pairing";
+import type { PairingBook, PairingCode, PairingGrant, WaitingName } from "./pairing";
 import {
   type AgentLink,
   AgentRuntime,
@@ -183,6 +183,11 @@ export class AgentHub implements AgentLink {
   /** Spends a pairing code. A code allows one pairing, so a second spend is refused. */
   spendCode(code: string): PairingGrant {
     return this.options.pairing.redeem(code);
+  }
+
+  /** The waiting pairing code, for a host other than `forHost`, that holds `name`, or null when none does. */
+  waitingName(name: string, forHost: string): WaitingName | null {
+    return this.options.pairing.waitingName(name, forHost);
   }
 
   /** Records a paired agent. The id is generated here, so no caller picks one. */

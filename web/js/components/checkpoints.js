@@ -16,7 +16,7 @@ import {
 } from "../lib/checkpoint-state.js";
 import { esc } from "../lib/dom.js";
 import { bytes, dateTime, relTime } from "../lib/format.js";
-import { boxOnAgentHost, hostOfBox } from "../lib/host-list.js";
+import { boxOnAgentHost, hostLabel, hostOfBox } from "../lib/host-list.js";
 import { hostFilter, hostName, hostsNow, multiHost } from "../lib/hosts.js";
 import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
@@ -168,14 +168,14 @@ export async function forkCheckpoint(checkpoint, box) {
   });
 }
 
-/** The host a copy goes to: each host but the one the checkpoint is kept on. */
 /**
- * A host to put a checkpoint on. An agent host is listed but cannot be picked, with the reason in its label: it runs
- * boxes only, so an import or a copy onto it would answer 501.
+ * A host to put a checkpoint on, labelled among `hosts` so two hosts of one name read apart. An agent host is listed but
+ * cannot be picked, with the reason in its label: it runs boxes only, so an import or a copy onto it would answer 501.
  */
-function checkpointHostOption(host, selected) {
+function checkpointHostOption(host, selected, hosts) {
   const agent = host.transport === "agent";
-  const label = agent ? t("ck.agentHostOption", { name: host.name }) : host.name;
+  const name = hostLabel(host, hosts);
+  const label = agent ? t("ck.agentHostOption", { name }) : name;
   return `<option value="${esc(host.id)}"${selected ? " selected" : ""}${agent ? " disabled" : ""}>${esc(label)}</option>`;
 }
 
@@ -185,10 +185,11 @@ const checkpointHostChoice = (hosts, wanted) =>
   hosts.find((host) => host.transport !== "agent")?.id ??
   "";
 
+/** The host a copy goes to: each host but the one the checkpoint is kept on. */
 export function copyFormHtml({ hosts, from }) {
   const targets = hosts.filter((host) => host.id !== from);
   const chosen = checkpointHostChoice(targets, "");
-  const options = targets.map((host) => checkpointHostOption(host, host.id === chosen)).join("");
+  const options = targets.map((host) => checkpointHostOption(host, host.id === chosen, hosts)).join("");
   return `<div class="field"><label class="label" for="ckCopyHost">${esc(t("cb.host"))}</label>
       <select class="select" id="ckCopyHost">${options}</select>
       <div class="help">${esc(t("ck.copyHostHelp"))}</div></div>
@@ -303,7 +304,7 @@ export function importFormHtml({ hosts, host }) {
     hosts.length > 1
       ? `<div class="field"><label class="label" for="ckImportHost">${esc(t("cb.host"))}</label>
           <select class="select" id="ckImportHost">${hosts
-            .map((h) => checkpointHostOption(h, h.id === checkpointHostChoice(hosts, host)))
+            .map((h) => checkpointHostOption(h, h.id === checkpointHostChoice(hosts, host), hosts))
             .join("")}</select>
           <div class="help">${esc(t("ck.importHostHelp"))}</div></div>`
       : "";

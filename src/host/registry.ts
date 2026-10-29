@@ -18,6 +18,7 @@ import { StartupLaunches } from "../services/startup";
 import { SpecStore } from "../specs/store";
 import { SelfTokenStore } from "../tokens/self-store";
 import { VolumeStore } from "../volumes/store";
+import { relabel } from "./label";
 import { type LiveSink, NO_LIVE } from "./live";
 import { HostMonitor } from "./metrics";
 import { HostSampler } from "./sampler";
@@ -304,6 +305,7 @@ export class HostRegistry {
   add(ctx: HostCtx): void {
     if (this.hosts.has(ctx.host.id)) throw new Error(`host already registered: ${ctx.host.id}`);
     this.hosts.set(ctx.host.id, ctx);
+    relabel(this.list().map((item) => item.host));
   }
 
   /** Forgets a host. The local host cannot be forgotten, since every install has one. */
@@ -311,6 +313,7 @@ export class HostRegistry {
     if (hostId === LOCAL_HOST_ID) throw new Error("the local host cannot be removed");
     const ctx = this.hosts.get(hostId);
     this.hosts.delete(hostId);
+    relabel(this.list().map((item) => item.host));
     return ctx;
   }
 

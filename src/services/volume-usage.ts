@@ -1,4 +1,5 @@
 import type { Config } from "../config";
+import { labelOf } from "../host/label";
 import type { HostCtx, HostRegistry } from "../host/registry";
 import { log } from "../lib/logger";
 import { OWNER } from "../operations/types";
@@ -210,7 +211,7 @@ export class VolumeUsageWatcher {
       op: "host.disk_low",
       kind: "write",
       status: "error",
-      summary: `Host disk is low: ${host.host.name}`,
+      summary: `Host disk is low: ${labelOf(host.host)}`,
       target: { kind: "host", id: host.host.id, name: host.host.name },
       error: { code: "insufficient_storage", status: 507 },
       detail: {

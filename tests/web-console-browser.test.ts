@@ -528,6 +528,108 @@ describe.skipIf(!executablePath)("the console's top navigation (real browser)", 
       },
       TIMEOUT_MS,
     );
+
+    test(
+      "a hosts file that repeats a name still lists both, each with its id so no two options read alike",
+      async () => {
+        const duplicated = await signedIn({ viewport: VIEWPORT });
+        try {
+          // A hosts file written before a name had to be unique: MiniBox loads it, and the console must not draw two hosts
+          // of one name as one option.
+          await duplicated.route("**/api/hosts", async (route) => {
+            const response = await route.fetch();
+            const body = (await response.json()) as { hosts: Record<string, unknown>[] };
+            const [local = {}] = body.hosts;
+            const twin = { ...local, id: "lab", name: "Local", transport: "unix", endpoint: "unix:///run/lab.sock" };
+            await route.fulfill({ response, json: { ...body, hosts: [...body.hosts, twin] } });
+          });
+          const hostsPage = await duplicated.newPage();
+          await hostsPage.goto(`${consoleUrl}/#/overview`);
+          const options = hostsPage.locator("#hostFilter option");
+          await webExpect(options).toHaveCount(3);
+          const texts = await options.allTextContents();
+          expect(texts).toEqual(["All hosts", "Local · local", "Local · lab"]);
+        } finally {
+          await duplicated.close();
+        }
+      },
+      TIMEOUT_MS,
+    );
+
+    test(
+      "removing one of two hosts of one name asks about it by its label, so the operator knows which one goes",
+      async () => {
+        const duplicated = await signedIn({ viewport: VIEWPORT });
+        try {
+          await duplicated.route("**/api/hosts", async (route) => {
+            if (route.request().method() !== "GET") return route.continue();
+            const response = await route.fetch();
+            const body = (await response.json()) as { hosts: Record<string, unknown>[] };
+            const [local = {}] = body.hosts;
+            const twin = { ...local, id: "lab", name: "Local", transport: "unix", endpoint: "unix:///run/lab.sock" };
+            await route.fulfill({ response, json: { ...body, hosts: [...body.hosts, twin] } });
+          });
+          const hostsPage = await duplicated.newPage();
+          await hostsPage.goto(`${consoleUrl}/#/settings/hosts`);
+          const remove = hostsPage.locator('[data-remove-host="lab"]');
+          await webExpect(remove).toHaveAttribute("data-host-name", "Local · lab");
+          await remove.click();
+          await webExpect(hostsPage.locator("#cfm-ok")).toBeVisible();
+          await webExpect(hostsPage.getByText("Local · lab", { exact: false }).last()).toBeVisible();
+        } finally {
+          await duplicated.close();
+        }
+      },
+      TIMEOUT_MS,
+    );
+  });
+
+  describe("the hosts table's width", () => {
+    test(
+      "an agent host's revoke and remove buttons fit without scrolling the table sideways, from a desktop to a phone",
+      async () => {
+        for (const lang of ["en", "zh-CN"]) {
+          const wide = await signedIn({ viewport: VIEWPORT });
+          try {
+            await wide.addInitScript((value) => localStorage.setItem("minibox.lang", value), lang);
+            await wide.route("**/api/hosts", async (route) => {
+              if (route.request().method() !== "GET") return route.continue();
+              const response = await route.fetch();
+              const body = (await response.json()) as { hosts: Record<string, unknown>[] };
+              const [local = {}] = body.hosts;
+              const agent = {
+                ...local,
+                id: "gpu-box",
+                name: "GPU",
+                transport: "agent",
+                endpoint: "agent://gpu-box",
+                agent: {
+                  connected: true,
+                  revoked: false,
+                  version: "0.4.0",
+                  protocol: 1,
+                  lastSeenAt: new Date().toISOString(),
+                },
+              };
+              await route.fulfill({ response, json: { ...body, hosts: [...body.hosts, agent] } });
+            });
+            const hostsPage = await wide.newPage();
+            await hostsPage.goto(`${consoleUrl}/#/settings/hosts`);
+            await webExpect(hostsPage.locator('[data-revoke-host="gpu-box"]')).toBeVisible();
+            for (const width of [1280, 1100, 1024, 900, 768, 600, 390]) {
+              await hostsPage.setViewportSize({ width, height: 800 });
+              const overflow = await hostsPage
+                .locator("#stHosts .table-wrap")
+                .evaluate((wrap) => wrap.scrollWidth - wrap.clientWidth);
+              expect({ lang, width, overflow }).toEqual({ lang, width, overflow: 0 });
+            }
+          } finally {
+            await wide.close();
+          }
+        }
+      },
+      TIMEOUT_MS * 2,
+    );
   });
 
   describe("the engine storage line on the hosts settings card", () => {

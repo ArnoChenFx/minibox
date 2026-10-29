@@ -4,6 +4,14 @@ A host is a Docker engine that MiniBox can run boxes on. The machine that runs M
 
 Each box records its host. Everything you do to a box runs on that host.
 
+## Ids and names
+
+A host has an **id** and a **name**. The id is the host's key: every API call, task, event, audit entry and command-line argument addresses a host by it, and nothing looks a host up by name. The name is only a label for people, the one the console shows and the one MiniBox writes into messages and logs.
+
+No two hosts may hold the same name. MiniBox refuses a name another host already has when a host is added, when a pairing code is created, and when an agent pairs with it, with `409` and the key `host_name_taken`, which names the host that already uses it. A name is compared without its case, with spaces trimmed and in Unicode NFC, so `Lab` and ` lab ` count as the same name. A host added without a name takes its id as its name, and that fallback is checked the same way: while another host is called `lab`, a host with id `lab` and no name is refused with `host_name_taken_by_id`, which asks you to give it a name. A pairing code that has not been used yet holds its name too, so another host asking for it is refused with `host_name_pending`, which names the host the code is for. The rule exists so that the console and the logs never leave you guessing which machine an entry is about; it is not part of the data model, since ids are what identify a host.
+
+MiniBox does not rename a host today, so the only way to free a name is to remove the host that holds it.
+
 ## Ways to connect to a host
 
 | Endpoint | How MiniBox connects | What you need |
@@ -18,14 +26,14 @@ Each box records its host. Everything you do to a box runs on that host.
 An agent is a small program that runs in a container on the machine and connects out to MiniBox. The machine opens no port and needs no certificate or SSH key, so an agent works behind NAT and firewalls. The machine needs Docker, and it must reach the MiniBox address that the command names.
 
 1. Click **Settings** in the sidebar, open the **Hosts** section, and click **Add host**.
-2. Choose **Agent (recommended)**, enter an **Id**, and optionally a **Name**.
+2. Choose **Agent (recommended)**, enter an **Id**, and optionally a **Name**. The name is only a label and no other host may hold it; omitted, the id is used.
 3. Click **Create pairing command**. MiniBox shows a pairing code and a `docker run` command, one for bash and one for PowerShell.
 4. Run the command on the machine. The agent exchanges the code for its own credentials, which it keeps in the `minibox-agent` volume, and it reconnects by itself after a restart.
 5. The dialog closes when the agent connects. The host then shows as online, with the agent's version and when it was last seen.
 
 The command runs the agent image at the tag of this MiniBox's own version, so the agent always speaks the protocol the console expects; a development build, which has no image tag of its own, uses `latest` and says so above the commands. Pair over https: over plain http only the agent's first handshake is signed, so anyone on the network path can read the code and inject commands afterwards. The dialog warns when the console is not on https.
 
-A pairing code works once and expires after 10 minutes. MiniBox spends it as soon as it receives it, so if the agent loses the reply and cannot save its credentials, the code is no longer valid. Then remove the agent's container and create a new code. Only the first start needs the code. For the options, the data volume and the operations an agent allows, see the [agent reference](../reference/agent.md).
+A pairing code works once and expires after 10 minutes. MiniBox spends it as soon as it receives it, so if the agent loses the reply and cannot save its credentials, the code is no longer valid. Then remove the agent's container and create a new code. You can also ask for a new code before the old one expires, for example after closing the dialog: create it again with the same id. The new code replaces the old one, which then no longer pairs. Only the first start needs the code. For the options, the data volume and the operations an agent allows, see the [agent reference](../reference/agent.md).
 
 ## Add a host with a Docker address
 
@@ -33,7 +41,7 @@ A pairing code works once and expires after 10 minutes. MiniBox spends it as soo
 2. Click **Add host**, and choose **Docker address**.
 3. Fill in the form:
    - **Id**: lowercase letters, digits and hyphens, starting with a letter.
-   - **Name**: a name you recognise.
+   - **Name**: a name you recognise, which no other host may hold. Omitted, the id is used.
    - **Endpoint**: one of the forms in the table above.
    - The credential fields that the endpoint needs: **CA certificate (PEM)**, **Client certificate (PEM)** and **Client key (PEM)** for `tcp://`, or **SSH private key (OpenSSH, no passphrase)** for `ssh://`.
 4. Click **Test** first. MiniBox connects to the engine, reads its version and capacity, and shows the result. Nothing is saved.

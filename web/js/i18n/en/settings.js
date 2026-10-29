@@ -288,6 +288,8 @@ export default {
   "st.hostId": "Id",
   "st.hostIdHelp": "Lowercase letters, digits and hyphens, starting with a letter.",
   "st.hostName": "Name",
+  "st.hostNameHelp":
+    "A label for you: every call and record names a host by its id. No two hosts may share one, so the console and the logs never leave you guessing which machine an entry is about.",
   "st.hostEndpoint": "Endpoint",
   "st.hostEndpointHelp":
     "unix:///var/run/docker.sock, tcp://host:2376 (mutual TLS) or ssh://user@host (key login, socket /var/run/docker.sock).",

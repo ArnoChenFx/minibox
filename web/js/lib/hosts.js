@@ -1,4 +1,5 @@
 import { api } from "./api.js";
+import { hostLabel } from "./host-list.js";
 
 /** The hosts the control plane runs boxes on, and the host the top bar filters by ("" lists every host). */
 const FILTER_KEY = "minibox.host";
@@ -21,7 +22,19 @@ const emit = () => {
 export const hostsNow = () => hosts;
 export const hostFilter = () => filter;
 export const multiHost = () => hosts.length > 1;
-export const hostName = (id) => hosts.find((host) => host.id === id)?.name ?? id;
+
+/** A host's label, as the console shows it: its name, with its id when another host holds the same name. */
+export const hostName = (id) => {
+  const host = hosts.find((candidate) => candidate.id === id);
+  return host ? hostLabel(host, hosts) : id;
+};
+
+/**
+ * The name an activity entry shows for a host it is about: the host's label while it is listed, so a name two hosts share
+ * reads with its id, or the name the entry recorded once the host is gone.
+ */
+export const hostTargetName = (target) =>
+  hosts.some((host) => host.id === target.id) ? hostName(target.id) : (target.name ?? target.id ?? "");
 
 export function setHostFilter(id) {
   filter = hosts.some((host) => host.id === id) ? id : "";
