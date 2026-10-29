@@ -6,7 +6,7 @@ import { chromium } from "@playwright/test";
 import type { App } from "../src/app";
 import { startServer } from "../src/server";
 import { createTestApp, TEST_KEY } from "./support/app";
-import { resolveChromiumPath } from "./support/chromium";
+import { chromiumFor } from "./support/chromium";
 import type { FakeRuntime } from "./support/fake-runtime";
 
 /**
@@ -17,7 +17,7 @@ import type { FakeRuntime } from "./support/fake-runtime";
  * wrap rather than be cut off at 390 px, and the English warning title must not be pushed onto the timestamp.
  */
 
-const executablePath = resolveChromiumPath();
+const executablePath = chromiumFor("The forward warning browser test");
 
 const DROPPED_POLICY = { forwarding: false, cause: "policy" as const, detail: "iptables FORWARD policy is DROP" };
 const DROPPED_RULE = {
