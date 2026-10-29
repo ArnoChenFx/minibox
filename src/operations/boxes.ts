@@ -707,7 +707,7 @@ const boxMove = defineOperation({
     via: z.enum(MOVE_VIA).meta({ description: "The path the move took, as the request asked for it." }),
     checkpoints: z.number().int().meta({
       description:
-        "Checkpoints the box has on its old host. A direct move leaves them there; a checkpoint move takes its own and removes it.",
+        "Checkpoints the box still has on its old host. Neither path carries them: a direct move leaves them where they are, and a checkpoint move removes the checkpoint it took for the transfer. To keep one with the box, copy it to the new host first.",
     }),
     leftovers: z.array(LeftoverSchema).meta({
       description: "What stayed on the old host after the move, when its removal failed. Empty when it was cleaned up.",

@@ -6,7 +6,6 @@ import { msg } from "../lib/messages";
 import { type ImageDetails, isRuntimeError } from "../runtime";
 import { assertSecretsSet, containerEnv } from "../secrets/env";
 import { REBUILD_LOSES } from "../specs/plan";
-import { revisionMismatch } from "../specs/revision";
 import type { BoxMount, BoxSpec } from "../specs/types";
 import { VolumeChanges } from "../volumes/changes";
 import { assertVolumesPresent, mountedByAnotherBox } from "../volumes/engine";
@@ -138,7 +137,6 @@ async function planCheckpointMove(
   holders: readonly HostCtx[],
 ): Promise<CheckpointMovePlan> {
   assertMovable(from, to, box, spec, revision);
-  if (spec.revision !== revision) throw revisionMismatch(spec.revision, revision);
   await assertReachable(to);
   refuseExpired(from, spec.id);
   if (from.checkpoints.pendingRollback(spec.id)) throw conflict(msg("rollback_pending", { box: box.name }));

@@ -6878,7 +6878,7 @@
               "type": "integer",
               "minimum": -9007199254740991,
               "maximum": 9007199254740991,
-              "description": "Checkpoints the box has on its old host. A direct move leaves them there; a checkpoint move takes its own and removes it."
+              "description": "Checkpoints the box still has on its old host. Neither path carries them: a direct move leaves them where they are, and a checkpoint move removes the checkpoint it took for the transfer. To keep one with the box, copy it to the new host first."
             },
             "leftovers": {
               "type": "array",
