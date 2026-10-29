@@ -16,7 +16,8 @@ import { boxSettingsOf } from "../lib/box-settings.js";
 import { applySamples } from "../lib/box-state.js";
 import { esc, delegate, revealInStrip } from "../lib/dom.js";
 import { shortId, cpus, mem } from "../lib/format.js";
-import { multiHost, onHosts } from "../lib/hosts.js";
+import { boxOnAgentHost } from "../lib/host-list.js";
+import { hostsNow, multiHost, onHosts, refreshHosts } from "../lib/hosts.js";
 import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
 import { setCrumbs } from "../lib/layout.js";
@@ -29,6 +30,21 @@ const CHART_POINTS = 240;
 
 /** How often the box and its history are read again while the live stream is down. */
 const FALLBACK_MS = 3000;
+
+/**
+ * The tabs an agent host refuses, each with the feature it loses: it holds no helper for the file browser and no relay
+ * for a preview. The port list itself still reads, so the tab names the preview, not the ports.
+ */
+const AGENT_REFUSED_TABS = new Map([
+  ["files", "bd.agentFeatureFiles"],
+  ["ports", "bd.agentFeaturePorts"],
+]);
+
+/** The tooltip of a tab its host refuses, so the tab bar says why before it is opened; empty for any other tab. */
+const refusedTabTitle = (key, onAgent) => {
+  const feature = onAgent ? AGENT_REFUSED_TABS.get(key) : undefined;
+  return feature ? ` title="${esc(t("bd.agentTab", { feature: t(feature) }))}"` : "";
+};
 
 /** The box's tabs in the order the tab bar shows them. Settings holds the sections that used to be tabs of their own. */
 const TABS = [
@@ -78,7 +94,15 @@ export function render(view, id, tab = "overview", sub = undefined) {
     for (const fn of listeners) fn();
   };
 
-  const headHtml = () => `
+  /** Whether the box runs on an agent host, which holds no helper: its files, ports and checkpoints are all refused. */
+  const onAgentHost = () => Boolean(box) && boxOnAgentHost(box, hostsNow());
+
+  const headHtml = () => {
+    const onAgent = onAgentHost();
+    // Both of these answer 501 on an agent host: a move is refused in either direction, and a template needs an image
+    // commit the agent cannot make. They are shown, disabled, with the reason, instead of failing after the click.
+    const disabled = (key) => (onAgent ? ` disabled title="${esc(t(key))}"` : "");
+    return `
     <div class="detail-head">
       <span class="avatar">${icon("box", "icon-lg")}</span>
       <div class="detail-title"><h1>${esc(box.name)} ${stateBadge(boxState(box))}</h1>
@@ -87,13 +111,15 @@ export function render(view, id, tab = "overview", sub = undefined) {
         ${box.running ? `<button class="btn" data-action="stop">${icon("stop")}${t("act.stop")}</button>` : `<button class="btn btn-primary" data-action="start">${icon("play")}${t("act.start")}</button>`}
         <button class="btn" data-action="restart">${icon("restart")}${t("act.restart")}</button>
         <button class="btn" data-action="ssh">${icon("terminal")}${t("act.ssh")}</button>
-        <button class="btn" data-action="checkpoint">${icon("camera")}${t("act.checkpoint")}</button>
-        <button class="btn" data-action="save-template">${icon("layers")}${t("tp.saveAction")}</button>
-        ${multiHost() ? `<button class="btn" data-action="move">${icon("move")}${t("bd.move")}</button>` : ""}
+        <button class="btn" data-action="checkpoint"${disabled("bd.agentCheckpoints")}>${icon("camera")}${t("act.checkpoint")}</button>
+        <button class="btn" data-action="save-template"${disabled("bd.agentTemplate")}>${icon("layers")}${t("tp.saveAction")}</button>
+        ${multiHost() ? `<button class="btn" data-action="move"${disabled("bd.agentMove")}>${icon("move")}${t("bd.move")}</button>` : ""}
         <button class="btn" data-action="rebuild">${icon("refresh")}${t("bd.rebuild")}</button>
         <button class="btn" data-action="delete" title="${t("bd.deleteTitle")}">${icon("trash")}${t("act.delete")}</button>
       </div>
+      ${onAgent ? `<p class="help detail-agent-note" id="bdAgentNote">${esc(t("bd.agentHeadNote"))}</p>` : ""}
     </div>`;
+  };
 
   const paintHead = () => {
     if (!painted) return;
@@ -149,7 +175,9 @@ export function render(view, id, tab = "overview", sub = undefined) {
   const mount = async () => {
     const token = ++mounts;
     try {
-      await fetchBox();
+      // The page decides from the host list whether the box sits on an agent host, so both are read before the box is
+      // drawn, side by side rather than one after the other.
+      await Promise.all([refreshHosts(), fetchBox()]);
     } catch (e) {
       if (disposed || token !== mounts) return;
       painted = false;
@@ -172,7 +200,7 @@ export function render(view, id, tab = "overview", sub = undefined) {
     view.innerHTML = `${headShown}
     <div class="tabs" role="tablist">${TABS.map(
       ([k, label, ic]) =>
-        `<a class="tab" role="tab" aria-selected="${k === tab}" href="${boxHash(box.id, k, k === tab ? section : "")}">${icon(ic)}${t(label)}</a>`,
+        `<a class="tab" role="tab" aria-selected="${k === tab}"${refusedTabTitle(k, onAgentHost())} href="${boxHash(box.id, k, k === tab ? section : "")}">${icon(ic)}${t(label)}</a>`,
     ).join("")}</div>
     <div id="tabBody"></div>`;
     painted = true;
@@ -192,6 +220,7 @@ export function render(view, id, tab = "overview", sub = undefined) {
       rerender,
       section,
       session: entry,
+      onAgentHost,
     });
   };
 
@@ -265,6 +294,21 @@ export function render(view, id, tab = "overview", sub = undefined) {
   };
 }
 
+/**
+ * What a tab an agent host refuses shows instead of its body: the feature, why the host cannot run it, and what to use
+ * meanwhile. The tab stays in the strip, so the console never looks like it lost a feature.
+ */
+function refuseTab(root, which) {
+  const key = which === "files" ? "bd.agentFiles" : "bd.agentPorts";
+  root.innerHTML = `<div class="card"><div class="card-body">${emptyState({
+    iconName: which === "files" ? "folder" : "externalLink",
+    title: t(`${key}Title`),
+    text: esc(t(key)),
+    action: `<span class="help">${esc(t("bd.agentHostHint"))}</span>`,
+  })}</div></div>`;
+  return () => {};
+}
+
 const TAB_RENDER = {
   overview: mountOverview,
 
@@ -272,11 +316,15 @@ const TAB_RENDER = {
     return mountTerminal(root, { box, onChange, rerender, session });
   },
 
-  files(root, { box, onChange }) {
+  files(root, { box, onChange, onAgentHost }) {
+    if (onAgentHost()) return refuseTab(root, "files");
     return mountFiles(root, { box, onChange });
   },
 
-  ports: mountPorts,
+  ports(root, { box, onAgentHost }) {
+    if (onAgentHost()) return refuseTab(root, "ports");
+    return mountPorts(root, { box });
+  },
 
   activity(root, { box }) {
     return mountActivity(root, { box });

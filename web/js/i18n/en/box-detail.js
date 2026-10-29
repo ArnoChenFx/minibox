@@ -431,6 +431,24 @@ export default {
   "bd.portsListening": "Listening",
   "bd.portsManual": "Manual",
   "bd.portsOpen": "Open",
+  "bd.agentFilesTitle": "Files need a helper this host cannot run",
+  "bd.agentFiles":
+    "The file browser reads and writes a box's volumes through a short-lived helper container, and an agent host runs boxes only, so it cannot start one. The Files tab stays off while the box is on an agent host; a box cannot be moved off one yet, so create the box on a host MiniBox reaches directly to browse its files.",
+  "bd.agentPortsTitle": "Port preview does not reach this host",
+  "bd.agentPorts":
+    "A preview relays the port through MiniBox, and an agent host opens no address MiniBox can relay to, so the preview is refused even when the port is listed. Reach the service on the machine itself, or use the terminal or SSH. A box cannot be moved off an agent host yet, so create the box on a host MiniBox reaches directly to use the preview.",
+  "bd.agentHostHint": "Agent host",
+  "bd.agentCheckpoints":
+    "An agent host cannot take a checkpoint: a checkpoint commits a system image and copies the volumes through a helper container, and an agent runs boxes only. Checkpoints kept on other hosts can still be listed, forked, exported, pinned and deleted.",
+  "bd.agentTemplate":
+    "An agent host cannot save a box as a template: saving commits the container's system layer as an image, and an agent runs boxes only.",
+  "bd.agentMove":
+    "A box cannot move to or from an agent host yet, because an agent copies neither images nor volumes. Create the box on the host you want it on instead.",
+  "bd.agentTab": "{feature} is not available on an agent host",
+  "bd.agentFeatureFiles": "File browsing",
+  "bd.agentFeaturePorts": "Port preview",
+  "bd.agentHeadNote":
+    "This box is on an agent host, which runs boxes only, so Create checkpoint, Save as template and Move to host are off.",
   "bd.portsAdd": "Add port",
   "bd.portsAddTitle": "Add preview port",
   "bd.portsAddText": "Remember a TCP port for one-click preview. It does not publish a host port.",

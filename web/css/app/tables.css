@@ -505,6 +505,18 @@ table.table {
 .vol-browse .fb-intro {
   display: none;
 }
+/* One line above the volumes table: why the rows that sit on an agent host keep their browse, measure and snapshot
+   buttons off. The rows share one reason, so the table says it once rather than repeating it on every row. */
+.vol-agent-note {
+  padding: 10px 18px;
+  border-bottom: 1px solid var(--border);
+  background: var(--warning-soft);
+  color: var(--warning);
+  font-size: 13px;
+}
+.vol-agent-note[hidden] {
+  display: none;
+}
 .bulk-bar[hidden] {
   display: none;
 }

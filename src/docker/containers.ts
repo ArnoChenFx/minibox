@@ -18,7 +18,7 @@ import {
 } from "../runtime";
 import type { Runtime } from "../runtime";
 import { call, withSignal, labelFilter, ignore304, type Engine } from "./engine";
-import { demuxLogs, followFailure, followedLines } from "./logs";
+import { boundLogBytes, demuxLogs, followFailure, followedLines } from "./logs";
 import { computeStats } from "./stats";
 
 const NANO_CPUS_PER_CPU = 1e9;
@@ -304,7 +304,7 @@ export function containerMethods(engine: Engine): ContainerMethods {
 
     async containerLogs(id, { tail, timestamps }) {
       const out = await call(() => docker.getContainer(id).logs({ stdout: true, stderr: true, tail, timestamps }));
-      return demuxLogs(Buffer.isBuffer(out) ? out : Buffer.from(String(out)));
+      return boundLogBytes(demuxLogs(Buffer.isBuffer(out) ? out : Buffer.from(String(out))));
     },
 
     async *followLogs(id, { tail, timestamps, since, signal }) {

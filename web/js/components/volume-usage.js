@@ -22,9 +22,10 @@ function levelBadge(level) {
 /**
  * The volumes table's size cell: the figure with a button that measures it again, the limit as a button that edits it
  * (plain text on NFS, which takes no limit), the bar against the limit, and the level the volume is at. A note about the
- * reading, such as a failed check, is the figure's tooltip, so the cell keeps to two lines.
+ * reading, such as a failed check, is the figure's tooltip, so the cell keeps to two lines. `block` is the i18n key of a
+ * reason the measure button cannot be used, which disables it and becomes its tooltip, as a row's action buttons do.
  */
-export function usageCellHtml(volume) {
+export function usageCellHtml(volume, block = "") {
   const summary = usageSummary(volume);
   const fill = fillPercent(summary.bytes, summary.scale);
   const notes = [
@@ -33,13 +34,13 @@ export function usageCellHtml(volume) {
   ].filter(Boolean);
   const tip = notes.length ? ` title="${esc(notes.join(" "))}"` : "";
   const warn = volume.usage?.lastError ? " vol-size-failed" : "";
-  const measure = esc(t("vol.measure"));
+  const measure = block ? esc(`${t("vol.measure")}: ${t(block)}`) : esc(t("vol.measure"));
   const limit =
     volume.backend === "nfs"
       ? `<span class="vol-limit" title="${esc(t("vol.limitsNfs"))}">${esc(limitText(summary))}</span>`
       : `<button type="button" class="vol-limit" data-action="limits" data-id="${esc(volume.id)}" title="${esc(t("vol.limits"))}">${esc(limitText(summary))}</button>`;
   return `<div class="vol-size">
-    <div class="vol-size-line"><span class="mono${warn}"${tip}>${esc(figureText(summary))}</span><button type="button" class="icon-btn icon-btn-sm" data-action="measure" data-id="${esc(volume.id)}" title="${measure}" aria-label="${measure}">${icon("refresh")}</button>${levelBadge(summary.level)}</div>
+    <div class="vol-size-line"><span class="mono${warn}"${tip}>${esc(figureText(summary))}</span><button type="button" class="icon-btn icon-btn-sm" data-action="measure" data-id="${esc(volume.id)}" title="${measure}" aria-label="${esc(t("vol.measure"))}"${block ? " disabled" : ""}>${icon("refresh")}</button>${levelBadge(summary.level)}</div>
     ${limit}
     ${fill === null ? "" : `<div class="bar ${levelClass(summary.level)}"><span style="width:${fill}%"></span></div>`}
   </div>`;

@@ -71,7 +71,7 @@ function helloFrame(key: KeyObject, nonce: string, agentId: string, protocol = A
 /** Opens a socket and answers its challenge with a hello. Returns the socket and the hub's end of it. */
 function connect(hub: AgentHub, key: KeyObject, agentId: string, protocol = AGENT_PROTOCOL) {
   const socket = fakeSocket();
-  const session: AgentSession = hub.attach(socket);
+  const session: AgentSession = hub.attach(socket, "10.0.0.1");
   session.receive(helloFrame(key, nonceOf(socket), agentId, protocol));
   return { socket, session };
 }
@@ -83,7 +83,7 @@ describe("the handshake", () => {
     const events: AgentEvent[] = [];
     hub.subscribe((event) => events.push(event));
     const socket = fakeSocket();
-    const session = hub.attach(socket);
+    const session = hub.attach(socket, "10.0.0.1");
     expect(framesOf(socket, "challenge")[0]).toMatchObject({ protocol: AGENT_PROTOCOL, serverVersion: "0.4.0-test" });
     session.receive(helloFrame(key, nonceOf(socket), record.agentId));
     expect(framesOf(socket, "welcome")).toEqual([{ type: "welcome", hostId: "edge", protocol: AGENT_PROTOCOL }]);
@@ -101,7 +101,7 @@ describe("the handshake", () => {
     const record = enroll();
     const stranger = generateKeyPairSync("ed25519").privateKey;
     const socket = fakeSocket();
-    hub.attach(socket).receive(helloFrame(stranger, nonceOf(socket), record.agentId));
+    hub.attach(socket, "10.0.0.1").receive(helloFrame(stranger, nonceOf(socket), record.agentId));
     expect(framesOf(socket, "refused")).toEqual([
       { type: "refused", code: "auth_failed", message: expect.any(String) },
     ]);
@@ -112,7 +112,7 @@ describe("the handshake", () => {
   test("an agent id the control plane does not know is refused the same way", () => {
     const { hub, key } = setup();
     const socket = fakeSocket();
-    hub.attach(socket).receive(helloFrame(key, nonceOf(socket), "f".repeat(32)));
+    hub.attach(socket, "10.0.0.1").receive(helloFrame(key, nonceOf(socket), "f".repeat(32)));
     expect(socket.closed).toEqual([{ code: AGENT_CLOSE.authFailed, reason: "auth failed" }]);
   });
 
@@ -151,7 +151,7 @@ describe("the handshake", () => {
     const { hub, enroll, key } = setup();
     const record = enroll();
     const socket = fakeSocket();
-    const session = hub.attach(socket);
+    const session = hub.attach(socket, "10.0.0.1");
     session.receive(JSON.stringify({ type: "response", id: "x", ok: true, result: {} }));
     expect(socket.closed).toEqual([]);
     const hello = helloFrame(key, nonceOf(socket), record.agentId);

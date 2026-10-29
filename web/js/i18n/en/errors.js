@@ -384,9 +384,15 @@ export default {
   "err.agent_refused_auth": "The agent could not prove its identity. Pair it again under Settings, Hosts.",
   "err.agent_refused_revoked": "This agent was revoked. Remove its host, then pair the agent again.",
   "err.agent_refused_protocol": "This MiniBox speaks agent protocol {protocol}. Update the agent image.",
+  "err.agent_pending_limit":
+    "Too many agent sockets are waiting to authenticate (at most {max} from one address). A real agent retries on its own; anything else should stop.",
+  "err.agent_pending_total_limit":
+    "Too many agent sockets are waiting to authenticate across all addresses (at most {max} in total). A real agent retries on its own; anything else should stop.",
+  "err.agent_pending_limit_hint":
+    "A socket that never sends a hello holds a place until it times out. If a real agent is refused, check for a proxy or tunnel in front of MiniBox: with TRUST_PROXY off, every client shares one address and one limit.",
   "err.runtime_unsupported": "This host cannot run that operation: {detail}",
   "err.move_agent_unsupported":
-    "A box cannot move to or from an agent host yet, because an agent does not copy images or volumes. Create the box on the agent host instead.",
+    "A box cannot move to or from an agent host yet, because an agent copies neither images nor volumes. Create the box on the host you want it on instead.",
   "err.preview_agent_unsupported": "Port preview is not supported on agent hosts yet.",
   "err.box_moving": "This box is moving to another host. Try again when the move finishes.",
   "err.box_changing": "This box is being rebuilt or updated. Try the move again when that finishes.",

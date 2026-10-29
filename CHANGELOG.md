@@ -4,6 +4,9 @@
 
 ## [Unreleased]
 
+### 安全
+- **未认证的 Agent socket 有了上限，而且按地址限流**（[#129](https://github.com/ArnoChenFx/minibox/issues/129)，review 反馈）：此前 `AgentHub.attach()` 接受每一个连上 `/api/agent/connect` 的 socket，只靠 `AGENT_HELLO_TIMEOUT_MS` 计时器在到点时清掉，`all` 这个集合没有上限——任何人可以开一堆 socket，每个占住挑战、计时器与一个描述符，控制台就被人从门口耗干。现在等待 hello 的 socket 受两道限制，都是**常量、不可配置**（`AgentHubOptions` 上的同名字段只是测试用的入口）：**每个地址 8 个**（`AGENT_PENDING_PER_ADDRESS_MAX`，地址取 `clientAddress` + `rateLimitKey`，即 TCP 对端或 `TRUST_PROXY` 下的 `X-Forwarded-For`），**全局 64 个**（`AGENT_PENDING_MAX`）作为兜底，免得一群人换个地址就能把门占满。超限的 socket **在升级之前**就被 `src/server.ts` 的 `AgentHub.pendingRefusal()` 判掉，直接回 **`429`**（错误键 `agent_pending_limit`，`details.scope` 为 `address` 或 `total`），根本不会打开；`attach()` 在 socket 打开时再判一次，两次之间被挤掉的以 **`4411`** 关掉。**一个地址被占满时，另一个地址的真实 Agent 照常连上**（有测试钉住）；名额按「`all` 里 `agentId` 仍为空的会话数」实时算，hello 通过的那一刻自然归还，`4408` 超时、hello 被拒、`4409` 被替换、`4403` 撤销、`4410` 静默、自己断开与关进程也都是靠会话离开 `all` 归还，既不会漏还也不会还两次。拒绝日志改成**每分钟最多一行**（`agent.pending_limit`，带 `suppressed` 计数），洪水不会顺带把日志也灌满。hello 超时从 15 秒缩短到 **5 秒**（`AGENT_HELLO_TIMEOUT_MS`，Agent 收到 challenge 立刻签，两端共用这个常量），一个静默 socket 占位的时间因此只有三分之一。未认证的 socket 若发来超过 **4 KiB** 的帧（`AGENT_HELLO_MAX_BYTES`）会被 `1009` 关掉，长度在解析之前检查，陌生人花不掉一次几 MB 的 JSON 解析；已认证的帧不受这条限制（`containerLogs` 是一次几 MB 的帧）。Bun 的 `websocket.maxPayloadLength` 是所有 socket 共用的一个数，保持 Bun 默认的 **16 MiB**（写成 `MAX_SOCKET_FRAME_BYTES`），因为它得装下最大的已认证帧：Agent 的 `containerLogs`、端口预览转发的帧、终端粘贴；陌生人的上限是上面那条 4 KiB。一次性读日志（`containerLogs`，本机与 Agent 主机都一样）现在**按字节封顶 2 MiB**（`MAX_LOG_READ_BYTES`），保留最新的整行，前面加一行 `[minibox: N bytes of older output omitted …]`。全局兜底满了的 `429` 用单独的错误键 `agent_pending_total_limit`（中英文都有），不再说成「一个地址」。Agent 客户端不再把 `4411` 当普通断线：`4411` 与升级前的 `429` 都记成 `agent.saturated` 并按退避重连（真实 Agent 会自己等到名额），`429` 之后 Bun 补发的 `1006` 关闭不再多记一行 `agent.disconnected`；其余断线日志补上 **close code 与 reason**（`agent.disconnected` 的 `code`/`reason`），正常的 `1000`/`1001` 关闭（如控制台重启）记一行 info 级的 `agent.closed`，握手失败另记 `agent.socket_error`。5 秒的 hello 计时器改为**在 socket 打开之后**才开始，拨号（DNS、TCP、TLS、升级）另有 30 秒的 `AGENT_CONNECT_TIMEOUT_MS`，慢链路不会白白吃掉 hello 的时间。Agent wire protocol 的帧形状不变；`docs/reference/agent.md` 的连接段、关闭码表与 `docs/architecture.md` 的握手段、长生命周期表同步改写，`docs/admin/remote-access.md` 写明 `TRUST_PROXY` 关闭时所有 Agent 共用一个地址、也就共用一个 8 的上限，中英文 `err.agent_pending_limit` 与 `err.agent_pending_limit_hint` 已补。测试：`tests/agent-hub-cap.test.ts` 重写（上限内都拿到 challenge、超限拿到 `4411` 且没有 challenge、**一个地址占满时另一个地址的 Agent 仍连上并被 welcome**、全局兜底与地址上限各自先触发、被拒的不占名额、超时/自己断开/hello 被拒/被撤销/关进程各自归还名额、hello 通过立刻释放、名额快满时已认证 Agent 仍能重连、未认证的大帧被 `1009` 关掉而已认证的大帧照收、拒绝日志每分钟一行并带 `suppressed`，以及**真起一个 `startServer` 的服务**：占满一个 `X-Forwarded-For` 地址后同一地址的握手拿到 `429` 与 `agent_pending_limit`，另一个地址的握手拿到 `101`）；`tests/host-agent.test.ts` 新增真服务上的 Agent 回一次约 6 MiB 的日志、Agent 仍在线；`tests/log-lines.test.ts` 新增日志按字节封顶；`tests/agent-hub-cap.test.ts` 新增两种 `429` 各自的错误键；`tests/agent-client.test.ts` 新增 `4411` 记 `agent.saturated` 并重连、`429` 握手失败记 `agent.saturated` 并重连且不重复记 `1006`、`1000`/`1001` 记 info、hello 计时器在打开后才开始、拨号超时、其他握手失败记 `agent.socket_error`、断线日志带 `1006` 与 reason、`handshakeStatus()` 的解析。
+
 ### 新增
 
 - 本地备份支持 `BACKUP_DIR` 与 `BACKUP_KEEP`：指定归档目录并保留最新的 N 份，符号链接按实际路径排除。新目录为 700，已有自定义目录保留权限，归档和记录为 600。
@@ -29,6 +32,21 @@
 - 备份跳过坏记录，维护失败保留已完成归档并记录日志。
 - 引导按钮可在窄屏换行；对话框聚焦不抢走已选择的字段。
 - Agent 事件/日志流按逐流预算处理慢消费者，超限明确失败并取消该流。task SSE、卷用量状态及 Docker inspect 并发有界。
+
+### 修复
+
+- **Agent 宿主机上不能用的入口先说明，而不是点了才 501**（[#129](https://github.com/ArnoChenFx/minibox/issues/129)）：
+  - Box 页的 **文件**、**端口** 标签改画说明卡片，不发注定 501 的请求；标签留在栏里，`title` 写「Agent 宿主机不支持文件浏览 / 端口预览」。
+  - 头部的 **创建检查点**、**存为模板**、**迁移到宿主机** 禁用并在 `title` 写原因；标题栏下多一行说明，手机上只剩图标、点不出 `title` 时也看得到原因。
+  - 设置 → 检查点 卡片与存储页检查点分组的 **创建检查点** 同样禁用；存储页表格上方一行说明。
+  - 导入与复制检查点时，Agent 宿主机在主机列表里列出但不可选；其他宿主机都是 Agent 时复制按钮禁用并说明。
+  - 存储页卷表：Agent 宿主机上的卷 **浏览文件**、**重新统计**、**快照** 禁用，表格上方一行说明。
+  - 宿主机列表与页面其他数据并行读取，不再先读完宿主机才开始读 Box / 卷 / 检查点。
+  - 服务端：`checkpoint.create` 在 Agent 宿主机上直接回 `501 agent_host_unsupported`（`beforeTask`，不起任务）。
+  - 判断抽在 `web/js/lib/host-list.js`（`listedHostOfBox`、`boxOnAgentHost`）与 `web/js/lib/volume-row.js`（`agentVolumeBlock`）。
+  - 文案中英都进词典；检查点说明只列实际可用的操作（列出、派生、导出、置顶、删除），中文去掉翻译腔。
+- **添加宿主机对话框里选择器与两块面板之间补上 16px 间距**（`.segmented ~ [data-method-panel]`）。
+- 测试：`tests/web-box-agent-host-browser.test.ts`（真机：标签、按钮、说明行、并行读取、导入主机选项）、`tests/web-volume-agent-host.test.ts`、`tests/web-hosts.test.ts`、`tests/web-checkpoints.test.ts`、`tests/checkpoint-operations.test.ts`、`tests/web-dialog-spacing-browser.test.ts`、`tests/web-components.test.ts`。
 
 ### 工程化
 

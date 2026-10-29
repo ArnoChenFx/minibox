@@ -153,7 +153,7 @@ minibox box create trainer --host auto --host-label gpu=true --host-label org/ar
 - 复制或迁移镜像要求目标引擎保留镜像 ID。Docker 的经典镜像存储满足此要求。containerd 镜像存储在加载镜像时会改变镜像 ID，因此 MiniBox 会以 `docker_error` 拒绝复制，并列出两个 ID。若 `docker info` 显示 `driver-type io.containerd.snapshotter.v1`，即表示该引擎使用 containerd 镜像存储。
 - 每个宿主机各自保留检查点。要让另一台宿主机也有某个检查点，请[复制](checkpoints.md#复制到其他宿主机)它。副本是新检查点，原检查点留在原处。带系统层的检查点暂时不能复制。
 - **自动** 只考虑已持有模板镜像的宿主机，除非所有者的官方模板可以在某台上构建。要限定它可用的宿主机，请给宿主机加标签并传 `hostLabels`；不传时它会考虑所有在线宿主机。
-- Agent 宿主机暂不支持迁入或迁出 Box，因为 Agent 不复制镜像或卷。请改为在 Agent 宿主机上创建 Box。Agent 宿主机暂不支持模板、快照与端口预览，也不能在其上创建带自助令牌的 Box，因为 Agent 无法写入令牌文件。
+- Agent 宿主机暂不支持迁入或迁出 Box，因为 Agent 既不复制镜像，也不复制卷。因此有多台宿主机时，Agent 宿主机上的 Box **迁移到宿主机** 按钮不可用，原因写在悬停提示里，API 则返回 `501 move_agent_unsupported`。请直接在想要的位置创建 Box。Agent 宿主机暂不支持模板、快照与端口预览，**存为模板** 在那里同样不可用；也不能在其上创建带自助令牌的 Box，因为 Agent 无法写入令牌文件。
 - 宿主机级别的 CPU 与内存占用仅对本机宿主机显示。远程宿主机显示其引擎上报的核心数与内存，以及其上 Box 的占用。
 - 命令行工具的宿主机命令只读写标签：`minibox host labels get` 与 `minibox host labels set`。添加、移除和吊销宿主机请在控制台或通过 [REST API（英文）](../../reference/api.md) 完成。
 - [Agent 令牌](access-and-tokens.md) 可以限制为特定宿主机。

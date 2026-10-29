@@ -13,10 +13,12 @@ import {
   accessWarningShown,
   agentState,
   boxesOnHost,
+  boxOnAgentHost,
   hostFilterShown,
   hostLabel,
   hostOfBox,
   isUnreachable,
+  listedHostOfBox,
 } from "../web/js/lib/host-list.js";
 
 const boxes = [
@@ -115,6 +117,44 @@ describe("the access warning on the hosts page", () => {
         { id: "edge", transport: "tcp" },
       ]),
     ).toBe(true);
+  });
+});
+
+describe("the host a box runs on, and whether it is an agent", () => {
+  const hosts = [
+    { id: "local", name: "This machine", transport: "local" },
+    { id: "lab", name: "Lab", transport: "ssh" },
+    { id: "edge", name: "Edge", transport: "agent" },
+  ];
+
+  test("a box names its host, and one that names none is on the local host", () => {
+    expect(listedHostOfBox({ name: "alpha" }, hosts)?.id).toBe("local");
+    expect(listedHostOfBox({ name: "beta", hostId: "edge" }, hosts)?.id).toBe("edge");
+  });
+
+  test("an agent host is the only host whose box is on one", () => {
+    expect(boxOnAgentHost({ name: "beta", hostId: "edge" }, hosts)).toBe(true);
+    expect(boxOnAgentHost({ name: "gamma", hostId: "lab" }, hosts)).toBe(false);
+    expect(boxOnAgentHost({ name: "alpha", hostId: "local" }, hosts)).toBe(false);
+    expect(boxOnAgentHost({ name: "delta" }, hosts)).toBe(false);
+  });
+
+  test("a host the list does not name yet is not called an agent, so a page that opens before the list loads keeps its tabs", () => {
+    expect(listedHostOfBox({ name: "beta", hostId: "edge" }, [])).toBeNull();
+    expect(boxOnAgentHost({ name: "beta", hostId: "edge" }, [])).toBe(false);
+    expect(listedHostOfBox({ name: "beta", hostId: "gone" }, hosts)).toBeNull();
+    expect(boxOnAgentHost({ name: "beta", hostId: "gone" }, hosts)).toBe(false);
+  });
+
+  test("the host is the one the box names, not the first host in the list", () => {
+    const [edge, local, lab] = hosts as [
+      { id: string; name: string; transport: string },
+      { id: string; name: string; transport: string },
+      { id: string; name: string; transport: string },
+    ];
+    const reordered = [edge, local, lab];
+    expect(listedHostOfBox({ name: "beta", hostId: "edge" }, reordered)?.transport).toBe("agent");
+    expect(listedHostOfBox({ name: "alpha" }, reordered)?.transport).toBe("local");
   });
 });
 

@@ -473,6 +473,57 @@ describe("checkpoints over HTTP", () => {
   });
 });
 
+describe("an agent host and checkpoints", () => {
+  let harness: Harness;
+  let restoreLogs: () => void;
+
+  beforeEach(() => {
+    restoreLogs = silenceLogs();
+    harness = startHarness();
+    harness.app.monitor.snapshot = async () => ROOMY_HOST;
+  });
+
+  afterEach(() => {
+    harness.stop();
+    restoreLogs();
+  });
+
+  /** A box made over REST. The local host stands in for an agent host, as the volume-snapshot test does. */
+  async function makeBox(name: string): Promise<string> {
+    const reply = await call(harness.base, "/api/boxes", { body: { name, cpus: 1, memoryMb: 256 } });
+    expect(reply.status).toBe(201);
+    return reply.json.box?.boxId ?? "";
+  }
+
+  test("a take is refused with the feature named, before any task starts, and the host is untouched", async () => {
+    const boxId = await makeBox("alpha");
+    const host = harness.app.hosts.get();
+    host.host.transport = "agent";
+    try {
+      const reply = await call(harness.base, `/api/boxes/${boxId}/checkpoints`, { method: "POST", body: {} });
+      expect(reply).toMatchObject({
+        status: 501,
+        json: { error: { code: "unsupported", key: "agent_host_unsupported", params: { feature: "checkpoints" } } },
+      });
+      expect(reply.json).not.toHaveProperty("taskId");
+      expect(harness.app.tasks.list({ limit: 10 })).toEqual([]);
+      expect(host.checkpoints.list()).toEqual([]);
+      expect(harness.runtime.images.size).toBeGreaterThan(0);
+    } finally {
+      host.host.transport = "local";
+    }
+  });
+
+  test("the refusal is the operation's, not the runtime's: a plain local host still takes a checkpoint", async () => {
+    const boxId = await makeBox("beta");
+    const started = await call(harness.base, `/api/boxes/${boxId}/checkpoints`, { method: "POST", body: {} });
+    expect(started.status).toBe(202);
+    const done = await finishedTask(harness.base, started.json.taskId ?? "");
+    expect(done.status).toBe("succeeded");
+    expect(harness.app.hosts.get().checkpoints.list()).toHaveLength(1);
+  });
+});
+
 describe("a refusal from the operation executor", () => {
   test("a refusal in beforeTask is audited once, as an error, and no task is started", async () => {
     const events: AuditEvent[] = [];
