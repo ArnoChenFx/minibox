@@ -4,6 +4,7 @@ import { log } from "../lib/logger";
 import type { Runtime } from "../runtime";
 import { AgentExecutor, type AgentSink } from "./executor";
 import {
+  AGENT_CLOSE,
   AGENT_CONNECT_PATH,
   AGENT_HEARTBEAT_MS,
   AGENT_HELLO_TIMEOUT_MS,
@@ -15,6 +16,16 @@ import {
   ServerFrameSchema,
   signHello,
 } from "./protocol";
+
+/**
+ * A refusal the control plane answers before it upgrades, so the agent's own WebSocket sees it as a failed handshake
+ * rather than as a close frame. The WebSocket API exposes no status, only the error's text: Bun's client says
+ * `Expected 101 status code: 429`, browsers and undici say `Unexpected server response: 429`. Both are read here.
+ */
+export function handshakeStatus(message: string): number | null {
+  const found = /(?:unexpected server response|expected \d{3} status code|http)\s*[: ]\s*(\d{3})/i.exec(message);
+  return found?.[1] ? Number(found[1]) : null;
+}
 
 const OPEN = 1;
 const DEFAULT_MIN_BACKOFF_MS = 1_000;
@@ -56,7 +67,9 @@ export function backoffMs(attempt: number, minMs: number, maxMs: number): number
 /**
  * Keeps one agent connected to its control plane. It connects, proves its identity with its key, serves what the control
  * plane asks, sends a heartbeat, and reconnects with backoff. A control plane that revokes the agent, or refuses its
- * protocol, ends the loop for good: the process stays up and idle, so a restart policy does not spin on a refusal.
+ * protocol, ends the loop for good: the process stays up and idle, so a restart policy does not spin on a refusal. A
+ * control plane that is saturated (429 before the upgrade, or `4411` on the socket) is not a reason to stop: the agent
+ * is real, and the place it needs is taken by someone else's socket only until that one times out.
  */
 export class AgentClient {
   private state: AgentConnectionState = "idle";
@@ -193,11 +206,24 @@ export class AgentClient {
             return;
         }
       });
-      ws.addEventListener("close", () => {
-        log.warn("agent.disconnected", { connected });
+      ws.addEventListener("close", (event) => {
+        // The code says what happened, so a log a person reads does not have to guess between a network drop and a
+        // control plane that refused the socket. A refusal before the upgrade is the error listener's to report.
+        if (event.code === AGENT_CLOSE.tooManyPending) {
+          log.warn("agent.saturated", { code: event.code, reason: event.reason, connected });
+        } else if (event.code !== 1000 && event.code !== 1001) {
+          log.warn("agent.disconnected", { code: event.code, reason: event.reason, connected });
+        }
         finish({ dormant: false, connected });
       });
-      ws.addEventListener("error", () => {
+      ws.addEventListener("error", (event) => {
+        const message = String((event as { message?: unknown }).message ?? "");
+        if (handshakeStatus(message) === 429) {
+          log.warn("agent.saturated", { status: 429, connected });
+          finish({ dormant: false, connected });
+          return;
+        }
+        log.warn("agent.socket_error", { message, connected });
         ws.close();
       });
     });

@@ -11,6 +11,7 @@ import {
   isWeakAccessKey,
   MIN_ACCESS_KEY_LENGTH,
   proxyHeaderWarner,
+  rateLimitKey,
   resolveCaller,
   sessionCaller,
 } from "./auth";
@@ -19,6 +20,7 @@ import { accessKeyPath } from "./data-dir";
 import type { EventReader } from "./events/store";
 import type { Source } from "./events/types";
 import { guardRequest } from "./guard";
+import type { PendingRefusal } from "./host/agent/hub";
 import { AppError, badRequest } from "./lib/errors";
 import { assertBodyAllowed, errorResponse, withSecurityHeaders } from "./lib/http";
 import { log, setLogLevel } from "./lib/logger";
@@ -49,12 +51,27 @@ const TERMINAL_PATH = /^\/api\/boxes\/([^/]+)\/terminal$/;
 const SSH_PATH = /^\/api\/ssh\/(?!host-key$)([^/]+)$/;
 const MB = 1024 * 1024;
 const PACKAGE_BODY_SLACK_BYTES = MB;
+/**
+ * The largest WebSocket frame MiniBox accepts, on every socket kind, instead of Bun's 16 MiB default. The largest real
+ * frame is an agent's one-shot `containerLogs` answer, which carries at most 5,000 lines, or a preview's forwarded frame
+ * from whatever app is behind it; a terminal frame is a resize. It matches the bytes a socket may leave unread
+ * (`BACKPRESSURE_LIMIT_BYTES`), so a frame and a queue are bounded by the same number. A socket that sends more is
+ * closed with `1009`. A socket that has not proved who it is is held far lower, by `AGENT_HELLO_MAX_BYTES`.
+ */
+export const MAX_SOCKET_FRAME_BYTES = BACKPRESSURE_LIMIT_BYTES;
 const PROXY_HINT =
   "Proxy headers arrived while TRUST_PROXY is off, so they are ignored. Behind a reverse proxy you control that overwrites them, set TRUST_PROXY=true (and ALLOWED_ORIGINS to its public address if it rewrites Host). A same-host tunnel such as OpenTunnel adds none of these headers, so leave TRUST_PROXY off and ignore this warning.";
 
 /** The address a request is counted under: the TCP peer, or the proxy's entry when TRUST_PROXY is set. */
 function addressOf(app: App, req: Request, server: Pick<Server<unknown>, "requestIP">): string {
   return clientAddress(req, server.requestIP(req)?.address, app.cfg.trustProxy);
+}
+
+/** The 429 an agent socket past a pending limit is answered with, before it is upgraded. */
+function pendingLimitError(refusal: PendingRefusal): AppError {
+  return new AppError(429, "too_many_requests", msg("agent_pending_limit", { max: refusal.max }), refusal, {
+    hint: msg("agent_pending_limit_hint"),
+  });
 }
 
 /**
@@ -160,7 +177,12 @@ async function dispatch(app: App, req: Request, url: URL, server: Server<SocketD
     if (req.headers.get("upgrade")?.toLowerCase() !== "websocket") {
       throw badRequest(msg("ws_upgrade_failed"));
     }
-    const data: AgentSocketData = { kind: "agent" };
+    // The pending limits are judged here, before the upgrade, so a caller past one is answered with 429 and no socket. The
+    // hub judges again as the socket opens, because the count can move between this check and the open.
+    const address = rateLimitKey(addressOf(app, req, server));
+    const refusal = app.agents.pendingRefusal(address);
+    if (refusal) throw pendingLimitError(refusal);
+    const data: AgentSocketData = { kind: "agent", address };
     if (server.upgrade(req, { data })) return undefined;
     throw new AppError(400, "bad_request", msg("ws_upgrade_failed"));
   }
@@ -297,6 +319,9 @@ export function startServer(app: App): Server<SocketData> {
       return withSecurityHeaders(res, isSecureRequest(req, app.cfg.trustProxy));
     },
     websocket: {
+      // Bun's default is 16 MiB of decompressed frame for every socket. This bounds what one socket may hold instead, and
+      // what a socket that never authenticates may spend on a parse is bounded far lower, in `AgentHub.receive`.
+      maxPayloadLength: MAX_SOCKET_FRAME_BYTES,
       open: async (ws) => {
         if (ws.data && "kind" in ws.data && ws.data.kind === "preview") {
           const data = ws.data;

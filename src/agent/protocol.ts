@@ -23,8 +23,8 @@ export const AGENT_CLOSE = {
   protocolMismatch: 4426,
 } as const;
 
-/** How long a socket may stay open without a valid hello. */
-export const AGENT_HELLO_TIMEOUT_MS = 15_000;
+/** How long a socket may stay open without a valid hello. The agent signs as soon as the challenge arrives, so this is generous. */
+export const AGENT_HELLO_TIMEOUT_MS = 5_000;
 /** How often an agent sends a heartbeat. The control plane's idle timeout is longer than this. */
 export const AGENT_HEARTBEAT_MS = 10_000;
 

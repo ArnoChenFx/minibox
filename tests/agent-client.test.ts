@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { generateKeyPairSync } from "node:crypto";
 
-import { AgentClient, backoffMs, connectUrlOf } from "../src/agent/client";
-import { AGENT_PROTOCOL, verifyHello } from "../src/agent/protocol";
+import { AgentClient, backoffMs, connectUrlOf, handshakeStatus } from "../src/agent/client";
+import { AGENT_CLOSE, AGENT_PROTOCOL, verifyHello } from "../src/agent/protocol";
+import { setLogSink } from "../src/lib/logger";
 import { silenceLogs } from "./support/app";
 import { FakeRuntime } from "./support/fake-runtime";
 
@@ -14,9 +15,15 @@ class FakeSocket {
   readyState = 1;
   readonly sent: Array<Record<string, unknown>> = [];
   readonly closes: Array<{ code: number | undefined; reason: string | undefined }> = [];
-  private readonly listeners = new Map<string, Array<(event: { data?: unknown }) => void>>();
+  private readonly listeners = new Map<
+    string,
+    Array<(event: { data?: unknown; code?: number; reason?: string; message?: string }) => void>
+  >();
 
-  addEventListener(type: string, listener: (event: { data?: unknown }) => void): void {
+  addEventListener(
+    type: string,
+    listener: (event: { data?: unknown; code?: number; reason?: string; message?: string }) => void,
+  ): void {
     this.listeners.set(type, [...(this.listeners.get(type) ?? []), listener]);
   }
 
@@ -42,11 +49,26 @@ class FakeSocket {
     this.dispatch("close", {});
   }
 
+  /** The control plane closing the socket, with the code and reason it gave. */
+  closeWith(code: number, reason: string): void {
+    this.readyState = 3;
+    this.dispatch("close", { code, reason });
+  }
+
+  /** The handshake failing before the upgrade, in Bun's own words. */
+  failHandshake(status: number): void {
+    this.readyState = 3;
+    this.dispatch("error", {
+      message: `WebSocket connection to 'ws://minibox.example.com/api/agent/connect' failed: Expected 101 status code: ${status}`,
+    });
+    this.dispatch("close", {});
+  }
+
   framesOf(type: string): Array<Record<string, unknown>> {
     return this.sent.filter((frame) => frame.type === type);
   }
 
-  private dispatch(type: string, event: { data?: unknown }): void {
+  private dispatch(type: string, event: { data?: unknown; code?: number; reason?: string; message?: string }): void {
     for (const listener of this.listeners.get(type) ?? []) listener(event);
   }
 }
@@ -201,5 +223,85 @@ describe("the connection", () => {
     await Bun.sleep(30);
     expect(sockets).toHaveLength(1);
     expect(client.connectionState).toBe("stopped");
+  });
+});
+
+/** The log lines one run writes, so a test can read what an operator would see. */
+function logLines(): { lines: string[]; restore: () => void } {
+  const lines: string[] = [];
+  return { lines, restore: setLogSink((_level, line) => lines.push(line)) };
+}
+
+describe("a saturated control plane", () => {
+  test("a socket closed 4411 is logged with its code and retried, not treated as an ordinary drop", async () => {
+    const { client, sockets } = setup();
+    const logs = logLines();
+    const done = client.run();
+    try {
+      sockets[0]?.closeWith(AGENT_CLOSE.tooManyPending, "too many sockets waiting for a hello");
+      await waitFor(() => sockets.length === 2, "a second connection");
+      const saturated = logs.lines.filter((line) => line.includes("agent.saturated"));
+      expect(saturated).toHaveLength(1);
+      expect(JSON.parse(saturated[0] ?? "{}")).toMatchObject({
+        code: AGENT_CLOSE.tooManyPending,
+        reason: "too many sockets waiting for a hello",
+        connected: false,
+      });
+      // The drop is reported as saturation, so the ordinary disconnect line is not written for it as well.
+      expect(logs.lines.filter((line) => line.includes("agent.disconnected"))).toHaveLength(0);
+      expect(client.connectionState).not.toBe("dormant");
+    } finally {
+      client.stop();
+      await done;
+      logs.restore();
+    }
+  });
+
+  test("a 429 before the upgrade is logged as saturation, and the agent dials again", async () => {
+    const { client, sockets } = setup();
+    const logs = logLines();
+    const done = client.run();
+    try {
+      sockets[0]?.failHandshake(429);
+      await waitFor(() => sockets.length === 2, "a second connection");
+      const saturated = logs.lines.filter((line) => line.includes("agent.saturated"));
+      expect(saturated).toHaveLength(1);
+      expect(JSON.parse(saturated[0] ?? "{}")).toMatchObject({ status: 429, connected: false });
+      expect(logs.lines.filter((line) => line.includes("agent.socket_error"))).toHaveLength(0);
+    } finally {
+      client.stop();
+      await done;
+      logs.restore();
+    }
+  });
+
+  test("another handshake refusal keeps the socket error line, and the code of an ordinary close is reported", async () => {
+    const { client, sockets } = setup();
+    const logs = logLines();
+    const done = client.run();
+    try {
+      sockets[0]?.failHandshake(503);
+      await waitFor(() => sockets.length === 2, "a second connection");
+      expect(logs.lines.filter((line) => line.includes("agent.socket_error"))).toHaveLength(1);
+      sockets[1]?.closeWith(1006, "connection lost");
+      const disconnected = logs.lines.filter((line) => line.includes("agent.disconnected"));
+      expect(JSON.parse(disconnected.at(-1) ?? "{}")).toMatchObject({ code: 1006, reason: "connection lost" });
+    } finally {
+      client.stop();
+      await done;
+      logs.restore();
+    }
+  });
+
+  test("the handshake status is read from the error text, and unknown text is no status at all", () => {
+    // Bun's client, as it actually reports a refused upgrade.
+    expect(
+      handshakeStatus("WebSocket connection to 'ws://host/api/agent/connect' failed: Expected 101 status code: 429"),
+    ).toBe(429);
+    // Browsers and undici.
+    expect(handshakeStatus("Unexpected server response: 503")).toBe(503);
+    expect(handshakeStatus("failed: HTTP 401")).toBe(401);
+    expect(handshakeStatus("socket hang up")).toBeNull();
+    expect(handshakeStatus("")).toBeNull();
   });
 });

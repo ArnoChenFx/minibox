@@ -427,6 +427,10 @@ export const MESSAGES = {
   agent_refused_auth: "The agent could not prove its identity. Pair it again under Settings, Hosts.",
   agent_refused_revoked: "This agent was revoked. Remove its host, then pair the agent again.",
   agent_refused_protocol: "This MiniBox speaks agent protocol {protocol}. Update the agent image.",
+  agent_pending_limit:
+    "Too many agent sockets are waiting to authenticate (at most {max} from one address). A real agent retries on its own; anything else should stop.",
+  agent_pending_limit_hint:
+    "A socket that never sends a hello holds a place until it times out. If a real agent is refused, check for a proxy or tunnel in front of MiniBox: with TRUST_PROXY off, every client shares one address and one limit.",
   runtime_unsupported: "This host cannot run that operation: {detail}",
   move_agent_unsupported:
     "A box cannot move to or from an agent host yet, because an agent does not copy images or volumes. Create the box on the agent host instead.",
