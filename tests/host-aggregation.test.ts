@@ -179,6 +179,58 @@ describe("the background check backs off for a host that stays offline", () => {
     expect([await pingsOnTick(), await pingsOnTick()]).toEqual([1, 1]);
   });
 
+  test("a host that answers again is asked for a fresh forwarding reading, since its firewall may have reloaded", async () => {
+    const gated = await post("/api/boxes", {
+      name: "gated",
+      cpus: 1,
+      memoryMb: 256,
+      host: "edge",
+      egress: { mode: "proxy-only", domains: ["example.com"] },
+    });
+    expect(gated.status).toBe(201);
+    await app.egressForward.tick();
+    expect(edge.callsTo("checkHostForward")).toHaveLength(1);
+
+    edge.down = true;
+    await app.hostAdmin.probeDue();
+    expect(app.hosts.get("edge").host.status).toBe("offline");
+    // A pass over an offline host reads nothing, so the rule that comes back is not what a plain tick would find.
+    await app.egressForward.tick();
+    expect(edge.callsTo("checkHostForward")).toHaveLength(1);
+
+    edge.down = false;
+    let ticks = 0;
+    while (app.hosts.get("edge").host.status !== "online" && ticks < 12) {
+      await app.hostAdmin.probeDue();
+      ticks += 1;
+    }
+    expect(app.hosts.get("edge").host.status).toBe("online");
+    await app.egressForward.tick();
+    expect(edge.callsTo("checkHostForward")).toHaveLength(2);
+  });
+
+  test("a link that comes back live asks for a fresh reading too, without waiting for the next probe", async () => {
+    const gated = await post("/api/boxes", {
+      name: "gated",
+      cpus: 1,
+      memoryMb: 256,
+      host: "edge",
+      egress: { mode: "proxy-only", domains: ["example.com"] },
+    });
+    expect(gated.status).toBe(201);
+    await app.egressForward.tick();
+    expect(edge.callsTo("checkHostForward")).toHaveLength(1);
+
+    const link = (state: "live" | "down") =>
+      app.bus.publish("link", { hostId: "edge", state, error: null, at: new Date().toISOString() });
+    link("down");
+    expect(app.hosts.get("edge").host.status).toBe("offline");
+    link("live");
+    expect(app.hosts.get("edge").host.status).toBe("online");
+    await app.egressForward.tick();
+    expect(edge.callsTo("checkHostForward")).toHaveLength(2);
+  });
+
   test("an explicit refresh checks an offline host at once, whatever its backoff", async () => {
     edge.down = true;
     for (let tick = 0; tick < 4; tick++) await pingsOnTick();
