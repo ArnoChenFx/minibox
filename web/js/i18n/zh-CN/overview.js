@@ -57,13 +57,17 @@ export default {
   "ov.forwardRepaired": "已添加 FORWARD 规则",
   "ov.forwardRepairFailed": "无法添加 FORWARD 规则",
   "ov.text.forward_blocked":
-    "这台宿主机的 FORWARD 规则丢弃了出站上行网络（{bridge}）的流量，其上 {count} 个仅代理的 Box（{boxes}）无法访问互联网。开放出站的 Box 不受影响。确认后由 MiniBox 添加规则，也可以手动添加。",
-  "ov.text.forward_blocked_rule":
-    "这台宿主机自己的规则有意丢弃了出站上行网络（{bridge}）的流量，其上 {count} 个仅代理的 Box（{boxes}）无法访问互联网。这里没有 MiniBox 可以添加的规则：如果这些 Box 应当出网，请手动改掉那条 DROP。开放出站的 Box 不受影响。",
-  "ov.text.forward_blocked_unreachable":
-    "这台宿主机的 FORWARD 规则丢弃了出站上行网络（{bridge}）的流量，其上 {count} 个仅代理的 Box（{boxes}）无法访问互联网。FORWARD 里有一条规则用 -g 把这些流量永久交给了另一条链，或用 RETURN 结束了遍历，所以 MiniBox 追加在 FORWARD 末尾的规则永远走不到。请手动把放行规则加到那条链里，或加在那条规则之前。开放出站的 Box 不受影响。",
+    "这台宿主机的 FORWARD 规则丢弃了出站上行网络（{bridge}）的流量，其上 {count} 个仅代理的 Box（{boxes}）无法访问互联网。开放出站的 Box 不受影响。",
   "ov.text.forward_blocked_unclear":
-    "这台宿主机的出站上行网络（{bridge}）看起来被丢弃，但其中有一条 MiniBox 读不懂的规则，说不清原因。其上 {count} 个仅代理的 Box（{boxes}）可能没有网络。请手动查看规则；MiniBox 在这里不提供任何规则。",
+    "这台宿主机的出站上行网络（{bridge}）看起来被丢弃，其上 {count} 个仅代理的 Box（{boxes}）可能没有网络。开放出站的 Box 不受影响。",
+  "ov.note.forward_policy":
+    "FORWARD 里没有规则放行这些流量，是链的默认策略把它们丢弃了。确认后由 MiniBox 添加规则，也可以手动添加。",
+  "ov.note.forward_rule":
+    "这是宿主机自己的一条 DROP 或 REJECT 规则有意为之。这里没有 MiniBox 可以添加的规则：如果这些 Box 应当出网，请手动改掉那条规则。",
+  "ov.note.forward_unreachable":
+    "FORWARD 里有一条规则用 -g 把这些流量永久交给了另一条链，或用 RETURN 结束了遍历，所以 MiniBox 追加在 FORWARD 末尾的规则永远走不到。请手动把放行规则加到那条链里，或加在那条规则之前。",
+  "ov.note.forward_unclear":
+    "其中有一条规则 MiniBox 读不懂，说不清原因。请手动查看规则；MiniBox 在这里不提供任何规则。",
   "actv.subtitle": "MiniBox 记录的每一次操作：谁做的、对哪个对象、结果如何。",
   "actv.filters": "筛选活动日志",
   "actv.box": "Box",

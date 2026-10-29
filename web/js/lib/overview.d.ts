@@ -43,6 +43,12 @@ export declare function attentionHref(item: AttentionItem): string;
  */
 export declare function canRepair(item: AttentionItem): boolean;
 
+/**
+ * What an item says about its cause, in full, as a line of its own under its row, or null for a kind with nothing more
+ * to say. The row's own sentence is cut at the edge of the line, so a reason that has to be read goes here.
+ */
+export declare function attentionNote(item: AttentionItem): AttentionText | null;
+
 export declare function attentionText(
   item: AttentionItem,
   options?: {

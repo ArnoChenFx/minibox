@@ -60,13 +60,17 @@ export default {
   "ov.forwardRepaired": "Added the FORWARD rule",
   "ov.forwardRepairFailed": "Couldn't add the FORWARD rule",
   "ov.text.forward_blocked":
-    "The host's FORWARD rules drop the egress uplink ({bridge}), so its {count} proxy-only box(es) ({boxes}) cannot reach the internet. Open boxes are unaffected. Confirm to let MiniBox add the rule, or add it by hand.",
-  "ov.text.forward_blocked_rule":
-    "The host's own rules drop the egress uplink ({bridge}) on purpose, so its {count} proxy-only box(es) ({boxes}) cannot reach the internet. MiniBox has no rule to add here: change the DROP by hand if these boxes should get out. Open boxes are unaffected.",
-  "ov.text.forward_blocked_unreachable":
-    "The host's FORWARD rules drop the egress uplink ({bridge}), so its {count} proxy-only box(es) ({boxes}) cannot reach the internet. A rule in FORWARD hands that traffic to another chain for good (-g) or ends the walk (RETURN), so a rule MiniBox appended to FORWARD would never be reached. Add the allowance in that chain, or above that rule, by hand. Open boxes are unaffected.",
+    "The host's FORWARD rules drop the egress uplink ({bridge}), so its {count} proxy-only box(es) ({boxes}) cannot reach the internet. Open boxes are unaffected.",
   "ov.text.forward_blocked_unclear":
-    "The egress uplink ({bridge}) looks dropped on this host, but one of its rules is one MiniBox cannot read, so it cannot say why. Its {count} proxy-only box(es) ({boxes}) may have no internet. Read the rules by hand; MiniBox offers no rule here.",
+    "The egress uplink ({bridge}) looks dropped on this host, so its {count} proxy-only box(es) ({boxes}) may have no internet. Open boxes are unaffected.",
+  "ov.note.forward_policy":
+    "No rule in FORWARD accepts that traffic, so the chain's policy drops it. Confirm to let MiniBox add the rule, or add it by hand.",
+  "ov.note.forward_rule":
+    "A DROP or REJECT rule of the host's own does it, on purpose. MiniBox has no rule to add here: change that rule by hand if these boxes should get out.",
+  "ov.note.forward_unreachable":
+    "A rule in FORWARD hands that traffic to another chain for good (-g) or ends the walk (RETURN), so a rule MiniBox appended to FORWARD would never be reached. Add the allowance in that chain, or above that rule, by hand.",
+  "ov.note.forward_unclear":
+    "One of the rules is one MiniBox cannot read, so it cannot say why. Read the rules by hand; MiniBox offers no rule here.",
   "actv.subtitle": "Every operation MiniBox has recorded: who acted, on what, and how it ended.",
   "actv.filters": "Filter the activity log",
   "actv.box": "Box",

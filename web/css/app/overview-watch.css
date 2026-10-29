@@ -206,6 +206,14 @@
   text-overflow: ellipsis;
   white-space: pre;
 }
+/* What an attention row says about its cause is a line of its own under the row, in full: the reason is not something a
+   hover has to reveal, and a phone has no hover. */
+.watch-note {
+  grid-column: 2 / -1;
+  margin: 0 0 2px;
+  font-size: 12px;
+  line-height: 1.5;
+}
 /* An attention row explains itself on the line, cut at the edge; the full text is its title. */
 .watch-text {
   min-width: 0;
@@ -264,5 +272,16 @@
   }
   .watch-detail {
     grid-area: detail;
+  }
+  /* An attention row reads: who and when, what it says, why, then the actions. */
+  .watch-attention .watch-row {
+    grid-template-areas:
+      "ico who time"
+      ". cmd cmd"
+      ". note note"
+      ". actions actions";
+  }
+  .watch-note {
+    grid-area: note;
   }
 }

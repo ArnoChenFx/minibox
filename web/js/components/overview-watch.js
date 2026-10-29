@@ -5,7 +5,14 @@ import { bytes, cpus, relTime } from "../lib/format.js";
 import { hostFilter, hostName, multiHost } from "../lib/hosts.js";
 import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
-import { ATTENTION_LABEL, attentionHref, attentionText, canRepair, scopeToHost } from "../lib/overview.js";
+import {
+  ATTENTION_LABEL,
+  attentionHref,
+  attentionNote,
+  attentionText,
+  canRepair,
+  scopeToHost,
+} from "../lib/overview.js";
 import { terminalHash } from "../lib/routes.js";
 import { confirmDialog, toast, toastError } from "../lib/ui.js";
 import { bindToggles, limitList } from "./list-toggle.js";
@@ -104,6 +111,8 @@ function attentionRow(item) {
   const label = ATTENTION_LABEL[item.kind] ? t(ATTENTION_LABEL[item.kind]) : item.kind;
   const text = attentionText(item, { bytes, cpus });
   const said = text ? t(text.key, text.params) : "";
+  const why = attentionNote(item);
+  const note = why ? `<div class="watch-note subtle">${esc(t(why.key, why.params))}</div>` : "";
   const repair = canRepair(item)
     ? `<button type="button" class="btn btn-sm" data-repair="${esc(item.kind)}" title="${esc(t("ov.forwardRepairHint"))}">${icon("shield")}${esc(t("ov.forwardRepair"))}</button>`
     : "";
@@ -113,6 +122,7 @@ function attentionRow(item) {
     <div class="watch-cmd"><span class="watch-text subtle" title="${esc(said)}">${esc(said)}</span></div>
     <span class="time">${item.at ? esc(relTime(item.at)) : ""}</span>
     <div class="watch-actions">${repair}<a class="btn btn-sm" href="${attentionHref(item)}">${icon("chevronRight")}${esc(t("ov.view"))}</a></div>
+    ${note}
   </li>`;
 }
 

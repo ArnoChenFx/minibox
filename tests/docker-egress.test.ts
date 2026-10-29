@@ -409,8 +409,43 @@ describe.skipIf(!enabled)("egress tiers on a real engine", () => {
     expect(before.detail).toContain("iptables");
     // The helper that read the rules runs in an image with iptables built in, made once on the first need. A build that
     // failed would have fallen back to plain Alpine, installed the packages inside the helper and left no such image.
-    const helper = await runtime.inspectImage(`${prefix}-host-firewall:alpine3.20`);
+    const helperTag = `${prefix}-host-firewall:alpine3.20`;
+    const builtLabel = `${prefix}.helper.built`;
+    const helper = await runtime.inspectImage(helperTag);
     expect(helper.labels[prefix]).toBe("true");
+    expect(Date.now() - Date.parse(helper.labels[builtLabel] ?? "")).toBeLessThan(10 * 60_000);
+
+    // An image a week old is built again, from a fresh base and without the cache, and the old one is removed. A build
+    // the engine did not understand would fail quietly and fall back to the old image, so what is checked is the new
+    // image itself: another id, and a built time of today.
+    const context = mkdtempSync(join(tmpdir(), "mbit-fwimage-"));
+    try {
+      writeFileSync(join(context, "Dockerfile"), "FROM alpine:3.20\nRUN apk add --no-cache iptables iptables-legacy\n");
+      await runtime.buildImage({
+        contextDir: context,
+        dockerfile: "Dockerfile",
+        tag: helperTag,
+        labels: {
+          [prefix]: "true",
+          [`${prefix}.internal`]: "true",
+          [builtLabel]: new Date(Date.now() - 8 * 24 * 3600 * 1000).toISOString(),
+        },
+      });
+    } finally {
+      rmSync(context, { recursive: true, force: true });
+    }
+    const stale = await runtime.inspectImage(helperTag);
+    expect(stale.id).not.toBe(helper.id);
+    expect((await runtime.checkHostForward(prefix, uplink?.bridge ?? "", "240.0.0.0/24")).forwarding).toBe(true);
+    const rebuilt = await runtime.inspectImage(helperTag);
+    expect(rebuilt.id).not.toBe(stale.id);
+    expect(Date.now() - Date.parse(rebuilt.labels[builtLabel] ?? "")).toBeLessThan(10 * 60_000);
+    expect(
+      await runtime.inspectImage(stale.id).then(
+        () => "still there",
+        () => "removed",
+      ),
+    ).toBe("removed");
 
     // What the owner's confirmation does: MiniBox's own chain, jumped to from FORWARD, so the uplink is accepted whatever
     // the policy is. Run twice, since a second confirmation must not add a second rule.

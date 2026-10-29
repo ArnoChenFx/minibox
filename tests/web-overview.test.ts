@@ -9,6 +9,7 @@ import {
   activityByBox,
   type AttentionItem,
   attentionHref,
+  attentionNote,
   attentionText,
   canRepair,
   type OverviewRow,
@@ -164,29 +165,41 @@ describe("attentionText", () => {
     expect(zh["ov.text.forward_blocked"]).toContain("开放出站的 Box 不受影响");
   });
 
-  test("a drop the host's own rules make, and an unclear one, read differently and promise no fix", () => {
-    // Only the policy case is an accident. Saying "confirm to let MiniBox add the rule" for a deliberate DROP would be
-    // asking the owner to undo their own decision.
+  test("the row's sentence is certain for a drop with a cause, and hedged for a reading that has none", () => {
     const params = SERVER_PARAMS["host.forward_blocked"];
-    expect(attentionText(itemOf("host.forward_blocked", { ...params, cause: "rule" }))?.key).toBe(
-      "ov.text.forward_blocked_rule",
-    );
+    for (const cause of ["policy", "rule", "unreachable"]) {
+      expect(attentionText(itemOf("host.forward_blocked", { ...params, cause }))?.key).toBe("ov.text.forward_blocked");
+    }
     expect(attentionText(itemOf("host.forward_blocked", { ...params, cause: "unclear" }))?.key).toBe(
       "ov.text.forward_blocked_unclear",
     );
-    expect(attentionText(itemOf("host.forward_blocked", { ...params, cause: "unreachable" }))?.key).toBe(
-      "ov.text.forward_blocked_unreachable",
-    );
-    for (const key of [
-      "ov.text.forward_blocked_rule",
-      "ov.text.forward_blocked_unclear",
-      "ov.text.forward_blocked_unreachable",
-    ]) {
-      expect(en[key]).not.toContain("Confirm to let MiniBox");
-      expect(zh[key]).not.toContain("确认后由 MiniBox");
+    // A view that carries no cause at all is not certain either.
+    const { cause: _cause, ...withoutCause } = params as Record<string, string | number>;
+    expect(attentionText(itemOf("host.forward_blocked", withoutCause))?.key).toBe("ov.text.forward_blocked_unclear");
+    expect(en["ov.text.forward_blocked_unclear"]).toContain("looks dropped");
+  });
+
+  test("each cause has a note of its own, and only a drop by policy promises MiniBox's rule", () => {
+    // Saying "confirm to let MiniBox add the rule" for a deliberate DROP would be asking the owner to undo their own
+    // decision, and for a rule that would never be reached it would promise a fix that does nothing.
+    const params = SERVER_PARAMS["host.forward_blocked"];
+    const notes = {
+      policy: "ov.note.forward_policy",
+      rule: "ov.note.forward_rule",
+      unreachable: "ov.note.forward_unreachable",
+      unclear: "ov.note.forward_unclear",
+    };
+    for (const [cause, key] of Object.entries(notes)) {
+      expect(attentionNote(itemOf("host.forward_blocked", { ...params, cause }))).toEqual({ key, params: {} });
+      const promises = cause === "policy";
+      expect(en[key]?.includes("Confirm to let MiniBox")).toBe(promises);
+      expect(zh[key]?.includes("确认后由 MiniBox")).toBe(promises);
       // i18n.test.ts checks that both languages exist; this checks the words differ from each other.
       expect(en[key]).not.toBe(zh[key]);
     }
+    const { cause: _cause, ...withoutCause } = params as Record<string, string | number>;
+    expect(attentionNote(itemOf("host.forward_blocked", withoutCause))?.key).toBe("ov.note.forward_unclear");
+    expect(attentionNote(itemOf("box.oom"))).toBeNull();
   });
 
   test("a kind the console does not know has no sentence", () => {

@@ -19,6 +19,17 @@ import type { FakeRuntime } from "./support/fake-runtime";
 
 const executablePath = chromiumFor("The forward warning browser test");
 
+interface Rect {
+  readonly left: number;
+  readonly right: number;
+  readonly top: number;
+  readonly bottom: number;
+}
+
+/** Whether two boxes share any area. Touching edges do not count. */
+const intersects = (a: Rect, b: Rect): boolean =>
+  a.left < b.right - 1 && b.left < a.right - 1 && a.top < b.bottom - 1 && b.top < a.bottom - 1;
+
 const DROPPED_POLICY = { forwarding: false, cause: "policy" as const, detail: "iptables FORWARD policy is DROP" };
 const DROPPED_RULE = {
   forwarding: false,
@@ -181,6 +192,93 @@ describe.skipIf(!executablePath)("the forward warning on the overview (real brow
     expect(seen.scrollWidth).toBeLessThanOrEqual(seen.clientWidth + 1);
     // A single clipped line would be one line tall; wrapping makes it taller.
     expect(seen.urlHeight).toBeGreaterThan(seen.lineHeight * 1.5);
+  });
+
+  test.each([1280, 390, 320])(
+    "at %i px the reason of the drop is on the page in full, not behind a hover, and overlaps nothing",
+    async (width) => {
+      await openWith(DROPPED_UNREACHABLE, width);
+      const found = await page.evaluate(() => {
+        // The page's DOM types are not in this project's tsconfig, so the shapes this script needs are declared here.
+        interface Box {
+          left: number;
+          right: number;
+          top: number;
+          bottom: number;
+          height: number;
+        }
+        interface Element {
+          querySelector(selector: string): Element | null;
+          getBoundingClientRect(): Box;
+          scrollWidth: number;
+          clientWidth: number;
+        }
+        interface Document extends Element {
+          documentElement: Element;
+        }
+        const scope = globalThis as unknown as {
+          document: Document;
+          getComputedStyle: (el: Element) => { whiteSpace: string; textOverflow: string; lineHeight: string };
+        };
+        const rowEl = scope.document.querySelector("[data-attn='host.forward_blocked']");
+        const noteEl = rowEl ? rowEl.querySelector(".watch-note") : null;
+        if (!rowEl || !noteEl) return null;
+        const rect = (el: Element | null): Box | null => {
+          if (!el) return null;
+          const b = el.getBoundingClientRect();
+          return { left: b.left, right: b.right, top: b.top, bottom: b.bottom, height: b.height };
+        };
+        const style = scope.getComputedStyle(noteEl);
+        return {
+          row: rect(rowEl),
+          note: rect(noteEl),
+          text: rect(rowEl.querySelector(".watch-cmd")),
+          actions: rect(rowEl.querySelector(".watch-actions")),
+          time: rect(rowEl.querySelector(".time")),
+          whiteSpace: style.whiteSpace,
+          textOverflow: style.textOverflow,
+          lineHeight: Number.parseFloat(style.lineHeight) || 0,
+          noteScroll: noteEl.scrollWidth,
+          noteClient: noteEl.clientWidth,
+          scroll: scope.document.documentElement.scrollWidth,
+          client: scope.document.documentElement.clientWidth,
+        };
+      });
+      expect(found).not.toBeNull();
+      const seen = found as NonNullable<typeof found>;
+      const [row, note, text, actions, time] = [seen.row, seen.note, seen.text, seen.actions, seen.time] as [
+        Rect,
+        Rect,
+        Rect,
+        Rect,
+        Rect,
+      ];
+      expect(await page.locator("[data-attn='host.forward_blocked'] .watch-note").isVisible()).toBe(true);
+      // The line wraps and is not cut: nothing hides its overflow, and nothing in it is wider than its box.
+      expect(seen.whiteSpace).toBe("normal");
+      expect(seen.textOverflow).not.toBe("ellipsis");
+      expect(seen.noteScroll).toBeLessThanOrEqual(seen.noteClient + 1);
+      // It is long, so it takes more than one line at any of these widths, and the row grows to hold it.
+      expect((note.bottom - note.top) / seen.lineHeight).toBeGreaterThan(1.5);
+      expect(note.left).toBeGreaterThanOrEqual(row.left - 1);
+      expect(note.right).toBeLessThanOrEqual(row.right + 1);
+      expect(note.bottom).toBeLessThanOrEqual(row.bottom + 1);
+      // And it overlaps none of the row's other parts, and the page gains no sideways scroll from it.
+      for (const other of [text, actions, time]) expect(intersects(note, other)).toBe(false);
+      expect(seen.scroll).toBeLessThanOrEqual(seen.client + 1);
+      // The reading order: on a phone the row says what it says, then why, then offers its buttons; on a wide screen the
+      // buttons are on the first line and the reason is under all of it.
+      expect(note.top).toBeGreaterThanOrEqual(text.bottom - 1);
+      if (width <= 640) expect(actions.top).toBeGreaterThanOrEqual(note.bottom - 1);
+      else expect(note.top).toBeGreaterThanOrEqual(actions.bottom - 1);
+    },
+  );
+
+  test("the reason is said in Chinese too, in full, on a phone", async () => {
+    await openWith(DROPPED_UNREACHABLE, 390, "zh-CN");
+    const note = page.locator("[data-attn='host.forward_blocked'] .watch-note");
+    expect(await note.isVisible()).toBe(true);
+    expect(await note.innerText()).toContain("永远走不到");
   });
 
   test("at 320 px the row keeps its reading order, with nothing overlapping and no sideways scroll", async () => {

@@ -320,6 +320,10 @@ export interface BuildSpec {
   target?: string;
   tag: string;
   labels: Record<string, string>;
+  /** Pulls the base image again even when the engine has it, as `--pull`. */
+  pull?: boolean;
+  /** Ignores the build cache, as `--no-cache`. With `pull`, this is what lets a rebuild take what changed upstream. */
+  noCache?: boolean;
   /** Called with each chunk of build output as the engine produces it. */
   onLog?: (chunk: string) => void;
   /** Closes the build stream. The call rejects with `AbortError` once that connection has closed. */

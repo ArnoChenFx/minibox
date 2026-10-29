@@ -12,6 +12,21 @@ import type { BoxSpec } from "../specs/types";
 const FIRST_PASS_MS = 30_000;
 
 /**
+ * The most different failures of one host that are logged before a pass reads it again. A host whose error text keeps
+ * changing would otherwise write a line on every pass, which is what logging a failure once is there to avoid.
+ */
+const FAILURE_KINDS_MAX = 8;
+
+/**
+ * What makes two failures the same one: the event and the error, with the ids that change from run to run (a helper
+ * container's name, an image id) left out, so the same problem does not look new every pass.
+ */
+function failureKey(event: string, fields: Record<string, unknown>): string {
+  const what = String(fields.error ?? fields.network ?? "");
+  return `${event}:${what.replace(/[0-9a-f]{8,}/gi, "#").slice(0, 200)}`;
+}
+
+/**
  * What the last pass of one host found. `forwarding: false` is the condition the overview lists; `detail` is what the
  * host's iptables backends said, for the log and the API. A host that never ran a pass has no entry.
  */
@@ -82,8 +97,12 @@ export class EgressForwardWatcher {
   private readonly state = new Map<string, ForwardState>();
   /** The pass each host is running, so two passes never read the same host at once and the repair can wait for one. */
   private readonly running = new Map<string, Promise<ForwardState | null>>();
-  /** Hosts whose last pass failed, so a host that stays broken is reported once and not on every pass. */
-  private readonly failing = new Set<string>();
+  /**
+   * The failures each host has had since a pass last read it, as `failureKey` tells them apart. A failure is logged
+   * when it is new to that run of failing, and quietly when the log already has it, so a host that stays broken is
+   * reported once and one that breaks in a different way is reported again.
+   */
+  private readonly failing = new Map<string, Set<string>>();
 
   constructor(private readonly options: ForwardOptions) {
     this.everyMs = options.everyMs ?? 600_000;
@@ -261,15 +280,21 @@ export class EgressForwardWatcher {
   }
 
   /**
-   * A host that cannot be read is reported once, when it starts failing, and quietly on the passes after it. A host
-   * that is down or has no internet for the helper would otherwise add the same error to the log every interval, which
-   * hides the lines that matter.
+   * A host that cannot be read is reported when it starts failing, and again when it fails in a different way, but not
+   * on the passes that repeat a failure the log already has. A host that is down or has no internet for the helper would
+   * otherwise add the same error to the log every interval, which hides the lines that matter, and a different error
+   * behind the first one would be hidden with it.
    */
   private failed(hostId: string, event: string, fields: Record<string, unknown>, level: "warn" | "error" = "error") {
-    const repeat = this.failing.has(hostId);
-    this.failing.add(hostId);
-    if (repeat) log.debug(event, { host: hostId, ...fields });
-    else if (level === "warn") log.warn(event, { host: hostId, ...fields });
+    const seen = this.failing.get(hostId) ?? new Set<string>();
+    this.failing.set(hostId, seen);
+    const key = failureKey(event, fields);
+    if (seen.has(key) || seen.size >= FAILURE_KINDS_MAX) {
+      log.debug(event, { host: hostId, ...fields });
+      return;
+    }
+    seen.add(key);
+    if (level === "warn") log.warn(event, { host: hostId, ...fields });
     else log.error(event, { host: hostId, ...fields });
   }
 

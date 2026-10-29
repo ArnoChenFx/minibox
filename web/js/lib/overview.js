@@ -32,6 +32,22 @@ export const ATTENTION_LABEL = Object.freeze({
  */
 export const canRepair = (item) => item.kind === "host.forward_blocked" && item.params.cause === "policy";
 
+/** The dictionary key of what each cause of a blocked uplink says under its row: why, and what to do about it. */
+const FORWARD_NOTE = Object.freeze({
+  policy: "ov.note.forward_policy",
+  rule: "ov.note.forward_rule",
+  unreachable: "ov.note.forward_unreachable",
+});
+
+/**
+ * What an item says about its cause, in full, or null for a kind with nothing more to say. The row's own sentence is
+ * cut at the edge of the line, so a reason that must be read goes here, in a line of its own, where it is not cut.
+ */
+export function attentionNote(item) {
+  if (item.kind !== "host.forward_blocked") return null;
+  return { key: FORWARD_NOTE[item.params.cause] ?? "ov.note.forward_unclear", params: {} };
+}
+
 /** The page of the storage or host an item names. Box conditions open the box's tab that shows them instead. */
 const PAGE_OF = Object.freeze({
   "volume.over_limit": "#/storage/volumes",
@@ -94,13 +110,8 @@ export function attentionText(item, { bytes = String, cpus = String } = {}) {
     case "host.memory_overcommit":
       return { key: "ov.text.memory_overcommit", params: { booked: bytes(p.booked), limit: bytes(p.limit) } };
     case "host.forward_blocked": {
-      // The row says which kind of drop it is, because only one of the four comes with a button.
-      const key =
-        {
-          policy: "ov.text.forward_blocked",
-          rule: "ov.text.forward_blocked_rule",
-          unreachable: "ov.text.forward_blocked_unreachable",
-        }[p.cause] ?? "ov.text.forward_blocked_unclear";
+      // A reading that is not certain says so; the three that are drop the uplink, and their cause is the note's to say.
+      const key = FORWARD_NOTE[p.cause] ? "ov.text.forward_blocked" : "ov.text.forward_blocked_unclear";
       return { key, params: { count: p.count, boxes: p.boxes, bridge: p.bridge } };
     }
     default:

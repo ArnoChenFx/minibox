@@ -60,6 +60,16 @@ async function gated(name = "gated") {
 const errors = () => lines.filter((line) => line.includes('"level":"error"'));
 const forwardCalls = () => runtime.callsTo("checkHostForward").length;
 
+/** The next reads of the host fail with `message`. */
+const failWith = (message: string) => {
+  runtime.checkHostForward = async () => {
+    throw new Error(message);
+  };
+};
+
+/** The lines that report a pass that could not read its host. */
+const failures = () => errors().filter((line) => line.includes("egress.forward_pass_failed"));
+
 describe("a host that cannot be read does not fill the log", () => {
   test("a host that stays unreadable is logged once, and reading it again is said once", async () => {
     await gated();
@@ -72,6 +82,51 @@ describe("a host that cannot be read does not fill the log", () => {
     await watcher.tick();
     await watcher.tick();
     expect(lines.filter((line) => line.includes("egress.forward_pass_recovered"))).toHaveLength(1);
+  });
+
+  test("a different failure behind an unrecovered one is logged as well, once, and none of them again", async () => {
+    await gated();
+    failWith("the engine is not reachable");
+    await watcher.tick();
+    failWith("the helper exited with 4: no iptables binary");
+    await watcher.tick();
+    expect(failures()).toHaveLength(2);
+    expect(failures()[1]).toContain("no iptables binary");
+    // Either one again, in any order, is no news while the host has not been read in between.
+    failWith("the engine is not reachable");
+    await watcher.tick();
+    failWith("the helper exited with 4: no iptables binary");
+    await watcher.tick();
+    expect(failures()).toHaveLength(2);
+  });
+
+  test("the same failure is news again once the host has been read in between", async () => {
+    await gated();
+    failWith("helper failed");
+    await watcher.tick();
+    runtime.checkHostForward = async () => FORWARDING;
+    await watcher.tick();
+    failWith("helper failed");
+    await watcher.tick();
+    expect(failures()).toHaveLength(2);
+  });
+
+  test("an id that changes from pass to pass does not make a failure a new one", async () => {
+    await gated();
+    for (const name of ["mbxhlp1a2b3c4d", "mbxhlp5e6f7a8b", "mbxhlp9c0d1e2f"]) {
+      failWith(`No such container: ${name}`);
+      await watcher.tick();
+    }
+    expect(failures()).toHaveLength(1);
+  });
+
+  test("a host whose error keeps changing is logged a few times and then quietly", async () => {
+    await gated();
+    for (let kind = 0; kind < 12; kind++) {
+      failWith(`failure number ${kind}`);
+      await watcher.tick();
+    }
+    expect(failures()).toHaveLength(8);
   });
 
   test("an offline host is not read at all, and is read again once it is back", async () => {
