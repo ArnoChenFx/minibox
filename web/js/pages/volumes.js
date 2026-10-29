@@ -20,6 +20,7 @@ import { usageCellHtml } from "../components/volume-usage.js";
 import { api } from "../lib/api.js";
 import { esc } from "../lib/dom.js";
 import { bytes } from "../lib/format.js";
+import { hostsNow, onHosts, refreshHosts } from "../lib/hosts.js";
 import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
 import { applyPoolDraft, poolChanges, poolDraft, poolForm, renameRole } from "../lib/pool-form.js";
@@ -33,7 +34,7 @@ import {
   saveGroupBy,
   volumeSearchFields,
 } from "../lib/volume-list.js";
-import { latestByVolume, snapshotPlan, stagedMountsByVolume } from "../lib/volume-row.js";
+import { agentVolumeBlock, latestByVolume, snapshotPlan, stagedMountsByVolume } from "../lib/volume-row.js";
 import { headerState, keepSelectable, toggleAll, toggleOne } from "../lib/volume-select.js";
 
 /**
@@ -51,7 +52,10 @@ const VOLUME_COLUMNS = 9;
 /** How many volumes a list or group shows before its "show all" toggle. */
 const VOLUME_LIMIT = 10;
 
-function volumeRow(volume, { selected, pools, latest, staged }) {
+function volumeRow(volume, { selected, pools, latest, staged, hosts }) {
+  // An agent host runs boxes only, so its volumes cannot be browsed, measured or snapshotted. The reason is one key for
+  // all three buttons, and the page says it once above the table instead of on every button.
+  const agent = agentVolumeBlock(volume, hosts);
   const over =
     volume.usage?.level === "hard" || volume.usage?.level === "soft" ? ` volume-over-${volume.usage.level}` : "";
   const role = volume.role ? `${roleLabel(volume.role)} · ` : "";
@@ -65,15 +69,15 @@ function volumeRow(volume, { selected, pools, latest, staged }) {
   return `<tr class="${over.trim()}">
     <td class="select-cell">${selectCellHtml(volume, selected)}</td>
     <td class="vol-name"><strong class="truncate" title="${esc(volume.name)}">${esc(volume.name)}</strong><div class="subtle truncate" title="${esc(volume.id)}">${esc(role)}<span class="mono">${esc(volume.id)}</span></div></td>
-    <td class="vol-usage" data-label="${esc(t("vol.colSize"))}">${usageCellHtml(volume)}</td>
+    <td class="vol-usage" data-label="${esc(t("vol.colSize"))}">${usageCellHtml(volume, agent)}</td>
     <td class="${mountsClass}" data-label="${esc(t("vol.colMounts"))}">${mountsHtml(volume)}</td>
     <td class="vol-owner nowrap"${ownerTip} data-label="${esc(t("vol.colOwnership"))}">${esc(owner)}</td>
     <td class="vol-pool" data-label="${esc(t("vol.colPool"))}">${poolHtml(volume, pools.get(volume.pool))}</td>
     <td class="${latestClass}" data-label="${esc(t("vol.colLatest"))}">${latestHtml(checkpoint)}</td>
     <td class="vol-status-cell nowrap">${statusHtml(volume, staged.get(volume.id))}</td>
     <td class="vol-actions nowrap"><div class="actions">
-      ${rowButton("browse", volume, "folder", t("vol.browse"))}
-      ${rowButton("snapshot", volume, "camera", t("vol.snapshot"), { block: snapshotPlan(volume).block })}
+      ${rowButton("browse", volume, "folder", t("vol.browse"), { block: agent })}
+      ${rowButton("snapshot", volume, "camera", t("vol.snapshot"), { block: agent || snapshotPlan(volume).block })}
       ${rowButton("mount-to", volume, "link", t("vol.mountTo"))}
       ${rowButton("delete", volume, "trash", t("vol.delete"), { danger: true })}
     </div></td>
@@ -201,6 +205,8 @@ export function render(view) {
   let boxes = [];
   let latest = new Map();
   let stagedMounts = new Map();
+  /** The hosts as /api/hosts lists them, read before the table draws: a volume on an agent host cannot use three of its buttons. */
+  let hosts = [];
   let poolsOpen = false;
   let query = "";
   let groupBy = loadGroupBy();
@@ -225,6 +231,7 @@ export function render(view) {
           <div class="group-by"><label for="volGroup">${t("vol.groupBy")}</label><select class="select" id="volGroup">${groupOptions}</select></div>
         </div>
       </div>
+      <p class="help vol-agent-note" id="volAgentNote" hidden>${esc(t("vol.agentHostNote"))}</p>
       <div class="bulk-bar" id="volBulk" hidden>
         <span id="volBulkCount"></span>
         <div class="bulk-actions">
@@ -329,6 +336,9 @@ export function render(view) {
     matches = volumes.length
       ? filterBySearch(volumes, query, (volume) => volumeSearchFields(volume, { boxNames, roleLabel }))
       : [];
+    // One line for the whole table: the rows that sit on an agent host share one reason, so the buttons say it in their
+    // tooltip and the table says it once, rather than repeating a long sentence on every row.
+    view.querySelector("#volAgentNote").hidden = !matches.some((volume) => agentVolumeBlock(volume, hosts));
     syncSelection();
     if (!volumes.length) {
       body.innerHTML = `<tr><td colspan="${VOLUME_COLUMNS}">${emptyState({ iconName: "folder", title: t("vol.none"), text: "" })}</td></tr>`;
@@ -351,7 +361,7 @@ export function render(view) {
         limit: VOLUME_LIMIT,
       });
       const html = shown
-        .map((volume) => volumeRow(volume, { selected, pools: poolMap, latest, staged: stagedMounts }))
+        .map((volume) => volumeRow(volume, { selected, pools: poolMap, latest, staged: stagedMounts, hosts }))
         .join("");
       return toggle ? `${html}<tr class="toggle-row"><td colspan="${VOLUME_COLUMNS}">${toggle}</td></tr>` : html;
     };
@@ -395,6 +405,9 @@ export function render(view) {
   });
 
   const load = async () => {
+    // The host list decides whether a volume sits on an agent host, so it is read before the table draws.
+    await refreshHosts();
+    hosts = hostsNow();
     const [poolBody, volumeBody, boxBody, checkpointBody] = await Promise.all([
       api("/api/pools?refresh=true"),
       api("/api/volumes"),
@@ -537,6 +550,12 @@ export function render(view) {
     draw();
   };
 
+  // The host list arrives once at boot and again every 15 seconds, so a table drawn before it loads is redrawn with it.
+  const offHosts = onHosts((list) => {
+    hosts = list;
+    drawVolumes();
+  });
+
   view.addEventListener("click", async (event) => {
     const target = event.target.closest("[data-action]");
     if (!target || !view.contains(target)) return;
@@ -616,4 +635,5 @@ export function render(view) {
     view.querySelector("#volBody").innerHTML = failure;
     view.querySelector("#volRows").innerHTML = `<tr><td colspan="${VOLUME_COLUMNS}">${failure}</td></tr>`;
   });
+  return () => offHosts();
 }

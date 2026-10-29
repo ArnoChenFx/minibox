@@ -3,7 +3,8 @@ import { groupCheckpoints } from "../lib/checkpoint-groups.js";
 import { kindsOf, rowActions } from "../lib/checkpoint-state.js";
 import { esc } from "../lib/dom.js";
 import { bytes, dateTime, relTime } from "../lib/format.js";
-import { hostOfBox } from "../lib/host-list.js";
+import { boxOnAgentHost, hostOfBox } from "../lib/host-list.js";
+import { hostsNow, onHosts, refreshHosts } from "../lib/hosts.js";
 import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
 import { subscribe } from "../lib/live.js";
@@ -80,15 +81,22 @@ function rowHtml(checkpoint, group) {
   </tr>`;
 }
 
-function groupHeadHtml(group, folded) {
+/**
+ * A box's group head. `hosts` is the host list, read so the take button of a box on an agent host is disabled with the
+ * reason: a checkpoint commits a system image and copies the volumes through a helper, and an agent can run neither.
+ */
+function groupHeadHtml(group, folded, hosts) {
   const size = group.rows.length ? `<span class="subtle">${esc(bytes(group.bytes))}</span>` : "";
   const deleted = group.deleted ? `<span class="badge">${esc(t("ck.boxDeleted"))}</span>` : "";
   // A group named after a volume holds snapshots of that volume, not of a box: the badge says so.
   const volume = group.volume ? `<span class="badge badge-accent">${esc(t("ck.volumeGroup"))}</span>` : "";
   const pending = group.pending ? `<span class="badge badge-warning">${esc(t("ck.pendingTitle"))}</span>` : "";
+  // A box on an agent host cannot take a checkpoint, so its take button says why instead of failing after the click.
+  const agent = group.box ? boxOnAgentHost(group.box, hosts) : false;
+  const take = agent ? `${t("act.checkpoint")}: ${t("bd.agentCheckpoints")}` : t("act.checkpoint");
   const tools = group.box
     ? `<a class="icon-btn" href="#/boxes/${enc(group.box.id)}/settings/checkpoints" title="${esc(t("ck.openBox"))}" aria-label="${esc(t("ck.openBox"))}">${icon("settings")}</a>
-       <button type="button" class="icon-btn" data-action="ck-take" data-box="${esc(group.id)}" title="${esc(t("act.checkpoint"))}" aria-label="${esc(t("act.checkpoint"))}">${icon("camera")}</button>`
+       <button type="button" class="icon-btn" data-action="ck-take" data-box="${esc(group.id)}" title="${esc(take)}" aria-label="${esc(t("act.checkpoint"))}"${agent ? " disabled" : ""}>${icon("camera")}</button>`
     : "";
   return `<tr class="group-row sck-group" data-group="${esc(group.id)}"><td colspan="${COLUMNS}"><div class="sck-group-head">
     <button type="button" class="group-toggle" data-action="ck-group" data-group="${esc(group.id)}" aria-expanded="${!folded}"${group.rows.length ? "" : " disabled"}>
@@ -108,6 +116,8 @@ export function mountStorageCheckpoints(root, { focus = "" } = {}) {
   let seq = 0;
   let groups = [];
   let usage = null;
+  /** The host list, read with the checkpoints so a box on an agent host says why its take button is off. */
+  let hosts = [];
 
   const draw = () => {
     const shown = focus ? groups.filter((group) => group.id === focus) : groups;
@@ -123,13 +133,13 @@ export function mountStorageCheckpoints(root, { focus = "" } = {}) {
       ? shown
           .map((group) => {
             const folded = isToggled(root, `ckg:${group.id}`);
-            if (folded || !group.rows.length) return groupHeadHtml(group, folded);
+            if (folded || !group.rows.length) return groupHeadHtml(group, folded, hosts);
             const { shown: rows, toggle } = limitList(root, `ck:${group.id}`, group.rows, {
               limit: GROUP_LIMIT,
               keep: (row) => row.pinned,
             });
             const more = toggle ? `<tr class="toggle-row"><td colspan="${COLUMNS}">${toggle}</td></tr>` : "";
-            return groupHeadHtml(group, false) + rows.map((row) => rowHtml(row, group)).join("") + more;
+            return groupHeadHtml(group, false, hosts) + rows.map((row) => rowHtml(row, group)).join("") + more;
           })
           .join("")
       : `<tr><td colspan="${COLUMNS}">${emptyState({ iconName: "history", title: t("ck.noneAnywhere"), text: esc(t("ck.noneAnywhereText")) })}</td></tr>`;
@@ -157,6 +167,9 @@ export function mountStorageCheckpoints(root, { focus = "" } = {}) {
   const load = async () => {
     const token = ++seq;
     try {
+      // The host list decides whether a box sits on an agent host, so it is read before the groups draw.
+      await refreshHosts();
+      hosts = hostsNow();
       const [{ checkpoints }, { boxes }, usageBody, pendingBody] = await Promise.all([
         api("/api/checkpoints"),
         api("/api/boxes?stats=false"),
@@ -218,6 +231,11 @@ export function mountStorageCheckpoints(root, { focus = "" } = {}) {
   };
   root.addEventListener("click", onClick);
 
+  const offHosts = onHosts((list) => {
+    hosts = list;
+    if (!disposed) draw();
+  });
+
   const off = subscribe("task", (frame) => {
     if (frame.kind === "status" && frame.status !== "running" && !disposed) void load();
   });
@@ -227,6 +245,7 @@ export function mountStorageCheckpoints(root, { focus = "" } = {}) {
   return () => {
     disposed = true;
     off();
+    offHosts();
     root.removeEventListener("click", onClick);
   };
 }

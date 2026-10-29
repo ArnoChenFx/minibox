@@ -200,6 +200,122 @@ describe.skipIf(!executablePath)("a Box on an agent host (real browser)", () => 
   );
 
   test(
+    "a volume on an agent host has its three buttons off, and asks for nothing that would fail",
+    async () => {
+      const context = await signedIn();
+      try {
+        const page = await context.newPage();
+        const requests = watch(page);
+        await page.route("**/api/hosts", hostsAs([{ id: "edge", name: "Edge lab", transport: "agent" }]));
+        // The volumes the page reads are put on the agent host, as `/api/volumes` lists them: `hostId` is always there.
+        await page.route("**/api/volumes", async (route) => {
+          const response = await route.fetch();
+          const body = (await response.json()) as { volumes: Record<string, unknown>[] };
+          await route.fulfill({
+            response,
+            json: { ...body, volumes: body.volumes.map((volume) => ({ ...volume, hostId: "edge" })) },
+          });
+        });
+        // The boxes are put on the agent host too, so the checkpoint timeline's group for one is an agent host's group.
+        await page.route(/\/api\/boxes\?/, async (route) => {
+          const response = await route.fetch();
+          const body = (await response.json()) as { boxes: Record<string, unknown>[] };
+          await route.fulfill({
+            response,
+            json: { ...body, boxes: body.boxes.map((row) => ({ ...row, hostId: "edge" })) },
+          });
+        });
+
+        await page.goto(`${base}/#/storage/volumes`);
+        await webExpect(page.locator("#volRows .vol-name").first()).toBeVisible();
+        // The workspace volume is the one whose snapshot its own plan allows, so its three buttons are the three this test
+        // is about: the cache volume is already left out of checkpoints for a reason of its own.
+        const row = page.locator("#volRows tr", { hasText: "Workspace" }).first();
+        const browse = row.locator("[data-action='browse']");
+        const snapshot = row.locator("[data-action='snapshot']");
+        const measure = row.locator("[data-action='measure']");
+        for (const button of [browse, snapshot, measure]) await webExpect(button).toBeDisabled();
+        // The reason is readable: the label, then one sentence naming the agent host.
+        await webExpect(browse).toHaveAttribute("title", `${english("vol.browse")}: ${english("vol.agentHost")}`);
+        await webExpect(snapshot).toHaveAttribute("title", `${english("vol.snapshot")}: ${english("vol.agentHost")}`);
+        await webExpect(measure).toHaveAttribute("title", `${english("vol.measure")}: ${english("vol.agentHost")}`);
+        // One line above the table says it for the whole page, instead of the long sentence on every row.
+        await webExpect(page.locator("#volAgentNote")).toBeVisible();
+        await webExpect(page.locator("#volAgentNote")).toHaveText(english("vol.agentHostNote"));
+        // Nothing the three buttons would send was sent: no file listing, no usage read, no checkpoint.
+        expect(requests.filter((path) => path.includes("/files"))).toEqual([]);
+        expect(requests.filter((path) => path.endsWith("/usage"))).toEqual([]);
+        expect(requests.filter((path) => path.endsWith("/checkpoints") && path.startsWith("/api/volumes/"))).toEqual(
+          [],
+        );
+        await webExpect(page.locator("#toasts .toast.error")).toHaveCount(0);
+
+        // The storage page's Checkpoints tab: the take button of a box on the agent host is off, with the reason.
+        await page.goto(`${base}/#/storage/checkpoints`);
+        await webExpect(page.locator("#sckRows .sck-group").first()).toBeVisible();
+        const take = page.locator("#sckRows [data-action='ck-take']").first();
+        await webExpect(take).toBeDisabled();
+        await webExpect(take).toHaveAttribute(
+          "title",
+          `${english("act.checkpoint")}: ${english("bd.agentCheckpoints")}`,
+        );
+        expect(requests.filter((path) => /^\/api\/boxes\/[^/]+\/checkpoints$/.test(path))).toEqual([]);
+      } finally {
+        await context.close();
+      }
+    },
+    TIMEOUT_MS,
+  );
+
+  test(
+    "a volume on a host that is not an agent keeps all three buttons",
+    async () => {
+      const context = await signedIn();
+      try {
+        const page = await context.newPage();
+        const requests = watch(page);
+        await page.route("**/api/hosts", hostsAs([{ id: "edge", name: "Edge lab", transport: "unix" }]));
+        await page.route("**/api/volumes", async (route) => {
+          const response = await route.fetch();
+          const body = (await response.json()) as { volumes: Record<string, unknown>[] };
+          await route.fulfill({
+            response,
+            json: { ...body, volumes: body.volumes.map((volume) => ({ ...volume, hostId: "edge" })) },
+          });
+        });
+        await page.route(/\/api\/boxes\?/, async (route) => {
+          const response = await route.fetch();
+          const body = (await response.json()) as { boxes: Record<string, unknown>[] };
+          await route.fulfill({
+            response,
+            json: { ...body, boxes: body.boxes.map((row) => ({ ...row, hostId: "edge" })) },
+          });
+        });
+
+        await page.goto(`${base}/#/storage/volumes`);
+        await webExpect(page.locator("#volRows .vol-name").first()).toBeVisible();
+        const row = page.locator("#volRows tr", { hasText: "Workspace" }).first();
+        for (const action of ["browse", "snapshot", "measure"]) {
+          await webExpect(row.locator(`[data-action='${action}']`)).toBeEnabled();
+        }
+        await webExpect(page.locator("#volAgentNote")).toBeHidden();
+        // The file browser opens and asks for its listing, which this host answers.
+        await row.locator("[data-action='browse']").click();
+        await webExpect.poll(() => requests.some((path) => path.includes("/files"))).toBe(true);
+
+        await page.goto(`${base}/#/storage/checkpoints`);
+        await webExpect(page.locator("#sckRows .sck-group").first()).toBeVisible();
+        const take = page.locator("#sckRows [data-action='ck-take']").first();
+        await webExpect(take).toBeEnabled();
+        await webExpect(take).toHaveAttribute("title", english("act.checkpoint"));
+      } finally {
+        await context.close();
+      }
+    },
+    TIMEOUT_MS,
+  );
+
+  test(
     "the same entries come back once the host is not an agent",
     async () => {
       const context = await signedIn();
