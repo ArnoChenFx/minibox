@@ -5,7 +5,13 @@ export interface ScheduleLike {
   timezone?: string | null;
   timezoneUnknown?: boolean;
   nextRunAt: string;
-  lastRun: { at: string; status: string; error?: string | null } | null;
+  lastRun: {
+    at: string;
+    status: string;
+    error?: string | null;
+    errorKey?: string | null;
+    errorParams?: Record<string, string | number> | null;
+  } | null;
 }
 
 /** The words a card uses for its own work, so a checkpoint card and a backup card share the markup. */

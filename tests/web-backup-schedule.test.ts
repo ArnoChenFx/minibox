@@ -49,6 +49,24 @@ const dailySchedule = {
   lastRun: { at: at(0), status: "failed", backupId: null, bytes: null, error: "<b>boom</b>" },
 };
 
+/** A run that failed for a reason the server has a message for, and one it only has the English text of. */
+const keyedFailure = {
+  ...intervalSchedule,
+  lastRun: {
+    at: at(0),
+    status: "failed",
+    backupId: null,
+    bytes: null,
+    error: "A backup was already running when this one was due, so it was skipped.",
+    errorKey: "backup_schedule_busy",
+    errorParams: null,
+  },
+};
+const unkeyedFailure = {
+  ...intervalSchedule,
+  lastRun: { ...keyedFailure.lastRun, error: "ENOSPC: no space left on device", errorKey: null },
+};
+
 type Markup = Record<string, string>;
 
 function browserGlobals(language: string): string[] {
@@ -88,6 +106,33 @@ const markup = runConsole<Markup>(
     fieldsOff: ui.scheduleFieldsHtml(null, { ids: ${JSON.stringify(IDS)}, help: "st.backupScheduleHelp" }),
   };`,
 );
+
+const failures = (language: string) =>
+  runConsole<Markup>(
+    language,
+    `return {
+      keyed: ui.scheduleCardHtml(${JSON.stringify(keyedFailure)}, { labels: ${JSON.stringify(LABELS)}, action: "a" }),
+      unkeyed: ui.scheduleCardHtml(${JSON.stringify(unkeyedFailure)}, { labels: ${JSON.stringify(LABELS)}, action: "a" }),
+      zoned: ui.zonedTime(${JSON.stringify(at(60))}, "Asia/Shanghai"),
+    };`,
+  );
+
+describe("a failed scheduled run is said in the console's language", () => {
+  test("a reason the server has a message for is translated, in each language", () => {
+    expect(failures("en").keyed).toContain(escaped(en["err.backup_schedule_busy"] ?? ""));
+    expect(failures("zh-CN").keyed).toContain(escaped(zh["err.backup_schedule_busy"] ?? ""));
+    expect(failures("zh-CN").keyed).not.toContain("was already running");
+  });
+
+  test("a reason that has only the server's English text is shown as it is", () => {
+    expect(failures("zh-CN").unkeyed).toContain("ENOSPC: no space left on device");
+  });
+
+  test("a time is shown with the zone it is in, which the saved toast uses too", () => {
+    expect(failures("en").zoned).toContain("Asia/Shanghai");
+    expect(SOURCE).toContain("zonedTime(saved.schedule.nextRunAt, browserTimezone())");
+  });
+});
 
 describe("the backup schedule card", () => {
   test("a schedule that is off says so, and offers to set one", () => {

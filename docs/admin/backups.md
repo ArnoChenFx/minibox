@@ -198,10 +198,12 @@ MiniBox can back itself up on a schedule, so you do not need cron. A schedule is
 A scheduled run needs a passphrase, and nobody is there to type one, so MiniBox reads it from `BACKUP_PASSPHRASE` in `.env`:
 
 ```bash
-BACKUP_PASSPHRASE='correct horse battery staple'
+BACKUP_PASSPHRASE=correct horse battery staple
 ```
 
-The rules are the same as a passphrase you type: 12 to 1024 characters, with no leading or trailing spaces and no line breaks. Blank leaves the passphrase unset, and a due run then fails once with a message saying so. An invalid value stops MiniBox at startup rather than leaving every run failed.
+The rules are the same as a passphrase you type: 12 to 1024 characters, with no leading or trailing spaces and no line breaks. Blank leaves the passphrase unset: MiniBox then refuses to save a schedule, and says why, instead of saving one that would fail at its first slot. A schedule saved before the passphrase went missing fails once at its next slot, with the same message. An invalid value stops MiniBox at startup rather than leaving every run failed.
+
+Keep `$` out of a passphrase in `.env`. Bun expands `$` in `.env` values even inside quotes, so `'ab$cd'` reaches MiniBox as `ab`, and a `#` cuts an unquoted value there too, so quote a passphrase that has one. If the passphrase needs a `$`, leave it out of `.env` and set `BACKUP_PASSPHRASE` in the process environment instead, such as the `environment:` of a compose file or a systemd `Environment=`. MiniBox reads `.env` on its own as well and refuses to start when the two readings differ, because it will not seal archives with a passphrase you did not write. Escaping the `$` as `\$` does not get around that: Bun understands it, but the two readings still differ.
 
 Set the schedule in **Settings → Backups**, under **Schedule**, with **Set a schedule**:
 
@@ -219,7 +221,7 @@ minibox backup schedule get
 minibox backup schedule clear
 ```
 
-`PUT /api/backups/schedule` sets it with `{ "everyHours": 6 }`, or with `{ "at": "02:30", "timezone": "Asia/Shanghai" }`, not both. `GET` on the same path reads it, `DELETE` removes it, and a `null` schedule means none is set. A daily time takes an IANA zone such as `Asia/Shanghai`; without one it is UTC, and a UTC offset such as `+08:00` is refused. The MCP storage toolset offers `get_backup_schedule`, `set_backup_schedule` and `clear_backup_schedule`. These operations are for the owner only.
+`PUT /api/backups/schedule` sets it with `{ "everyHours": 6 }`, or with `{ "at": "02:30", "timezone": "Asia/Shanghai" }`, not both. `GET` on the same path reads it, `DELETE` removes it, and a `null` schedule means none is set. `PUT` answers `409` when the server has no `BACKUP_PASSPHRASE`. A daily time takes an IANA zone such as `Asia/Shanghai`; without one it is UTC, and a UTC offset such as `+08:00` is refused. The MCP storage toolset offers `get_backup_schedule`, `set_backup_schedule` and `clear_backup_schedule`. These operations are for the owner only.
 
 What a run does:
 
@@ -231,7 +233,7 @@ What a run does:
 
 Scheduled backups are sealed with the passphrase in `BACKUP_PASSPHRASE`, which stays in `.env` on the server. Keep it apart from the archives: it is what opens them.
 
-If `BACKUP_PASSPHRASE` differs between the process environment and `.env` (for example after Bun expands a `$` in it), startup refuses the ambiguous value rather than seal archives with a passphrase you did not type. Use one source, keep the exact passphrase somewhere else, and try a restore before you rely on the schedule.
+Keep the exact passphrase somewhere other than this server, and try a restore before you rely on the schedule. If `BACKUP_PASSPHRASE` differs between the process environment and `.env`, startup refuses it (see above) rather than seal archives with a passphrase you did not type.
 
 ### Cron, if you prefer it
 

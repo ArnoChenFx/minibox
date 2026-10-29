@@ -10,7 +10,7 @@
 ### 新增
 
 - 本地备份支持 `BACKUP_DIR` 与 `BACKUP_KEEP`：指定归档目录并保留最新的 N 份，符号链接按实际路径排除。新目录为 700，已有自定义目录保留权限，归档和记录为 600。
-- MiniBox 可以按计划备份自己（[#154](https://github.com/ArnoChenFx/minibox/issues/154)）：实例只有一条计划，每隔 1 到 720 小时一次，或每天在 IANA 时区的某个时间一次，默认关闭。计划保存在 `DATA_DIR/backup-schedule.json`（权限 600），因此重启后仍然有效。到点的运行通过手动备份所用的同一个 `BackupService.create` 做一份备份，之后照常应用 `BACKUP_KEEP`，所以计划不会把磁盘塞满；失败的运行只记录一次日志并等到下一个时间点；停机期间到点的运行在启动后只执行一次，不会补上错过的每一次。按计划备份的口令取自新增的 `BACKUP_PASSPHRASE`，因为计划运行时没有人可以输入口令。API 新增 `GET`/`PUT`/`DELETE /api/backups/schedule`（操作 `backup.schedule.get`、`backup.schedule.set`、`backup.schedule.clear`，仅所有者），CLI 新增 `minibox backup schedule get|set|clear`，MCP 存储工具集新增 `get_backup_schedule`、`set_backup_schedule`、`clear_backup_schedule`，设置页新增「备份」分类。中英文《备份》文档说明计划的含义、设置方法、`BACKUP_KEEP` 的作用，并保留 cron 作为偏好者的选择；配置参考补充 `BACKUP_PASSPHRASE`。
+- MiniBox 可以按计划备份自己（[#154](https://github.com/ArnoChenFx/minibox/issues/154)）：每隔 1 到 720 小时一次，或每天在某个时区的固定时间一次，默认关闭。到点用 `BACKUP_PASSPHRASE` 做一份备份并应用 `BACKUP_KEEP`；服务器没有设口令时拒绝保存计划。REST、MCP、CLI（`minibox backup schedule`）和设置页都可用，见[备份](docs/admin/backups.md#scheduled-backups)。
 - Agent 配对命令使用当前发布版镜像标签；非 HTTPS 连接显示警告。
 - 概览页提供首次使用引导，覆盖模板、Box 和 Agent 令牌配置。
 - 模板支持编辑构建来源、描述、启动命令和端口。所有者可编辑任意模板，令牌只能编辑自己创建的模板；官方模板的来源固定。

@@ -93,6 +93,8 @@ export interface OperationContext {
   readonly backups?: BackupService;
   /** The one backup schedule of this instance. The executor fills it in; its operations read it. */
   readonly backupSchedule?: BackupScheduleStore;
+  /** Whether the server has a `BACKUP_PASSPHRASE`. A schedule is refused without one. Absent means not known. */
+  readonly backupPassphraseSet?: boolean;
   /** Off-site targets. The executor fills it in; target operations read it. */
   readonly targets?: TargetService;
   /** The owner's SSH keys for direct SSH. The executor fills it in; SSH key operations read it. */

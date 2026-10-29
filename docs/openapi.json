@@ -30994,6 +30994,31 @@
                                         "string",
                                         "null"
                                       ]
+                                    },
+                                    "errorKey": {
+                                      "type": [
+                                        "string",
+                                        "null"
+                                      ]
+                                    },
+                                    "errorParams": {
+                                      "anyOf": [
+                                        {
+                                          "type": "object",
+                                          "propertyNames": {
+                                            "type": "string"
+                                          },
+                                          "additionalProperties": {
+                                            "type": [
+                                              "string",
+                                              "number"
+                                            ]
+                                          }
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
                                     }
                                   },
                                   "required": [
@@ -31001,7 +31026,9 @@
                                     "status",
                                     "backupId",
                                     "bytes",
-                                    "error"
+                                    "error",
+                                    "errorKey",
+                                    "errorParams"
                                   ],
                                   "additionalProperties": false
                                 },
@@ -31261,6 +31288,31 @@
                                     "string",
                                     "null"
                                   ]
+                                },
+                                "errorKey": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                },
+                                "errorParams": {
+                                  "anyOf": [
+                                    {
+                                      "type": "object",
+                                      "propertyNames": {
+                                        "type": "string"
+                                      },
+                                      "additionalProperties": {
+                                        "type": [
+                                          "string",
+                                          "number"
+                                        ]
+                                      }
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
                                 }
                               },
                               "required": [
@@ -31268,7 +31320,9 @@
                                 "status",
                                 "backupId",
                                 "bytes",
-                                "error"
+                                "error",
+                                "errorKey",
+                                "errorParams"
                               ],
                               "additionalProperties": false
                             },

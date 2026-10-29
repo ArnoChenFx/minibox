@@ -1,3 +1,4 @@
+import { errorText } from "./api.js";
 import { browserTimezone, SCHEDULE_HOURS, scheduleBody, scheduleZone } from "./checkpoint-state.js";
 import { esc } from "./dom.js";
 import { dateTime } from "./format.js";
@@ -23,13 +24,15 @@ export function ruleText(schedule) {
 
 /**
  * The last run in words: `labels.ok` or `labels.failed` with the time, or `labels.none` when nothing has run yet.
- * `labels.ok` and `labels.failed` take `{ time }` and `{ time, error }`.
+ * `labels.ok` and `labels.failed` take `{ time }` and `{ time, error }`. A failure that came from a message is said in
+ * the console's language, and one that did not is shown as the server wrote it.
  */
 export function lastRunText(run, zone, labels) {
   if (!run) return t(labels.none);
   const time = zonedTime(run.at, zone);
   if (run.status === "ok") return t(labels.ok, { time });
-  return t(labels.failed, { time, error: run.error ?? "" });
+  const error = errorText({ key: run.errorKey, params: run.errorParams, message: run.error ?? "" });
+  return t(labels.failed, { time, error });
 }
 
 /**

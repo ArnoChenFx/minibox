@@ -252,7 +252,11 @@ const BackupScheduleLastRunSchema = z.object({
   status: z.enum(["ok", "failed"]),
   backupId: z.string().nullable(),
   bytes: z.number().int().nullable(),
+  /** Why the run failed, in English. */
   error: z.string().nullable(),
+  /** The message the failure came from, so a console can say it in its own language. Null for an unkeyed error. */
+  errorKey: z.string().nullable(),
+  errorParams: z.record(z.string(), z.union([z.string(), z.number()])).nullable(),
 });
 
 /**

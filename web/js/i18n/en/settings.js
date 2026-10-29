@@ -432,7 +432,7 @@ export default {
   "st.tokenNone": "No agent tokens yet.",
   "st.backups": "Backups",
   "st.backupsHelp":
-    "Back up MiniBox's data directory on a schedule, without an external cron job. A scheduled backup is sealed with the passphrase in BACKUP_PASSPHRASE on the server, and BACKUP_KEEP decides how many stay. Off until you set one.",
+    "Back up MiniBox's data directory on a schedule, without an external cron job. A scheduled backup is sealed with the passphrase in BACKUP_PASSPHRASE on the server, and BACKUP_KEEP decides how many stay.",
   "st.backupSchedule": "Schedule",
   "st.backupScheduleOffHelp": "Backups are made only when you run minibox backup, or call the API.",
   "st.backupScheduleNote":

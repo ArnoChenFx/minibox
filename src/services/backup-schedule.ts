@@ -2,7 +2,7 @@ import { BACKUP_SCHEDULE_VERSION, type BackupSchedule, type BackupScheduleRun } 
 import type { BackupScheduleStore } from "../backup/schedule-store";
 import { firstRunAt, isDue, nextRunAfterRun, ruleOf, runZoneOf, type ScheduleRule } from "../checkpoints/schedule";
 import { LOCAL_HOST_ID } from "../host/registry";
-import { badRequest } from "../lib/errors";
+import { AppError, badRequest } from "../lib/errors";
 import { log } from "../lib/logger";
 import { msg } from "../lib/messages";
 import { OWNER } from "../operations/types";
@@ -10,13 +10,6 @@ import type { BackupService } from "./backup";
 import type { RecordNote } from "./terminals";
 
 const SCHEDULER_EVERY_MS = 60 * 1000;
-
-/**
- * The backup passphrase for a scheduled run, from `BACKUP_PASSPHRASE`. A schedule runs inside MiniBox with nobody to ask,
- * so the operator sets the passphrase in the same file as the rest of the settings. Unset, a due run fails once with a
- * message saying so, and the schedule waits for its next slot.
- */
-export const BACKUP_PASSPHRASE_ENV = "BACKUP_PASSPHRASE";
 
 /** A schedule as the API returns it: `timezoneUnknown` says its saved zone is not one this server knows, so it runs in UTC. */
 export type BackupScheduleView = BackupSchedule & { timezoneUnknown: boolean };
@@ -29,6 +22,10 @@ export type BackupScheduleView = BackupSchedule & { timezoneUnknown: boolean };
  * afterwards exactly as it does to a backup made by hand. A schedule that fell due while MiniBox was down runs once when
  * it comes back, not once per missed slot: the next run is the first slot after now. A failed run is recorded on the
  * schedule and logged once, and nothing runs again until the next slot.
+ *
+ * The passphrase of a scheduled run is `BACKUP_PASSPHRASE`: a schedule runs inside MiniBox with nobody to ask, so the
+ * operator sets it in the same file as the rest of the settings. Setting a schedule without one is refused; a schedule
+ * that outlives the setting fails once at its next slot with a message saying so.
  */
 export class BackupScheduler {
   private timer: ReturnType<typeof setInterval> | undefined;
@@ -105,19 +102,17 @@ export class BackupScheduler {
   }
 
   private async attempt(): Promise<Omit<BackupScheduleRun, "at">> {
-    if (this.passphrase === null) {
-      return {
-        status: "failed",
-        backupId: null,
-        bytes: null,
-        error: `Set ${BACKUP_PASSPHRASE_ENV} to a passphrase, so that a scheduled backup can be sealed.`,
-      };
-    }
+    if (this.passphrase === null) return failure(msg("backup_schedule_passphrase_unset"));
     try {
       const record = await this.backups.create(this.passphrase, OWNER.id);
-      return { status: "ok", backupId: record.id, bytes: record.bytes, error: null };
+      return { status: "ok", backupId: record.id, bytes: record.bytes, error: null, errorKey: null, errorParams: null };
     } catch (e) {
-      return { status: "failed", backupId: null, bytes: null, error: messageOf(e) };
+      // A manual backup holds the folder. Its "wait, then try again" is no use to a schedule, which does not try again
+      // until its next slot, so the run says that instead.
+      if (e instanceof AppError && e.key === "backup_running") return failure(msg("backup_schedule_busy"));
+      if (e instanceof AppError && e.key !== undefined)
+        return failure({ key: e.key, params: e.params, text: e.message });
+      return failure(messageOf(e));
     }
   }
 
@@ -192,6 +187,26 @@ export function clearBackupSchedule(store: BackupScheduleStore): void {
 
 function scheduleView(schedule: BackupSchedule): BackupScheduleView {
   return { ...schedule, timezoneUnknown: runZoneOf(schedule).unknown !== null };
+}
+
+/** The message a failure came from: the English text, and the key and parameters a console translates it by. */
+interface Reason {
+  readonly key: string;
+  readonly params?: Record<string, string | number>;
+  readonly text: string;
+}
+
+/** A failed run. A keyed reason lets the console say it in its own language; a plain one is shown as it is. */
+function failure(reason: string | Reason): Omit<BackupScheduleRun, "at"> {
+  const plain = typeof reason === "string";
+  return {
+    status: "failed",
+    backupId: null,
+    bytes: null,
+    error: plain ? reason : reason.text,
+    errorKey: plain ? null : reason.key,
+    errorParams: plain ? null : (reason.params ?? null),
+  };
 }
 
 function messageOf(e: unknown): string {

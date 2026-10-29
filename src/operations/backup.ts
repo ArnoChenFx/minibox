@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { BackupScheduleStore } from "../backup/schedule-store";
 import { DEFAULT_TIMEZONE, ruleOf } from "../checkpoints/schedule";
 import { type ByteStream, isByteStream } from "../lib/body";
+import { conflict } from "../lib/errors";
 import { msg } from "../lib/messages";
 import { type BackupService, backupView } from "../services/backup";
 import { backupRuleOf, clearBackupSchedule, readBackupSchedule, setBackupSchedule } from "../services/backup-schedule";
@@ -168,7 +169,7 @@ const backupScheduleSet = defineOperation({
     toolset: "storage",
     name: "set_backup_schedule",
     description:
-      "Set the backup schedule of this instance. Send everyHours (1 to 720) or at (HH:MM), not both. With at, send timezone, an IANA zone such as Asia/Shanghai; without it the time is UTC. A due run makes one backup with the passphrase in BACKUP_PASSPHRASE, and BACKUP_KEEP then applies. A run that fell due while MiniBox was down happens once when it comes back. Replaces any schedule the instance has. Owner only.",
+      "Set the backup schedule of this instance. Send everyHours (1 to 720) or at (HH:MM), not both. With at, send timezone, an IANA zone such as Asia/Shanghai; without it the time is UTC. A due run makes one backup with the passphrase in BACKUP_PASSPHRASE, and BACKUP_KEEP then applies. A run that fell due while MiniBox was down happens once when it comes back. Replaces any schedule the instance has. Refused with 409 when the server has no BACKUP_PASSPHRASE, since a schedule nobody can seal would only fail. Owner only.",
   },
   activity: { action: () => "backup.schedule", target: () => "DATA_DIR" },
   audit: {
@@ -178,9 +179,11 @@ const backupScheduleSet = defineOperation({
       timezone: input.at ? (input.timezone ?? DEFAULT_TIMEZONE) : null,
     }),
   },
-  run: async ({ backupSchedule, principal }, input) => ({
-    schedule: setBackupSchedule(scheduleStoreOf(backupSchedule), backupRuleOf(input), principal.id),
-  }),
+  run: async ({ backupSchedule, backupPassphraseSet, principal }, input) => {
+    // A schedule nobody can seal would only fail at its first slot, so it is refused now, where it can be seen.
+    if (backupPassphraseSet === false) throw conflict(msg("backup_schedule_passphrase_unset"));
+    return { schedule: setBackupSchedule(scheduleStoreOf(backupSchedule), backupRuleOf(input), principal.id) };
+  },
 });
 
 const backupScheduleClear = defineOperation({

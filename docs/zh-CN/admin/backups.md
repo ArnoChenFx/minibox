@@ -198,10 +198,12 @@ MiniBox 可以按计划备份自己，因此不需要 cron。计划是整个实�
 按计划运行时没有人输入口令，所以 MiniBox 从 `.env` 中的 `BACKUP_PASSPHRASE` 读取：
 
 ```bash
-BACKUP_PASSPHRASE='correct horse battery staple'
+BACKUP_PASSPHRASE=correct horse battery staple
 ```
 
-规则与手动输入的口令相同：12 至 1024 个字符，首尾不能有空格，也不能包含换行符。留空表示没有设置口令，到点的运行会失败一次并说明原因。值不合法会让 MiniBox 拒绝启动，而不是让每次运行都失败。
+规则与手动输入的口令相同：12 至 1024 个字符，首尾不能有空格，也不能包含换行符。留空表示没有设置口令：MiniBox 会拒绝保存计划并说明原因，而不是存下一个到第一个时间点就会失败的计划。在口令丢失之前就已保存的计划，会在下一个时间点失败一次，给出同样的说明。值不合法会让 MiniBox 拒绝启动，而不是让每次运行都失败。
+
+不要在 `.env` 的口令里写 `$`。Bun 会展开 `.env` 值里的 `$`，即使它在引号里也一样，所以 `'ab$cd'` 到 MiniBox 手里是 `ab`；无引号的值遇到 `#` 也会被截断，口令里有 `#` 时请加引号。如果口令确实需要 `$`，就不要写进 `.env`，改在进程环境里设置 `BACKUP_PASSPHRASE`，例如 compose 文件的 `environment:` 或 systemd 的 `Environment=`。MiniBox 自己也会读 `.env`，两种读法不一致时拒绝启动，因为它不会用一个你没有写过的口令封装归档。把 `$` 转义成 `\$` 绕不过去：Bun 认这种写法，但两种读法仍然不一致。
 
 在 **设置 → 备份** 的 **计划** 中点击 **设置计划**：
 
@@ -219,7 +221,7 @@ minibox backup schedule get
 minibox backup schedule clear
 ```
 
-`PUT /api/backups/schedule` 用 `{ "everyHours": 6 }` 或 `{ "at": "02:30", "timezone": "Asia/Shanghai" }` 设置，两者只能给一个。同一路径的 `GET` 读取，`DELETE` 移除，计划为 `null` 表示没有设置。每天的时间可带 IANA 时区名（如 `Asia/Shanghai`），不带时按 UTC 计算，不接受 `+08:00` 这类偏移。MCP 的存储工具集提供 `get_backup_schedule`、`set_backup_schedule` 与 `clear_backup_schedule`。这些操作仅限所有者。
+`PUT /api/backups/schedule` 用 `{ "everyHours": 6 }` 或 `{ "at": "02:30", "timezone": "Asia/Shanghai" }` 设置，两者只能给一个。同一路径的 `GET` 读取，`DELETE` 移除，计划为 `null` 表示没有设置。服务器没有 `BACKUP_PASSPHRASE` 时，`PUT` 返回 `409`。每天的时间可带 IANA 时区名（如 `Asia/Shanghai`），不带时按 UTC 计算，不接受 `+08:00` 这类偏移。MCP 的存储工具集提供 `get_backup_schedule`、`set_backup_schedule` 与 `clear_backup_schedule`。这些操作仅限所有者。
 
 一次运行会做什么：
 
@@ -231,7 +233,7 @@ minibox backup schedule clear
 
 按计划备份使用 `BACKUP_PASSPHRASE` 中的口令封装，口令留在服务器的 `.env` 里。请把它与归档分开保存，因为只有它能打开归档。
 
-如果进程环境与 `.env` 的 `BACKUP_PASSPHRASE` 不一致（例如 Bun 展开了其中的 `$`），启动会拒绝这个有歧义的值，而不是用一个你没有输入过的口令封装归档。请只用一个来源，把原始口令另存别处，并在依赖计划之前先试一次恢复。
+请把原始口令另存在这台服务器之外，并在依赖计划之前先试一次恢复。如果进程环境与 `.env` 里的 `BACKUP_PASSPHRASE` 不一致，启动会拒绝它（见上文），而不是用一个你没有输入过的口令封装归档。
 
 ### 仍然可以使用 cron
 

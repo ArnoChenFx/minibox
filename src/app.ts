@@ -474,6 +474,7 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
       notify,
       backups,
       backupSchedule,
+      backupPassphraseSet: cfg.backupPassphrase !== null,
       targets,
       sshKeys,
       hooks: {

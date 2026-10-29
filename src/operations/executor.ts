@@ -97,6 +97,8 @@ export interface ExecutorDeps {
   readonly backups?: BackupService;
   /** The one backup schedule of this instance. Its operations read it from the context. */
   readonly backupSchedule?: BackupScheduleStore;
+  /** Whether the server has a `BACKUP_PASSPHRASE`, which a schedule needs. See `OperationContext`. */
+  readonly backupPassphraseSet?: boolean;
   /** Off-site targets. Target operations read it from the context. */
   readonly targets?: TargetService;
   /** The owner's SSH keys. SSH key operations read it from the context. */
@@ -191,6 +193,7 @@ export class Executor {
       notify: ctx.notify ?? this.deps.notify,
       backups: ctx.backups ?? this.deps.backups,
       backupSchedule: ctx.backupSchedule ?? this.deps.backupSchedule,
+      backupPassphraseSet: ctx.backupPassphraseSet ?? this.deps.backupPassphraseSet,
       targets: ctx.targets ?? this.deps.targets,
       sshKeys: ctx.sshKeys ?? this.deps.sshKeys,
       recordActivity: (entry) => this.deps.activity.add(entry),

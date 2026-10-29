@@ -1,9 +1,9 @@
 import { api } from "../lib/api.js";
+import { browserTimezone } from "../lib/checkpoint-state.js";
 import { esc } from "../lib/dom.js";
-import { dateTime } from "../lib/format.js";
 import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
-import { bindScheduleForm, scheduleCardHtml, scheduleFieldsHtml } from "../lib/schedule-ui.js";
+import { bindScheduleForm, scheduleCardHtml, scheduleFieldsHtml, zonedTime } from "../lib/schedule-ui.js";
 import { openDialog, toast, toastError } from "../lib/ui.js";
 
 /**
@@ -81,7 +81,8 @@ async function editSchedule(view, schedule) {
   if (!body) return;
   try {
     const saved = await api("/api/backups/schedule", { method: "PUT", body });
-    toast(t("st.backupScheduleSaved"), { message: t("ck.nextRun") + ": " + dateTime(saved.schedule.nextRunAt) });
+    const next = zonedTime(saved.schedule.nextRunAt, browserTimezone());
+    toast(t("st.backupScheduleSaved"), { message: t("ck.nextRun") + ": " + next });
   } catch (e) {
     toastError(t("st.backupScheduleFailed"), e);
   }

@@ -10,7 +10,9 @@ import { BackupScheduleStore } from "../src/backup/schedule-store";
 import { ruleOf } from "../src/checkpoints/schedule";
 import { type Config, loadConfig } from "../src/config";
 import { SECRET_FILE_MODE } from "../src/data-dir";
+import { AppError } from "../src/lib/errors";
 import { setLogSink } from "../src/lib/logger";
+import { msg } from "../src/lib/messages";
 import {
   readBackupSchedule,
   BackupScheduler,
@@ -149,6 +151,22 @@ describe("a due backup schedule over the scheduler", () => {
     expect(await restoreArchive(app.backups.store.pathFor(id!), destination, literal)).toBeGreaterThan(0);
   });
 
+  test("the startup refusal says what works, and does not send anyone to escape the dollar sign", () => {
+    const file = join(scratch, ".env");
+    writeFileSync(file, "BACKUP_PASSPHRASE=hunter2hunter2\\$xyz\n");
+    // Bun takes the backslash away, so the environment holds a string the file does not say, and escaping is refused too.
+    let message = "";
+    try {
+      loadConfig({ BACKUP_PASSPHRASE: "hunter2hunter2$xyz", DATA_DIR: scratch }, { envFile: file });
+    } catch (e) {
+      message = String(e);
+    }
+    expect(message).toContain("BACKUP_PASSPHRASE differs");
+    expect(message).toContain("process environment");
+    expect(message).toContain("does not help");
+    expect(message).not.toContain("escape dotenv expansion");
+  });
+
   test("Bun-expanded dotenv passphrases are refused at startup", () => {
     const file = join(scratch, ".env");
     writeFileSync(file, "BACKUP_PASSPHRASE='hunter2hunter2$xyz'\n");
@@ -175,6 +193,76 @@ describe("a due backup schedule over the scheduler", () => {
     expect(app.backups.list()).toHaveLength(1);
     await app.backups.create(PASSPHRASE, "owner");
     expect(app.backups.list()).toHaveLength(2);
+  });
+
+  test("a run with no passphrase fails with a reason the console can translate", async () => {
+    setBackupSchedule(app.backupSchedule, rule({ everyHours: 1 }), "owner", clock);
+    const { scheduler } = schedulerOf(app, { passphrase: null, clock: () => clock });
+    clock = new Date(clock.getTime() + HOUR);
+    expect(await scheduler.run()).toBeNull();
+    const run = app.backupSchedule.read()?.lastRun;
+    expect(run).toMatchObject({ status: "failed", errorKey: "backup_schedule_passphrase_unset" });
+    expect(run?.error).toContain("BACKUP_PASSPHRASE");
+  });
+
+  test("a run that meets a manual backup says it was skipped until the next slot, not to try again", async () => {
+    setBackupSchedule(app.backupSchedule, rule({ everyHours: 1 }), "owner", clock);
+    const { scheduler } = schedulerOf(app, { clock: () => clock });
+    clock = new Date(clock.getTime() + HOUR);
+    const manual = app.backups.create(PASSPHRASE, "owner");
+    expect(await scheduler.run()).toBeNull();
+    const run = app.backupSchedule.read()?.lastRun;
+    expect(run).toMatchObject({ status: "failed", errorKey: "backup_schedule_busy" });
+    // A schedule does not try again until its next slot, so the manual path's "wait, then try again" would be wrong here.
+    expect(run?.error).not.toContain("try again");
+    await manual;
+  });
+
+  test("a failure with a message of its own keeps its key and parameters", async () => {
+    setBackupSchedule(app.backupSchedule, rule({ everyHours: 1 }), "owner", clock);
+    const { scheduler } = schedulerOf(app, { clock: () => clock });
+    clock = new Date(clock.getTime() + HOUR);
+    app.backups.create = async () => {
+      throw new AppError(409, "conflict", msg("backup_exists", { id: "bk_sample" }));
+    };
+    expect(await scheduler.run()).toBeNull();
+    expect(app.backupSchedule.read()?.lastRun).toMatchObject({
+      status: "failed",
+      errorKey: "backup_exists",
+      errorParams: { id: "bk_sample" },
+    });
+  });
+
+  test("a damaged schedule file is named once, however often the scheduler reads it", () => {
+    const lines: string[] = [];
+    const restore = setLogSink((_level, line) => lines.push(line));
+    try {
+      writeFileSync(app.backupSchedule.file(), "{ not json");
+      for (let pass = 0; pass < 5; pass++) expect(app.backupSchedule.read()).toBeNull();
+      expect(lines.filter((line) => line.includes("backup.schedule_unreadable"))).toHaveLength(1);
+      // Setting it again mends the file, so the next break is news again.
+      setBackupSchedule(app.backupSchedule, rule({ everyHours: 1 }), "owner", clock);
+      writeFileSync(app.backupSchedule.file(), "{ not json");
+      app.backupSchedule.read();
+      expect(lines.filter((line) => line.includes("backup.schedule_unreadable"))).toHaveLength(2);
+    } finally {
+      restore();
+    }
+  });
+
+  test("an unreadable backup record is named once, however often the backups are listed", () => {
+    const store = app.backups.store;
+    store.ensureDir();
+    const id = store.allocateId();
+    writeFileSync(join(store.dir(), `${id}.json`), "{ not json");
+    const lines: string[] = [];
+    const restore = setLogSink((_level, line) => lines.push(line));
+    try {
+      for (let pass = 0; pass < 4; pass++) store.list();
+      expect(lines.filter((line) => line.includes("backup.record_unreadable"))).toHaveLength(1);
+    } finally {
+      restore();
+    }
   });
 
   test("the schedule is off by default, and a pass over it makes nothing", async () => {

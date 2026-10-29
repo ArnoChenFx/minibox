@@ -121,6 +121,14 @@ describe("the backup schedule operations", () => {
     expect((zone as AppError).status).toBe(400);
   });
 
+  test("a schedule is refused without a passphrase on the server, and nothing is saved", async () => {
+    const { app } = createTestApp({ backupPassphrase: null });
+    const refusal = await rejectionOf(app.operations.run("backup.schedule.set", ctxOf(app), { everyHours: 6 }));
+    expect(refusal).toBeInstanceOf(AppError);
+    expect(refusal).toMatchObject({ status: 409, key: "backup_schedule_passphrase_unset" });
+    expect(readBackupSchedule(app.backupSchedule)).toBeNull();
+  });
+
   test("setting a schedule records an activity entry, and clearing it records another", async () => {
     const { app } = createTestApp();
     const ctx = ctxOf(app);

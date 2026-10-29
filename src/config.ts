@@ -329,7 +329,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     file.BACKUP_PASSPHRASE !== env.BACKUP_PASSPHRASE
   ) {
     throw new Error(
-      "BACKUP_PASSPHRASE differs between the environment and .env; remove the duplicate or escape dotenv expansion before starting MiniBox",
+      'BACKUP_PASSPHRASE differs between the environment and .env: Bun expands "$" in .env values, even inside quotes, and cuts an unquoted value at "#", so the environment holds something the file does not say. Set it only in the process environment, or use a passphrase without "$" in .env. Escaping the "$" does not help, because the two readings still differ.',
     );
   }
   const dataDir = resolveDataDir(nonBlank(env.DATA_DIR) ?? nonBlank(file.DATA_DIR), ROOT);
