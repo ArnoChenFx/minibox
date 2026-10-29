@@ -256,6 +256,14 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+  /* A phone has no hover, so what an attention row says wraps rather than being cut at the edge. */
+  .watch-text {
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+    line-height: 1.5;
+    padding: 3px 0;
+  }
   .watch-state:empty {
     display: none;
   }

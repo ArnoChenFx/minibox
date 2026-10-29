@@ -229,9 +229,13 @@ describe.skipIf(!executablePath)("the forward warning on the overview (real brow
           return { left: b.left, right: b.right, top: b.top, bottom: b.bottom, height: b.height };
         };
         const style = scope.getComputedStyle(noteEl);
+        const sentenceEl = rowEl.querySelector(".watch-text");
         return {
           row: rect(rowEl),
           note: rect(noteEl),
+          sentenceWhiteSpace: sentenceEl ? scope.getComputedStyle(sentenceEl).whiteSpace : "",
+          sentenceScroll: sentenceEl ? sentenceEl.scrollWidth : 0,
+          sentenceClient: sentenceEl ? sentenceEl.clientWidth : 0,
           text: rect(rowEl.querySelector(".watch-cmd")),
           actions: rect(rowEl.querySelector(".watch-actions")),
           time: rect(rowEl.querySelector(".time")),
@@ -266,6 +270,14 @@ describe.skipIf(!executablePath)("the forward warning on the overview (real brow
       // And it overlaps none of the row's other parts, and the page gains no sideways scroll from it.
       for (const other of [text, actions, time]) expect(intersects(note, other)).toBe(false);
       expect(seen.scroll).toBeLessThanOrEqual(seen.client + 1);
+      // The row's own sentence is one line cut at the edge on a wide screen, where the title has a hover to show it, and
+      // wraps on a phone, which has none: nothing in it is hidden there.
+      if (width <= 640) {
+        expect(seen.sentenceWhiteSpace).toBe("normal");
+        expect(seen.sentenceScroll).toBeLessThanOrEqual(seen.sentenceClient + 1);
+      } else {
+        expect(seen.sentenceWhiteSpace).toBe("nowrap");
+      }
       // The reading order: on a phone the row says what it says, then why, then offers its buttons; on a wide screen the
       // buttons are on the first line and the reason is under all of it.
       expect(note.top).toBeGreaterThanOrEqual(text.bottom - 1);
