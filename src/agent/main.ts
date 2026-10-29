@@ -5,7 +5,7 @@ import { resolveVersion } from "../version";
 import { AgentClient } from "./client";
 import { type AgentIdentity, generateKeyPairPem, loadIdentity, saveIdentity } from "./identity";
 import { AGENT_PAIR_PATH, AGENT_PROTOCOL, type PairRequest, type PairResponse, PairResponseSchema } from "./protocol";
-import { AgentScope, freshScope, loadScope, saveScope } from "./scope";
+import { AgentScope, freshScope, isLabelPrefix, loadScope, saveScope } from "./scope";
 import { scopedRuntime } from "./scoped-runtime";
 import { findSelf } from "./self";
 
@@ -18,7 +18,9 @@ Environment:
   DATA_DIR                  Where the agent keeps its identity. Default /data.
   DOCKER_SOCKET             The Docker socket to manage. Default /var/run/docker.sock.
   AGENT_ALLOWED_RUNTIMES    Container runtimes besides runc that a box may ask for, comma separated, such as runsc.
-                            Default: runc only.`;
+                            Default: runc only.
+  AGENT_ADOPT_PREFIX        For an agent paired before scopes existed: the LABEL_PREFIX of the MiniBox it serves, whose
+                            containers, volumes and networks it then takes as its own, once. Default: none taken.`;
 
 export class UsageError extends Error {}
 
@@ -161,7 +163,7 @@ export async function runAgent(
       };
       // Written before the identity, so an agent that exists is never without it: this one labels everything it makes,
       // and there is nothing from before it to adopt.
-      saveScope(dataDir, freshScope(reply.hostId, (deps.now ?? (() => new Date()))()));
+      saveScope(dataDir, freshScope(reply.hostId, (deps.now ?? (() => new Date()))(), reply.labelPrefix ?? null));
       saveIdentity(dataDir, identity, keys.privateKeyPem);
       stored = loadIdentity(dataDir);
       log.info("agent.paired", { agentId: reply.agentId, hostId: reply.hostId });
@@ -172,6 +174,11 @@ export async function runAgent(
     return 2;
   }
   const server = args.server ?? stored.identity.server;
+  const adoptPrefix = env.AGENT_ADOPT_PREFIX?.trim() || null;
+  if (adoptPrefix !== null && !isLabelPrefix(adoptPrefix)) {
+    console.error(`AGENT_ADOPT_PREFIX must be a label prefix such as minibox, not ${adoptPrefix}\n\n${USAGE}`);
+    return 2;
+  }
   const engine = deps.runtime ?? createDockerRuntime(env.DOCKER_SOCKET?.trim() || "/var/run/docker.sock");
   let scope: AgentScope;
   try {
@@ -179,6 +186,7 @@ export async function runAgent(
       hostId: stored.identity.hostId,
       dataDir,
       runtime: engine,
+      adoptPrefix,
       record: loadScope(dataDir, stored.identity.hostId),
       findSelf: () => findSelf(engine),
     });

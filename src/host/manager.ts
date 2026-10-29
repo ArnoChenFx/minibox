@@ -551,7 +551,12 @@ export class HostManager {
       this.register(host);
       await this.probe(this.options.registry.get(grant.hostId));
       log.info("host.added", { host: grant.hostId, transport: "agent" });
-      return { agentId: record.agentId, hostId: grant.hostId, protocol: AGENT_PROTOCOL };
+      return {
+        agentId: record.agentId,
+        hostId: grant.hostId,
+        protocol: AGENT_PROTOCOL,
+        labelPrefix: this.options.cfg.labelPrefix,
+      };
     });
   }
 

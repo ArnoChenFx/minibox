@@ -316,6 +316,24 @@ async function servedBy(
 describe("what the agent may touch, from the first start", () => {
   test("an agent that has just paired keeps a scope that adopts nothing, next to its identity and as private as it", async () => {
     const dir = tempDir();
+    // The control plane names its prefix in its answer, which is when the agent learns whose it is.
+    const fetcher = answering(() =>
+      jsonResponse({ agentId: AGENT, hostId: "edge", protocol: 1, labelPrefix: "mbtest" }, 201),
+    );
+    const now = new Date("2026-10-29T10:00:00.000Z");
+    const run = () =>
+      runAgent(
+        ["--server", "http://127.0.0.1:1", "--pair", "ABCDE-FGHJK"],
+        { DATA_DIR: dir },
+        { fetch: fetcher, runtime: new FakeRuntime(), now: () => now },
+      );
+    expect(await startedAndStopped(run)).toBe(0);
+    expect(loadScope(dir, "edge")).toEqual(freshScope("edge", now, "mbtest"));
+    expect(statSync(join(dir, SCOPE_FILE)).mode & 0o777).toBe(0o600);
+  });
+
+  test("a control plane that gives no prefix when it pairs leaves a scope with none, which the owner of the firewall rule then is not pinned by", async () => {
+    const dir = tempDir();
     const fetcher = answering(() => jsonResponse({ agentId: AGENT, hostId: "edge", protocol: 1 }, 201));
     const now = new Date("2026-10-29T10:00:00.000Z");
     const run = () =>
@@ -325,8 +343,20 @@ describe("what the agent may touch, from the first start", () => {
         { fetch: fetcher, runtime: new FakeRuntime(), now: () => now },
       );
     expect(await startedAndStopped(run)).toBe(0);
-    expect(loadScope(dir, "edge")).toEqual(freshScope("edge", now));
-    expect(statSync(join(dir, SCOPE_FILE)).mode & 0o777).toBe(0o600);
+    expect(loadScope(dir, "edge")).toEqual(freshScope("edge", now, null));
+  });
+
+  test("a prefix that is not a label prefix stops the agent with a usage error, before it serves anything", async () => {
+    const dir = tempDir();
+    saveIdentity(
+      dir,
+      { agentId: AGENT, hostId: "edge", server: "http://127.0.0.1:1/", pairedAt: "2026-10-01T00:00:00.000Z" },
+      generateKeyPairPem().privateKeyPem,
+    );
+    for (const bad of ["not a prefix!", "-leading", "x".repeat(64)]) {
+      expect(await runAgent([], { DATA_DIR: dir, AGENT_ADOPT_PREFIX: bad }, { runtime: new FakeRuntime() })).toBe(2);
+    }
+    expect(existsSync(join(dir, SCOPE_FILE))).toBe(false);
   });
 
   test("an agent paired before scopes existed writes none when it starts: it adopts only when the control plane welcomes it", async () => {
@@ -366,7 +396,7 @@ describe("what the agent may touch, from the first start", () => {
     expect(engine.callsTo("removeContainer")).toEqual([]);
   });
 
-  test("an agent paired before scopes existed adopts what MiniBox made when the control plane welcomes it, and nothing else", async () => {
+  test("an agent paired before scopes existed adopts what MiniBox made when its operator names the prefix and the control plane welcomes it, and nothing else", async () => {
     const dir = tempDir();
     const engine = new FakeRuntime();
     engine.seedImage("alpine:3.20");
@@ -378,20 +408,30 @@ describe("what the agent may touch, from the first start", () => {
       labels: { mbtest: "true", "mbtest.box": "true" },
     });
     const stranger = engine.seedContainer({ image: "alpine:3.20", name: "stranger", running: true, labels: {} });
+    // A Compose stack, which a control plane that could name the prefix could take by naming it.
+    const compose = engine.seedContainer({
+      image: "alpine:3.20",
+      name: "compose-db",
+      running: true,
+      labels: { "com.docker.compose.project": "app" },
+    });
+    // The control plane names the stack's prefix. The operator named the MiniBox's, and that is the one used.
     const plane = await controlPlane({
-      labelPrefix: "mbtest",
+      labelPrefix: "com.docker.compose",
       requests: [
         ["inspectContainer", { id: legacy }],
         ["inspectContainer", { id: stranger }],
+        ["inspectContainer", { id: compose }],
       ],
     });
-    await servedBy(dir, engine, plane);
+    await servedBy(dir, engine, plane, { AGENT_ADOPT_PREFIX: "mbtest" });
     expect(plane.answers.get("r1")).toMatchObject({ ok: true });
     expect(plane.answers.get("r2")).toMatchObject({ ok: false, error: { kind: "not_found" } });
-    expect(loadScope(dir, "edge")?.adopted.containers).toEqual([legacy]);
+    expect(plane.answers.get("r3")).toMatchObject({ ok: false, error: { kind: "not_found" } });
+    expect(loadScope(dir, "edge")).toMatchObject({ labelPrefix: "mbtest", adopted: { containers: [legacy] } });
   });
 
-  test("a control plane that names no label prefix gets no adoption: the old boxes are not found until it does", async () => {
+  test("an agent whose operator named no prefix adopts nothing, whatever the control plane names: the old boxes are not found until it does", async () => {
     const dir = tempDir();
     const engine = new FakeRuntime();
     engine.seedImage("alpine:3.20");
@@ -401,16 +441,29 @@ describe("what the agent may touch, from the first start", () => {
       running: true,
       labels: { mbtest: "true", "mbtest.box": "true" },
     });
-    const plane = await controlPlane({ requests: [["inspectContainer", { id: legacy }]] });
+    const compose = engine.seedContainer({
+      image: "alpine:3.20",
+      name: "compose-db",
+      running: true,
+      labels: { "com.docker.compose.project": "app" },
+    });
+    const plane = await controlPlane({
+      labelPrefix: "com.docker.compose",
+      requests: [
+        ["inspectContainer", { id: legacy }],
+        ["inspectContainer", { id: compose }],
+      ],
+    });
     await servedBy(dir, engine, plane);
     expect(plane.answers.get("r1")).toMatchObject({ ok: false, error: { kind: "not_found" } });
+    expect(plane.answers.get("r2")).toMatchObject({ ok: false, error: { kind: "not_found" } });
     expect(existsSync(join(dir, SCOPE_FILE))).toBe(false);
   });
 
   test("a container runtime besides runc is allowed only when AGENT_ALLOWED_RUNTIMES says so", async () => {
     const create = [
       "createContainer",
-      { spec: { image: "alpine:3.20", name: "sandboxed", hardening: { runtime: "runsc" } } },
+      { spec: { image: "alpine:3.20", name: "sandboxed", network: "mbtest-boxes", hardening: { runtime: "runsc" } } },
     ];
     for (const [env, outcome] of [
       [{}, { ok: false, error: { kind: "invalid" } }],
@@ -419,6 +472,7 @@ describe("what the agent may touch, from the first start", () => {
       const dir = tempDir();
       const engine = new FakeRuntime();
       engine.seedImage("alpine:3.20");
+      engine.seedNetwork("mbtest-boxes", {}, "bridge", { [OWNER_LABEL]: "edge" });
       saveScope(dir, freshScope("edge", new Date()));
       const plane = await controlPlane({ labelPrefix: "mbtest", requests: [create as [string, unknown]] });
       await servedBy(dir, engine, plane, env);

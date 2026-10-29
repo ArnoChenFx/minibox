@@ -96,7 +96,7 @@ export interface AgentHubOptions {
   readonly store: AgentStore;
   readonly pairing: PairingBook;
   readonly serverVersion: string;
-  /** The control plane's `LABEL_PREFIX`, sent in the welcome so an agent paired before labels existed can adopt what is there. */
+  /** The control plane's `LABEL_PREFIX`, sent in the welcome so an agent can tell its operator which prefix it names. */
   readonly labelPrefix?: string;
   readonly now?: () => Date;
   /** How many sockets may wait for a hello at once. Defaults to `AGENT_PENDING_MAX`. A test seam, not a setting. */

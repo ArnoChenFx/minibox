@@ -32,6 +32,7 @@ An unknown option, or an option without a value, is a usage error and exits with
 | `DATA_DIR` | `/data` | Where the agent keeps its identity and its scope. |
 | `DOCKER_SOCKET` | `/var/run/docker.sock` | The Docker socket the agent manages. |
 | `AGENT_ALLOWED_RUNTIMES` | Empty | Container runtimes besides `runc` that a box on this machine may ask for, comma separated, such as `runsc`. See [What the agent manages](#what-the-agent-manages). |
+| `AGENT_ADOPT_PREFIX` | Empty | For an agent paired before scopes existed: the `LABEL_PREFIX` of the MiniBox it serves, whose containers, volumes and networks it takes as its own, once. See [An agent from before scopes](#an-agent-from-before-scopes). |
 | `MINIBOX_VERSION` | Set by the image | The version the agent reports to MiniBox. |
 
 ## Exit status
@@ -40,7 +41,7 @@ An unknown option, or an option without a value, is a usage error and exits with
 |---|---|
 | `0` | Stopped by `SIGTERM` or `SIGINT`, or `--help` was given. |
 | `1` | Pairing failed. The MiniBox address could not be reached, or MiniBox refused the code. Or `scope.json` cannot be read, or was written for another host: the agent serves nothing until it is fixed. |
-| `2` | Usage error, or the agent is not paired and was started without `--pair`. |
+| `2` | Usage error, `AGENT_ADOPT_PREFIX` is not a label prefix, or the agent is not paired and was started without `--pair`. |
 
 A revoked agent does not exit. It stays running and idle, so a restart policy does not start it again and again.
 
@@ -50,7 +51,7 @@ The agent keeps up to three files in `/data`, all with mode `600`:
 
 - `agent.json` holds the agent id, the host id, the MiniBox address and the time of pairing. It holds no secret.
 - `agent-key.pem` holds the agent's Ed25519 private key. The key never leaves the volume.
-- `scope.json` holds the host id, the label prefix the agent adopted by and the ids of what it adopted, if it adopted anything. It holds no secret. An agent paired by this version writes it when it pairs. An older one writes it when it adopts, which is described [below](#an-agent-from-before-scopes). One that has none is treated as an older one.
+- `scope.json` holds the host id, the label prefix of the MiniBox the agent serves and the ids of what it adopted, if it adopted anything. It holds no secret. An agent paired by this version writes it when it pairs, with the prefix the control plane names in its answer. An older one writes it when it adopts, which is described [below](#an-agent-from-before-scopes). One that has none is treated as an older one, and one that is empty is an error, since reading it as none would let the agent adopt again.
 
 Keep the volume to keep the agent's identity. If the key file is lost, the agent cannot prove who it is. Remove the volume and pair the agent again. A `scope.json` that was written for another host stops the agent with status 1 and a message saying so: its list belongs to another engine.
 
@@ -119,23 +120,26 @@ The agent writes that label on everything it creates, in place of a label of tha
 
 - **Containers.** A container that is not MiniBox's cannot be inspected, started, stopped, restarted, paused, renamed, updated or removed. Its logs, stats, filesystem diff and environment cannot be read, and no command can be run in it. The agent asks the engine what a name or an id refers to before it acts, and acts on the id the engine gave.
 - **Volumes.** A volume that is not MiniBox's cannot be inspected, removed or have its owner set, and no box can mount it. A box that mounts a volume that does not exist is refused too, because the engine would make that volume on the spot, with no label. Creating a volume under a name that a volume which is not MiniBox's already holds is a `conflict`.
-- **Networks.** A network that is not MiniBox's cannot be removed, joined or re-attached, and no box can be created on it. A box may also be on the engine's own `bridge` network. Ensuring a network under a name that another network holds is a `conflict`. The rule that keeps new connections from boxes out of the host is only set for MiniBox's own networks.
+- **Networks.** A network that is not MiniBox's cannot be removed, joined or re-attached, and no box can be created on it. A box is put on one of MiniBox's networks and never on the engine's default `bridge`, which whatever else runs on the machine is on too, so a request that names no network is refused as well. Ensuring a network under a name that another network holds is a `conflict`.
+- **The host's firewall rule.** The rule that keeps new connections from boxes out of the host is set only for MiniBox's own networks, and in the chain of the MiniBox the agent serves: a request that names another owner is refused, so a MiniBox that has been taken over cannot replace or remove the rule of another install on the same machine. An agent paired by a control plane that did not name its prefix, and one that was never told, leave the owner as the control plane gives it.
 - **Lists and events.** The lists of containers, volumes and networks hold only what is MiniBox's, and the event stream carries only the events of MiniBox's containers. MiniBox therefore picks the private subnet of a new box without seeing the other networks on the engine, so it can overlap one of them. The engine refuses an overlapping subnet by itself, and the box is not created.
-- **The agent itself.** The container the agent runs in, and every volume mounted into it, including the one that holds its key, are never managed, whatever labels they carry. The agent finds its own container from its mount table, then from its hostname. If it cannot tell, it goes by labels alone.
-- **Images** are not scoped. The engine keeps one copy of an image for everything that uses it, so the agent lists, inspects and pulls images as before.
+- **The agent itself.** The container the agent runs in, and every volume mounted into it, including the one that holds its key, are never managed and are in no list or event, whatever labels they carry. The agent finds its own container from its mount table, then from its hostname. An engine that cannot answer fails the request, and the agent asks again next time; an agent that is not in a container the engine knows goes by labels alone.
+- **Images** are not scoped. The engine keeps one copy of an image for everything that uses it, so the agent lists, inspects and pulls images as before. A MiniBox that has been taken over can therefore read the metadata of any image on the engine, including environment variables baked into it, and can make the agent pull an image.
 - **Runtimes.** A box may ask for the container runtime `runc` and for no other, unless you allow it. `AGENT_ALLOWED_RUNTIMES=runsc` lets boxes on this machine use gVisor, which is what `RUNTIME=runsc` on MiniBox asks for. A box that asks for another runtime is refused with an `invalid` error that names this setting.
 
 ### An agent from before scopes
 
-An agent paired by an earlier version has containers, volumes and networks that carry none of its label, and it **adopts them once**. When MiniBox welcomes it and names its label prefix (`LABEL_PREFIX`), the agent takes the containers and volumes that carry that prefix and the networks named `<prefix>-boxes` and `<prefix>-egress-…`. A container made from an image that MiniBox built carries that image's labels, so it counts as MiniBox's here too, as it does everywhere else in MiniBox. It writes their ids to `scope.json` before it uses them, and from then on goes by the label and that list. The list never grows: what carries the prefix later is nobody's. An agent paired by this version starts with an empty list and never adopts, so a MiniBox that is taken over later cannot talk it into adopting anything.
+An agent paired by an earlier version has containers, volumes and networks that carry none of its label, and it **adopts them once**, when its operator tells it which prefix is MiniBox's. Start it with `AGENT_ADOPT_PREFIX` set to the `LABEL_PREFIX` of the MiniBox it serves (`minibox` unless you changed it), and when the MiniBox welcomes it the agent takes the containers and volumes that carry that prefix and the networks named `<prefix>-boxes` and `<prefix>-egress-…`. A container made from an image that MiniBox built carries that image's labels, so it counts as MiniBox's here too, as it does everywhere else in MiniBox. The agent writes their ids to `scope.json` before it uses them, and from then on goes by the label and that list. The list never grows: what carries the prefix later is nobody's, and a setting that is still there on a later start is ignored.
 
-Upgrade MiniBox before its agents. An agent that is welcomed by a MiniBox which does not name its prefix adopts nothing and logs `agent.scope_unadopted`. Until MiniBox is upgraded too, it manages only what it creates itself, and the boxes that were already there are not found. An older agent ignores the prefix in the welcome and keeps working as it did.
+The prefix comes from the machine and not from the control plane, because it decides what the agent will touch: a control plane that could name it could name `com.docker.compose`, and take a Compose stack that runs beside the boxes. What the control plane names in its welcome is only compared with the operator's, and logged when they differ (`agent.scope_prefix_differs`). An agent paired by this version starts with an empty list and never adopts, so a MiniBox that is taken over later cannot talk it into adopting anything either.
+
+Upgrade MiniBox before its agents, and recreate each older agent with the setting. An agent that was not told the prefix adopts nothing and logs `agent.scope_unadopted` at each welcome, with the prefix the control plane named. Until it is told, it manages only what it creates itself, and the boxes that were already there are not found: after the machine restarts they are not started, a new box cannot be made, because the shared `<prefix>-boxes` network exists and is not the agent's yet, and nothing there is deleted. An older agent ignores everything above and keeps working as it did.
 
 ## Remove, revoke, upgrade and re-pair
 
 In the console, an agent host has only **Remove**. Removing it revokes the agent first: the agent is disconnected at once, is blocked from reconnecting, and MiniBox forgets its record. A host that still holds boxes, volumes or checkpoints cannot be removed. To cut off its agent at once anyway, call `POST /api/hosts/{id}/revoke`. A removed or revoked agent keeps running idle until its container is removed.
 
-To upgrade, pull the newer image, remove the old container and run the command again with the same data volume. The agent keeps its identity, so the host and its boxes stay the same. If the boxes on this machine use another container runtime than `runc`, add `-e AGENT_ALLOWED_RUNTIMES=<runtime>` to the command, or new boxes are refused:
+To upgrade, pull the newer image, remove the old container and run the command again with the same data volume. The agent keeps its identity, so the host and its boxes stay the same. If this agent was paired before scopes existed, add `-e AGENT_ADOPT_PREFIX=minibox` (your `LABEL_PREFIX`) to the command, or it does not find the boxes that were already there. If the boxes on this machine use another container runtime than `runc`, add `-e AGENT_ALLOWED_RUNTIMES=<runtime>`, or new boxes are refused:
 
 ```sh
 docker pull ghcr.io/arnochenfx/minibox-agent
@@ -150,6 +154,6 @@ To put the machine back in use, remove its host first if it is still listed. The
 
 ## Security
 
-Mounting `/var/run/docker.sock` gives the agent control of that machine's Docker engine. The agent limits itself to what is MiniBox's, as [above](#what-the-agent-manages), and refuses bind mounts, the host network, privileged mode and devices, so a MiniBox that has been taken over reaches no further than that. The limit is the agent's own code, though: whoever can run code inside the agent's container, or on the machine, still controls every container on it. Run agents only on machines you control. Remove the host of an agent you no longer trust, or revoke the agent through the REST API while its host still holds boxes.
+Mounting `/var/run/docker.sock` gives the agent control of that machine's Docker engine. The agent limits itself to what is MiniBox's, as [above](#what-the-agent-manages), and refuses bind mounts, the host network, privileged mode and devices, so a MiniBox that has been taken over reaches what its own boxes reach, the images on the engine (to read, and to pull) and the host's ingress rule for its own networks, and no further. The limit is the agent's own code, though: whoever can run code inside the agent's container, or on the machine, still controls every container on it. Run agents only on machines you control. Remove the host of an agent you no longer trust, or revoke the agent through the REST API while its host still holds boxes.
 
 The activity log records creating a pairing code, revoking an agent and removing a host. The server log records each accepted connection and each disconnection with its reason.

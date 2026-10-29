@@ -625,6 +625,11 @@ export class FakeRuntime implements Runtime {
     return c.id;
   }
 
+  /** How many `events()` streams are open, so a test can emit once its consumer has subscribed. */
+  watching(): number {
+    return this.subscribers.size;
+  }
+
   emitEvent(event: RuntimeEvent): void {
     for (const subscriber of this.subscribers) subscriber(event);
   }

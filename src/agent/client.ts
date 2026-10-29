@@ -46,7 +46,7 @@ export interface AgentClientOptions {
   readonly privateKey: KeyObject;
   /** What the agent serves. In production this is the engine behind a `scopedRuntime`. */
   readonly runtime: ServedRuntime;
-  /** Told what the control plane welcomes it with, so an agent paired before labels existed can adopt once. */
+  /** Told what the control plane welcomes it with: an agent that has not adopted yet adopts once the welcome has come. */
   readonly scope?: AgentScope;
   readonly version: string;
   readonly heartbeatMs?: number;

@@ -51,22 +51,22 @@ export interface ScopedRuntimeOptions {
   readonly allowedRuntimes?: readonly string[];
 }
 
-/** The network every engine has, which a box may be on when MiniBox has not made one for it. */
-const DEFAULT_NETWORK = "bridge";
-
 /**
  * Wraps an engine so that it answers only for the MiniBox resources of this agent (see `OWNER_LABEL`). Every operation
  * that names a container, a volume or a network first asks the engine what it is and refuses one that is not managed, as
  * not found, before anything is done. Lists and events are cut down to what is managed, and what the agent creates is
- * labelled as managed, whatever the request said about labels. The target of an operation is the id the engine gave for
- * the reference, so a name that is given to another container between the check and the call cannot change what is acted on.
+ * labelled as managed, whatever the request said about labels. A container is acted on by the id the engine gave for the
+ * reference, so a name that is given to another container between the check and the call cannot change what is acted on.
+ * A volume or a network is keyed by its name, which is all the engine offers, so that is what is used.
  */
 export function scopedRuntime(runtime: Runtime, scope: AgentScope, options: ScopedRuntimeOptions = {}): ServedRuntime {
   const allowed = new Set(["runc", ...(options.allowedRuntimes ?? [])]);
 
-  /** A network a container may be created on or joined: one of MiniBox's, or the engine's default bridge. */
+  /**
+   * A network a container may be created on or joined: one of MiniBox's. The engine's default bridge is not, since
+   * whatever else runs on the machine is on it, and a box there could reach it. MiniBox puts every box on its own network.
+   */
   async function usableNetwork(name: string): Promise<void> {
-    if (name === DEFAULT_NETWORK) return;
     if ((await scope.network(name)) === null) {
       throw new RuntimeError(
         "not_found",
@@ -82,7 +82,10 @@ export function scopedRuntime(runtime: Runtime, scope: AgentScope, options: Scop
 
     async listContainers(filter, opts) {
       await scope.ready();
-      return (await runtime.listContainers(filter, opts)).filter((info) => scope.ownsContainer(info));
+      const self = await scope.selfOf();
+      return (await runtime.listContainers(filter, opts)).filter(
+        (info) => scope.ownsContainer(info) && info.id !== self?.containerId,
+      );
     },
     inspectContainer: async (id) => scope.container(id),
     async inspectEnv(id) {
@@ -102,7 +105,15 @@ export function scopedRuntime(runtime: Runtime, scope: AgentScope, options: Scop
       // A named volume that is missing is made by the engine on the spot, unlabelled and so nobody's. The volumes a
       // container mounts must already exist and be MiniBox's.
       for (const mount of spec.mounts ?? []) await scope.volume(mount.source);
-      if (spec.network !== undefined) await usableNetwork(spec.network);
+      // No network named would be the engine's default bridge, which is not MiniBox's.
+      if (spec.network === undefined) {
+        throw new RuntimeError(
+          "invalid",
+          "createContainer: a container needs a network of MiniBox's",
+          "a container on an agent host is put on one of MiniBox's networks, and the request named none",
+        );
+      }
+      await usableNetwork(spec.network);
       return runtime.createContainer({ ...spec, labels: scope.labels(spec.labels) });
     },
     async startContainer(id) {
@@ -147,8 +158,9 @@ export function scopedRuntime(runtime: Runtime, scope: AgentScope, options: Scop
     },
     async *events(filter, signal) {
       await scope.ready();
+      const self = await scope.selfOf();
       for await (const event of runtime.events(filter, signal)) {
-        if (scope.ownsEvent(event)) yield event;
+        if (scope.ownsEvent(event) && event.id !== self?.containerId) yield event;
       }
     },
 
@@ -161,7 +173,8 @@ export function scopedRuntime(runtime: Runtime, scope: AgentScope, options: Scop
     inspectVolume: async (name) => scope.volume(name),
     async listVolumes() {
       await scope.ready();
-      return (await runtime.listVolumes()).filter((info) => scope.ownsVolume(info));
+      const self = await scope.selfOf();
+      return (await runtime.listVolumes()).filter((info) => scope.ownsVolume(info) && !self?.volumes.has(info.name));
     },
     async createVolume(name, labels, opts) {
       await scope.ready();
@@ -218,6 +231,18 @@ export function scopedRuntime(runtime: Runtime, scope: AgentScope, options: Scop
       await usableNetwork(name);
       return runtime.reattachNetwork(info.id, name);
     },
-    setHostIngressBlock: (owner, sources) => runtime.setHostIngressBlock(owner, sources),
+    async setHostIngressBlock(owner, sources) {
+      // The owner names the chain, so another install's chain on this host could be replaced or removed by naming it. It
+      // is the MiniBox the agent was paired with, or adopted for, and nobody else.
+      const own = scope.ingressOwner();
+      if (own !== null && owner !== own) {
+        throw new RuntimeError(
+          "invalid",
+          `setHostIngressBlock: owner ${owner} is not this agent's`,
+          "the host's ingress rule belongs to the MiniBox this agent serves, and the owner named is another",
+        );
+      }
+      return runtime.setHostIngressBlock(owner, sources);
+    },
   };
 }

@@ -189,7 +189,8 @@ describe.skipIf(!enabled)("an agent host, against a real engine", () => {
         hostId: stored.identity.hostId,
         dataDir: dir,
         runtime: engine,
-        record: freshScope(stored.identity.hostId, new Date()),
+        // What the pairing answer would have recorded: the control plane's prefix, which is whose firewall rule it may touch.
+        record: freshScope(stored.identity.hostId, new Date(), prefix),
         findSelf: async () => null,
       });
       scoped = scopedRuntime(engine, scope);
@@ -381,6 +382,15 @@ describe.skipIf(!enabled)("an agent host, against a real engine", () => {
           "conflict",
         );
         expect((await foreign.inspect()).Labels).toEqual({ [prefix]: "true" });
+
+        // The engine's own network is there, with whatever else runs on the machine, and is nobody's but the engine's: a
+        // box is not put on it, and a request that names no network would be.
+        const onBridge = `${prefix}-agent-onbridge`;
+        expect(
+          (await refusal(() => agent.createContainer({ image: IMAGE, name: onBridge, network: "bridge" }))).kind,
+        ).toBe("not_found");
+        expect((await refusal(() => agent.createContainer({ image: IMAGE, name: onBridge }))).kind).toBe("invalid");
+        expect(await docker.listContainers({ all: true, filters: { name: [onBridge] } })).toEqual([]);
       } finally {
         await foreign.remove().catch(() => {});
       }
@@ -411,15 +421,21 @@ describe.skipIf(!enabled)("an agent host, against a real engine", () => {
         await own.unpause();
 
         const seen: Array<{ id: string; action: string; owner: string | undefined }> = [];
+        let reachedEnd = false;
         const timer = setTimeout(() => abort.abort(), 30_000);
         try {
           for await (const event of agent.events({ types: ["container"], since }, abort.signal)) {
             seen.push({ id: event.id, action: event.action, owner: event.attributes[OWNER_LABEL] });
-            if (event.id === ownId && event.action === "unpause") break;
+            if (event.id === ownId && event.action === "unpause") {
+              reachedEnd = true;
+              break;
+            }
           }
         } finally {
           clearTimeout(timer);
         }
+        // The stream ended on the last event the box's own container had, not on the timeout.
+        expect(reachedEnd).toBe(true);
         expect(seen.some((event) => event.id === ownId && event.action === "pause")).toBe(true);
         expect(seen.some((event) => event.id === foreign.id)).toBe(false);
         expect(seen.every((event) => event.owner === "edge")).toBe(true);
@@ -452,6 +468,8 @@ describe.skipIf(!enabled)("an agent host, against a real engine", () => {
           dataDir: dir,
           runtime: engine,
           record: null,
+          // The operator of this agent named the prefix, as `AGENT_ADOPT_PREFIX` does.
+          adoptPrefix: prefix,
           findSelf: async () => null,
         });
         const agent = scopedRuntime(engine, scope);

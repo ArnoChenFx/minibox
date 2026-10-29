@@ -243,7 +243,7 @@ describe("the control plane's agent API, over HTTP and a real socket", () => {
 
   /**
    * An agent whose engine is behind its scope, as `minibox-agent` runs it, and which has no scope file yet, as one paired
-   * before labels existed. Its scope is kept in `dir`.
+   * before labels existed, started by an operator who named the prefix. Its scope is kept in `dir`.
    */
   function runScopedAgent(stored: StoredIdentity, engine: FakeRuntime, dir: string): AgentClient {
     const scope = new AgentScope({
@@ -251,6 +251,7 @@ describe("the control plane's agent API, over HTTP and a real socket", () => {
       dataDir: dir,
       runtime: engine,
       record: null,
+      adoptPrefix: "mbtest",
       findSelf: async () => null,
     });
     const client = new AgentClient({
@@ -310,11 +311,13 @@ describe("the control plane's agent API, over HTTP and a real socket", () => {
 
     const paired = await pairWithCode(pairing.code, pairingKey());
     expect(paired.status).toBe(201);
-    const reply = (await paired.json()) as { agentId: string; hostId: string; protocol: number };
+    const reply = (await paired.json()) as { agentId: string; hostId: string; protocol: number; labelPrefix?: string };
+    // The answer names the control plane's prefix, which the agent keeps as the MiniBox it serves.
     expect(reply).toEqual({
       agentId: expect.stringMatching(/^[0-9a-f]{32}$/),
       hostId: "edge",
       protocol: AGENT_PROTOCOL,
+      labelPrefix: "mbtest",
     });
 
     const hosts = (await (await api("/api/hosts")).json()) as { hosts: Array<Record<string, unknown>> };
@@ -411,8 +414,8 @@ describe("the control plane's agent API, over HTTP and a real socket", () => {
     });
   });
 
-  test("an agent that serves through its scope adopts what an older MiniBox made when the welcome names the prefix, and labels what it makes", async () => {
-    // An image of somebody else's: a container made from one of MiniBox's templates would inherit its labels.
+  test("an agent that serves through its scope adopts what an older MiniBox made when its operator names the prefix, and labels what it makes", async () => {
+    // An image of somebody else's, so the stranger carries no label of MiniBox's.
     const image = "alpine:3.20";
     // What an older MiniBox left on that machine: its labels and none of the agent's. And somebody else's container.
     const older = edgeEngine.seedContainer({
@@ -438,7 +441,8 @@ describe("the control plane's agent API, over HTTP and a real socket", () => {
     const alpha = [...edgeEngine.containers.values()].find((container) => container.labels[keys.name] === "alpha");
     expect(alpha?.labels[OWNER_LABEL]).toBe("edge");
 
-    // The welcome named this control plane's prefix, so the agent adopted the older box once, and not the stranger.
+    // The agent adopted the older box once, on the prefix its operator named and the welcome came to confirm, and not the
+    // stranger.
     const adopted = loadScope(scopeDir, "edge")?.adopted.containers;
     expect(adopted).toContain(older);
     expect(adopted).not.toContain(stranger);

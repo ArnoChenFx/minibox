@@ -106,7 +106,7 @@ describe("the handshake", () => {
       { type: "welcome", hostId: "edge", protocol: AGENT_PROTOCOL, labelPrefix: "minibox" },
     ]);
 
-    // A control plane that predates the field sends a welcome without it, which an agent reads as "nothing to adopt by".
+    // A control plane that predates the field sends a welcome without it, which an agent reads as having been told nothing.
     const bare = setup();
     const bareRecord = bare.enroll();
     const bareSocket = fakeSocket();

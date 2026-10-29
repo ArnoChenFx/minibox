@@ -71,6 +71,22 @@ function setup(
 const container = (runtime: FakeRuntime, name: string, labels: Record<string, string>) =>
   runtime.seedContainer({ image: IMAGE, name, running: true, labels });
 
+/** Waits until `condition` holds, for a stream that subscribes after its first await, or a consumer that has to catch up. */
+async function until(condition: () => boolean): Promise<void> {
+  const deadline = Date.now() + 2_000;
+  while (!condition()) {
+    if (Date.now() > deadline) throw new Error("timed out waiting");
+    await Bun.sleep(1);
+  }
+}
+
+/** The network the control plane puts every box on, made through the agent as it would be, so it is MiniBox's. */
+const BOX_NETWORK = "mbtest-boxes";
+const boxNetwork = async (scoped: ServedRuntime): Promise<{ network: string }> => {
+  await scoped.ensureBridgeNetwork(BOX_NETWORK, { interContainerComm: false });
+  return { network: BOX_NETWORK };
+};
+
 const refusedAs = async (promise: Promise<unknown>, kind: RuntimeErrorKind): Promise<void> => {
   const error = await promise.then(
     () => null,
@@ -139,7 +155,8 @@ describe("a container that is not MiniBox's", () => {
     await refusedAs(run(scoped, foreign), "not_found");
     // Only the engine's answer about the container was asked for: the call that acts on it never ran.
     expect(mutations(runtime)).toEqual([]);
-    expect(runtime.calls.slice(calls).map((call) => call.op)).not.toContain(name === "inspectContainer" ? "x" : name);
+    // Asking the engine what the container is, `inspectContainer`, is how it is judged. Every other call is an action.
+    if (name !== "inspectContainer") expect(runtime.calls.slice(calls).map((call) => call.op)).not.toContain(name);
     expect([...runtime.containers.values()].map((c) => [c.id, c.name, c.running, c.paused])).toEqual(before);
   });
 
@@ -171,6 +188,7 @@ describe("a container that is not MiniBox's", () => {
       image: IMAGE,
       name: "mine",
       labels: { [OWNER_LABEL]: "other-host", "mbtest.box": "true" },
+      ...(await boxNetwork(scoped)),
     });
     const info = await scoped.inspectContainer(made.id);
     expect(info.labels).toMatchObject({ [OWNER_LABEL]: HOST, "mbtest.box": "true" });
@@ -266,6 +284,21 @@ describe("the agent's own container and the volumes it runs on", () => {
     expect(
       await findSelf(rt, { mountinfo: () => `/containers/${"a".repeat(64)}/x`, hostname: () => "web-1" }),
     ).toBeNull();
+  });
+
+  test("an engine that cannot answer is an error, and one that does not know the container is not", async () => {
+    const rt = new FakeRuntime();
+    const sources = {
+      mountinfo: () =>
+        `36 24 0:34 /docker/containers/${"a".repeat(64)}/hostname /etc/hostname rw - ext4 /dev/sda1 rw\n`,
+      hostname: () => "web-1",
+    };
+    // The engine does not know the container, so the agent is not in one that it can see: null, and a fact worth keeping.
+    expect(await findSelf(rt, sources)).toBeNull();
+    // An engine that is busy has said nothing of the sort, and taking its silence for that would leave the agent free to
+    // manage itself.
+    rt.fail("inspectContainer", new RuntimeError("unavailable", "the engine is busy"));
+    await expect(findSelf(rt, sources)).rejects.toThrow("the engine is busy");
   });
 
   test("the volumes mounted into it are the ones it runs on", async () => {
@@ -380,9 +413,10 @@ describe("networks", () => {
 describe("creating a container", () => {
   test("it gets the label, and keeps the labels the control plane gave it", async () => {
     const { runtime, scoped } = setup();
-    const made = await scoped.createContainer({ image: IMAGE, name: "box", labels: { "mbtest.box": "true" } });
+    const on = await boxNetwork(scoped);
+    const made = await scoped.createContainer({ image: IMAGE, name: "box", labels: { "mbtest.box": "true" }, ...on });
     expect(runtime.containers.get(made.id)?.labels).toEqual({ "mbtest.box": "true", [OWNER_LABEL]: HOST });
-    const bare = await scoped.createContainer({ image: IMAGE, name: "bare" });
+    const bare = await scoped.createContainer({ image: IMAGE, name: "bare", ...on });
     expect(runtime.containers.get(bare.id)?.labels).toEqual({ [OWNER_LABEL]: HOST });
   });
 
@@ -404,29 +438,38 @@ describe("creating a container", () => {
     expect(runtime.volumes.has("new-one")).toBe(false);
     expect(runtime.containers.size).toBe(before);
 
-    await scoped.createContainer({ image: IMAGE, name: "ok", mounts: [{ source: "mine", target: "/data" }] });
+    await scoped.createContainer({
+      image: IMAGE,
+      name: "ok",
+      mounts: [{ source: "mine", target: "/data" }],
+      ...(await boxNetwork(scoped)),
+    });
     expect(runtime.containers.size).toBe(before + 1);
   });
 
-  test("it can be on a MiniBox network or on the engine's default one, and on no other", async () => {
+  test("it is on a network of MiniBox's and on no other: not the engine's default one, not a stranger's, not none", async () => {
     const { runtime, scoped } = setup();
-    await scoped.ensureBridgeNetwork("mbtest-boxes", { interContainerComm: false });
+    await boxNetwork(scoped);
     runtime.seedNetwork("theirs");
+    // The engine's own network, which whatever else runs on the machine is on too.
+    runtime.seedNetwork("bridge");
     const before = runtime.containers.size;
-    await scoped.createContainer({ image: IMAGE, name: "a", network: "mbtest-boxes" });
-    await scoped.createContainer({ image: IMAGE, name: "b", network: "bridge" });
-    await scoped.createContainer({ image: IMAGE, name: "c" });
-    await refusedAs(scoped.createContainer({ image: IMAGE, name: "d", network: "theirs" }), "not_found");
-    await refusedAs(scoped.createContainer({ image: IMAGE, name: "e", network: "missing" }), "not_found");
-    expect(runtime.containers.size).toBe(before + 3);
+    await scoped.createContainer({ image: IMAGE, name: "a", network: BOX_NETWORK });
+    for (const network of ["bridge", "theirs", "missing"]) {
+      await refusedAs(scoped.createContainer({ image: IMAGE, name: "b", network }), "not_found");
+    }
+    // A request that names no network would be put on the engine's default one.
+    await refusedAs(scoped.createContainer({ image: IMAGE, name: "c" }), "invalid");
+    expect(runtime.containers.size).toBe(before + 1);
   });
 
   test("a container runtime has to be allowed: runc always, the others only when the operator says so", async () => {
     const strict = setup();
-    await strict.scoped.createContainer({ image: IMAGE, name: "a", hardening: { runtime: "runc" } });
-    await strict.scoped.createContainer({ image: IMAGE, name: "b" });
+    const on = await boxNetwork(strict.scoped);
+    await strict.scoped.createContainer({ image: IMAGE, name: "a", hardening: { runtime: "runc" }, ...on });
+    await strict.scoped.createContainer({ image: IMAGE, name: "b", ...on });
     const refusal = await strict.scoped
-      .createContainer({ image: IMAGE, name: "c", hardening: { runtime: "runsc" } })
+      .createContainer({ image: IMAGE, name: "c", hardening: { runtime: "runsc" }, ...on })
       .then(
         () => null,
         (e: unknown) => e as RuntimeError,
@@ -436,15 +479,57 @@ describe("creating a container", () => {
     expect(strict.runtime.containers.size).toBe(2);
 
     const open = setup({ allowedRuntimes: ["runsc"] });
-    await open.scoped.createContainer({ image: IMAGE, name: "c", hardening: { runtime: "runsc" } });
+    const there = await boxNetwork(open.scoped);
+    await open.scoped.createContainer({ image: IMAGE, name: "c", hardening: { runtime: "runsc" }, ...there });
     await refusedAs(
-      open.scoped.createContainer({ image: IMAGE, name: "d", hardening: { runtime: "kata" } }),
+      open.scoped.createContainer({ image: IMAGE, name: "d", hardening: { runtime: "kata" }, ...there }),
       "invalid",
     );
   });
 });
 
 describe("lists and events", () => {
+  test("the agent's own container and volumes are in no list or event, though they carry the label", async () => {
+    const runtime = new FakeRuntime();
+    runtime.seedImage(IMAGE);
+    const own = container(runtime, "the-agent", MINE);
+    const mine = container(runtime, "mine", MINE);
+    runtime.volumes.set("minibox-agent", { name: "minibox-agent", labels: MINE });
+    runtime.volumes.set("mine-volume", { name: "mine-volume", labels: MINE });
+    const scope = new AgentScope({
+      hostId: HOST,
+      dataDir: scratch,
+      runtime,
+      record: freshScope(HOST, new Date()),
+      findSelf: async () => ({ containerId: own, volumes: new Set(["minibox-agent"]) }),
+    });
+    const scoped = scopedRuntime(runtime, scope);
+    expect((await scoped.listContainers({ labels: {} })).map((info) => info.id)).toEqual([mine]);
+    expect((await scoped.listVolumes()).map((volume) => volume.name)).toEqual(["mine-volume"]);
+
+    const abort = new AbortController();
+    const seen: string[] = [];
+    const pump = (async () => {
+      for await (const event of scoped.events({}, abort.signal)) seen.push(event.id);
+    })();
+    await until(() => runtime.watching() > 0);
+    // The last event is MiniBox's: events arrive in order, so once it has, the agent's own has been let go.
+    for (const id of [own, mine]) {
+      runtime.emitEvent({
+        type: "container",
+        action: "die",
+        id,
+        attributes: { ...MINE },
+        time: new Date().toISOString(),
+        timeNano: Date.now() * 1_000_000,
+      });
+    }
+    await until(() => seen.length > 0);
+    abort.abort();
+    await pump;
+    expect(seen).toEqual([mine]);
+  });
+
   test("a container list holds only MiniBox's containers, and the filter the control plane gave still applies", async () => {
     const { runtime, scoped } = setup();
     const mine = container(runtime, "mine", { ...MINE, "mbtest.box": "true" });
@@ -464,10 +549,10 @@ describe("lists and events", () => {
         seen.push(`${event.type}:${event.attributes.name}`);
       }
     })();
-    await Bun.sleep(5);
+    await until(() => runtime.watching() > 0);
     container(runtime, "theirs", NOT_MINE);
     container(runtime, "another-agents", OTHER_HOST);
-    container(runtime, "mine", MINE);
+    const mine = container(runtime, "mine", MINE);
     runtime.emitEvent({
       type: "volume",
       action: "create",
@@ -476,16 +561,28 @@ describe("lists and events", () => {
       time: new Date().toISOString(),
       timeNano: Date.now() * 1_000_000,
     });
-    await Bun.sleep(20);
+    // MiniBox's own, last: events arrive in order, so once it has, everything before it has been judged.
+    runtime.emitEvent({
+      type: "container",
+      action: "die",
+      id: mine,
+      attributes: { ...MINE, name: "mine" },
+      time: new Date().toISOString(),
+      timeNano: Date.now() * 1_000_000,
+    });
+    await until(() => seen.length >= 3);
     abort.abort();
     await pump;
-    expect(seen).toEqual(["container:mine", "container:mine"]);
+    expect(seen).toEqual(["container:mine", "container:mine", "container:mine"]);
   });
 });
 
-/** A scope over an engine for an agent paired before labels existed (no record), or one that kept a record. */
-function legacy(runtime: FakeRuntime, record: ScopeRecord | null = null) {
-  const scope = new AgentScope({ hostId: HOST, dataDir: scratch, runtime, record });
+/**
+ * A scope over an engine for an agent paired before labels existed (no record), or one that kept a record. Its operator
+ * has named `adoptPrefix`, as `AGENT_ADOPT_PREFIX` does, unless a test says it has not.
+ */
+function legacy(runtime: FakeRuntime, record: ScopeRecord | null = null, adoptPrefix: string | null = PREFIX) {
+  const scope = new AgentScope({ hostId: HOST, dataDir: scratch, runtime, record, adoptPrefix });
   return { scope, scoped: scopedRuntime(runtime, scope) };
 }
 
@@ -523,7 +620,7 @@ describe("an agent that was paired before containers carried the label", () => {
     await refusedAs(scoped.inspectContainer(old), "not_found");
   });
 
-  test("when the control plane names its prefix it adopts what carries it, and nothing else", async () => {
+  test("when its operator has named the prefix and the control plane welcomes it, it adopts what carries it, and nothing else", async () => {
     const { runtime, old, stranger, lookalikes } = engine();
     const { scope, scoped } = legacy(runtime);
     scope.begin(PREFIX);
@@ -541,6 +638,53 @@ describe("an agent that was paired before containers carried the label", () => {
     await scoped.removeNetwork("mbtest-egress-abc");
     await refusedAs(scoped.removeNetwork("strangers-network"), "not_found");
     expect(runtime.networks.has("strangers-network")).toBe(true);
+  });
+
+  test("the control plane cannot widen what is adopted: the prefix its operator named is the one used, whatever it says", async () => {
+    const { runtime, old, lookalikes } = engine();
+    const { scope, scoped } = legacy(runtime);
+    // A prefix that would take a Compose stack, one that would take every label with a dot, and one that is another install's.
+    for (const named of ["com.docker.compose", "com", "mbtest2"]) scope.begin(named);
+    expect((await scoped.inspectContainer(old)).id).toBe(old);
+    for (const other of lookalikes) await refusedAs(scoped.inspectContainer(other), "not_found");
+    await refusedAs(scoped.inspectVolume("compose-volume"), "not_found");
+    await refusedAs(scoped.inspectVolume("another-volume"), "not_found");
+    expect(loadScope(scratch, HOST)).toMatchObject({ labelPrefix: PREFIX });
+  });
+
+  test("an operator who named no prefix gets no adoption, whatever the control plane names, and the log says what to do", async () => {
+    const { runtime, old, lookalikes } = engine();
+    const lines: string[] = [];
+    const restore = setLogSink((_level, line) => lines.push(line));
+    try {
+      const { scope, scoped } = legacy(runtime, null, null);
+      for (const named of ["com.docker.compose", "com", "a", PREFIX, undefined]) scope.begin(named);
+      await refusedAs(scoped.inspectContainer(old), "not_found");
+      for (const other of lookalikes) await refusedAs(scoped.inspectContainer(other), "not_found");
+      expect(existsSync(join(scratch, SCOPE_FILE))).toBe(false);
+    } finally {
+      restore();
+    }
+    const unadopted = lines.filter((line) => line.includes("agent.scope_unadopted"));
+    expect(unadopted).toHaveLength(5);
+    expect(JSON.parse(unadopted[0] ?? "{}")).toMatchObject({ reported: "com.docker.compose" });
+    expect(unadopted[0]).toContain("AGENT_ADOPT_PREFIX");
+  });
+
+  test("a prefix the control plane names that differs from the operator's is logged, and not used", async () => {
+    const { runtime } = engine();
+    const lines: string[] = [];
+    const restore = setLogSink((_level, line) => lines.push(line));
+    try {
+      const { scope } = legacy(runtime);
+      scope.begin("somebody-else");
+      scope.begin(PREFIX);
+    } finally {
+      restore();
+    }
+    const differs = lines.filter((line) => line.includes("agent.scope_prefix_differs"));
+    expect(differs).toHaveLength(1);
+    expect(JSON.parse(differs[0] ?? "{}")).toMatchObject({ named: PREFIX, reported: "somebody-else" });
   });
 
   test("it adopts once: what appears afterwards with the prefix on it is not adopted", async () => {
@@ -579,24 +723,12 @@ describe("an agent that was paired before containers carried the label", () => {
     await refusedAs(restarted.scoped.inspectContainer(later), "not_found");
   });
 
-  test("an agent paired by this version adopts nothing, whatever the control plane names", async () => {
+  test("an agent paired by this version adopts nothing, even when its operator names a prefix", async () => {
     const { runtime, old } = engine();
-    const { scope, scoped } = legacy(runtime, freshScope(HOST, new Date()));
+    const { scope, scoped } = legacy(runtime, freshScope(HOST, new Date(), PREFIX));
     scope.begin(PREFIX);
     await refusedAs(scoped.inspectContainer(old), "not_found");
     expect(existsSync(join(scratch, SCOPE_FILE))).toBe(false);
-  });
-
-  test("a control plane that names no prefix, or a bad one, adopts nothing, and is asked again at the next welcome", async () => {
-    const { runtime, old } = engine();
-    const { scope, scoped } = legacy(runtime);
-    scope.begin(undefined);
-    await refusedAs(scoped.inspectContainer(old), "not_found");
-    scope.begin("not a prefix!");
-    await refusedAs(scoped.inspectContainer(old), "not_found");
-    expect(existsSync(join(scratch, SCOPE_FILE))).toBe(false);
-    scope.begin(PREFIX);
-    expect((await scoped.inspectContainer(old)).id).toBe(old);
   });
 
   test("an adoption that fails fails the request, and is tried again by the next one", async () => {
@@ -618,6 +750,7 @@ describe("an agent that was paired before containers carried the label", () => {
       dataDir: scratch,
       runtime,
       record: null,
+      adoptPrefix: PREFIX,
       findSelf: async () => ({ containerId: self, volumes: new Set(["minibox-agent"]) }),
     });
     scope.begin(PREFIX);
@@ -625,6 +758,36 @@ describe("an agent that was paired before containers carried the label", () => {
     const kept = JSON.parse(readFileSync(join(scratch, SCOPE_FILE), "utf8")) as ScopeRecord;
     expect(kept.adopted.containers).not.toContain(self);
     expect(kept.adopted.volumes).not.toContain("minibox-agent");
+  });
+
+  test("an agent that cannot yet ask who it is adopts nothing, and finds out the next time the engine answers", async () => {
+    const { runtime, old } = engine();
+    const self = container(runtime, "the-agent", LEGACY);
+    let asked = 0;
+    const scope = new AgentScope({
+      hostId: HOST,
+      dataDir: scratch,
+      runtime,
+      record: null,
+      adoptPrefix: PREFIX,
+      findSelf: async () => {
+        asked += 1;
+        if (asked === 1) throw new RuntimeError("unavailable", "the engine is busy");
+        return { containerId: self, volumes: new Set<string>() };
+      },
+    });
+    const scoped = scopedRuntime(runtime, scope);
+    scope.begin(PREFIX);
+    // The first answer was a failure: it fails the request, and is not kept as "not in a container".
+    await refusedAs(scoped.inspectContainer(old), "unavailable");
+    expect(existsSync(join(scratch, SCOPE_FILE))).toBe(false);
+    // Asked again, the engine says which container the agent is, and that one is not taken with the rest.
+    expect((await scoped.inspectContainer(old)).id).toBe(old);
+    await refusedAs(scoped.inspectContainer(self), "not_found");
+    expect(asked).toBe(2);
+    expect(
+      (JSON.parse(readFileSync(join(scratch, SCOPE_FILE), "utf8")) as ScopeRecord).adopted.containers,
+    ).not.toContain(self);
   });
 
   test("two requests at once adopt once", async () => {
@@ -636,7 +799,38 @@ describe("an agent that was paired before containers carried the label", () => {
   });
 });
 
+describe("the owner of the host's firewall rule", () => {
+  test("it is the MiniBox the agent was paired with, and another install's chain cannot be named", async () => {
+    const { runtime, scoped } = setup({ record: freshScope(HOST, new Date(), PREFIX) });
+    runtime.seedNetwork("mbtest-egress-abc", {}, "bridge", MINE);
+    await scoped.setHostIngressBlock(PREFIX, []);
+    expect(runtime.callsTo("setHostIngressBlock")).toHaveLength(1);
+    await refusedAs(scoped.setHostIngressBlock("another-install", []), "invalid");
+    expect(runtime.callsTo("setHostIngressBlock")).toHaveLength(1);
+  });
+
+  test("an agent that was never told the prefix leaves the owner as the control plane gives it", async () => {
+    const { runtime, scoped } = setup();
+    await scoped.setHostIngressBlock("whatever", []);
+    expect(runtime.callsTo("setHostIngressBlock")).toHaveLength(1);
+  });
+
+  test("an adopted agent's owner is the prefix its operator named", async () => {
+    const { runtime } = setup();
+    const { scope, scoped } = legacy(runtime);
+    scope.begin(PREFIX);
+    await scope.ready();
+    await scoped.setHostIngressBlock(PREFIX, []);
+    await refusedAs(scoped.setHostIngressBlock("another-install", []), "invalid");
+  });
+});
+
 describe("the scope file", () => {
+  test("an empty one is an error, not an agent that never had a scope, which would adopt again", () => {
+    writeFileSync(join(scratch, SCOPE_FILE), "", { mode: 0o600 });
+    expect(() => loadScope(scratch, HOST)).toThrow("is empty");
+  });
+
   test("it is written and read back, and a fresh scope adopts nothing", () => {
     const record = freshScope(HOST, new Date("2026-10-30T00:00:00Z"));
     saveScope(scratch, record);
@@ -723,10 +917,12 @@ describe("through the executor, which is what the control plane talks to", () =>
     const { runtime, ask } = served();
     runtime.seedNetwork("strangers", {}, "bridge", {});
     const stranger = runtime.networks.get("strangers");
-    if (stranger) stranger.subnets = ["10.9.0.0/24"];
+    if (!stranger) throw new Error("the stranger's network was not seeded");
+    stranger.subnets = ["10.9.0.0/24"];
     runtime.seedNetwork("mine", {}, "bridge", MINE);
     const own = runtime.networks.get("mine");
-    if (own) own.subnets = ["10.8.0.0/24"];
+    if (!own) throw new Error("the agent's network was not seeded");
+    own.subnets = ["10.8.0.0/24"];
     expect(await ask("setHostIngressBlock", { owner: PREFIX, sources: ["10.9.0.0/24"] })).toMatchObject({
       ok: false,
       error: { kind: "invalid" },

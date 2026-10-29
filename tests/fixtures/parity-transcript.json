@@ -2557,7 +2557,7 @@
     "path": "/api/agent/pair",
     "status": 201,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"agentId\":\"<agentId>\",\"hostId\":\"edge\",\"protocol\":1}"
+    "body": "{\"agentId\":\"<agentId>\",\"hostId\":\"edge\",\"protocol\":1,\"labelPrefix\":\"mbtest\"}"
   },
   {
     "step": "pair an agent with a used code",

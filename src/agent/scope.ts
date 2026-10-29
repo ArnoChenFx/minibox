@@ -1,4 +1,4 @@
-import { mkdirSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 
 import { z } from "zod";
@@ -32,13 +32,16 @@ export const OWNER_LABEL = "minibox-agent.host";
 /** Where the agent keeps what it adopted, next to its identity in its data volume. */
 export const SCOPE_FILE = "scope.json";
 
-/** What the control plane may name as its label prefix. Container and network names are made from it, so it fits them. */
+/** What a label prefix may be. Container and network names are made from it, so it fits them. */
 const LABEL_PREFIX = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$/;
+
+/** Whether `value` is a label prefix, such as `minibox`. */
+export const isLabelPrefix = (value: string): boolean => LABEL_PREFIX.test(value);
 
 const ScopeSchema = z.object({
   version: z.literal(1),
   hostId: z.string().min(1).max(64),
-  /** The prefix the control plane reported when this agent adopted what existed. Null when it adopted nothing. */
+  /** The prefix of the MiniBox this agent serves: from pairing, or what its operator named when it adopted. Null when not known. */
   labelPrefix: z.string().max(64).nullable(),
   adoptedAt: z.string().min(1).max(64),
   adopted: z.object({
@@ -50,12 +53,15 @@ const ScopeSchema = z.object({
 });
 export type ScopeRecord = z.infer<typeof ScopeSchema>;
 
-/** The scope of an agent paired by a version that labels what it creates: nothing came before, so nothing is adopted. */
-export function freshScope(hostId: string, now: Date): ScopeRecord {
+/**
+ * The scope of an agent paired by a version that labels what it creates: nothing came before, so nothing is adopted.
+ * `labelPrefix` is the MiniBox it was paired with, when that MiniBox said so.
+ */
+export function freshScope(hostId: string, now: Date, labelPrefix: string | null = null): ScopeRecord {
   return {
     version: 1,
     hostId,
-    labelPrefix: null,
+    labelPrefix,
     adoptedAt: now.toISOString(),
     adopted: { containers: [], volumes: [], networks: [] },
   };
@@ -66,8 +72,15 @@ export function freshScope(hostId: string, now: Date): ScopeRecord {
  * belongs to another host is an error that names the fix: its adopted resources are another engine's.
  */
 export function loadScope(dataDir: string, hostId: string): ScopeRecord | null {
-  const text = readSecretFile(join(dataDir, SCOPE_FILE));
-  if (text === null) return null;
+  const path = join(dataDir, SCOPE_FILE);
+  const text = readSecretFile(path);
+  if (text === null) {
+    // A file that is there and empty is a scope that was cut short, not an agent that never had one: reading it as none
+    // would make the agent adopt again.
+    if (existsSync(path))
+      throw new Error(`${SCOPE_FILE} is empty. Restore it from a backup, or remove the data volume and pair again.`);
+    return null;
+  }
   const record = ScopeSchema.parse(JSON.parse(text));
   if (record.hostId !== hostId) {
     throw new Error(
@@ -96,8 +109,14 @@ export interface AgentScopeOptions {
     Runtime,
     "inspectContainer" | "inspectVolume" | "listContainers" | "listVolumes" | "listNetworks"
   >;
-  /** What an earlier run kept. Null for an agent paired before scopes existed, which adopts once. */
+  /** What an earlier run kept. Null for an agent paired before scopes existed, which can adopt once. */
   readonly record: ScopeRecord | null;
+  /**
+   * The label prefix whose resources an agent with no `record` takes as its own, once. It comes from the machine's
+   * operator (`AGENT_ADOPT_PREFIX`) and not from the control plane: what the agent may touch is for the machine to say,
+   * and a control plane that could name the prefix could name `com.docker.compose`.
+   */
+  readonly adoptPrefix?: string | null;
   /** Finds the container the agent runs in. Called once, when it is first needed. */
   readonly findSelf?: () => Promise<AgentSelf | null>;
   readonly now?: () => Date;
@@ -114,9 +133,10 @@ function notManaged(what: "container" | "volume" | "network", ref: string): Runt
 
 /**
  * Decides what the agent manages: the resources that carry its label, and the ones it adopted. It adopts at most once,
- * for an agent that was paired before this existed and so has resources the label never reached: when the control plane
- * welcomes it and names its label prefix, the agent takes the containers, volumes and networks that carry that prefix at
- * that moment, writes their ids down, and from then on goes by the label and that list alone. The list never grows.
+ * for an agent that was paired before this existed and so has resources the label never reached: when its operator has
+ * named a label prefix (`adoptPrefix`) and the control plane has welcomed it, the agent takes the containers, volumes and
+ * networks that carry that prefix at that moment, writes their ids down, and from then on goes by the label and that
+ * list alone. The list never grows. The control plane's own idea of its prefix is never used to decide what is taken.
  *
  * An agent paired by this version starts with an empty list and never adopts, so a control plane that is taken over
  * later cannot talk it into adopting anything. The agent's own container and the volumes mounted into it, its key's
@@ -127,7 +147,9 @@ export class AgentScope {
   private adopted: { containers: Set<string>; volumes: Set<string>; networks: Set<string> };
   private pendingPrefix: string | null = null;
   private adopting: Promise<void> | null = null;
-  private self: Promise<AgentSelf | null> | null = null;
+  /** Who the agent is, once the engine has said so. A failure is not kept: the engine may answer the next time. */
+  private selfFound: { readonly value: AgentSelf | null } | null = null;
+  private selfPending: Promise<AgentSelf | null> | null = null;
 
   constructor(private readonly options: AgentScopeOptions) {
     this.record = options.record;
@@ -140,26 +162,35 @@ export class AgentScope {
   }
 
   /**
-   * The control plane welcomed the agent. An agent that has not adopted yet remembers the label prefix it named, and
-   * adopts when it is next asked for something. One that has adopted, or was paired by this version, ignores it: the
-   * prefix is not something a later welcome can change.
+   * The control plane welcomed the agent, and may name the label prefix it uses. An agent that has not adopted yet takes
+   * the prefix its operator named, if the operator named one, and adopts when it is next asked for something; what the
+   * control plane says is only compared with it, and with nothing named it is the hint in the log. One that has a record
+   * ignores the welcome: the prefix is not something a later welcome can change.
    */
   begin(labelPrefix: string | undefined): void {
     if (this.record !== null) {
       if (labelPrefix !== undefined && this.record.labelPrefix !== null && labelPrefix !== this.record.labelPrefix) {
-        log.warn("agent.scope_prefix_ignored", { adopted: this.record.labelPrefix, reported: labelPrefix });
+        log.warn("agent.scope_prefix_differs", { kept: this.record.labelPrefix, reported: labelPrefix });
       }
       return;
     }
-    if (labelPrefix === undefined || !LABEL_PREFIX.test(labelPrefix)) {
+    const prefix = this.options.adoptPrefix ?? null;
+    if (prefix === null) {
       this.pendingPrefix = null;
       log.warn("agent.scope_unadopted", {
-        reason: labelPrefix === undefined ? "the control plane named no label prefix" : "the label prefix is not valid",
-        hint: "this agent manages only what it creates itself until the control plane is upgraded",
+        reported: labelPrefix ?? null,
+        hint: "this agent was paired before scopes existed, and it manages only what it creates itself until its operator names the label prefix of the MiniBox it serves: recreate it with AGENT_ADOPT_PREFIX set to that MiniBox's LABEL_PREFIX",
       });
       return;
     }
-    this.pendingPrefix = labelPrefix;
+    if (labelPrefix !== undefined && labelPrefix !== prefix) {
+      log.warn("agent.scope_prefix_differs", {
+        named: prefix,
+        reported: labelPrefix,
+        hint: "the prefix named at the agent is the one used",
+      });
+    }
+    this.pendingPrefix = prefix;
   }
 
   /** Settles once any adoption that is due has been made. Every call that needs the scope waits for it first. */
@@ -217,13 +248,28 @@ export class AgentScope {
     return event.attributes[OWNER_LABEL] === this.options.hostId || this.adopted.containers.has(event.id);
   }
 
-  /** The container the agent runs in, found once. Null when it cannot tell, and then it goes by labels alone. */
+  /**
+   * The container the agent runs in, found once it has been found. Null when it is not in one, and then it goes by labels
+   * alone. An engine that cannot be asked fails the call and is asked again next time, since taking "cannot tell" for "not
+   * in a container" would leave the agent free to manage itself.
+   */
   async selfOf(): Promise<AgentSelf | null> {
-    this.self ??= (this.options.findSelf?.() ?? Promise.resolve(null)).catch((e: unknown) => {
-      log.warn("agent.self_unknown", { error: String(e) });
-      return null;
-    });
-    return this.self;
+    if (this.selfFound !== null) return this.selfFound.value;
+    this.selfPending ??= (async () => {
+      try {
+        const value = (await this.options.findSelf?.()) ?? null;
+        this.selfFound = { value };
+        return value;
+      } finally {
+        this.selfPending = null;
+      }
+    })();
+    return this.selfPending;
+  }
+
+  /** The label prefix of the MiniBox this agent serves, from its pairing or its adoption, or null when it was never told. */
+  ingressOwner(): string | null {
+    return this.record?.labelPrefix ?? null;
   }
 
   private async adopt(prefix: string): Promise<void> {

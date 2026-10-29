@@ -129,8 +129,9 @@ export const ServerFrameSchema = z.discriminatedUnion("type", [
     hostId: ID,
     protocol: z.number().int(),
     /**
-     * The control plane's `LABEL_PREFIX`. An agent paired before it labelled what it creates uses it once, to adopt the
-     * containers, volumes and networks MiniBox made until then. Absent from a control plane that predates the field.
+     * The control plane's `LABEL_PREFIX`. An agent paired before it labelled what it creates only compares it with the
+     * prefix its operator named for adoption, and says in its log when they differ or when none was named: the control
+     * plane does not get to say what the agent takes as its own. Absent from a control plane that predates the field.
      */
     labelPrefix: z.string().max(64).optional(),
   }),
@@ -187,6 +188,11 @@ export const PairResponseSchema = z.object({
   agentId: ID,
   hostId: ID,
   protocol: z.number().int(),
+  /**
+   * The control plane's `LABEL_PREFIX`, as it stood when the code was spent. The agent keeps it as the MiniBox it serves,
+   * which is what the owner of the host's firewall rule must be. Absent from a control plane that predates the field.
+   */
+  labelPrefix: z.string().max(64).optional(),
 });
 export type PairResponse = z.infer<typeof PairResponseSchema>;
 
