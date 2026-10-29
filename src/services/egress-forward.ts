@@ -147,6 +147,11 @@ export class EgressForwardWatcher {
   private async hostPass(host: HostCtx): Promise<ForwardState | null> {
     const skip = skipReason(host);
     if (skip !== null) {
+      // The reason a host is not covered is worth one line, once: an operator reading the log should not have to guess
+      // why a host with proxy-only boxes never reports on them.
+      if (this.state.get(host.host.id)?.skipped !== skip) {
+        log.info("egress.forward_skipped", { host: host.host.id, reason: skip });
+      }
       const skipped: ForwardState = {
         bridge: "",
         forwarding: false,

@@ -111,6 +111,10 @@ describe("the pass reads the host only when it has something to read", () => {
       forwarding: false,
       skipped: expect.stringContaining("agent"),
     });
+    // The reason reaches the log once, so an operator is not left guessing why the host never reports.
+    expect(lines.filter((line) => line.includes("egress.forward_skipped"))).toHaveLength(1);
+    await watcher.tick();
+    expect(lines.filter((line) => line.includes("egress.forward_skipped"))).toHaveLength(1);
   });
 });
 

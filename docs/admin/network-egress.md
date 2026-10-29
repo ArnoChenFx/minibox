@@ -68,7 +68,7 @@ The block is a rule in a `MINIBOX-EGRESS-<hash>` chain, which the host's `INPUT`
 
 Boxes on a [remote host](../user-guide/hosts.md) use the same tiers. The proxy, the private networks and the firewall rules are made on the engine of the host that runs the box. That host needs the base template image too, for its proxy. A box that is not `open` cannot be moved to another host, because its network and proxy belong to the host it runs on.
 
-A host reached through an [agent](../reference/agent.md) does not run the forwarding check: an agent runs no helper containers, so there is no way to read its engine's `FORWARD` rules from here, and the check is skipped with that reason. Its `proxy-only` boxes have the same dependency on Docker's forwarding, so a `proxy-only` box that loses the internet there is still found the same way, in the proxy's `egress.failed … upstream` events, and fixed with the manual commands below on that machine. Every other host — local, socket, TCP and SSH — runs the check.
+A host reached through an [agent](../reference/agent.md) does not run the forwarding check: an agent runs no helper containers, so there is no way to read its engine's `FORWARD` rules from here, and the check is skipped with that reason, logged once as `egress.forward_skipped`. Its `proxy-only` boxes have the same dependency on Docker's forwarding, so a `proxy-only` box that loses the internet there is still found the same way, in the proxy's `egress.failed … upstream` events, and fixed with the manual commands below on that machine. Every other host — local, socket, TCP and SSH — runs the check.
 
 ## Limits
 
