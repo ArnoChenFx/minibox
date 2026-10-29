@@ -125,6 +125,9 @@ describe("the owner's repair over HTTP", () => {
     const state = (reply.json as unknown as { host: StateJson }).host;
     const entry = app.activity.list().find((item) => item.action === "host.forward.repair");
     expect(entry).toMatchObject({ target: "local", ok: true });
+    // The audit names the host itself, not the bridge: the bridge is a detail of what was done, not who it was done to.
+    const audited = app.events.list({ op: "host.forward.repair" }, { limit: 10 }).events[0];
+    expect(audited?.target).toMatchObject({ kind: "host", id: "local", name: "local" });
     expect(JSON.stringify(app.events.list({ op: "host.forward.repair" }, { limit: 10 }).events)).toContain(
       state.bridge,
     );

@@ -293,7 +293,7 @@ const hostForwardRepair = defineOperation({
   },
   activity: { action: () => "host.forward.repair", target: (input) => input.id },
   audit: {
-    target: ({ id }, _resolved, result) => ({ kind: "host", id, name: result?.host.bridge ?? id }),
+    target: ({ id }) => ({ kind: "host", id, name: id }),
     detail: (_input, _resolved, result) => ({
       bridge: result?.host.bridge ?? null,
       forwarding: result?.host.forwarding ?? null,
