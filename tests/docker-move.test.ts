@@ -288,7 +288,14 @@ describe.skipIf(!enabled)("moving a box to a second host, against a real engine"
       ).toBe(200);
       const before = await viewOf(box.boxId);
       const copied = before.mounts.filter((mount) => mount.volumeId !== null && mount.path !== TOOLS_PATH);
-      expect(copied).toHaveLength(3);
+      // Read while their records exist: once the move has removed the source volumes there is nothing left to ask.
+      const oldEngineNames = await Promise.all(
+        copied.map(async (mount) => {
+          const found = (await (await api(`/api/volumes/${mount.volumeId}`)).json()) as { volume: VolumeJson };
+          return found.volume.engineName;
+        }),
+      );
+      expect(oldEngineNames).toHaveLength(3);
 
       const preview = await moveRequest(box.boxId, before.revision, { host: "lab", via: "checkpoint" });
       expect(preview.status).toBe(409);
@@ -326,13 +333,7 @@ describe.skipIf(!enabled)("moving a box to a second host, against a real engine"
 
       // The source's volumes went with the box.
       const volumes = ((await (await api("/api/volumes")).json()) as { volumes: VolumeJson[] }).volumes;
-      for (const mount of copied) {
-        const engineName =
-          (before.mounts.find((item) => item.path === mount.path)?.volumeName ?? "") === ""
-            ? ""
-            : ((await (await api(`/api/volumes/${mount.volumeId}`)).json()) as { volume: VolumeJson }).volume
-                .engineName;
-        if (engineName === "") continue;
+      for (const engineName of oldEngineNames) {
         expect(volumes.filter((volume) => volume.engineName === engineName)).toEqual([]);
         await expect(runtime.inspectVolume(engineName)).rejects.toMatchObject({ kind: "not_found" });
       }
