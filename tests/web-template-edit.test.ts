@@ -289,8 +289,12 @@ describe.skipIf(!executablePath)("editing a template from the Templates page (re
         await ok.dispatchEvent("click");
         expect(sent.filter((request) => request.method === "PATCH")).toHaveLength(1);
 
+        const response = page.waitForResponse(
+          (reply) => reply.request().method() === "PATCH" && reply.url().includes("/api/templates/"),
+        );
         held.resolve();
         await settled.promise;
+        expect((await response).status()).toBe(200);
         await webExpect(dialog()).toHaveCount(0);
         const host = app?.hosts.get();
         if (!host) throw new Error("the test app has a host");
