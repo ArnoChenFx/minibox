@@ -178,7 +178,7 @@ describe.skipIf(!executablePath)("a Box on an agent host (real browser)", () => 
         const checkpoint = page.locator(".detail-head [data-action='checkpoint']");
         await webExpect(checkpoint).toBeDisabled();
         await webExpect(checkpoint).toHaveAttribute("title", english("bd.agentCheckpoints"));
-        await webExpect(checkpoint).toHaveAttribute("title", /agent host cannot take checkpoints/);
+        await webExpect(checkpoint).toHaveAttribute("title", /agent host cannot take a checkpoint/);
 
         await page.goto(boxUrl(base, box, "settings/checkpoints"));
         const panel = page.locator("#bsPanel");
@@ -191,6 +191,49 @@ describe.skipIf(!executablePath)("a Box on an agent host (real browser)", () => 
 
         // The take is never attempted: no checkpoint request is sent, so no 501 comes back as a toast.
         expect(requests.filter((path) => path.endsWith("/checkpoints") && path.startsWith("/api/boxes/"))).toEqual([]);
+        await webExpect(page.locator("#toasts .toast.error")).toHaveCount(0);
+      } finally {
+        await context.close();
+      }
+    },
+    TIMEOUT_MS,
+  );
+
+  test(
+    "Move and Save as template are off in the head, with the reason, so neither can answer 501 after a click",
+    async () => {
+      const context = await signedIn();
+      try {
+        const page = await context.newPage();
+        const requests = watch(page);
+        await page.route("**/api/hosts", hostsAs([{ id: "edge", name: "Edge lab", transport: "agent" }]));
+        await page.route("**/api/boxes/*", async (route) => {
+          const request = route.request();
+          if (request.method() !== "GET" || new URL(request.url()).pathname.endsWith("/stats")) return route.fallback();
+          const response = await route.fetch();
+          const body = (await response.json()) as { box: Record<string, unknown> };
+          await route.fulfill({ response, json: { ...body, box: { ...body.box, hostId: "edge" } } });
+        });
+
+        await page.goto(boxUrl(base, box, "overview"));
+        // The host list holds a second host, so the Move button is drawn at all; on an agent host it is off.
+        const move = page.locator(".detail-head [data-action='move']");
+        await webExpect(move).toHaveCount(1);
+        await webExpect(move).toBeDisabled();
+        await webExpect(move).toHaveAttribute("title", english("bd.agentMove"));
+        // A move is refused in either direction, so the reason never promises one.
+        await webExpect(move).toHaveAttribute("title", /cannot move to or from an agent host/);
+
+        const template = page.locator(".detail-head [data-action='save-template']");
+        await webExpect(template).toBeDisabled();
+        await webExpect(template).toHaveAttribute("title", english("bd.agentTemplate"));
+        await webExpect(template).toHaveAttribute("title", /cannot save a box as a template/);
+
+        // Neither dialog opens, so neither request is sent: no move preview, no template save.
+        await move.click({ force: true });
+        await template.click({ force: true });
+        await webExpect(page.locator(".dialog")).toHaveCount(0);
+        expect(requests.filter((path) => path.endsWith("/move") || path.endsWith("/template"))).toEqual([]);
         await webExpect(page.locator("#toasts .toast.error")).toHaveCount(0);
       } finally {
         await context.close();
@@ -335,6 +378,17 @@ describe.skipIf(!executablePath)("a Box on an agent host (real browser)", () => 
         const checkpoint = page.locator(".detail-head [data-action='checkpoint']");
         await webExpect(checkpoint).toBeEnabled();
         await webExpect(checkpoint).not.toHaveAttribute("title", english("bd.agentCheckpoints"));
+        // Move and Save as template are offered again, with no reason attached.
+        await webExpect(page.locator(".detail-head [data-action='move']")).toBeEnabled();
+        await webExpect(page.locator(".detail-head [data-action='move']")).not.toHaveAttribute(
+          "title",
+          english("bd.agentMove"),
+        );
+        await webExpect(page.locator(".detail-head [data-action='save-template']")).toBeEnabled();
+        await webExpect(page.locator(".detail-head [data-action='save-template']")).not.toHaveAttribute(
+          "title",
+          english("bd.agentTemplate"),
+        );
 
         // The Files tab asks for its listing again, which a host with an engine answers.
         await page.goto(boxUrl(base, box, "files"));

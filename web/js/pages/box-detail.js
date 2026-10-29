@@ -90,6 +90,9 @@ export function render(view, id, tab = "overview", sub = undefined) {
 
   const headHtml = () => {
     const onAgent = onAgentHost();
+    // Both of these answer 501 on an agent host: a move is refused in either direction, and a template needs an image
+    // commit the agent cannot make. They are shown, disabled, with the reason, instead of failing after the click.
+    const disabled = (key) => (onAgent ? ` disabled title="${esc(t(key))}"` : "");
     return `
     <div class="detail-head">
       <span class="avatar">${icon("box", "icon-lg")}</span>
@@ -99,9 +102,9 @@ export function render(view, id, tab = "overview", sub = undefined) {
         ${box.running ? `<button class="btn" data-action="stop">${icon("stop")}${t("act.stop")}</button>` : `<button class="btn btn-primary" data-action="start">${icon("play")}${t("act.start")}</button>`}
         <button class="btn" data-action="restart">${icon("restart")}${t("act.restart")}</button>
         <button class="btn" data-action="ssh">${icon("terminal")}${t("act.ssh")}</button>
-        ${onAgent ? `<button class="btn" data-action="checkpoint" disabled title="${esc(t("bd.agentCheckpoints"))}">${icon("camera")}${t("act.checkpoint")}</button>` : `<button class="btn" data-action="checkpoint">${icon("camera")}${t("act.checkpoint")}</button>`}
-        <button class="btn" data-action="save-template">${icon("layers")}${t("tp.saveAction")}</button>
-        ${multiHost() ? `<button class="btn" data-action="move">${icon("move")}${t("bd.move")}</button>` : ""}
+        <button class="btn" data-action="checkpoint"${disabled("bd.agentCheckpoints")}>${icon("camera")}${t("act.checkpoint")}</button>
+        <button class="btn" data-action="save-template"${disabled("bd.agentTemplate")}>${icon("layers")}${t("tp.saveAction")}</button>
+        ${multiHost() ? `<button class="btn" data-action="move"${disabled("bd.agentMove")}>${icon("move")}${t("bd.move")}</button>` : ""}
         <button class="btn" data-action="rebuild">${icon("refresh")}${t("bd.rebuild")}</button>
         <button class="btn" data-action="delete" title="${t("bd.deleteTitle")}">${icon("trash")}${t("act.delete")}</button>
       </div>

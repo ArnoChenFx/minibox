@@ -94,11 +94,13 @@ describe("mount row", () => {
 });
 
 describe("dialog spacing", () => {
-  test("the method selector of the add-host dialog is one block gap above the form it reveals", () => {
+  test("the method selector of the add-host dialog is one block gap above either form it reveals", () => {
     // app.css is the import list; the rules themselves live in the part it inlines.
     const css = readFileSync(join(WEB, "css", "app", "forms.css"), "utf8");
-    const rule = css.match(/\.segmented\s*\+\s*\[data-method-panel\]\s*\{[^}]*\}/)?.[0] ?? "";
+    // Both method panels are siblings of the selector, so a `+` combinator would leave the second one flush against it.
+    const rule = css.match(/\.segmented\s*~\s*\[data-method-panel\]\s*\{[^}]*\}/)?.[0] ?? "";
     expect(rule).toContain("margin-top: 16px;");
+    expect(css).not.toMatch(/\.segmented\s*\+\s*\[data-method-panel\]/);
     // The hint under a row of choices keeps its tighter gap, so the rule cannot be the one that already existed.
     expect(css.match(/\.segmented\s*\+\s*\.help\s*\{[^}]*\}/)?.[0]).toContain("margin-top: 4px;");
   });

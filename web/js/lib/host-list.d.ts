@@ -34,7 +34,7 @@ export interface ListedHost {
 
 export declare function listedHost<H extends ListedHost>(hostId: string, hosts: readonly H[]): H | null;
 
-export declare function agentHostOfBox<H extends ListedHost>(box: HostedBox, hosts: readonly H[]): H | null;
+export declare function listedHostOfBox<H extends ListedHost>(box: HostedBox, hosts: readonly H[]): H | null;
 
 export declare const boxOnAgentHost: (box: HostedBox, hosts: readonly ListedHost[]) => boolean;
 

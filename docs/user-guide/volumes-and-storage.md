@@ -102,7 +102,7 @@ The same volume can be mounted by several boxes. When you mount a volume read-wr
 
 ## Snapshot a volume
 
-**A volume on an agent host cannot be browsed, measured or snapshotted.** An agent runs boxes only: the file browser and the usage reading both start a short-lived helper container, and a checkpoint commits a system image and copies the volume through one. The **Browse files**, **Measure** and **Snapshot** buttons of such a volume are off, with the reason as their tooltip, and one line above the table says the same for the whole page. Volumes on the other hosts are unaffected, and the command line still reads a volume's files over the API, which answers the same refusal.
+**A volume on an agent host cannot be browsed, measured or snapshotted.** An agent runs boxes only: the file browser and the usage reading both start a short-lived helper container, and a checkpoint commits a system image and copies the volume through one. The **Browse files**, **Measure** and **Snapshot** buttons of such a volume are off, with the reason as their tooltip, and one line above the table says the same for the whole page. A box cannot move off an agent host yet, so the volume stays there with the box that owns it. Volumes on the other hosts are unaffected, and the command line still reads a volume's files over the API, which answers the same refusal.
 
 Click **Snapshot** on a volume to keep a copy of its data as a checkpoint.
 

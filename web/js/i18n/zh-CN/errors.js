@@ -316,7 +316,7 @@ export default {
   "err.agent_refused_protocol": "当前 MiniBox 使用 Agent 协议 {protocol}。请更新 Agent 镜像。",
   "err.runtime_unsupported": "该宿主机无法执行此操作：{detail}",
   "err.move_agent_unsupported":
-    "箱子暂时不能迁移到 Agent 宿主机或从其迁出，因为 Agent 不复制镜像和卷。请直接在 Agent 宿主机上创建箱子。",
+    "目前 Box 还不能迁入或迁出 Agent 宿主机，因为 Agent 既不复制镜像，也不复制卷。请直接在想要的位置创建 Box。",
   "err.preview_agent_unsupported": "Agent 宿主机暂不支持端口预览。",
   "err.box_moving": "此 Box 正在迁移到另一台宿主机，请等迁移完成后再试。",
   "err.box_changing": "此 Box 正在重建或更新，请等它完成后再迁移。",

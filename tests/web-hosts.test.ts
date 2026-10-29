@@ -11,13 +11,13 @@ import {
 } from "../web/js/lib/agent-command.js";
 import {
   accessWarningShown,
-  agentHostOfBox,
   agentState,
   boxesOnHost,
   boxOnAgentHost,
   hostFilterShown,
   hostOfBox,
   isUnreachable,
+  listedHostOfBox,
 } from "../web/js/lib/host-list.js";
 
 const boxes = [
@@ -83,8 +83,8 @@ describe("the host a box runs on, and whether it is an agent", () => {
   ];
 
   test("a box names its host, and one that names none is on the local host", () => {
-    expect(agentHostOfBox({ name: "alpha" }, hosts)?.id).toBe("local");
-    expect(agentHostOfBox({ name: "beta", hostId: "edge" }, hosts)?.id).toBe("edge");
+    expect(listedHostOfBox({ name: "alpha" }, hosts)?.id).toBe("local");
+    expect(listedHostOfBox({ name: "beta", hostId: "edge" }, hosts)?.id).toBe("edge");
   });
 
   test("an agent host is the only host whose box is on one", () => {
@@ -95,9 +95,9 @@ describe("the host a box runs on, and whether it is an agent", () => {
   });
 
   test("a host the list does not name yet is not called an agent, so a page that opens before the list loads keeps its tabs", () => {
-    expect(agentHostOfBox({ name: "beta", hostId: "edge" }, [])).toBeNull();
+    expect(listedHostOfBox({ name: "beta", hostId: "edge" }, [])).toBeNull();
     expect(boxOnAgentHost({ name: "beta", hostId: "edge" }, [])).toBe(false);
-    expect(agentHostOfBox({ name: "beta", hostId: "gone" }, hosts)).toBeNull();
+    expect(listedHostOfBox({ name: "beta", hostId: "gone" }, hosts)).toBeNull();
     expect(boxOnAgentHost({ name: "beta", hostId: "gone" }, hosts)).toBe(false);
   });
 
@@ -108,8 +108,8 @@ describe("the host a box runs on, and whether it is an agent", () => {
       { id: string; name: string; transport: string },
     ];
     const reordered = [edge, local, lab];
-    expect(agentHostOfBox({ name: "beta", hostId: "edge" }, reordered)?.transport).toBe("agent");
-    expect(agentHostOfBox({ name: "alpha" }, reordered)?.transport).toBe("local");
+    expect(listedHostOfBox({ name: "beta", hostId: "edge" }, reordered)?.transport).toBe("agent");
+    expect(listedHostOfBox({ name: "alpha" }, reordered)?.transport).toBe("local");
   });
 });
 
