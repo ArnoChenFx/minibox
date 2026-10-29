@@ -2,6 +2,38 @@
 
 Scope: the combined reviews of `3b9c71b..dc4f3b2` (#285/#286). This records concrete changes and the disposition of candidates; a scan warning is not a deletion instruction.
 
+## Acceptance audit after the first CI run
+
+PR #288 implements the storage policy and confirmed bug fixes, but does **not** complete every investigation in #286. Keep #286 open for the outstanding acceptance work below. “Retained” records a deliberate compatibility decision; “deferred” records unfinished work.
+
+| Issue item | Status and evidence / remaining work |
+| --- | --- |
+| A: trusted storage administrator, existing tokens, explicit volume/pool operations | Implemented in token authentication and the shared executor; `issue-286`, token permission/surface, prune, and form tests cover the policy. |
+| A: normal Box operations and indirect volume lifecycle | Existing Box, checkpoint, recycle-bin and SSH regression suites remain. Default provisioning and cleanup belonging to those operations are internal lifecycle work; explicit storage operations remain gated. Real Docker integration passed on the first PR head. |
+| A: UI, errors, translations, upgrade/API docs | Implemented, including MCP discovery/errors and regenerated OpenAPI. |
+| B1: stale template edit | Implemented; a regression suspends real token authorization I/O before a competing edit. |
+| B2: backup I/O failures / maintenance | Implemented; bad records are isolated, maintenance errors are logged without deleting a committed archive. |
+| B3: symlink backup boundaries | Implemented; existing-ancestor resolution and internal/default backup aliases are covered. |
+| B4/B5: setup clearing and argv round trip | Implemented; service and browser cases cover independent clearing, literal shell arguments and untouched multiline argv. |
+| B6: explicit pool versus legacy workspace | Implemented under the new identity gate; explicit selection no longer authorizes an unused legacy workspace. |
+| B7: narrow onboarding | Layout fix and original 320/390px assertions passed in CI. The complete language/theme/font matrix and recorded font diagnosis requested by the issue remain incomplete. |
+| C L4: template existence oracle | Implemented pre-resolution visibility check and cross-token REST regression; a dedicated cross-token MCP oracle regression remains unverified. |
+| C L6: raw path copying | Retained for editor/file-manager compatibility; a separate shell-copy UI is not implemented. |
+| C L7: stream close | Comment and already-closed request guard implemented. The specific close-during-events/log-start interleaving still needs dedicated verification. |
+| C L8: task SSE / Agent Feed | SSE watermark implemented with replay/reset regression coverage. Agent Feed slow-consumer pressure testing and end-to-end flow control are deferred. |
+| C L9: dependency cycle | Pure desired-tools helper extracted; existing tools/Box behavior retained. |
+| C L10: custom backup directory | Implemented permission preservation and warning, with private archives. First CI exposed an obsolete test masked locally by umask 0077; replacement tests set modes explicitly and cover custom/new/default folders. |
+| C L11: deleted-volume levels | Historical level entries are pruned. A dedicated deletion/recreation threshold regression remains to be added. |
+| C L12: CI costs | Existing coverage retained; Action versions ran successfully. Cache/QEMU cost measurement and optimization are unfinished. |
+| C L13: inspect concurrency | Implemented 12-worker cap; a 120-container cold-cache regression verifies concurrency and ordering. |
+| C L14: small consistency fixes | Used parameter renamed and null version retry fixed; localhost warning deliberately retained. |
+| C: low-value tests / test-only helper | Selected source-spelling assertions removed in favor of existing browser coverage; production TAR parsing replaces the test-only wrapper. This is not a repository-wide dead-test audit. |
+| C: knip / exports | Complete entry-point configuration and verified unused-export baseline are unfinished; no bulk deletion is claimed. |
+| C: CSS / large files / relay | Current contracts retained for the reasons below; full style matrix, module audit and Git-history size measurement are unfinished. |
+| C: tooling / docs / catalog | openssl dependency and policy docs updated; complete translation inventory and tools-catalog versus official-template audit are unfinished. |
+
+The first CI run passed real Docker integration and every build check, but its unit/browser job failed on the obsolete backup permission assertion (5408 pass, 179 skip, 1 fail). Local umask 0077 made that assertion pass accidentally; CI's 0022 exposed it. The fix makes the intended filesystem preconditions explicit instead of relying on the runner's umask. Final rerun results belong in the PR.
+
 ## Implemented
 
 - Storage administrator identity is derived on authentication from the stored, unmodified admin policy. Narrowed/custom tokens, even with volume scopes, cannot independently create/delete volumes or select pools. Default Box provisioning remains internal. Admin storage still checks resource/host grants; other owner-only functions remain owner-only. Existing token records are covered without rewriting credentials.

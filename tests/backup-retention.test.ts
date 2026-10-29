@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -214,13 +214,28 @@ describe("the folder the archives live in", () => {
     expect(existsSync(join(dataDir, "backups"))).toBe(false);
   });
 
-  test("the folder is created private, and an existing one is tightened to 700", () => {
+  test("a new custom backup folder is private", () => {
+    const store = new BackupStore(dataDir, { dir: join(root, "archives") });
+    store.ensureDir();
+    expect(mode(store.dir())).toBe(DIR_MODE);
+  });
+
+  test("an existing custom backup folder retains the operator's permissions", () => {
     const backupDir = join(root, "archives");
-    mkdirSync(backupDir, { recursive: true, mode: 0o755 });
+    mkdirSync(backupDir, { recursive: true });
+    chmodSync(backupDir, 0o755);
     const store = new BackupStore(dataDir, { dir: backupDir });
     store.ensureDir();
+    expect(mode(backupDir)).toBe(0o755);
+  });
+
+  test("an existing default backup folder is tightened to 700", () => {
+    const backupDir = join(dataDir, "backups");
+    mkdirSync(backupDir, { recursive: true });
+    chmodSync(backupDir, 0o755);
+    const store = new BackupStore(dataDir);
+    store.ensureDir();
     expect(mode(backupDir)).toBe(DIR_MODE);
-    expect(mode(store.dir())).toBe(DIR_MODE);
   });
 
   test("a store under DATA_DIR/backups counts as inside, and a sibling folder does not", () => {
