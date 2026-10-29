@@ -54,6 +54,9 @@ const DEFAULT_TIMEOUT_MS = 60_000;
 const PULL_TIMEOUT_MS = 15 * 60_000;
 const OWNER_TIMEOUT_MS = 5 * 60_000;
 const STOP_GRACE_MS = 60_000;
+/** Per item stream: bound both small-event counts and large log payloads from a slow consumer. */
+const FEED_MAX_ITEMS = 1024;
+const FEED_MAX_BYTES = 4 * 1024 * 1024;
 
 /** Volume creation with a driver is how an NFS or path pool makes its volume, and an agent host has no such pools. */
 const LOCAL_VOLUMES_ONLY = "volume driver options are not available on agent hosts";
@@ -74,25 +77,40 @@ export function runtimeErrorOf(info: AgentErrorInfo): Error {
 
 /** A queue an async iterator reads from. Items already pushed are read first; `finish` ends it, with an error if one is given. */
 class Feed<T> {
-  private readonly queue: T[] = [];
+  private readonly queue: Array<{ value: T; bytes: number }> = [];
+  private bytes = 0;
   private readonly waiting: Array<(step: Step<T>) => void> = [];
   private ended: { error: unknown } | null = null;
 
-  push(value: T): void {
-    if (this.ended) return;
+  push(value: T): boolean {
+    if (this.ended) return true;
     const wake = this.waiting.shift();
     if (wake) wake({ done: false, value });
-    else this.queue.push(value);
+    else {
+      const bytes = Buffer.byteLength(typeof value === "string" ? value : (JSON.stringify(value) ?? "null"));
+      if (this.queue.length >= FEED_MAX_ITEMS || this.bytes + bytes > FEED_MAX_BYTES) return false;
+      this.queue.push({ value, bytes });
+      this.bytes += bytes;
+    }
+    return true;
   }
 
-  finish(error?: unknown): void {
-    if (this.ended) return;
+  finish(error?: unknown, discard = false): void {
+    if (discard) {
+      this.queue.length = 0;
+      this.bytes = 0;
+    }
+    if (this.ended && !discard) return;
     this.ended = { error };
     for (const wake of this.waiting.splice(0)) wake({ done: true, error });
   }
 
   next(): Promise<Step<T>> {
-    if (this.queue.length > 0) return Promise.resolve({ done: false, value: this.queue.shift() as T });
+    const queued = this.queue.shift();
+    if (queued) {
+      this.bytes -= queued.bytes;
+      return Promise.resolve({ done: false, value: queued.value });
+    }
     if (this.ended) return Promise.resolve({ done: true, error: this.ended.error });
     return new Promise<Step<T>>((resolve) => this.waiting.push(resolve));
   }
@@ -434,22 +452,36 @@ export class AgentRuntime implements Runtime {
   private async *items<T>(op: string, args: unknown, signal?: AbortSignal): AsyncGenerator<T, void, void> {
     if (signal?.aborted) return;
     const feed = new Feed<T>();
+    const pending: { handle?: StreamHandle } = {};
+    let cancelled = false;
+    const cancel = () => {
+      if (cancelled) return;
+      cancelled = true;
+      pending.handle?.cancel();
+    };
     const handle = this.link.open(
       this.agentId,
       op,
       args,
       {
-        item: (value) => feed.push(value as T),
+        item: (value) => {
+          if (feed.push(value as T)) return;
+          feed.finish(unavailable("the agent stream exceeded its consumer buffer limit"), true);
+          cancel();
+        },
         data: () => {},
         end: (error) => feed.finish(error ? runtimeErrorOf(error) : undefined),
       },
       { timeoutMs: DEFAULT_TIMEOUT_MS },
     );
+    pending.handle = handle;
+    if (cancelled) handle.cancel();
     const onAbort = () => {
-      handle.cancel();
-      feed.finish();
+      cancel();
+      feed.finish(undefined, true);
     };
     signal?.addEventListener("abort", onAbort, { once: true });
+    if (signal?.aborted) onAbort();
     try {
       try {
         await handle.opened;
@@ -467,7 +499,7 @@ export class AgentRuntime implements Runtime {
       }
     } finally {
       signal?.removeEventListener("abort", onAbort);
-      handle.cancel();
+      cancel();
     }
   }
 }

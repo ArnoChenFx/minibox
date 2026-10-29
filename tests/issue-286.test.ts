@@ -81,6 +81,30 @@ test("an authenticated admin can use pools and create/delete its volume, without
   expect((await call(h.base, "/api/tokens", { token: admin.secret })).status).toBe(403);
 });
 
+test("admin pool selection ignores an unrelated legacy workspace, while default provisioning still checks ownership", async () => {
+  const h = startHarness();
+  harnesses.push(h);
+  const host = h.app.hosts.get();
+  h.runtime.volumes.set("mbtest-ws-legacy", {
+    name: "mbtest-ws-legacy",
+    labels: { [host.keys.box]: "true", [host.keys.name]: "legacy" },
+  });
+  const admin = mint(h.app, { name: "admin", preset: "admin" });
+  const selected = await call(h.base, "/api/boxes", {
+    token: admin.secret,
+    body: { name: "legacy", mounts: [{ role: "workspace", pool: "local" }] },
+  });
+  expect(selected.status).toBe(201);
+  expect(host.specs.list().find((box) => box.name === "legacy")?.mounts[0]?.volume).not.toBe("mbtest-ws-legacy");
+  h.runtime.volumes.set("mbtest-ws-default", {
+    name: "mbtest-ws-default",
+    labels: { [host.keys.box]: "true", [host.keys.name]: "default" },
+  });
+  const operator = mint(h.app, { name: "operator", preset: "operator" });
+  expect((await call(h.base, "/api/boxes", { token: operator.secret, body: { name: "default" } })).status).toBe(403);
+  expect(h.runtime.containers.size).toBe(1);
+});
+
 test("saved legacy tokens get the new storage restriction after reloading", () => {
   const file = join(temp(), "tokens.json");
   const store = new TokenStore({ file });
@@ -135,41 +159,43 @@ test("custom shared backup folders retain their mode; archives stay private", as
   expect(statSync(service.store.pathFor(record.id)).mode & 0o777).toBe(0o600);
 });
 
-test("a stale edit cannot replace a newer image/recipe after token authorization I/O", async () => {
-  const { app, runtime } = createTestApp({ labelPrefix: "mbtest" });
-  const host = app.hosts.get();
-  const maker = mint(app, { name: "maker", preset: "operator" });
-  await createDeclaredTemplate(host, { name: "tool", source, createdBy: maker.id }, { log: () => {} });
-  const inspect = runtime.inspectImage.bind(runtime);
-  let count = 0;
-  const entered = Promise.withResolvers<void>();
-  const release = Promise.withResolvers<void>();
-  runtime.inspectImage = async (ref) => {
-    if (++count === 4) {
-      entered.resolve();
-      await release.promise;
-    }
-    return inspect(ref);
-  };
-  const ctx = {
-    host,
-    principal: principalOf(app, maker.secret),
-    source: "rest" as const,
-    events: app.events,
-    tokens: app.tokens,
-    execs: app.execs,
-    terminals: app.terminals,
-  };
-  const stale = app.operations.run("template.edit", ctx, {
-    ref: "mbtest-template:tool",
-    source: { ...source, text: "FROM alpine:3.21\n" },
+for (const [stalePatch, currentPatch] of [
+  [{ source: { ...source, text: "FROM alpine:3.21\n" } }, { description: "New description" }],
+  [{ source: { ...source, text: "FROM alpine:3.21\n" } }, { init: { forwardPorts: [8080] } }],
+  [{ init: { forwardPorts: [3000] } }, { source: { ...source, text: "FROM alpine:3.21\n" } }],
+] as const)
+  test(`a stale ${Object.keys(stalePatch)[0]} edit cannot replace a newer ${Object.keys(currentPatch)[0]} after authorization I/O`, async () => {
+    const { app, runtime } = createTestApp({ labelPrefix: "mbtest" });
+    const host = app.hosts.get();
+    const maker = mint(app, { name: "maker", preset: "operator" });
+    await createDeclaredTemplate(host, { name: "tool", source, createdBy: maker.id }, { log: () => {} });
+    const inspect = runtime.inspectImage.bind(runtime);
+    let count = 0;
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    runtime.inspectImage = async (ref) => {
+      if (++count === 4) {
+        entered.resolve();
+        await release.promise;
+      }
+      return inspect(ref);
+    };
+    const ctx = {
+      host,
+      principal: principalOf(app, maker.secret),
+      source: "rest" as const,
+      events: app.events,
+      tokens: app.tokens,
+      execs: app.execs,
+      terminals: app.terminals,
+    };
+    const stale = app.operations.run("template.edit", ctx, { ref: "mbtest-template:tool", ...stalePatch });
+    await entered.promise;
+    await app.operations.run("template.edit", ctx, { ref: "mbtest-template:tool", ...currentPatch });
+    release.resolve();
+    await expect(stale).rejects.toMatchObject({ status: 409, key: "template_busy" });
+    expect((await templateAndRecipe(host, "mbtest-template:tool"))[0].recipe).toMatchObject(currentPatch);
   });
-  await entered.promise;
-  await app.operations.run("template.edit", ctx, { ref: "mbtest-template:tool", description: "New description" });
-  release.resolve();
-  await expect(stale).rejects.toMatchObject({ status: 409, key: "template_busy" });
-  expect((await templateAndRecipe(host, "mbtest-template:tool"))[0].recipe.description).toBe("New description");
-});
 
 test("full template form clears each field while an unchanged argv remains safe", async () => {
   const { app } = createTestApp({ labelPrefix: "mbtest" });
@@ -247,10 +273,30 @@ test("invisible recipe references do not disclose whether a source exists", asyn
     [host.keys.createdBy]: "tok_other",
   });
   const reader = mint(h.app, { name: "reader", preset: "readonly" });
+  const rpc = (method: string, params: unknown, session?: string) =>
+    fetch(`${h.base}/mcp?toolsets=tools`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${reader.secret}`,
+        "content-type": "application/json",
+        accept: "application/json, text/event-stream",
+        ...(session ? { "mcp-session-id": session } : {}),
+      },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+    });
+  const initialized = await rpc("initialize", { protocolVersion: "2025-03-26", capabilities: {} });
+  const session = initialized.headers.get("mcp-session-id") ?? "";
   for (const ref of ["mbtest-template:foreign", "mbtest-template:absent"]) {
     const result = await call(h.base, `/api/templates/${encodeURIComponent(ref)}/recipe`, { token: reader.secret });
     expect(result.status).toBe(403);
     expect(result.json.error?.key).toBe("template_out_of_scope");
+    const mcp = (await (
+      await rpc("tools/call", { name: "get_template_source", arguments: { ref } }, session)
+    ).json()) as {
+      result: { isError: boolean; structuredContent: { code: string; key: string } };
+    };
+    expect(mcp.result.isError).toBe(true);
+    expect(mcp.result.structuredContent).toMatchObject({ code: "forbidden", key: "template_out_of_scope" });
   }
 });
 

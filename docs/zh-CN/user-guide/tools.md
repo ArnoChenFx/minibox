@@ -2,6 +2,8 @@
 
 工具是你安装到 Box 中的程序，例如 AI 编程 Agent、语言运行时和命令行实用程序。MiniBox 有工具目录。你也可以添加自己的工具。
 
+先核对工具显示的依赖与 Box 模板。base 和 `node` 模板包含 Node.js 26，`python`、`go`、`minimal` 模板不包含 Node.js。Claude Code、Codex、OpenCode、Pi、Qoder 等 npm Agent 即使由工具写入器成功安装，其运行时仍需要 Box 内有 Node.js；请先在派生模板中补齐要求的运行时。把工具安装到共享工具卷，不会给所有 Box 镜像安装运行时。
+
 ## 创建 Box 时选择工具
 
 在创建对话框中，**工具** 部分列出目录中的工具。勾选需要的工具。用 **搜索工具** 按名称、说明或分类筛选。

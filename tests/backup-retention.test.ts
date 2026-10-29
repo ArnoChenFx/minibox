@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -8,6 +8,7 @@ import { restoreArchive } from "../src/backup/restore";
 import { applyBackupRetention } from "../src/backup/retention";
 import { BACKUP_VERSION, type BackupRecord, BackupStore } from "../src/backup/store";
 import { DIR_MODE } from "../src/data-dir";
+import { log } from "../src/lib/logger";
 import { BackupService } from "../src/services/backup";
 import { createTestApp, silenceLogs } from "./support/app";
 
@@ -203,6 +204,53 @@ describe("BACKUP_KEEP retention", () => {
 });
 
 describe("the folder the archives live in", () => {
+  test.skipIf(process.getuid?.() === 0)(
+    "an EACCES record is skipped and logged without deleting the committed backup",
+    async () => {
+      const service = new BackupService({ dataDir, databases: [], keep: 1 });
+      service.store.ensureDir();
+      const id = "bk_aaaa000000000001";
+      const path = join(service.store.dir(), `${id}.json`);
+      writeFileSync(path, JSON.stringify(recordFor(id, "2026-10-01T00:00:00.000Z")));
+      chmodSync(path, 0);
+      const warnings = spyOn(log, "warn").mockImplementation(() => {});
+      try {
+        const record = await service.create(PASSPHRASE, "owner");
+        expect(service.list().map((item) => item.id)).toEqual([record.id]);
+        expect(service.whole(record.id)).not.toBeNull();
+        expect(
+          warnings.mock.calls.some(
+            ([event, detail]) =>
+              event === "backup.record_unreadable" && detail?.id === id && String(detail.error).includes("EACCES"),
+          ),
+        ).toBe(true);
+      } finally {
+        warnings.mockRestore();
+        chmodSync(path, 0o600);
+      }
+    },
+  );
+
+  test.skipIf(process.getuid?.() === 0)(
+    "an unreadable custom directory fails listing but maintenance stays best effort",
+    () => {
+      const backupDir = join(root, "unreadable");
+      mkdirSync(backupDir);
+      const service = new BackupService({ dataDir, backupDir, databases: [], keep: 1 });
+      chmodSync(backupDir, 0);
+      const errors = spyOn(log, "error").mockImplementation(() => {});
+      try {
+        expect(() => service.list()).toThrow(/EACCES/);
+        expect(service.sweepPartial()).toBe(0);
+        expect(service.applyRetention()).toEqual({ removed: [], kept: 0 });
+        expect(errors.mock.calls.map(([event]) => event)).toEqual(["backup.sweep_failed", "backup.retention_failed"]);
+      } finally {
+        errors.mockRestore();
+        chmodSync(backupDir, 0o700);
+      }
+    },
+  );
+
   test("BACKUP_DIR moves the archives and their records out of DATA_DIR/backups", () => {
     const backupDir = join(root, "archives");
     const store = new BackupStore(dataDir, { dir: backupDir });
