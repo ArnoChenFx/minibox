@@ -20,7 +20,7 @@
 - 删除 Box 时同时删除其卷（`deleteVolume=true`，REST 与 MCP `delete_box`）同样要求所有者或未收窄的 admin 令牌；其他令牌（包括按 id、标签或 created-by-me 限定、持有 `trash:skip` 的令牌）返回 `403 storage_admin_required`，Box 与卷都不改动。不带该参数删除 Box 不受影响。
 - 未收窄的 admin 令牌现在可以列出和替换存储池（`pool.list`、`pool.replace`），并删除其可见范围内的卷（单个与批量），不再限于自己创建的卷；批量删除越权的卷返回 `volume_delete_forbidden`，文案改为“不在此凭据的资源范围内”。tools 角色卷仍只有所有者可以手动创建，任何令牌（包括 admin）返回 `403 volume_tools_create_forbidden`。
 - 同一存储池有多个 tools 角色卷时，Box 总是挂载 MiniBox 管理的 `<前缀>-tools-<宿主机 id>`；Box 不会挂载的多余 tools 卷可以按名称单个或批量删除，清理（prune）仍跳过所有 tools 卷。
-- 兼容性：重建（rebuild）或更新挂载时写入一个尚不存在的卷名（例如 `{ "volume": "brand-new-vol" }`）会新建独立卷，属于卷管理，现在要求所有者或未收窄的 admin 令牌，其他令牌返回 `403 storage_admin_required`（此前 operator 等令牌可以成功）。
+- 兼容性：重建（rebuild）或更新挂载时写入一个尚不存在的卷名（例如 `{ "volume": "brand-new-vol" }`）会新建独立卷，属于卷管理，现在要求所有者或未收窄的 admin 令牌，其他令牌返回 `403 storage_admin_required`（此前 operator 等令牌可以成功）。创建 Box 时写入不存在的卷名不会新建卷，所有调用方都返回 `404 volume_not_found`。
 - `BACKUP_DIR` 的祖先目录不可读（EACCES、EPERM、符号链接环等）时按字面路径比较，不再导致启动失败；备份遍历只对符号链接单独解析实际路径。
 - 模板列表隐藏已失去模板标签、且配方已指向其他镜像的旧镜像；编辑模板描述生成新镜像后尝试删除旧镜像（不强制），仍被使用时保留并记录日志。
 - 令牌权限表单中“敏感 / 危险”分组与上方分组之间保留 16px 间距；`volume:delete` 的中文名称改为“删除存储卷”（英文 “Delete volumes”），说明改为删除存储卷（包括一次删除多个），数据无法找回。

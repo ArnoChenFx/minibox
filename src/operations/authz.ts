@@ -1,4 +1,4 @@
-import { AppError } from "../lib/errors";
+import { AppError, notFound } from "../lib/errors";
 import { msg } from "../lib/messages";
 import type { TemplateInit } from "../services/template-builds";
 import type { BoxMount } from "../specs/types";
@@ -185,7 +185,9 @@ function poolNamed(ctx: OperationContext, name: string): StoragePool | null {
 /**
  * Checks the mounts a create asks for. A mount of a recorded volume is an attachment: `volume:attach` on it, and
  * `volume:write` for a read-write one. A role mount makes a new volume, so it needs `volume:write`, and the tools role
- * also needs `volume:attach` when the shared tools volume already exists.
+ * also needs `volume:attach` when the shared tools volume already exists. A create never makes a volume from a name,
+ * so a name with no record on this host is `404 volume_not_found` for every caller, as the create itself would answer,
+ * rather than the `storage_admin_required` a rebuild gives a new name.
  */
 export async function assertCanCreateMounts(
   ctx: OperationContext,
@@ -195,6 +197,12 @@ export async function assertCanCreateMounts(
   const attached: BoxMount[] = mounts.flatMap((mount) =>
     isRoleMount(mount) ? [] : [{ volume: mount.volume, ...mountPointOf(mount) }],
   );
+  for (const mount of attached) {
+    const record = ctx.host.volumes.resolve(mount.volume, ctx.host.host.id);
+    if (!record || record.hostId !== ctx.host.host.id) {
+      throw notFound(msg("volume_not_found", { volume: mount.volume }));
+    }
+  }
   await assertCanChangeMounts(ctx, attached, []);
   await assertCanCreateRoleVolumes(ctx, boxName, roleRequests(mounts));
 }

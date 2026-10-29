@@ -95,7 +95,7 @@ Box 内 Agent 使用的是另一种令牌，即自助令牌。所有者在创建
 | operator、sandboxed-agent、自定义或收窄的 admin | 拒绝 | 按 Box/资源范围及 scope 执行 |
 | Box self-token | 拒绝 | 仅该 Box 的 self 操作 |
 
-不指定 pool 时，服务器为有权创建的 Box 配备默认角色卷。删除 Box 时同时删除其卷（`deleteVolume=true`）属于显式删卷：非存储管理员令牌会得到 `403 storage_admin_required`，Box 也不会被删除；不带该参数删除 Box 时卷保留。重建或修改挂载时写入一个尚不存在的卷名会新建独立卷，同样返回 `403 storage_admin_required`。任何令牌（包括未收窄的 admin 令牌）都不能创建 tools 角色卷，只有所有者可以（`403 volume_tools_create_forbidden`）。授权 Box 的文件、终端、端口、检查点与活动分别按对应 scope 检查，SSH 需要 `box:ssh`。令牌管理等 owner-only 功能只允许所有者调用。
+不指定 pool 时，服务器为有权创建的 Box 配备默认角色卷。删除 Box 时同时删除其卷（`deleteVolume=true`）属于显式删卷：非存储管理员令牌会得到 `403 storage_admin_required`，Box 也不会被删除；不带该参数删除 Box 时卷保留。重建或修改挂载时写入一个尚不存在的卷名会新建独立卷，同样返回 `403 storage_admin_required`。创建 Box 不会按名称新建卷，因此创建时写入不存在的卷名，无论哪个令牌都返回 `404 volume_not_found`。任何令牌（包括未收窄的 admin 令牌）都不能创建 tools 角色卷，只有所有者可以（`403 volume_tools_create_forbidden`）。授权 Box 的文件、终端、端口、检查点与活动分别按对应 scope 检查，SSH 需要 `box:ssh`。令牌管理等 owner-only 功能只允许所有者调用。
 
 ### 吊销令牌
 

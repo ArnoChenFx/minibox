@@ -59,3 +59,28 @@ test("an unmodified admin token and the owner may still rebuild with a new volum
     expect(brandNew(h)).toBeDefined();
   }
 });
+
+test("creating a box with a volume name that has no record is 404 volume_not_found for every caller, and makes nothing", async () => {
+  for (const preset of ["operator", "admin", null] as const) {
+    const h = startHarness();
+    harnesses.push(h);
+    const token = preset ? mint(h.app, { name: preset, preset }).secret : undefined;
+    const before = h.runtime.calls.length;
+    const reply = await call(h.base, "/api/boxes", {
+      token,
+      body: { name: "box", mounts: [{ volume: "no-such-vol", path: "/data", mode: "rw" }] },
+    });
+    // A create never makes a volume from a name, so the missing name is reported, not refused as volume administration.
+    expect({ preset, ...refused(reply) }).toEqual({ preset, status: 404, key: "volume_not_found" });
+    expect(h.app.hosts.get().specs.list()).toHaveLength(0);
+    expect(
+      h.app.hosts
+        .get()
+        .volumes.list()
+        .some((volume) => volume.name === "no-such-vol"),
+    ).toBe(false);
+    expect(h.runtime.calls.slice(before).some((c) => c.op === "createVolume" || c.op === "createContainer")).toBe(
+      false,
+    );
+  }
+});
