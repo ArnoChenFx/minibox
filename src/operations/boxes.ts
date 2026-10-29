@@ -25,7 +25,8 @@ import {
 } from "../services/boxes";
 import { assertCapacity, assertNewBox, assertResizeRoom } from "../services/capacity";
 import { assertRepoSecretSet, cloneIntoWorkspace, WORKSPACE } from "../services/git-clone";
-import { moveBox, moveConfirmation, previewMove } from "../services/move";
+import { MOVE_VIA, moveBox, moveConfirmation, previewMove } from "../services/move";
+import { checkpointMoveConfirmation, moveBoxByCheckpoint, previewCheckpointMove } from "../services/move-checkpoint";
 import { officialOfRef } from "../services/official-templates";
 import { placeBox } from "../services/placement";
 import { rebuildBox, rebuildWithSafety } from "../services/rebuild";
@@ -49,7 +50,7 @@ import {
   assertTemplateSetupAllowed,
 } from "./authz";
 import { defineOperation } from "./define";
-import { hostById, hostOfBox } from "./routing";
+import { hostById, hostOfBox, imageHosts } from "./routing";
 import {
   BoxSchema,
   BoxWithStatsSchema,
@@ -670,9 +671,19 @@ const boxRebuild = defineOperation({
 });
 
 const LeftoverSchema = z.object({
-  kind: z.enum(["container", "volume"]),
+  kind: z.enum(["container", "volume", "checkpoint"]).meta({
+    description:
+      "What stayed behind. A checkpoint is one the move took and could not remove, so it is left for the operator to delete.",
+  }),
   name: z.string(),
 });
+
+/** How a box reaches its target. `checkpoint` carries the box's data in a checkpoint, `direct` sends the template image. */
+const moveVia = () =>
+  z.enum(MOVE_VIA).default("direct").meta({
+    description:
+      "How the box travels. direct (the default) sends the template image and copies the volumes with archives. checkpoint takes a checkpoint of the box, copies that checkpoint to the target, makes the box there from it, and removes the box from the old host. A checkpoint move carries the data a checkpoint holds, so a volume a checkpoint cannot read refuses it; it also refuses an agent host on either side, because both paths need an engine that copies images, archives and helper containers.",
+  });
 
 const boxMove = defineOperation({
   name: "box.move",
@@ -686,14 +697,17 @@ const boxMove = defineOperation({
     id: boxId(),
     host: hostId().meta({ description: "The host to move the box to. It must differ from the box's current host." }),
     confirm: storageConfirmFlag(),
+    via: moveVia(),
     expectedRevision: expectedRevision(),
   }),
   output: z.object({
     box: BoxSchema,
     from: hostId(),
     to: hostId(),
+    via: z.enum(MOVE_VIA).meta({ description: "The path the move took, as the request asked for it." }),
     checkpoints: z.number().int().meta({
-      description: "Checkpoints the box has on its old host. They stay there and are not restored on the new one.",
+      description:
+        "Checkpoints the box has on its old host. A direct move leaves them there; a checkpoint move takes its own and removes it.",
     }),
     leftovers: z.array(LeftoverSchema).meta({
       description: "What stayed on the old host after the move, when its removal failed. Empty when it was cleaned up.",
@@ -704,19 +718,20 @@ const boxMove = defineOperation({
     toolset: "move",
     name: "move_box",
     description:
-      "Move a box to another host. Owner or admin only: the token needs box write and every host and box granted, as the admin preset has. Without confirm true the call is refused with a preview: the volumes that would be copied or attached, whether the box starts on the new host, the template image that would be sent, and the state that is lost. With confirm, the image is sent, local volumes are copied, the box is recreated on the new host and started there if it runs now, and the old container is removed once the new one runs. NFS volumes stay where they are and are attached on the new host. Bind mounts and volumes MiniBox did not create refuse the move. The box keeps its id, name, volumes, env and history, and loses its writable layer, processes and IP. Its checkpoints stay on the old host. Pass expectedRevision, the box's current revision.",
+      "Move a box to another host. Owner or admin only: the token needs box write and every host and box granted, as the admin preset has. Without confirm true the call is refused with a preview: the path the move takes, the volumes that would be copied, restored or attached, whether the box starts on the new host, the template image that would be sent, and the state that is lost. via direct (the default) sends the template image and copies the volumes with archives. via checkpoint takes a checkpoint of the box, copies that checkpoint to the new host, makes the box there from it and removes the old one; it carries only what a checkpoint holds, so a volume a checkpoint cannot read refuses the move, and it needs a target that can copy images, archives and helper containers, so neither host may be an agent host. NFS volumes stay where they are and are attached on the new host. Bind mounts and volumes MiniBox did not create refuse a direct move. The box keeps its id, name, volumes, env and history, and loses its writable layer, processes and IP. A direct move leaves the box's checkpoints on the old host; a checkpoint move takes its own and removes it afterwards. Pass expectedRevision, the box's current revision.",
   },
   hostFor: (ctx, input) => hostOfBox(ctx, input.id),
   resolve: ({ host }, input) => getBox(host, input.id),
   beforeTask: async (ctx, input) => {
-    const preview = await previewMove(
-      ctx.host,
-      hostById(ctx, input.host),
-      input.id,
-      requireRevision(input.expectedRevision),
-    );
-    if (!input.confirm) throw moveConfirmation(preview);
-    await assertHostDiskRoom(hostById(ctx, input.host));
+    const target = hostById(ctx, input.host);
+    const preview =
+      input.via === "checkpoint"
+        ? await previewCheckpointMove(ctx.host, target, input.id, requireRevision(input.expectedRevision), imageHosts(ctx))
+        : await previewMove(ctx.host, target, input.id, requireRevision(input.expectedRevision));
+    if (!input.confirm) {
+      throw input.via === "checkpoint" ? checkpointMoveConfirmation(preview) : moveConfirmation(preview);
+    }
+    await assertHostDiskRoom(target);
   },
   exclusive: ({ host }, _input, box) => `box.move:${host.host.id}:${box.boxId}`,
   activity: { action: () => "box.move", target: (_input, box) => box.name },
@@ -725,17 +740,17 @@ const boxMove = defineOperation({
     detail: (input) => ({ host: input.host, confirm: input.confirm }),
   },
   run: async (ctx, input) => {
-    const result = await moveBox(
-      ctx.host,
-      hostById(ctx, input.host),
-      input.id,
-      requireRevision(input.expectedRevision),
-      ctx.task,
-    );
+    const target = hostById(ctx, input.host);
+    const revision = requireRevision(input.expectedRevision);
+    const result =
+      input.via === "checkpoint"
+        ? await moveBoxByCheckpoint(ctx.host, target, input.id, revision, imageHosts(ctx), ctx.task)
+        : await moveBox(ctx.host, target, input.id, revision, ctx.task);
     return {
       box: result.box,
       from: result.from,
       to: result.to,
+      via: result.via,
       checkpoints: result.checkpoints,
       leftovers: [...result.leftovers],
     };

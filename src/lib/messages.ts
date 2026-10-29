@@ -429,12 +429,18 @@ export const MESSAGES = {
   agent_refused_protocol: "This MiniBox speaks agent protocol {protocol}. Update the agent image.",
   runtime_unsupported: "This host cannot run that operation: {detail}",
   move_agent_unsupported:
-    "A box cannot move to or from an agent host yet, because an agent does not copy images or volumes. Create the box on the agent host instead.",
+    "A box cannot move to or from an agent host, by either path. An agent does not copy images, volumes or archives, and the helpers both paths run are refused there. Create the box on the agent host instead.",
   preview_agent_unsupported: "Port preview is not supported on agent hosts yet.",
   box_moving: "This box is moving to another host. Try again when the move finishes.",
   box_changing: "This box is being rebuilt or updated. Try the move again when that finishes.",
   move_confirm:
     "Moving copies the box's volumes to {to}, starts it there if it runs now, and removes it from {from} once it runs there. Send confirm: true to continue.",
+  move_confirm_checkpoint:
+    "Moving {box} through a checkpoint takes a checkpoint of it, copies that checkpoint to {to}, makes the box there from it, and removes it from {from} once it runs there. Send confirm: true to continue.",
+  move_checkpoint_template_missing:
+    "Host {host} does not hold template {image} and no other host can send it, so the box could not be made there. Copy the template to {host} first, or move with via direct.",
+  move_checkpoint_volume_unrepresentable:
+    "Volume {volume}, mounted at {path}, holds data a checkpoint cannot read, so the box cannot move through a checkpoint. Use via direct, which copies the volume as it is, or unmount the volume first.",
   move_same_host: "The box already runs on host {host}, so it cannot move there.",
   move_owner_only: "Only the owner or an admin credential may move a box.",
   move_changed: "The box changed while it was moving, so the move was undone. Refresh the box and try again.",

@@ -6268,6 +6268,15 @@
                   "confirm": {
                     "type": "boolean",
                     "description": "Apply the change. Without true, the call is rejected with 409 confirmation_required and a preview of what would change, and nothing changes. Defaults to false."
+                  },
+                  "via": {
+                    "default": "direct",
+                    "description": "How the box travels. direct (the default) sends the template image and copies the volumes with archives. checkpoint takes a checkpoint of the box, copies that checkpoint to the target, makes the box there from it, and removes the box from the old host. A checkpoint move carries the data a checkpoint holds, so a volume a checkpoint cannot read refuses it; it also refuses an agent host on either side, because both paths need an engine that copies images, archives and helper containers.",
+                    "type": "string",
+                    "enum": [
+                      "direct",
+                      "checkpoint"
+                    ]
                   }
                 },
                 "required": [
@@ -6857,11 +6866,19 @@
               "pattern": "^[a-z][a-z0-9-]{0,31}$",
               "description": "Host id: local, or the id of a host added under Settings."
             },
+            "via": {
+              "type": "string",
+              "enum": [
+                "direct",
+                "checkpoint"
+              ],
+              "description": "The path the move took, as the request asked for it."
+            },
             "checkpoints": {
               "type": "integer",
               "minimum": -9007199254740991,
               "maximum": 9007199254740991,
-              "description": "Checkpoints the box has on its old host. They stay there and are not restored on the new one."
+              "description": "Checkpoints the box has on its old host. A direct move leaves them there; a checkpoint move takes its own and removes it."
             },
             "leftovers": {
               "type": "array",
@@ -6872,8 +6889,10 @@
                     "type": "string",
                     "enum": [
                       "container",
-                      "volume"
-                    ]
+                      "volume",
+                      "checkpoint"
+                    ],
+                    "description": "What stayed behind. A checkpoint is one the move took and could not remove, so it is left for the operator to delete."
                   },
                   "name": {
                     "type": "string"
@@ -6892,6 +6911,7 @@
             "box",
             "from",
             "to",
+            "via",
             "checkpoints",
             "leftovers"
           ],
