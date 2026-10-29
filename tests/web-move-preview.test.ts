@@ -94,4 +94,28 @@ describe("the hosts a box may be moved to", () => {
     expect(usable).toBe(false);
     expect(agentsOnly).toBe(false);
   });
+
+  test("an agent host beside a host that is only offline is not 'agents only', since a host that is not an agent exists", () => {
+    const offline = { ...lab, status: "offline" };
+    const { options, usable, agentsOnly } = moveTargets(box, [local, offline, edge]);
+    expect(options).toBe('<option value="edge" disabled>Edge — an agent host cannot take a box yet</option>');
+    expect(usable).toBe(false);
+    // "Add a host that is not an agent host" would be wrong to say to someone whose Lab is merely down.
+    expect(agentsOnly).toBe(false);
+  });
+
+  test("a box that names no host sits on the local host, which is not one of its own targets", () => {
+    const { options, usable, agentsOnly } = moveTargets({}, [local, edge]);
+    expect(options).toBe('<option value="edge" disabled>Edge — an agent host cannot take a box yet</option>');
+    expect(usable).toBe(false);
+    expect(agentsOnly).toBe(true);
+  });
+
+  test("an agent host that is offline is not offered, and when it is the only other host the dialog still says 'agents only'", () => {
+    const offline = { ...edge, status: "offline" };
+    const { options, usable, agentsOnly } = moveTargets(box, [local, offline]);
+    expect(options).toBe("");
+    expect(usable).toBe(false);
+    expect(agentsOnly).toBe(true);
+  });
 });

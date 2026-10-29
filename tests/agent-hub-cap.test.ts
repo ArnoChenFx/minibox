@@ -282,8 +282,8 @@ describe("the cap on sockets that have not authenticated", () => {
   test("authenticated agents hold no place in the total either, however many are connected", () => {
     const { hub, enrollAs, key } = setup({ pendingMax: 2, pendingPerAddressMax: 2 });
     // Three agents are connected, which is more than the total allows to be waiting.
-    for (const hostId of ["one", "two", "three"]) {
-      const connected = connectAgent(hub, key, enrollAs(hostId).agentId, `198.51.100.${hostId.length}`);
+    for (const [index, hostId] of ["one", "two", "three"].entries()) {
+      const connected = connectAgent(hub, key, enrollAs(hostId).agentId, `198.51.100.${index + 1}`);
       expect(connected.socket.closed).toEqual([]);
       expect(framesOf(connected.socket, "welcome")).toHaveLength(1);
     }
@@ -293,15 +293,36 @@ describe("the cap on sockets that have not authenticated", () => {
     expect(framesOf(next.socket, "challenge")).toHaveLength(1);
   });
 
-  test("a socket that cannot be written to holds no place, although opening it fails", () => {
+  test("a socket that cannot be written to holds no place and is closed, although opening it fails", () => {
     const { hub } = setup({ pendingPerAddressMax: 1 });
+    const closed: Array<{ code: number; reason: string }> = [];
     const broken: AgentSocket = {
       send: () => {
         throw new Error("the socket is gone");
       },
-      close: () => {},
+      close: (code, reason) => {
+        closed.push({ code, reason });
+      },
     };
     expect(() => hub.attach(broken, LOCAL)).toThrow("the socket is gone");
+    // The caller got no session to detach and no timer was set, so nothing else would ever close it.
+    expect(closed).toEqual([{ code: 1011, reason: "the challenge could not be sent" }]);
+    const next = open(hub);
+    expect(next.socket.closed).toEqual([]);
+    expect(framesOf(next.socket, "challenge")).toHaveLength(1);
+  });
+
+  test("a socket that cannot be closed either still gives its place back, and the failure raised is the send's", () => {
+    const { hub } = setup({ pendingPerAddressMax: 1 });
+    const gone: AgentSocket = {
+      send: () => {
+        throw new Error("the socket is gone");
+      },
+      close: () => {
+        throw new Error("already closed");
+      },
+    };
+    expect(() => hub.attach(gone, LOCAL)).toThrow("the socket is gone");
     const next = open(hub);
     expect(next.socket.closed).toEqual([]);
     expect(framesOf(next.socket, "challenge")).toHaveLength(1);

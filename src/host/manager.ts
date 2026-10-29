@@ -474,7 +474,7 @@ export class HostManager {
       if (usage.total > 0) {
         throw new AppError(409, "conflict", msg("host_in_use", { host: id, count: usage.total }), usage);
       }
-      if (this.options.liftToolsVolume) await this.options.liftToolsVolume(ctx);
+      await this.liftTools(ctx);
       const view = this.view(ctx);
       const stored = this.stored.get(id);
       const agentId = stored ? agentIdOf(stored) : null;
@@ -491,6 +491,27 @@ export class HostManager {
       log.info("host.removed", { host: id });
       return view;
     });
+  }
+
+  /**
+   * Lifts the host's shared tools volumes as it goes, when the app gave a way to. A machine that is offline, whether it
+   * is switched off, lost, or an agent that was revoked, cannot lose them, and holding the host back for that would keep
+   * it listed for good: its volumes stay where they are, and the log names them for whoever uses the machine next. A
+   * machine that answers and refuses is another matter. The removal stops with its reason, and nothing has changed.
+   */
+  private async liftTools(ctx: HostCtx): Promise<void> {
+    const lift = this.options.liftToolsVolume;
+    if (!lift) return;
+    try {
+      await lift(ctx);
+    } catch (e) {
+      if (ctx.host.status !== "offline") throw e;
+      const left = ctx.volumes
+        .list()
+        .filter((volume) => volume.hostId === ctx.host.id && volume.role === "tools")
+        .map((volume) => volume.engineName);
+      log.warn("host.tools_volume_left", { host: ctx.host.id, volumes: left, error: reasonOf(e) });
+    }
   }
 
   /**

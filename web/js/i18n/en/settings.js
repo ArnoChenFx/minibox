@@ -381,7 +381,7 @@ export default {
   "st.agentUpgradeHelp":
     "It speaks another agent protocol than this MiniBox. Pull the latest minibox-agent image and recreate the container with the same data volume.",
   "st.agentRemoveMessage":
-    "{name} is removed from MiniBox. Its agent is disconnected at once and cannot reconnect; to use the machine again, pair it with a new code. A host that still holds boxes, volumes or checkpoints cannot be removed. Removing deletes no container on the machine, and the only volume it deletes is MiniBox's own shared tools volume there. The agent's container keeps running idle: stop and remove it on the machine with docker rm -f.",
+    "{name} is removed from MiniBox. Its agent is disconnected at once and cannot reconnect; to use the machine again, pair it with a new code. A host that still holds boxes, volumes or checkpoints cannot be removed. Removing deletes no container on the machine, and the only volumes it deletes are MiniBox's own shared tools volumes there. If the machine is connected and refuses, nothing is removed and you can try again. The agent's container keeps running idle: stop and remove it on the machine with docker rm -f.",
   "st.tokenExpiry": "Expires in (days)",
   "st.tokenExpiryHelp": "Leave empty for no expiry.",
   "st.tokenQuotas": "Quotas",

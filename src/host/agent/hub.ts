@@ -263,9 +263,15 @@ export class AgentHub implements AgentLink {
       });
     } catch (e) {
       // A socket that cannot be written to is not waiting for a hello, so it holds no place. Nothing else would ever
-      // give it back: the caller never gets a session to detach, and no timer has been set.
+      // give it back: the caller never gets a session to detach, and no timer has been set. Nothing would close it
+      // either, so that is done here, as far as it can still be.
       session.done = true;
       this.all.delete(session);
+      try {
+        socket.close(1011, "the challenge could not be sent");
+      } catch {
+        // It is gone already, which is likely why the send failed. The failure to report is the send's.
+      }
       throw e;
     }
     session.timer = setTimeout(() => this.end(session, AGENT_CLOSE.helloTimeout, "no hello"), AGENT_HELLO_TIMEOUT_MS);

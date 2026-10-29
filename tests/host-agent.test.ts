@@ -14,7 +14,9 @@ import { agentsPath } from "../src/data-dir";
 import { normalizeCode, PairingBook } from "../src/host/agent/pairing";
 import { AgentStore, AgentsFileError } from "../src/host/agent/store";
 import { AppError } from "../src/lib/errors";
+import { setLogSink } from "../src/lib/logger";
 import { msg } from "../src/lib/messages";
+import { RuntimeError } from "../src/runtime";
 import { startServer } from "../src/server";
 import type { SocketData } from "../src/ws/socket";
 import { silenceLogs, TEST_KEY, testConfig } from "./support/app";
@@ -417,6 +419,82 @@ describe("the control plane's agent API, over HTTP and a real socket", () => {
     // Nothing else on the machine was touched: the bystander's container and volume are where they were.
     expect(edgeEngine.containers.has(bystander)).toBe(true);
     expect(edgeEngine.volumes.has("bystanders-volume")).toBe(true);
+  });
+
+  test("an agent host whose tools volume cannot be deleted stays as it was, and goes once the machine lets it", async () => {
+    const { code } = (await (await post("/api/hosts/pairing", { id: "edge", name: "Edge" })).json()) as {
+      code: string;
+    };
+    const stored = await enrollAgent(code, tempDir());
+    runAgent(stored, edgeEngine);
+    await waitFor(() => app.agents.status(stored.identity.agentId)?.connected === true, "the agent to connect");
+    await waitFor(() => app.hosts.get("edge").host.status === "online", "the host to go online");
+    const made = await post("/api/boxes", { name: "alpha", cpus: 1, memoryMb: 256, host: "edge" });
+    expect(made.status).toBe(201);
+    const { box } = (await made.json()) as { box: { boxId: string } };
+    expect((await api(`/api/boxes/${box.boxId}?deleteVolume=true&skipTrash=true`, { method: "DELETE" })).status).toBe(
+      200,
+    );
+    const tools = app.hosts
+      .get("edge")
+      .volumes.list()
+      .find((volume) => volume.hostId === "edge" && volume.role === "tools")?.engineName;
+    expect(tools).toBeDefined();
+
+    // The volume is deleted before anything is revoked or forgotten, so a machine that refuses leaves the host whole.
+    edgeEngine.fail("removeVolume", new RuntimeError("engine", "the volume is busy", "the volume is busy"));
+    const refused = await api("/api/hosts/edge", { method: "DELETE" });
+    expect(refused.status).toBe(409);
+    expect(edgeEngine.volumes.has(tools ?? "")).toBe(true);
+    expect(app.agents.status(stored.identity.agentId)?.connected).toBe(true);
+    expect(app.hosts.get("edge").host.status).toBe("online");
+
+    // The next try finds the machine willing: the volume goes, then the host.
+    const removed = await api("/api/hosts/edge", { method: "DELETE" });
+    expect(removed.status).toBe(200);
+    expect(edgeEngine.volumes.has(tools ?? "")).toBe(false);
+    expect(app.agents.status(stored.identity.agentId)?.connected ?? false).toBe(false);
+  });
+
+  test("a revoked agent host is removed with one DELETE although its tools volume cannot be reached, and the log names what stays", async () => {
+    const { code } = (await (await post("/api/hosts/pairing", { id: "edge", name: "Edge" })).json()) as {
+      code: string;
+    };
+    const stored = await enrollAgent(code, tempDir());
+    const client = runAgent(stored, edgeEngine);
+    await waitFor(() => app.agents.status(stored.identity.agentId)?.connected === true, "the agent to connect");
+    await waitFor(() => app.hosts.get("edge").host.status === "online", "the host to go online");
+    const made = await post("/api/boxes", { name: "alpha", cpus: 1, memoryMb: 256, host: "edge" });
+    expect(made.status).toBe(201);
+    const { box } = (await made.json()) as { box: { boxId: string } };
+    expect((await api(`/api/boxes/${box.boxId}?deleteVolume=true&skipTrash=true`, { method: "DELETE" })).status).toBe(
+      200,
+    );
+    const tools = app.hosts
+      .get("edge")
+      .volumes.list()
+      .find((volume) => volume.hostId === "edge" && volume.role === "tools")?.engineName;
+    expect(tools).toBeDefined();
+
+    // A revoked agent cannot be asked to delete anything, and cannot come back to be asked: waiting for it would keep the
+    // host listed for good, and a revoked host is listed so that it can be removed.
+    expect((await api("/api/hosts/edge/revoke", { method: "POST" })).status).toBe(200);
+    await waitFor(() => client.connectionState === "dormant", "the agent to go dormant");
+    const lines: string[] = [];
+    const restore = setLogSink((_level, line) => lines.push(line));
+    try {
+      const removed = await api("/api/hosts/edge", { method: "DELETE" });
+      expect(removed.status).toBe(200);
+    } finally {
+      restore();
+    }
+    const hosts = (await (await api("/api/hosts")).json()) as { hosts: Array<{ id: string }> };
+    expect(hosts.hosts.map((host) => host.id)).not.toContain("edge");
+    // What it could not delete is still on the machine, and the log says which volume, for whoever uses it next.
+    expect(edgeEngine.volumes.has(tools ?? "")).toBe(true);
+    const left = lines.filter((line) => line.includes("host.tools_volume_left"));
+    expect(left).toHaveLength(1);
+    expect(JSON.parse(left[0] ?? "{}")).toMatchObject({ host: "edge", volumes: [tools] });
   });
 
   test("a log read past 4 MiB comes back over the agent's socket in one frame, and the agent stays connected", async () => {

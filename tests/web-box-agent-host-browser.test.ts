@@ -22,8 +22,8 @@ afterAll(restoreLogs);
 const TIMEOUT_MS = 30_000;
 const VIEWPORT = { width: 1280, height: 800 };
 
-/** The grey of a plain `.help` line (`--text-3`), which a note meant to warn must not end up in. */
-const GREY_HELP = "rgb(139, 139, 148)";
+/** The light theme's `--warning`, the colour a note meant to warn is written in. The contexts below pin the light theme. */
+const WARNING = "rgb(217, 119, 6)";
 
 /** The English text of a dictionary key, which a locator looks for. */
 const english = (key: string): string => en[key] ?? key;
@@ -100,7 +100,7 @@ describe.skipIf(!executablePath)("a Box on an agent host (real browser)", () => 
   let box: BoxRow;
 
   async function signedIn(options = {}): Promise<BrowserContext> {
-    const context = await browser.newContext({ viewport: VIEWPORT, ...options });
+    const context = await browser.newContext({ viewport: VIEWPORT, colorScheme: "light", ...options });
     expect(
       (
         await context.request.post(`${base}/api/auth/login`, {
@@ -251,14 +251,22 @@ describe.skipIf(!executablePath)("a Box on an agent host (real browser)", () => 
 
         await page.unroute("**/api/hosts");
         await page.route("**/api/hosts", hostsAs([edge]));
-        await page.goto(boxUrl(base, box, "files"));
-        await page.goto(boxUrl(base, box, "overview"));
+        // The dialog reads the host list again each time it opens, so the second answer needs no new page.
         await page.locator('[data-action="move"]').click();
         await webExpect(page.locator("#mvHost")).toHaveCount(0);
         await webExpect(page.locator("#mvPreviewBtn")).toHaveCount(0);
         await webExpect(page.locator(".dialog, [role='dialog']").last()).toContainText(english("mv.agentsOnly"));
         // That sentence is the whole answer: the plain "no other host" line would tell someone with an agent host to add one.
         await webExpect(page.locator(".dialog, [role='dialog']").last()).not.toContainText(english("mv.noHosts"));
+        await page.keyboard.press("Escape");
+
+        // A host that is not an agent but is down changes the answer: the agent-hosts sentence would send its owner to add
+        // a host they already have.
+        await page.unroute("**/api/hosts");
+        await page.route("**/api/hosts", hostsAs([{ ...lab, status: "offline" }, edge]));
+        await page.locator('[data-action="move"]').click();
+        await webExpect(page.locator(".dialog, [role='dialog']").last()).toContainText(english("mv.noHosts"));
+        await webExpect(page.locator(".dialog, [role='dialog']").last()).not.toContainText(english("mv.agentsOnly"));
       } finally {
         await context.close();
       }
@@ -396,7 +404,7 @@ describe.skipIf(!executablePath)("a Box on an agent host (real browser)", () => 
         // It is the warning-coloured 13px line it was written to be, not the grey 12px of the `.help` it also is: the
         // two rules have the same weight, so only the later one wins unless the note's rule names both classes.
         await webExpect(page.locator("#volAgentNote")).toHaveCSS("font-size", "13px");
-        await webExpect(page.locator("#volAgentNote")).not.toHaveCSS("color", GREY_HELP);
+        await webExpect(page.locator("#volAgentNote")).toHaveCSS("color", WARNING);
         // Nothing the three buttons would send was sent: no file listing, no usage read, no checkpoint.
         expect(requests.filter((path) => path.includes("/files"))).toEqual([]);
         expect(requests.filter((path) => path.endsWith("/usage"))).toEqual([]);
@@ -555,7 +563,7 @@ describe.skipIf(!executablePath)("a Box on an agent host (real browser)", () => 
         await webExpect(page.locator("#sckAgentNote")).toBeVisible();
         await webExpect(page.locator("#sckAgentNote")).toHaveText(english("ck.agentNote"));
         await webExpect(page.locator("#sckAgentNote")).toHaveCSS("font-size", "13px");
-        await webExpect(page.locator("#sckAgentNote")).not.toHaveCSS("color", GREY_HELP);
+        await webExpect(page.locator("#sckAgentNote")).toHaveCSS("color", WARNING);
 
         await page.locator("[data-action='ck-import']").click();
         const edge = page.locator("#ckImportHost option[value='edge']");

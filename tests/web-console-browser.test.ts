@@ -640,10 +640,17 @@ describe.skipIf(!executablePath)("the console's top navigation (real browser)", 
           en: [
             "disconnected at once and cannot reconnect",
             "deletes no container on the machine",
-            "only volume it deletes is MiniBox's own shared tools volume",
+            "only volumes it deletes are MiniBox's own shared tools volumes",
+            "nothing is removed and you can try again",
             "docker rm -f",
           ],
-          "zh-CN": ["立即断开，且无法再次连接", "不会删除机器上的任何容器", "共享工具卷", "docker rm -f"],
+          "zh-CN": [
+            "立即断开，且无法再次连接",
+            "不会删除机器上的任何容器",
+            "共享工具卷",
+            "什么都不会移除",
+            "docker rm -f",
+          ],
         };
         for (const [lang, phrases] of Object.entries(said)) {
           const context = await signedIn({ viewport: VIEWPORT });
