@@ -36,6 +36,8 @@ export function movePreviewHtml(preview) {
   const volumes = (preview.volumes ?? []).map((volume) => volumeLine(volume, preview.to)).join("");
   const image = preview.image?.transfer ? t("mv.imageSend", { to }) : t("mv.imageHave", { to });
   const starts = preview.starts ? t("mv.starts", { to }) : t("mv.staysStopped");
+  // Both paths pause a running box when its data is taken and keep it paused until the move commits.
+  const pauses = preview.running ? `<div class="help">${esc(t("mv.pauses", { from }))}</div>` : "";
   const keeps = KEEPS.map((name) => t(`mv.keep.${name}`)).join(", ");
   const loses = LOSES.map((name) => t(`rebuild.lose.${name}`)).join(", ");
   const checkpointKey = preview.checkpoints === 1 ? "mv.checkpoint" : "mv.checkpoints";
@@ -52,6 +54,7 @@ export function movePreviewHtml(preview) {
     <ul class="move-volumes">${volumes || `<li class="help">${esc(t("mv.noVolumes"))}</li>`}</ul>
     <div class="help">${esc(t("mv.image", { image: preview.image?.ref ?? "" }))}: ${esc(image)}</div>
     <div class="help">${esc(starts)}</div>
+    ${pauses}
     ${checkpoints}
     <div class="help">${esc(t("mv.keeps"))}: ${esc(keeps)}</div>
     <div class="help">${esc(t("mv.loses"))}: ${esc(loses)}</div>

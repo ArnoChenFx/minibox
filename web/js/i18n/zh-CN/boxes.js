@@ -314,6 +314,7 @@ export default {
   "mv.imageHave": "已在 {to} 上",
   "mv.starts": "因为正在运行，会在 {to} 上启动",
   "mv.staysStopped": "保持停止",
+  "mv.pauses": "迁移期间，{from} 上正在运行的 Box 会被暂停，一直暂停到迁移提交；迁移失败会恢复它。",
   "mv.checkpoint": "{count} 个检查点留在原宿主机 {from}，不会在 {to} 上恢复。",
   "mv.checkpoints": "{count} 个检查点留在原宿主机 {from}，不会在 {to} 上恢复。",
   "mv.keeps": "保留",

@@ -58,6 +58,13 @@ describe("the move preview's checkpoint line", () => {
     );
   });
 
+  test("a running box is told it stays paused until the move commits, and a stopped one is not", () => {
+    expect(movePreviewHtml({ ...preview(0), running: true, starts: true })).toContain(
+      "While it moves, the running box on local is paused, and it stays paused until the move commits.",
+    );
+    expect(movePreviewHtml(preview(0))).not.toContain("paused");
+  });
+
   test("a box with no checkpoints has no checkpoint line", () => {
     expect(movePreviewHtml(preview(0))).not.toContain("source host");
   });

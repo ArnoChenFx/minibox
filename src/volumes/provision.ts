@@ -177,20 +177,21 @@ export async function createIndependentVolume(
 }
 
 /**
- * An empty volume for data a checkpoint restores into: owned by `owner` when one is given, else independent. Its name
- * is made free the way a box's role volume is. It is not chowned, because the restore writes the owners the snapshot
- * recorded. Without `changes`, a failure removes what this call created before it is thrown.
+ * An empty volume for data a checkpoint restores into: owned by `owner` when one is given, else independent. It is made
+ * in `pool` when one is named, else in the pool of its role, as a new box's volume is. Its name is made free the way a
+ * box's role volume is. It is not chowned, because the restore writes the owners the snapshot recorded. Without
+ * `changes`, a failure removes what this call created before it is thrown.
  */
 export async function createRestoredVolume(
   host: HostCtx,
-  input: { name: string; role: VolumeRole | null; owner: string | null; createdBy: string | null },
+  input: { name: string; role: VolumeRole | null; owner: string | null; createdBy: string | null; pool?: string },
   known: Set<string>,
   changes?: VolumeChanges,
 ): Promise<VolumeRecord> {
   const own = changes ?? new VolumeChanges();
   try {
     return await host.volumes.exclusive(async () => {
-      const pool = resolvePool(host, { role: input.role });
+      const pool = resolvePool(host, { pool: input.pool, role: input.role });
       const created = await materialize(
         host,
         {

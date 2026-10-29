@@ -329,6 +329,8 @@ export default {
   "mv.imageHave": "already on {to}",
   "mv.starts": "Starts on {to}, because it runs now",
   "mv.staysStopped": "Stays stopped",
+  "mv.pauses":
+    "While it moves, the running box on {from} is paused, and it stays paused until the move commits. A move that fails resumes it.",
   "mv.checkpoint": "{count} checkpoint stays on the source host, {from}, and is not restored on {to}.",
   "mv.checkpoints": "{count} checkpoints stay on the source host, {from}, and are not restored on {to}.",
   "mv.keeps": "Kept",

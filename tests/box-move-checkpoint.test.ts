@@ -5,6 +5,7 @@ import { msg } from "../src/lib/messages";
 import { RuntimeError } from "../src/runtime";
 import type { CheckpointView } from "../src/services/checkpoint-model";
 import { moveBoxByCheckpoint } from "../src/services/move-checkpoint";
+import { normalizePools } from "../src/volumes/pools";
 import { type Cluster, bootCluster, boxOn, errorOf } from "./support/cluster";
 import type { FakeRuntime } from "./support/fake-runtime";
 import { finishedTask } from "./support/tokens";
@@ -202,6 +203,43 @@ describe("moving a box through a checkpoint", () => {
     expect(filesOf(cluster.engines.small, moved)).toEqual({ "notes.txt": "kept" });
     expect(cluster.engines.local.volumes.has(source)).toBe(false);
     expect(local.volumes.list().some((record) => record.engineName === source)).toBe(false);
+  });
+
+  test("a volume keeps the storage pool it was in, rather than the pool its role would pick", async () => {
+    // A second pool, so the restored volume has somewhere else to go than the default one.
+    const local = cluster.app.hosts.get();
+    local.volumes.writePools(
+      normalizePools(
+        [
+          { name: "local", backend: "local", default: true },
+          { name: "fast", backend: "local" },
+        ],
+        undefined,
+        local.volumes.list(),
+      ),
+    );
+    const created = await cluster.post("/api/volumes", { name: "data", pool: "fast", confirm: true });
+    expect(created.status).toBe(201);
+    const box = await boxOn(cluster, undefined, "dev", { mounts: [{ volume: "data", path: "/data", mode: "rw" }] });
+
+    expect((await confirmed(box.boxId, { host: "small", via: "checkpoint" }, box.revision)).status).toBe("succeeded");
+
+    const onTarget = local.volumes.list().filter((record) => record.hostId === "small" && record.name === "data");
+    expect(onTarget.map((record) => record.pool)).toEqual(["fast"]);
+  });
+
+  test("a volume whose pool is gone refuses the move up front, with the reason a direct move gives", async () => {
+    const data = await dataVolume(cluster);
+    const box = await boxOn(cluster, undefined, "dev", { mounts: [{ volume: "data", path: "/data", mode: "rw" }] });
+    const local = cluster.app.hosts.get();
+    const record = local.volumes.findByEngine("local", data);
+    if (!record) throw new Error("the data volume has no record");
+    local.volumes.write({ ...record, pool: "gone" });
+
+    const res = await move(box.boxId, { host: "small", via: "checkpoint" }, box.revision);
+    expect(res.status).toBe(404);
+    expect((await errorOf(res)).key).toBe("pool_not_found");
+    expect(checkpointsOn(cluster, "local", box.boxId)).toEqual([]);
   });
 
   test("the source stays paused through target start and is never resumed on success", async () => {

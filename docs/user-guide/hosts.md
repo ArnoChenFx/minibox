@@ -109,7 +109,7 @@ A host whose running boxes reserve more CPU or memory than its capacity times `H
 ## Move a box to another host
 
 1. Open the box and click **Move to host**. The button appears when there is more than one host.
-2. Choose the target host, choose how the box travels, and click **Preview**. The preview lists the path, each volume and what happens to it, whether the template image is sent, and whether the box starts on the target. Nothing changes yet.
+2. Choose the target host, choose how the box travels, and click **Preview**. The preview lists the path, each volume and what happens to it, whether the template image is sent, whether the box starts on the target, and that a running box is paused until the move commits. Nothing changes yet.
 3. Click **Move box**. The move runs as a task in the task panel.
 
 There are two paths, and the choice is the `via` field of `POST /api/boxes/:id/move`:
@@ -121,12 +121,13 @@ Either way:
 
 - The box is created on the target and started there if it was running. The box is removed from the old host only after it runs on the target. If any step fails before that, the move is undone and the box stays where it was, still running and still holding its volumes.
 - The box keeps its id, name, volumes, environment variables and history. Its writable layer, running processes and IP address are lost, as in a rebuild.
-- NFS and other shared-storage volumes are attached on the target and not copied. Their storage stays where it is, and the move does not remove the volume on the old host. The tools volume is replaced by the target's shared tools volume.
+- The tools volume is replaced by the target's shared tools volume. A volume on shared storage, such as NFS, is never removed from the old host by a move.
 
 What differs between the two paths:
 
 - A direct move leaves the box's checkpoints on the old host. The preview counts them. A checkpoint holds volume data, and copying every checkpoint would make a move slow. To keep one with the box, [copy it](checkpoints.md#copy-to-another-host) to the new host, or [export](checkpoints.md#export-and-import) it and import it there.
 - A checkpoint move takes its own checkpoint for the transfer and removes it afterwards, on both hosts, so a move leaves no extra checkpoint behind. It carries only what a checkpoint holds: the workspace, the home, and any recorded volume the box mounts. A cache volume is made again empty on the target.
+- A direct move attaches a volume on NFS or other shared storage on the target without copying it, so its storage stays where it is. A checkpoint move carries that volume's data in the checkpoint like any other, and makes the restored volume on the target in the storage pool the source volume was in, so a volume keeps its pool. The source volume of shared storage stays on the old host as an independent volume, listed among the leftovers.
 - Both paths keep a running source box paused until the move commits and its source container is removed. A failed move resumes the source. A stopped box stays stopped.
 
 Refusals name why, in the message:

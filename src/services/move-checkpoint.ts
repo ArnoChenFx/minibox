@@ -58,7 +58,10 @@ interface CheckpointMovePlan {
   readonly checkpoints: number;
 }
 
-/** What a failed run has made on the target, so the source can be left exactly as it was. */
+/**
+ * What a run has changed so far, on the target and on the source (it pauses the source box), so a failure can put both
+ * back.
+ */
 interface CheckpointRunState {
   created: string | null;
   tokenIssued: boolean;
@@ -101,8 +104,9 @@ export async function previewCheckpointMove(
 /**
  * Moves a box through a checkpoint: the box is checkpointed where it runs, the checkpoint is copied to the target, the
  * box is made there from that copy, and only then is it removed from the source. The box's power lock is held for the
- * whole move. Nothing is written to the source's spec until the new container has been created and checked, so every
- * failure before that leaves the box running where it was.
+ * whole move. A running source box is paused when its checkpoint is taken and stays paused until the move commits.
+ * Nothing is written to the source's spec until the new container has been created and checked, so every failure
+ * before that resumes the box and leaves it running where it was.
  *
  * A box whose checkpoint holds no data (a box with no volumes of its own) is moved without copying a package: there is
  * nothing to carry, and `copyCheckpoint` refuses a checkpoint with no layers.
@@ -221,10 +225,14 @@ async function firstHolder(holders: readonly HostCtx[], image: string): Promise<
 
 function volumePlanOf(from: HostCtx, to: HostCtx, spec: BoxSpec, layers: readonly PlannedLayer[]): CheckpointVolume[] {
   const atPath = new Map(layers.map((layer) => [layer.path, layer]));
+  const pools = from.volumes.readPools().pools;
   return spec.mounts.map((mount) => {
     const source = from.volumes.findByEngine(from.host.id, mount.volume);
     if (!source) throw conflict(msg("volume_unmanaged", { volume: mount.volume }));
     if (source.role === "tools") return { mount, source, action: "tools", target: null };
+    // The volume is made again in the pool it is in, so a pool that is gone refuses the move here, with the same reason a
+    // direct move gives, and not half way through the restore.
+    if (!pools.some((pool) => pool.name === source.pool)) throw notFound(msg("pool_not_found", { pool: source.pool }));
     const layer = atPath.get(mount.path);
     if (layer) return { mount, source, action: "checkpoint", target: source.name };
     // A cache volume is the one volume a checkpoint never reads, and its contents are only a cache: it is made again
@@ -358,7 +366,8 @@ async function runCheckpointMove(
 /**
  * Restores the checkpoint into the volumes the box mounts on the target, in the order the box mounts them. A mount the
  * checkpoint holds is restored into a new volume owned by the box. The shared tools volume is the target's own, and a
- * cache volume is made again empty. The names the volumes had are kept where the target has them free.
+ * cache volume is made again empty. A volume keeps the storage pool it was in, and the names the volumes had are kept
+ * where the target has them free.
  */
 async function restoreMounts(
   to: HostCtx,
@@ -400,6 +409,7 @@ async function restoreMounts(
         role: volume.source.role,
         owner: volume.source.ownership === "owned" ? plan.spec.id : null,
         createdBy: volume.source.createdBy,
+        pool: volume.source.pool,
       },
       known,
       changes,
@@ -413,7 +423,8 @@ async function restoreMounts(
 /**
  * Takes back a move that failed before the commit: the target container, the volumes and records the move made there,
  * and the checkpoint it left on either host. Each step is logged if it fails, and the original error is still the one
- * thrown. The source box is untouched: its spec was never written, and its checkpoint is the only thing to remove.
+ * thrown. The source's spec was never written, so what is put back is its running state: a box the move paused is
+ * resumed, its self token, which the target took over, is issued to it again, and its checkpoint is removed.
  */
 async function undoCheckpointMove(
   from: HostCtx,
