@@ -584,6 +584,54 @@ describe.skipIf(!executablePath)("the console's top navigation (real browser)", 
     );
   });
 
+  describe("the hosts table's width", () => {
+    test(
+      "an agent host's revoke and remove buttons fit without scrolling the table sideways, from a desktop to a phone",
+      async () => {
+        for (const lang of ["en", "zh-CN"]) {
+          const wide = await signedIn({ viewport: VIEWPORT });
+          try {
+            await wide.addInitScript((value) => localStorage.setItem("minibox.lang", value), lang);
+            await wide.route("**/api/hosts", async (route) => {
+              if (route.request().method() !== "GET") return route.continue();
+              const response = await route.fetch();
+              const body = (await response.json()) as { hosts: Record<string, unknown>[] };
+              const [local = {}] = body.hosts;
+              const agent = {
+                ...local,
+                id: "gpu-box",
+                name: "GPU",
+                transport: "agent",
+                endpoint: "agent://gpu-box",
+                agent: {
+                  connected: true,
+                  revoked: false,
+                  version: "0.4.0",
+                  protocol: 1,
+                  lastSeenAt: new Date().toISOString(),
+                },
+              };
+              await route.fulfill({ response, json: { ...body, hosts: [...body.hosts, agent] } });
+            });
+            const hostsPage = await wide.newPage();
+            await hostsPage.goto(`${consoleUrl}/#/settings/hosts`);
+            await webExpect(hostsPage.locator('[data-revoke-host="gpu-box"]')).toBeVisible();
+            for (const width of [1280, 1100, 1024, 900, 768, 600, 390]) {
+              await hostsPage.setViewportSize({ width, height: 800 });
+              const overflow = await hostsPage
+                .locator("#stHosts .table-wrap")
+                .evaluate((wrap) => wrap.scrollWidth - wrap.clientWidth);
+              expect({ lang, width, overflow }).toEqual({ lang, width, overflow: 0 });
+            }
+          } finally {
+            await wide.close();
+          }
+        }
+      },
+      TIMEOUT_MS * 2,
+    );
+  });
+
   describe("the engine storage line on the hosts settings card", () => {
     test(
       "lists the four classes with their totals and reclaimable bytes",

@@ -73,7 +73,7 @@ function drawHosts(view, card, { hosts, readDisk }) {
       <button class="btn btn-sm btn-primary" id="stHostAdd">${icon("plus")}${t("st.hostAdd")}</button>
     </div>
     ${accessWarningShown(hosts) ? `<div class="card-body"><div class="callout warn">${icon("alert")}<span>${esc(t("st.hostAccessWarn"))}</span></div></div>` : ""}
-    <div class="table-wrap"><table class="table">
+    <div class="table-wrap"><table class="table host-table">
       <thead><tr>
         <th>${t("st.hostColName")}</th><th class="hide-sm">${t("st.hostColEndpoint")}</th><th>${t("st.hostColStatus")}</th>
         <th class="hide-sm">${t("st.hostColCapacity")}</th><th class="hide-sm">${t("st.hostColBoxes")}</th><th></th>
@@ -107,11 +107,11 @@ function hostRow(host, hosts) {
   const labels = hostLabelsLine(host.labels);
   return `<tr>
     <td><strong>${esc(host.name)}</strong> <span class="subtle mono">${esc(host.id)}</span>${labels}</td>
-    <td class="hide-sm">${endpoint}</td>
+    <td class="hide-sm host-endpoint">${endpoint}</td>
     <td class="${host.agent ? "" : "nowrap"}"><span class="badge ${HOST_BADGE[host.status] ?? ""}"><span class="dot"></span>${esc(t(`st.hostStatus.${host.status}`))}</span>${latency}${error}${agent}</td>
     <td class="hide-sm nowrap">${capacity}</td>
     <td class="hide-sm">${host.boxes}</td>
-    <td class="nowrap"><div class="actions">${hostActions(host, hosts)}</div></td>
+    <td class="nowrap"><div class="actions host-actions">${hostActions(host, hosts)}</div></td>
   </tr>
   <tr class="host-disk-row">
     <td colspan="6" data-disk-host="${esc(host.id)}">${diskLines(null)}</td>
