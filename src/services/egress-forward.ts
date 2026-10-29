@@ -241,8 +241,6 @@ export class EgressForwardWatcher {
     await host.runtime.allowHostForward(host.prefix, state.bridge);
     // A pass that was already reading the host when the rule went in could answer with the rules before it, so it is
     // waited out and a fresh one reads what the repair left behind.
-    // A pass that was already reading the host when the rule went in could answer with the rules before it, so it is
-    // waited out and a fresh one reads what the repair left behind.
     await this.running.get(host.host.id)?.catch(() => null);
     const next = await this.hostPass(host);
     if (next === null) throw new AppError(502, "docker_error", msg("egress_forward_unchecked"));
