@@ -125,14 +125,14 @@ Either way:
 
 What differs between the two paths:
 
-- A direct move leaves the box's checkpoints on the old host. The preview counts them. A checkpoint holds volume data, and copying every checkpoint would make a move slow. To keep one with the box, [copy it](checkpoints.md#copy-to-another-host) to the new host, or [export](checkpoints.md#export-and-import) it and import it there.
-- A checkpoint move takes its own checkpoint for the transfer and removes it afterwards, on both hosts, so a move leaves no extra checkpoint behind. It carries only what a checkpoint holds: the workspace, the home, and any recorded volume the box mounts. A cache volume is made again empty on the target.
+- Either way the box's own checkpoints stay on the old host, and the preview counts them. A checkpoint holds volume data, and copying every checkpoint would make a move slow. To keep one with the box, [copy it](checkpoints.md#copy-to-another-host) to the new host, or [export](checkpoints.md#export-and-import) it and import it there.
+- A checkpoint move also takes a checkpoint of its own for the transfer, and removes it afterwards, on both hosts, so a move leaves no extra checkpoint behind. It carries only what a checkpoint holds: the workspace, the home, and any recorded volume the box mounts. A cache volume is made again empty on the target.
 - A direct move attaches a volume on NFS or other shared storage on the target without copying it, so its storage stays where it is. A checkpoint move carries that volume's data in the checkpoint like any other, and makes the restored volume on the target in the storage pool the source volume was in, so a volume keeps its pool. The source volume of shared storage stays on the old host as an independent volume, listed among the leftovers.
 - Both paths keep a running source box paused until the move commits and its source container is removed. A failed move resumes the source. A stopped box stays stopped.
 
 Refusals name why, in the message:
 
-- A volume a checkpoint cannot read, such as a bind-mount volume, refuses a checkpoint move. Use **direct** for that box, which copies the volume as it is.
+- A volume a checkpoint cannot read refuses a checkpoint move. Use **direct** for that box, which copies the volume as it is. A volume in a `path` pool, which is a path on the host, refuses both paths: neither can carry it to another host.
 - A volume another box also mounts, and a volume the box mounts twice, refuse a checkpoint move: a copy carries one snapshot per volume, so it cannot carry another box's data or the same volume twice.
 - An agent host on either side refuses both paths. An agent does not copy images, volumes or archives, and the helpers both paths run are refused there, so a move to or from one would fail half way. Create the box on the agent host instead.
 

@@ -205,6 +205,147 @@ describe("moving a box through a checkpoint", () => {
     expect(local.volumes.list().some((record) => record.engineName === source)).toBe(false);
   });
 
+  test("the container the box leaves behind is retired, so a read already under way cannot claim it back", async () => {
+    const box = await boxOn(cluster, undefined, "dev", { mounts: undefined });
+    const local = cluster.app.hosts.get();
+    const oldId = local.specs.read(box.boxId)?.containerId ?? "";
+    expect(oldId).not.toBe("");
+    expect(local.specs.isRetired(oldId)).toBe(false);
+
+    expect((await confirmed(box.boxId, { host: "small", via: "checkpoint" }, box.revision)).status).toBe("succeeded");
+    expect(local.specs.isRetired(oldId)).toBe(true);
+  });
+
+  test("it is retired when its removal fails too: a container left behind is still not the box's", async () => {
+    const box = await boxOn(cluster, undefined, "dev", { mounts: undefined });
+    const local = cluster.app.hosts.get();
+    const oldId = local.specs.read(box.boxId)?.containerId ?? "";
+    cluster.engines.local.fail("removeContainer", new RuntimeError("engine", "the container is busy"));
+
+    const done = await confirmed(box.boxId, { host: "small", via: "checkpoint" }, box.revision);
+    expect(done.status).toBe("succeeded");
+    expect(done.result?.leftovers?.map((leftover) => leftover.kind)).toContain("container");
+    expect(local.specs.isRetired(oldId)).toBe(true);
+  });
+
+  test("the preview names a volume as the restore will make it: a name the target holds already is taken", async () => {
+    const data = await dataVolume(cluster);
+    const box = await boxOn(cluster, undefined, "dev", { mounts: [{ volume: "data", path: "/data", mode: "rw" }] });
+    // The target already holds a volume called data, as a box that was deleted there and kept its volume would leave.
+    const there = cluster.app.hosts.get().volumes.findByEngine("local", data);
+    if (!there) throw new Error("the data volume has no record");
+    cluster.app.hosts.get().volumes.write({
+      ...there,
+      id: "vol_heldontarget",
+      hostId: "small",
+      engineName: "mbtest-data-on-small",
+      ownership: "independent",
+      ownerBoxId: null,
+    });
+
+    const res = await move(box.boxId, { host: "small", via: "checkpoint" }, box.revision);
+    const preview = (await errorOf(res)).details?.preview as Preview;
+    const planned = preview.volumes?.find((volume) => volume.path === "/data");
+    expect(planned).toMatchObject({ name: "data", action: "checkpoint" });
+    expect(planned?.target).not.toBe("data");
+
+    const done = await confirmed(box.boxId, { host: "small", via: "checkpoint" }, box.revision);
+    expect(done.status).toBe("succeeded");
+    const moved = cluster.app.hosts
+      .get()
+      .specs.read(box.boxId)
+      ?.mounts.find((mount) => mount.path === "/data")?.volume;
+    const record = cluster.app.hosts
+      .get()
+      .volumes.list()
+      .find((volume) => volume.engineName === moved);
+    expect(record?.name).toBe(planned?.target ?? undefined);
+  });
+
+  test("a volume in a path pool refuses the move, as a direct move does, and nothing is taken", async () => {
+    const data = await dataVolume(cluster);
+    const box = await boxOn(cluster, undefined, "dev", { mounts: [{ volume: "data", path: "/data", mode: "rw" }] });
+    const local = cluster.app.hosts.get();
+    local.volumes.writePools(
+      normalizePools(
+        [
+          { name: "local", backend: "local", default: true },
+          { name: "hostpath", backend: "path", root: "/srv/hostpath" },
+        ],
+        undefined,
+        local.volumes.list(),
+      ),
+    );
+    const record = local.volumes.findByEngine("local", data);
+    if (!record) throw new Error("the data volume has no record");
+    local.volumes.write({ ...record, pool: "hostpath" });
+
+    const res = await move(box.boxId, { host: "small", via: "checkpoint" }, box.revision);
+    expect(res.status).toBe(409);
+    expect((await errorOf(res)).key).toBe("move_bind_volume");
+    expect(checkpointsOn(cluster, "local", box.boxId)).toEqual([]);
+    expect(containersOf(cluster, "local", box.boxId).map((container) => container.paused)).toEqual([false]);
+  });
+
+  test("a pool the target cannot reach refuses the move before the box is paused or anything is copied", async () => {
+    await dataVolume(cluster);
+    const box = await boxOn(cluster, undefined, "dev", { mounts: [{ volume: "data", path: "/data", mode: "rw" }] });
+    const local = cluster.app.hosts.get();
+    local.volumes.writePools(
+      normalizePools(
+        [
+          { name: "local", backend: "local", default: true },
+          { name: "nas", backend: "nfs", server: "192.168.1.10", export: "/volume1/nas", options: ["nfsvers=4.1"] },
+        ],
+        undefined,
+        local.volumes.list(),
+      ),
+    );
+    const record = local.volumes.findByEngine("local", cluster.engines.local.volumes.keys().next().value ?? "");
+    const data = local.volumes.list().find((volume) => volume.name === "data");
+    if (!data || !record) throw new Error("the data volume has no record");
+    local.volumes.write({ ...data, pool: "nas" });
+    // The probe of the pool runs a helper on the target, and that helper cannot mount the export.
+    cluster.engines.small.fail("runHelper", new RuntimeError("engine", "mount.nfs: connection timed out"));
+
+    const res = await move(box.boxId, { host: "small", via: "checkpoint" }, box.revision);
+    expect(res.status).toBe(503);
+    expect((await errorOf(res)).key).toBe("storage_unreachable");
+    expect(cluster.engines.local.calls.filter((call) => call.op === "pauseContainer")).toHaveLength(0);
+    expect(checkpointsOn(cluster, "local", box.boxId)).toEqual([]);
+  });
+
+  test("a backup that fails and a resume that fails too still leave the source running: the rollback asks the box", async () => {
+    const box = await boxOn(cluster, undefined, "dev", { mounts: undefined });
+    const source = cluster.app.hosts.get();
+    const workspace = source.specs.read(box.boxId)?.mounts.find((mount) => mount.path === "/workspace")?.volume ?? "";
+    cluster.checkpointEngine().failBackupOf.add(workspace);
+    // The first unpause is the checkpoint's own, in its finally; it fails, and the box stays paused.
+    cluster.engines.local.fail("unpauseContainer", new RuntimeError("engine", "the engine refused to resume"));
+
+    const done = await confirmed(box.boxId, { host: "small", via: "checkpoint" }, box.revision);
+    expect(done.status).toBe("failed");
+    expect(containersOf(cluster, "local", box.boxId).map((container) => [container.running, container.paused])).toEqual(
+      [[true, false]],
+    );
+  });
+
+  test("a step after the commit that fails does not undo the move: the box stays where it went", async () => {
+    const box = await boxOn(cluster, undefined, "dev", { mounts: undefined });
+    expect((await cluster.api(`/api/boxes/${box.boxId}/stop`, { method: "POST" })).status).toBe(200);
+    const revision = (await viewOf(box.boxId)).revision;
+    // A stopped box has its token revoked once it has moved. This throws, after the spec already names the target.
+    cluster.app.selfTokens.revoke = () => {
+      throw new Error("the token file is read-only");
+    };
+
+    const done = await confirmed(box.boxId, { host: "small", via: "checkpoint" }, revision);
+    expect(done.status).toBe("succeeded");
+    expect((await viewOf(box.boxId)).hostId).toBe("small");
+    expect(containersOf(cluster, "small", box.boxId)).toHaveLength(1);
+    expect(containersOf(cluster, "local", box.boxId)).toEqual([]);
+  });
+
   test("a volume keeps the storage pool it was in, rather than the pool its role would pick", async () => {
     // A second pool, so the restored volume has somewhere else to go than the default one.
     const local = cluster.app.hosts.get();

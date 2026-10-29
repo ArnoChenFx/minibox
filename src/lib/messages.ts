@@ -450,9 +450,9 @@ export const MESSAGES = {
   move_confirm_checkpoint:
     "Moving {box} through a checkpoint takes a checkpoint of it, copies that checkpoint to {to}, makes the box there from it, and removes it from {from} once it runs there. Send confirm: true to continue.",
   move_checkpoint_template_missing:
-    "Host {host} does not hold template {image} and no other host can send it, so the box could not be made there. Copy the template to {host} first, or move with via direct.",
+    "Host {host} does not hold template {image}, and no host holds it as a template it could send from, so the box could not be made there. Copy the template to {host} first, or move with via direct.",
   move_checkpoint_volume_unrepresentable:
-    "Volume {volume}, mounted at {path}, holds data a checkpoint cannot read, so the box cannot move through a checkpoint. Use via direct, which copies the volume as it is, or unmount the volume first.",
+    "Volume {volume}, mounted at {path}, cannot travel in a checkpoint: a checkpoint cannot read it, or the box mounts it more than once. Use via direct, which copies the volume as it is, or change the box's mounts first.",
   move_same_host: "The box already runs on host {host}, so it cannot move there.",
   move_owner_only: "Only the owner or an admin credential may move a box.",
   move_changed: "The box changed while it was moving, so the move was undone. Refresh the box and try again.",

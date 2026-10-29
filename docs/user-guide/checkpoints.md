@@ -121,7 +121,7 @@ A copy is refused for the same reasons as an export. These are a snapshot from b
 
 `GET /api/checkpoints` lists the copy with its host. Forking from the copy creates the box on that host.
 
-A copy is also what a [move by the checkpoint path](hosts.md#move-a-box-to-another-host) uses: the move takes a checkpoint, copies it to the target, makes the box there from the copy, and removes both checkpoints once the box runs on the target. That is why a checkpoint move needs no image transfer, and why a volume a checkpoint cannot read refuses it.
+A copy is also what a [move by the checkpoint path](hosts.md#move-a-box-to-another-host) uses: the move takes a checkpoint, copies it to the target, makes the box there from the copy, and removes both checkpoints once the box runs on the target. That is why a volume a checkpoint cannot read refuses it. The template image still has to be on the target, and the copy sends it when it is not.
 
 ## Export and import
 

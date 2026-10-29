@@ -41,8 +41,10 @@ export function movePreviewHtml(preview) {
   const keeps = KEEPS.map((name) => t(`mv.keep.${name}`)).join(", ");
   const loses = LOSES.map((name) => t(`rebuild.lose.${name}`)).join(", ");
   const checkpointKey = preview.checkpoints === 1 ? "mv.checkpoint" : "mv.checkpoints";
+  // The box's own checkpoints stay on the source host on either path. The checkpoint path's own, taken for the transfer, is
+  // removed afterwards and is not among them.
   const checkpoints =
-    preview.checkpoints > 0 && preview.via !== "checkpoint"
+    preview.checkpoints > 0
       ? `<p class="help">${esc(t(checkpointKey, { count: String(preview.checkpoints), from, to }))}</p>`
       : "";
   const via = preview.via

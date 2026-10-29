@@ -427,6 +427,9 @@ async function moveVolumes(
   for (const move of plan.volumes) {
     throwIfCancelled(progress);
     const source = move.source;
+    // A volume the box mounts at two paths is one volume: it is moved once, and both mounts take what it became. Copied
+    // for each mount, it would leave a second copy on the target that nothing mounts and nothing lists.
+    if (moved.resolved.has(source.engineName)) continue;
     if (move.action === "copy") {
       say(`Copying volume ${source.name}.`);
       const copy = await to.volumes.exclusive(() =>

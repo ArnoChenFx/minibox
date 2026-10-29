@@ -9,7 +9,8 @@ import { type PlannedRebuild, REBUILD_LOSES } from "../specs/plan";
 import type { BoxMount, BoxSpec } from "../specs/types";
 import { VolumeChanges } from "../volumes/changes";
 import { assertVolumesPresent, mountedByAnotherBox } from "../volumes/engine";
-import { createRestoredVolume, removeEngine } from "../volumes/provision";
+import { assertPoolsReachable } from "../volumes/health";
+import { createRestoredVolume, freeName, removeEngine } from "../volumes/provision";
 import { type Box, ensureBoxNetwork, getBox, refuseExpired } from "./boxes";
 import { restoreLayer, type PlannedLayer } from "./checkpoint-layers";
 import { deleteCheckpoint } from "./checkpoint-manage";
@@ -65,7 +66,6 @@ interface CheckpointMovePlan {
 interface CheckpointRunState {
   created: string | null;
   tokenIssued: boolean;
-  paused: boolean;
 }
 
 /** The 409 a checkpoint move answers without `confirm`. It carries the same preview the direct move carries. */
@@ -157,6 +157,12 @@ async function planCheckpointMove(
     layers.map((layer) => layer.volume.engineName),
   );
   const volumes = volumePlanOf(from, to, spec, layers);
+  // The restored volumes are made in the pools their sources are in. A pool the target cannot reach would fail half way
+  // through the restore, after the box was paused and its data copied, so it is asked now, while nothing has started.
+  await assertPoolsReachable(
+    to,
+    volumes.filter((volume) => volume.action !== "tools").map((volume) => volume.source.pool),
+  );
 
   const starts = spec.lifecycle.desired === "running";
   if (starts) await assertRoomFor(to, spec);
@@ -229,16 +235,21 @@ function volumePlanOf(from: HostCtx, to: HostCtx, spec: BoxSpec, layers: readonl
   return spec.mounts.map((mount) => {
     const source = from.volumes.findByEngine(from.host.id, mount.volume);
     if (!source) throw conflict(msg("volume_unmanaged", { volume: mount.volume }));
-    if (source.role === "tools") return { mount, source, action: "tools", target: null };
     // The volume is made again in the pool it is in, so a pool that is gone refuses the move here, with the same reason a
-    // direct move gives, and not half way through the restore.
-    if (!pools.some((pool) => pool.name === source.pool)) throw notFound(msg("pool_not_found", { pool: source.pool }));
+    // direct move gives, and not half way through the restore. A volume that is a host path is refused as a direct move
+    // refuses it: what a path pool holds is the host's, and neither path can carry it to another one.
+    const pool = pools.find((item) => item.name === source.pool);
+    if (!pool) throw notFound(msg("pool_not_found", { pool: source.pool }));
+    if (pool.backend === "path") throw conflict(msg("move_bind_volume", { volume: source.name }));
+    if (source.role === "tools") return { mount, source, action: "tools", target: null };
+    // The name the volume takes on the target is the one the restore will pick, so the preview says what will be made.
+    const target = freeName(to, source.name, source.pool);
     const layer = atPath.get(mount.path);
-    if (layer) return { mount, source, action: "checkpoint", target: source.name };
+    if (layer) return { mount, source, action: "checkpoint", target };
     // A cache volume is the one volume a checkpoint never reads, and its contents are only a cache: it is made again
     // empty on the target. Any other volume a checkpoint cannot read refuses the move rather than arriving without the
     // data the box had.
-    if (source.role === "cache") return { mount, source, action: "empty", target: source.name };
+    if (source.role === "cache") return { mount, source, action: "empty", target };
     throw conflict(
       msg("move_checkpoint_volume_unrepresentable", {
         volume: source.name,
@@ -284,7 +295,7 @@ async function runCheckpointMove(
   const { spec } = plan;
   const oldId = spec.containerId;
   const changes = new VolumeChanges();
-  const state: CheckpointRunState = { created: null, tokenIssued: false, paused: false };
+  const state: CheckpointRunState = { created: null, tokenIssued: false };
   const say = (text: string): void => progress?.log?.(`${text}\n`);
   let sourceCheckpoint: CheckpointView | null = null;
   let copy: CheckpointView | null = null;
@@ -305,7 +316,6 @@ async function runCheckpointMove(
       false,
       { keepStopped: true },
     );
-    state.paused = plan.running;
     throwIfCancelled(progress);
     if (sourceCheckpoint.data.length > 0) {
       say(`Copying the checkpoint to ${to.host.id}.`);
@@ -353,12 +363,18 @@ async function runCheckpointMove(
     }
     throwIfCancelled(progress);
     await commitMove(from, to, spec.id, revision, { containerId: created.id, containerName: name, mounts, template });
+  } catch (e) {
+    await undoCheckpointMove(from, to, plan, state, changes, sourceCheckpoint, copy);
+    throw e;
+  }
+  // The box runs on the target and its spec says so. Nothing from here may take that back, so a step that fails is
+  // logged and the move is finished as it would have been: undoing it now would remove the container the spec names.
+  try {
     if (!plan.starts) to.selfTokens.revoke(spec.id);
     if (plan.starts) await startupNow(to, spec.id);
     say(`The box now runs on ${to.host.id}.`);
   } catch (e) {
-    await undoCheckpointMove(from, to, spec, state, changes, sourceCheckpoint, copy);
-    throw e;
+    log.warn("box.move_after_commit_failed", { id: spec.id, host: to.host.id, error: String(e) });
   }
   return finishCheckpointMove(from, to, spec, oldId, plan, state.created, sourceCheckpoint, copy, say);
 }
@@ -429,12 +445,13 @@ async function restoreMounts(
 async function undoCheckpointMove(
   from: HostCtx,
   to: HostCtx,
-  spec: BoxSpec,
+  plan: CheckpointMovePlan,
   state: CheckpointRunState,
   changes: VolumeChanges,
   sourceCheckpoint: CheckpointView | null,
   copy: CheckpointView | null,
 ): Promise<void> {
+  const { spec } = plan;
   if (state.created) {
     try {
       await to.runtime.removeContainer(state.created, { force: true });
@@ -445,9 +462,12 @@ async function undoCheckpointMove(
     }
   }
   if (state.tokenIssued) to.selfTokens.revoke(spec.id);
-  if (state.paused) {
+  if (plan.running) {
+    // The box is asked whether it is paused, not remembered as paused: a checkpoint that failed half way may have paused
+    // it without the move ever being told, and one that could not resume it afterwards left it that way.
     try {
-      await from.runtime.unpauseContainer(spec.containerId);
+      const source = await from.runtime.inspectContainer(spec.containerId);
+      if (source.state === "paused") await from.runtime.unpauseContainer(spec.containerId);
       if (state.tokenIssued) {
         await provisionSelfToken(from, { boxId: spec.id, name: spec.name }, spec.containerId);
       }

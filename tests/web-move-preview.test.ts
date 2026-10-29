@@ -83,7 +83,8 @@ describe("the move preview's checkpoint line", () => {
     );
     expect(html).toContain("Carried in the checkpoint and restored on lab");
     expect(html).toContain("Made again on lab, empty");
-    // The move's own checkpoint is removed afterwards, so the count is not something that stays behind.
-    expect(html).not.toContain("source host");
+    // The box's own checkpoints stay on the source host on this path too. The move's own is taken for the transfer and
+    // removed afterwards, and is not among them.
+    expect(html).toContain("2 checkpoints stay on the source host, local, and are not restored on lab.");
   });
 });

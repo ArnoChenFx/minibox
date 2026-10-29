@@ -312,7 +312,7 @@ export default {
   "mv.title": "Move box",
   "mv.desc": "Copy the box to another host, then remove it from this one.",
   "mv.help":
-    "Preview first; nothing changes until you apply. The box keeps its id, name, volumes, env and history. With the direct path its checkpoints stay on the source host; with the checkpoint path the move takes its own and removes it afterwards.",
+    "Preview first; nothing changes until you apply. The box keeps its id, name, volumes, env and history. Its checkpoints stay on the source host on either path; the checkpoint path also takes one of its own for the transfer and removes it afterwards.",
   "mv.host": "Target host",
   "mv.noHosts": "There is no other online host to move this box to. Add a host first.",
   "mv.preview": "Preview",
