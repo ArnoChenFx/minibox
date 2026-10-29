@@ -322,6 +322,16 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
   const file = readEnvFile(options.envFile ?? ENV_PATH);
   const get = (k: string) => env[k] ?? file[k];
 
+  // Bun expands dotenv values before populating process.env. Never silently seal with a different secret.
+  if (
+    file.BACKUP_PASSPHRASE !== undefined &&
+    env.BACKUP_PASSPHRASE !== undefined &&
+    file.BACKUP_PASSPHRASE !== env.BACKUP_PASSPHRASE
+  ) {
+    throw new Error(
+      "BACKUP_PASSPHRASE differs between the environment and .env; remove the duplicate or escape dotenv expansion before starting MiniBox",
+    );
+  }
   const dataDir = resolveDataDir(nonBlank(env.DATA_DIR) ?? nonBlank(file.DATA_DIR), ROOT);
   const backupDir = resolveBackupDir(nonBlank(env.BACKUP_DIR) ?? nonBlank(file.BACKUP_DIR), dataDir, ROOT);
   const refused = backupDirRefusal(backupDir, dataDir);

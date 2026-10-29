@@ -33,6 +33,8 @@ export type BackupScheduleView = BackupSchedule & { timezoneUnknown: boolean };
 export class BackupScheduler {
   private timer: ReturnType<typeof setInterval> | undefined;
   private passing = false;
+  // Keep a consumed slot in memory even if persisting its result fails.
+  private consumed: { updatedAt: string; slot: string; next: number } | null = null;
 
   constructor(
     private readonly store: BackupScheduleStore,
@@ -60,6 +62,12 @@ export class BackupScheduler {
     if (this.passing) return null;
     const schedule = this.store.read();
     if (schedule === null || !isDue(schedule, now)) return null;
+    if (
+      this.consumed?.updatedAt === schedule.updatedAt &&
+      this.consumed.slot === schedule.nextRunAt &&
+      now.getTime() < this.consumed.next
+    )
+      return null;
     this.passing = true;
     try {
       return await this.runOne(schedule);
@@ -84,9 +92,11 @@ export class BackupScheduler {
     if (current !== null) {
       // A rule set while this ran has its own first run, so the run is recorded and that run is left as it is.
       const replaced = current.updatedAt !== schedule.updatedAt;
+      const nextRunAt = replaced ? current.nextRunAt : nextRunAfterRun(current, finished).toISOString();
+      this.consumed = { updatedAt: current.updatedAt, slot: current.nextRunAt, next: Date.parse(nextRunAt) };
       this.store.write({
         ...current,
-        nextRunAt: replaced ? current.nextRunAt : nextRunAfterRun(current, finished).toISOString(),
+        nextRunAt,
         lastRun: run,
       });
     }

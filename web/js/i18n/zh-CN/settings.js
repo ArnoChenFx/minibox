@@ -406,7 +406,7 @@ export default {
   "st.tokenNone": "还没有 Agent 令牌。",
   "st.backups": "备份",
   "st.backupsHelp":
-    "按计划备份 MiniBox 的数据目录，无需外部 cron。按计划备份使用服务器上的 BACKUP_PASSPHRASE 封装，BACKUP_KEEP 决定保留几份。设置之前为关闭状态。",
+    "按计划备份 MiniBox 的数据目录，无需外部 cron。按计划备份使用服务器上的 BACKUP_PASSPHRASE 封装，BACKUP_KEEP 决定保留几份。",
   "st.backupSchedule": "计划",
   "st.backupScheduleOffHelp": "只有运行 minibox backup 或调用 API 时才会创建备份。",
   "st.backupScheduleNote":

@@ -59,6 +59,7 @@ export class BackupService {
   readonly store: BackupStore;
   private readonly keep: number;
   private readonly exclude: readonly string[];
+  private creating = false;
   private readonly receiving = new Set<string>();
 
   constructor(private readonly options: BackupServiceOptions) {
@@ -91,8 +92,10 @@ export class BackupService {
   }
 
   async create(passphrase: string, createdBy: string | null, progress?: (line: string) => void): Promise<BackupRecord> {
+    if (this.creating) throw conflict("A backup is already running");
     this.store.ensureDir();
     const id = this.store.allocateId();
+    this.creating = true;
     try {
       const summary = await writeArchive({
         dataDir: this.options.dataDir,
@@ -121,6 +124,8 @@ export class BackupService {
     } catch (e) {
       this.store.remove(id);
       throw e;
+    } finally {
+      this.creating = false;
     }
   }
 

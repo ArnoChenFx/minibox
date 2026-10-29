@@ -1,5 +1,6 @@
 import { api } from "../lib/api.js";
 import { esc } from "../lib/dom.js";
+import { dateTime } from "../lib/format.js";
 import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
 import { bindScheduleForm, scheduleCardHtml, scheduleFieldsHtml } from "../lib/schedule-ui.js";
@@ -80,7 +81,7 @@ async function editSchedule(view, schedule) {
   if (!body) return;
   try {
     const saved = await api("/api/backups/schedule", { method: "PUT", body });
-    toast(t("st.backupScheduleSaved"), { message: t("ck.nextRun") + ": " + saved.schedule.nextRunAt });
+    toast(t("st.backupScheduleSaved"), { message: t("ck.nextRun") + ": " + dateTime(saved.schedule.nextRunAt) });
   } catch (e) {
     toastError(t("st.backupScheduleFailed"), e);
   }

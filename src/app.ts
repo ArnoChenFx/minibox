@@ -284,7 +284,7 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
     },
   );
   hosts.add(local);
-  const knownSecrets = [cfg.accessKey];
+  const knownSecrets = [cfg.accessKey, ...(cfg.backupPassphrase ? [cfg.backupPassphrase] : [])];
   const redactor = createRedactor({ knownSecrets });
   const tokens = new TokenStore({
     file: tokensPath(cfg.dataDir),

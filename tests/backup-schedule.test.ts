@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import type { App } from "../src/app";
+import { restoreArchive } from "../src/backup/restore";
 import { BackupScheduleSchema } from "../src/backup/schedule";
 import { BackupScheduleStore } from "../src/backup/schedule-store";
 import { ruleOf } from "../src/checkpoints/schedule";
@@ -118,6 +119,62 @@ describe("a due backup schedule over the scheduler", () => {
   beforeEach(() => {
     clock = new Date(Date.UTC(2026, 9, 22, 10, 0));
     setup();
+  });
+
+  test("a completed slot is not repeated when saving its result fails", async () => {
+    setBackupSchedule(app.backupSchedule, rule({ everyHours: 1 }), "owner", clock);
+    const { scheduler } = schedulerOf(app, { clock: () => clock });
+    clock = new Date(clock.getTime() + HOUR);
+    app.backupSchedule.write = () => {
+      throw new Error("schedule is read-only");
+    };
+    await expect(scheduler.run()).rejects.toThrow("read-only");
+    expect(app.backups.list()).toHaveLength(1);
+    for (let pass = 0; pass < 3; pass++) {
+      clock = new Date(clock.getTime() + 60_000);
+      expect(await scheduler.run()).toBeNull();
+    }
+    expect(app.backups.list()).toHaveLength(1);
+  });
+
+  test("a scheduled archive restores with the exact literal passphrase from config", async () => {
+    const literal = "hunter2hunter2$xyz#end";
+    const cfg = loadConfig({ BACKUP_PASSPHRASE: literal, DATA_DIR: scratch }, { envFile: join(scratch, "absent.env") });
+    setBackupSchedule(app.backupSchedule, rule({ everyHours: 1 }), "owner", clock);
+    const { scheduler } = schedulerOf(app, { passphrase: cfg.backupPassphrase, clock: () => clock });
+    clock = new Date(clock.getTime() + HOUR);
+    const id = await scheduler.run();
+    expect(id).not.toBeNull();
+    const destination = join(scratch, "restored");
+    expect(await restoreArchive(app.backups.store.pathFor(id!), destination, literal)).toBeGreaterThan(0);
+  });
+
+  test("Bun-expanded dotenv passphrases are refused at startup", () => {
+    const file = join(scratch, ".env");
+    writeFileSync(file, "BACKUP_PASSPHRASE='hunter2hunter2$xyz'\n");
+    const run = Bun.spawnSync(
+      [
+        process.execPath,
+        "-e",
+        `import { loadConfig } from ${JSON.stringify(join(import.meta.dir, "../src/config.ts"))}; loadConfig(process.env, { envFile: ${JSON.stringify(file)} });`,
+      ],
+      { cwd: scratch, env: { PATH: process.env.PATH ?? "", DATA_DIR: scratch }, stdout: "pipe", stderr: "pipe" },
+    );
+    expect(run.exitCode).not.toBe(0);
+    expect(run.stderr.toString()).toContain("BACKUP_PASSPHRASE differs");
+  });
+
+  test("a scheduled run cannot overlap a manual backup and the service unlocks afterwards", async () => {
+    setBackupSchedule(app.backupSchedule, rule({ everyHours: 1 }), "owner", clock);
+    const { scheduler } = schedulerOf(app, { clock: () => clock });
+    clock = new Date(clock.getTime() + HOUR);
+    const manual = app.backups.create(PASSPHRASE, "owner");
+    expect(await scheduler.run()).toBeNull();
+    expect(app.backupSchedule.read()?.lastRun?.status).toBe("failed");
+    await manual;
+    expect(app.backups.list()).toHaveLength(1);
+    await app.backups.create(PASSPHRASE, "owner");
+    expect(app.backups.list()).toHaveLength(2);
   });
 
   test("the schedule is off by default, and a pass over it makes nothing", async () => {

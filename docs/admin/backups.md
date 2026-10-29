@@ -227,7 +227,7 @@ What a run does:
 - `BACKUP_KEEP` applies afterwards, exactly as it does to a manual backup. A schedule therefore cannot fill the disk on its own: with `BACKUP_KEEP=7` it keeps the newest seven and removes the older ones. See [Keep only the newest backups](#keep-only-the-newest-backups).
 - A failed run is recorded on the schedule and logged once, and nothing runs again until the next slot. It does not retry in a loop.
 - A run that fell due while MiniBox was down happens once when it comes back, not once per missed slot. An every-hours schedule keeps to its original times, so a late run does not move the later ones; a daily schedule runs at its next time.
-- Schedules are checked every minute. A backup made on a schedule appears in `GET /api/backups` and in the **Tasks** panel like any other, with the audit event `backup.scheduled`.
+- Schedules are checked every minute. A backup made on a schedule appears in `GET /api/backups` and records the audit event `backup.scheduled`.
 
 Scheduled backups are sealed with the passphrase in `BACKUP_PASSPHRASE`, which stays in `.env` on the server. Keep it apart from the archives: it is what opens them.
 
@@ -274,3 +274,5 @@ Replace `vol_abc123` with the volume's ID. To restore the archive, see [Restore 
 ## Checkpoints and backups
 
 Checkpoints are copies of one box's data, and they are stored on the same host as the boxes. A backup holds the checkpoint records and schedules, but not the checkpoint data, which is in the repository volume. The recycle bin keeps the data of deleted boxes and volumes in the same repository volume, so a backup does not hold it either. To keep a checkpoint elsewhere, [export](../user-guide/checkpoints.md#export-and-import) it and download the package, or push the package to an [off-site target](#off-site-targets).
+
+If `BACKUP_PASSPHRASE` differs between the process environment and `.env` (for example after Bun expands `$`), startup refuses the ambiguous value. Use one unambiguous source; keep the exact passphrase separately and verify a restore.
