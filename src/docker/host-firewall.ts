@@ -1,17 +1,36 @@
 import { createHash } from "node:crypto";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import { FORWARD_PROBE_SCRIPT, FORWARD_REPAIR_SCRIPT, judgeForwardReport } from "../egress/forward";
 import { formatIpv4Cidr, ipv4At, parseIpv4Cidr } from "../lib/cidr";
-import { RuntimeError, type Runtime } from "../runtime";
+import { isRuntimeError, RuntimeError, type Runtime } from "../runtime";
 import type { Engine } from "./engine";
 import { runHelper } from "./helpers";
 import { imageMethods } from "./images";
 
 /**
- * Carries iptables, which the base template does not. Pinned to a release line; the helper pulls it on first use. A
- * remote agent host pulls it on its own engine.
+ * What the helpers are built from. The base template carries no iptables, and Alpine has none either. Pinned to a
+ * release line; a remote agent host pulls it on its own engine.
  */
 const HOST_FIREWALL_IMAGE = "alpine:3.20";
+
+/**
+ * The forward check's helper image: that Alpine with the iptables binaries in it. The check runs on every host with a
+ * `proxy-only` box every ten minutes, and installing the packages inside each helper put a download behind every pass,
+ * and a failure on every pass of a host with no internet whose firewall had not changed. It is built once on each
+ * engine, the first time a helper needs it.
+ */
+const HELPER_DOCKERFILE = `FROM ${HOST_FIREWALL_IMAGE}\nRUN apk add --no-cache iptables iptables-legacy\n`;
+
+/** How long a failed build is left alone before the next helper tries again. */
+const BUILD_RETRY_MS = 60 * 60 * 1000;
+
+/** The helper image of one install. Image names are lower case, and a label prefix need not be. */
+function helperImageTag(owner: string): string {
+  return `${owner.toLowerCase()}-host-firewall:alpine3.20`;
+}
 
 /**
  * The chains MiniBox owns start with this. Each install has its own, named after a hash of its label prefix, so two
@@ -56,6 +75,57 @@ export function hostFirewallMethods(
   engine: Engine,
 ): Pick<Runtime, "setHostIngressBlock" | "checkHostForward" | "allowHostForward"> {
   const images = imageMethods(engine);
+  // One resolution at a time per install, so a probe and a repair that start together share one build.
+  const resolving = new Map<string, Promise<string>>();
+  let buildFailedAt = 0;
+  let buildError = "";
+
+  async function buildHelperImage(tag: string): Promise<void> {
+    const dir = mkdtempSync(join(tmpdir(), "minibox-fwimage-"));
+    try {
+      writeFileSync(join(dir, "Dockerfile"), HELPER_DOCKERFILE);
+      await images.buildImage({ contextDir: dir, dockerfile: "Dockerfile", tag, labels: {} });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  /**
+   * The image a helper runs in: the one with iptables built in, building it when the engine lacks it. A build that
+   * fails (no internet, no registry) falls back to plain Alpine, whose scripts try to install iptables themselves, and
+   * is not tried again for an hour, so a host that cannot build does not retry it on every pass.
+   */
+  async function resolveHelperImage(owner: string): Promise<string> {
+    const tag = helperImageTag(owner);
+    try {
+      await images.inspectImage(tag);
+      return tag;
+    } catch (e) {
+      if (!isRuntimeError(e, "not_found")) throw e;
+    }
+    if (Date.now() - buildFailedAt >= BUILD_RETRY_MS) {
+      try {
+        await buildHelperImage(tag);
+        buildError = "";
+        return tag;
+      } catch (e) {
+        buildFailedAt = Date.now();
+        buildError = String(e).slice(-LOG_TAIL_CHARS);
+      }
+    }
+    await images.pullImage(HOST_FIREWALL_IMAGE);
+    return HOST_FIREWALL_IMAGE;
+  }
+
+  function helperImage(owner: string): Promise<string> {
+    let pending = resolving.get(owner);
+    if (!pending) {
+      pending = resolveHelperImage(owner).finally(() => resolving.delete(owner));
+      resolving.set(owner, pending);
+    }
+    return pending;
+  }
+
   return {
     async setHostIngressBlock(owner, sources) {
       const canonical = sources.map((source) => {
@@ -88,9 +158,9 @@ export function hostFirewallMethods(
         throw new RuntimeError("invalid", `${bridge} is not an interface name`);
       const network = parseIpv4Cidr(source);
       if (!network) throw new RuntimeError("invalid", `${source} is not an IPv4 CIDR`);
-      await images.pullImage(HOST_FIREWALL_IMAGE);
+      const image = await helperImage(owner);
       const result = await runHelper(engine.docker, {
-        image: HOST_FIREWALL_IMAGE,
+        image,
         cmd: ["sh", "-c", FORWARD_PROBE_SCRIPT],
         env: [`MINIBOX_FORWARD_CHAIN=${hostForwardChain(owner)}`],
         capAdd: ["NET_ADMIN"],
@@ -112,7 +182,9 @@ export function hostFirewallMethods(
       if (verdict.backends.length === 0) {
         throw new RuntimeError(
           "engine",
-          `the host forward probe read no iptables backend: ${result.logs.trim().slice(-LOG_TAIL_CHARS)}`,
+          `the host forward probe read no iptables backend: ${result.logs.trim().slice(-LOG_TAIL_CHARS)}${
+            buildError === "" ? "" : ` (the helper image could not be built: ${buildError})`
+          }`,
           "the host's FORWARD rules could not be read",
         );
       }
@@ -122,9 +194,9 @@ export function hostFirewallMethods(
     async allowHostForward(owner, bridge) {
       if (bridge !== "" && !/^[A-Za-z0-9][A-Za-z0-9_.-]{0,14}$/.test(bridge))
         throw new RuntimeError("invalid", `${bridge} is not an interface name`);
-      await images.pullImage(HOST_FIREWALL_IMAGE);
+      const image = await helperImage(owner);
       const result = await runHelper(engine.docker, {
-        image: HOST_FIREWALL_IMAGE,
+        image,
         cmd: ["sh", "-c", FORWARD_REPAIR_SCRIPT],
         env: [`MINIBOX_FORWARD_CHAIN=${hostForwardChain(owner)}`, `MINIBOX_UPLINK_BRIDGE=${bridge}`],
         capAdd: ["NET_ADMIN"],

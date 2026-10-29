@@ -174,7 +174,14 @@ describe("attentionText", () => {
     expect(attentionText(itemOf("host.forward_blocked", { ...params, cause: "unclear" }))?.key).toBe(
       "ov.text.forward_blocked_unclear",
     );
-    for (const key of ["ov.text.forward_blocked_rule", "ov.text.forward_blocked_unclear"]) {
+    expect(attentionText(itemOf("host.forward_blocked", { ...params, cause: "unreachable" }))?.key).toBe(
+      "ov.text.forward_blocked_unreachable",
+    );
+    for (const key of [
+      "ov.text.forward_blocked_rule",
+      "ov.text.forward_blocked_unclear",
+      "ov.text.forward_blocked_unreachable",
+    ]) {
       expect(en[key]).not.toContain("Confirm to let MiniBox");
       expect(zh[key]).not.toContain("确认后由 MiniBox");
       // i18n.test.ts checks that both languages exist; this checks the words differ from each other.
@@ -218,6 +225,7 @@ describe("where an attention item leads", () => {
     expect(canRepair(itemOf("host.forward_blocked", { ...params, cause: "policy" }))).toBe(true);
     expect(canRepair(itemOf("host.forward_blocked", { ...params, cause: "rule" }))).toBe(false);
     expect(canRepair(itemOf("host.forward_blocked", { ...params, cause: "unclear" }))).toBe(false);
+    expect(canRepair(itemOf("host.forward_blocked", { ...params, cause: "unreachable" }))).toBe(false);
     // A view that carries no cause at all must not offer a button either: without one nothing is certain.
     const { cause: _cause, ...withoutCause } = params as Record<string, string | number>;
     expect(canRepair(itemOf("host.forward_blocked", withoutCause))).toBe(false);

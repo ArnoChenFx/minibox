@@ -166,9 +166,12 @@ export interface NetworkSummary {
   bridge: string | null;
 }
 
-/** What the host's `FORWARD` chain does with a new connection arriving on one bridge. */
-/** Why the host's rules dropped the uplink. `policy` is a chain falling off its end, `rule` a `DROP` written on purpose. */
-export type HostForwardCause = "policy" | "rule";
+/**
+ * Why the host's rules dropped the uplink. `policy` is a chain falling off its end, `rule` a `DROP` written on purpose,
+ * and `unreachable` the policy again after a `RETURN` or `-g` in `FORWARD` ended the walk, where nothing MiniBox
+ * appends would be reached.
+ */
+export type HostForwardCause = "policy" | "rule" | "unreachable";
 
 export interface HostForwardCheck {
   /** True when the connection would be forwarded, so an egress proxy on that bridge can reach the internet. */

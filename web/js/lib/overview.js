@@ -94,13 +94,13 @@ export function attentionText(item, { bytes = String, cpus = String } = {}) {
     case "host.memory_overcommit":
       return { key: "ov.text.memory_overcommit", params: { booked: bytes(p.booked), limit: bytes(p.limit) } };
     case "host.forward_blocked": {
-      // The row says which kind of drop it is, because only one of the three comes with a button.
+      // The row says which kind of drop it is, because only one of the four comes with a button.
       const key =
-        p.cause === "rule"
-          ? "ov.text.forward_blocked_rule"
-          : p.cause === "policy"
-            ? "ov.text.forward_blocked"
-            : "ov.text.forward_blocked_unclear";
+        {
+          policy: "ov.text.forward_blocked",
+          rule: "ov.text.forward_blocked_rule",
+          unreachable: "ov.text.forward_blocked_unreachable",
+        }[p.cause] ?? "ov.text.forward_blocked_unclear";
       return { key, params: { count: p.count, boxes: p.boxes, bridge: p.bridge } };
     }
     default:

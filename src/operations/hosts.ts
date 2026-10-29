@@ -256,9 +256,9 @@ const ForwardStateSchema = z.object({
   forwarding: z.boolean().meta({
     description: "Whether a new connection arriving on that bridge would be forwarded to the internet.",
   }),
-  cause: z.enum(["policy", "rule"]).nullable().meta({
+  cause: z.enum(["policy", "rule", "unreachable"]).nullable().meta({
     description:
-      "What drops the uplink when it is dropped. policy is a chain falling off its end, the case MiniBox may repair. rule is a DROP or REJECT the host's own rules make on purpose. Null when the reading is not certain, which is the case with nothing to offer.",
+      "What drops the uplink when it is dropped. policy is a chain falling off its end, the case MiniBox may repair. rule is a DROP or REJECT the host's own rules make on purpose. unreachable is the policy again, but a RETURN or -g in FORWARD ends the walk first, so a rule appended at the end would never be reached. Null when the reading is not certain, which is the case with nothing to offer.",
   }),
   detail: z
     .string()

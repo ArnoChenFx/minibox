@@ -82,6 +82,13 @@ describe("the owner's repair over HTTP", () => {
     expect(runtime.callsTo("allowHostForward")).toEqual([]);
   });
 
+  test("a token cannot read the overview either, so it never sees the item that carries the button", async () => {
+    await blocked();
+    const admin = mint(app, { name: "admin", preset: "admin" });
+    const reply = await call(base, "/api/overview", { token: admin.secret });
+    expect(reply.status).toBe(403);
+  });
+
   test("a token cannot reach the repair, whatever it holds", async () => {
     await blocked();
     const admin = mint(app, { name: "admin", preset: "admin" });

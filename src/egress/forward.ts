@@ -38,9 +38,11 @@ export interface ForwardProbe {
  * Why a backend says the packet goes or does not. `policy` is a chain that fell off its end with nothing to accept the
  * packet, which is the accident this check exists for: nothing on the host asks for that drop in particular.
  * `rule` is a `DROP` or `REJECT` that a person (or Docker) wrote on purpose, so the host is doing what it was told and
- * MiniBox must not widen it.
+ * MiniBox must not widen it. `unreachable` is the policy dropping it too, but a rule in `FORWARD` itself ended the walk
+ * early (a `-g` to a chain, or a `RETURN`), so a rule appended at the end of `FORWARD` would never be reached and
+ * MiniBox has nothing to add that would help.
  */
-export type DropCause = "policy" | "rule";
+export type DropCause = "policy" | "rule" | "unreachable";
 
 export interface BackendVerdict {
   readonly backend: string;
@@ -258,13 +260,14 @@ const BUILT_IN_CHAINS = new Set(["INPUT", "FORWARD", "OUTPUT"]);
  * What one chain decided. `accept` and `drop` are verdicts, with the cause of a drop. `none` is the chain falling off
  * its end, which returns to the caller. `return` is a `RETURN` in a built-in chain, which hands the packet to the
  * policy. `unsure` marks a walk where a rule it could not read might have decided otherwise, so nothing certain can be
- * said about a packet that reaches the end of it.
+ * said about a packet that reaches the end of it. `goto` marks a `none` that left through a `-g`, and a `return` is the
+ * same thing from `RETURN`: in `FORWARD` itself, the walk then never reaches the end of the chain.
  */
 type Decision =
   | { readonly kind: "accept" }
   | { readonly kind: "drop"; readonly cause: DropCause }
-  | { readonly kind: "return" }
-  | { readonly kind: "none"; readonly unsure: boolean };
+  | { readonly kind: "return"; readonly unsure: boolean }
+  | { readonly kind: "none"; readonly unsure: boolean; readonly goto?: boolean };
 
 /**
  * Walks one chain, following jumps, and stops at the first verdict. iptables' `RETURN` is two different things, and
@@ -292,7 +295,7 @@ function decide(chains: Map<string, Chain>, name: string, probe: ForwardProbe, s
         return unsure ? { kind: "none", unsure: true } : { kind: "drop", cause: "rule" };
       case "return":
         // `RETURN` in a built-in chain ends the traversal, which leaves the packet to the chain's policy.
-        if (BUILT_IN_CHAINS.has(name)) return { kind: "return" };
+        if (BUILT_IN_CHAINS.has(name)) return { kind: "return", unsure };
         // In a chain of its own it ends only that chain, and the caller carries on with its next rule.
         return { kind: "none", unsure };
       case "chain": {
@@ -305,7 +308,7 @@ function decide(chains: Map<string, Chain>, name: string, probe: ForwardProbe, s
         if (inner.kind === "return") unsure = true;
         // `-g` never comes back: when the chain it went to ends, the packet carries on from where this chain was called,
         // so this chain's later rules are not walked. In `FORWARD` that leaves the packet to the policy.
-        if (rule.target.goto === true) return { kind: "none", unsure };
+        if (rule.target.goto === true) return { kind: "none", unsure, goto: true };
         break;
       }
       default:
@@ -358,16 +361,26 @@ function verdictOf(backend: Backend, probe: ForwardProbe, source: number): Backe
           : `${backend.name}: its FORWARD policy drops traffic from ${probe.bridge}`,
     };
   }
-  // Nothing in FORWARD accepted the packet, so the chain's own policy decides it.
-  return policyVerdict(backend.name, forward, decided.kind === "none" ? decided.unsure : true, probe);
+  // Nothing in FORWARD accepted the packet, so the chain's own policy decides it. A walk that ended on a `RETURN` or a
+  // `-g` in FORWARD itself never got to the end of the chain, which is where a rule MiniBox appends would sit.
+  const early = decided.kind === "return" || decided.goto === true;
+  return policyVerdict(backend.name, forward, decided.unsure, early, probe);
 }
 
 /**
  * The verdict when nothing in `FORWARD` accepted the packet. The policy decides it, and that is the case MiniBox may
  * offer to repair: nobody wrote a rule asking for this drop. A rule the check could not read leaves the cause open, so
- * the reading is reported as a drop with no cause: worth a warning, never worth a button.
+ * the reading is reported as a drop with no cause: worth a warning, never worth a button. A walk that `early` ended in
+ * FORWARD itself (`RETURN`, `-g`) has the policy as its answer too, but a rule appended at the end would never be
+ * reached, so that is a drop of its own kind and gets no button either.
  */
-function policyVerdict(name: string, forward: Chain, unsure: boolean, probe: ForwardProbe): BackendVerdict {
+function policyVerdict(
+  name: string,
+  forward: Chain,
+  unsure: boolean,
+  early: boolean,
+  probe: ForwardProbe,
+): BackendVerdict {
   if (forward.policy === "ACCEPT") {
     return { backend: name, verdict: "ok", cause: null, unsure, reason: `${name} FORWARD policy is ACCEPT` };
   }
@@ -375,11 +388,9 @@ function policyVerdict(name: string, forward: Chain, unsure: boolean, probe: For
     return {
       backend: name,
       verdict: "drop",
-      cause: unsure ? null : "policy",
+      cause: policyCause(unsure, early),
       unsure,
-      reason: unsure
-        ? `${name} FORWARD policy is ${forward.policy}, and a rule MiniBox does not read may accept ${probe.bridge}`
-        : `${name} FORWARD policy is ${forward.policy} and no rule accepts ${probe.bridge}`,
+      reason: policyReason(name, forward.policy, unsure, early, probe.bridge),
     };
   }
   return {
@@ -389,6 +400,18 @@ function policyVerdict(name: string, forward: Chain, unsure: boolean, probe: For
     unsure: true,
     reason: `${name} FORWARD policy is not readable`,
   };
+}
+
+function policyCause(unsure: boolean, early: boolean): DropCause | null {
+  if (unsure) return null;
+  return early ? "unreachable" : "policy";
+}
+
+function policyReason(name: string, policy: string, unsure: boolean, early: boolean, bridge: string): string {
+  const head = `${name} FORWARD policy is ${policy}`;
+  if (unsure) return `${head}, and a rule MiniBox does not read may accept ${bridge}`;
+  if (early) return `${head}, and a RETURN or -g in FORWARD leaves ${bridge} to it before the end of the chain`;
+  return `${head} and no rule accepts ${bridge}`;
 }
 
 interface ParsedReport {

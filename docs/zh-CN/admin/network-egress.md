@@ -91,13 +91,13 @@ Box 设置中**安全**一组的**网络出站**卡片列出最近被拒绝的�
 
 `proxy-only` 的 Box 在自己的网络上没有对外路由。它唯一的对端是出站代理，代理位于 `<prefix>-egress-uplink` 网桥上，并通过宿主机的 `FORWARD` 链访问互联网。这条规则 MiniBox 从不写入，而是依赖 Docker 自己的规则。因此当宿主机的 `FORWARD` 策略为 `DROP`，或残留的 `iptables-legacy` 表丢弃了这些流量，或 MiniBox 运行期间防火墙被重新加载时，该宿主机上每个 `proxy-only` 的 Box 都会静默失去互联网。Box 仍能启动，exec 与 SSH 仍然可用，而代理日志只说 `egress.failed … upstream`，读起来像是目标主机挂了。
 
-MiniBox 每十分钟检查一次（`EGRESS_FORWARD_CHECK_INTERVAL_SEC`，可在 60 到 86400 秒之间调整，见[配置（英文）](../../reference/configuration.md#boxes)），启动后不久也会检查，另外在 `proxy-only` 的 Box 启动时、宿主机重新上线时各检查一次。检查会运行一个在宿主机网络上带 `NET_ADMIN` 的短生命周期辅助容器，在其中读取 `iptables -S`，因此代价是一次容器启动，宿主机上什么都不改。没有 `proxy-only` Box 的宿主机完全不会被读取；有 `proxy-only` Box 的宿主机每轮都会重新读取，因为防火墙重新加载可能在没人注意时把规则清掉。辅助镜像只拉取一次，就是宿主机防火墙用的同一个 `alpine:3.20`。
+MiniBox 每十分钟检查一次（`EGRESS_FORWARD_CHECK_INTERVAL_SEC`，可在 60 到 86400 秒之间调整，见[配置（英文）](../../reference/configuration.md#boxes)），启动后不久也会检查，另外在 `proxy-only` 的 Box 启动时、宿主机重新上线时各检查一次。检查会运行一个在宿主机网络上带 `NET_ADMIN` 的短生命周期辅助容器，在其中读取 `iptables -S`，因此代价是一次容器启动，宿主机上什么都不改。没有 `proxy-only` Box 的宿主机完全不会被读取；有 `proxy-only` Box 的宿主机每轮都会重新读取，因为防火墙重新加载可能在没人注意时把规则清掉。辅助容器用的是在 `alpine:3.20` 上装好 iptables 的镜像，MiniBox 在每台宿主机上第一次需要时构建一次（`<prefix>-host-firewall:alpine3.20`），之后每轮检查不再下载任何东西。构建不成功的宿主机回退到纯 Alpine，一小时后再试。读不到的宿主机（离线，或没有网络可供构建）开始失败时记一行日志（`egress.forward_pass_failed`），能再读到时记一行（`egress.forward_pass_recovered`）；离线的宿主机在回来之前完全不会被读取。
 
 规则丢弃上行网络时，概览页的**需要关注**会显示**仅代理的 Box 无法上网**，其中给出宿主机、受影响的 `proxy-only` Box 数量与网桥名。同一时刻 MiniBox 日志会写一行 `error`（`egress.forward_blocked`），条件持续期间不会重复写，所以无人值守的运维只会看到一次。之后某次检查发现规则恢复，会写 `egress.forward_restored` 并清掉该条目。
 
 ### 检查证明了什么，没证明什么
 
-检查读取的是宿主机的 `FORWARD` 链对一个**新的 TCP 连接**会怎么做：该连接从上行网桥进来，从宿主机的默认路由（通常是网卡 `eth0`）出去。它会顺着 Docker 自己的链走到做决定的那条规则，并且同时读取 `iptables` 表（现代宿主机上是 nft 那张）和 `iptables-legacy`（仅当旧表已经存在时才读，读它本身不会把旧表加载起来），因为残留的旧表正是这个问题的一种成因。因此：
+检查读取的是宿主机的 `FORWARD` 链对一个**新的 TCP 连接**会怎么做：该连接从上行网桥进来，从宿主机的默认路由（通常是网卡 `eth0`）出去。它会顺着 Docker 自己的链走到做决定的那条规则，并且同时读取 `iptables` 命令看到的内容（现代宿主机上是基于 nft 的那个，它只列出通过 iptables 写入的规则，见最后一节）和 `iptables-legacy`（仅当旧表已经存在时才读，读它本身不会把旧表加载起来），因为残留的旧表正是这个问题的一种成因。因此：
 
 - 它证明的是：该宿主机上的 `proxy-only` Box 无法访问外部，**原因在于宿主机的转发规则**。这正是警告要说的故障，也是 MiniBox 能修的那种。
 - 它**不能**证明互联网可达。规则正常但上行网络无法解析或无法路由的宿主机不会被报告：那种情况要去看代理的 `egress.failed … upstream` 事件，也不是一条 `FORWARD` 规则能修的。
@@ -106,9 +106,9 @@ MiniBox 每十分钟检查一次（`EGRESS_FORWARD_CHECK_INTERVAL_SEC`，可在 
 
 ### 修复
 
-概览页的条目上有**添加规则**按钮，但**只在丢包是因为链走到末尾、按策略丢弃时才出现**（`cause: "policy"`）。如果丢包来自宿主机自己写的 `DROP`/`REJECT` 规则，或者这次读取里有 MiniBox 读不懂的规则，条目只报告、不给按钮：那种情况下宿主机是在按写好的规则办事，MiniBox 的规则会把那个决定推翻。
+概览页的条目上有**添加规则**按钮，但**只在丢包是因为链走到末尾、按策略丢弃时才出现**（`cause: "policy"`）。另外三种读数只报告、不给按钮。丢包来自宿主机自己写的 `DROP`/`REJECT` 规则（`rule`）：宿主机是在按写好的规则办事，MiniBox 的规则会把那个决定推翻。这次读取里有 MiniBox 读不懂的规则（没有原因）。以及按策略丢弃、但 `FORWARD` 里先走到了一条 `RETURN`，或一条用 `-g` 把上行网络的流量永久交给另一条链的规则（`unreachable`）：遍历在那里就结束了，追加在 `FORWARD` 末尾的规则永远走不到，放行规则只能手动加到那条链里，或加在那条规则之前。
 
-点按钮会打开一个确认框，写明宿主机与网桥，**在你确认之前什么都不写入**。确认后，MiniBox 会在宿主机上运行一个短生命周期辅助容器，添加自己的链 `MINIBOX-FWD-<hash>`，并把跳转**追加在 `FORWARD` 末尾**。追加而不是插到最前面是有意的：包走到 MiniBox 的规则之前，Docker 自己的隔离链和你写在 `DOCKER-USER` 里的规则都已经做过决定，所以它们仍然优先。该链只接受从上行网桥进入、从宿主机默认路由出去的新连接，以及回到该网桥的回程；该规则不放行其它网桥接口；对默认出口网卡所通向的局域网与私网段的限制，仍需写在该跳转之前。宿主机防火墙的其它部分都不动：`FORWARD` 策略保持原样，别的安装的链也不受影响。这个安装不再需要这条规则时（最后一个 `proxy-only` 的 Box 被删除，或宿主机被移除），MiniBox 会把它删掉。宿主机没有 IPv4 默认路由时修复会被拒绝，因为没有可以放行的出口。
+点按钮会打开一个确认框，写明宿主机与网桥，**在你确认之前什么都不写入**。确认后，MiniBox 会在宿主机上运行一个短生命周期辅助容器，添加自己的链 `MINIBOX-FWD-<hash>`，并把跳转**追加在 `FORWARD` 末尾**。追加而不是插到最前面是有意的：包走到 MiniBox 的规则之前，Docker 自己的隔离链和你写在 `DOCKER-USER` 里的规则都已经做过决定，所以它们仍然优先。该链只接受从上行网桥进入、从宿主机默认路由出去的新连接，以及回到该网桥的回程；该规则不放行其它网桥接口；对默认出口网卡所通向的局域网与私网段的限制，仍需写在该跳转之前。宿主机防火墙的其它部分都不动：`FORWARD` 策略保持原样，别的安装的链也不受影响。这个安装不再需要这条规则时（最后一个 `proxy-only` 的 Box 被删除，或宿主机被移除），MiniBox 会把它删掉。MiniBox 只在运行期间记得自己加过这条规则：重启之后它不知道此前加过，也不会再删除它。要手动删除，先在 `sudo iptables -S` 里找到那条链（`MINIBOX-FWD-<hash>`），再依次执行 `sudo iptables -D FORWARD -j <链>`、`sudo iptables -F <链>`、`sudo iptables -X <链>`；旧表请换成 `iptables-legacy`。宿主机没有 IPv4 默认路由时修复会被拒绝，因为没有可以放行的出口。
 
 这是一次点击，通过 API 也就是一次调用：
 
@@ -123,7 +123,7 @@ curl -sS -X POST -H "Authorization: Bearer $MINIBOX_KEY" https://minibox.example
 ```bash
 docker network inspect minibox-egress-uplink --format '{{.Id}}'
 # br-<该 id 的前 12 个字符>
-sudo iptables -S FORWARD        # 现代宿主机上的 nft 表
+sudo iptables -S FORWARD        # 现代宿主机上基于 nft 的命令
 sudo iptables-legacy -S FORWARD # 残留的旧表，若打印出规则则存在
 ```
 
@@ -140,10 +140,10 @@ sudo iptables -I FORWARD 1 -o "$BR" -m conntrack --ctstate RELATED,ESTABLISHED -
 
 ### 检查覆盖不到的地方
 
-以下是这次读取的盲区。它们不会造成误报，但每一种都可能藏住真实的故障：
+以下是这次读取的盲区。大多数只会藏住真实的故障；nftables 那一条还可能产生 MiniBox 的规则清不掉的警告：
 
 - **IPv6。** 只读 IPv4 规则；`proxy-only` Box 的代理目前是通过 IPv4 访问互联网的，所以这不是本警告要说的那种故障。一台放行 IPv4、拦住 IPv6 的宿主机不会被报告。
-- **原生 nftables 规则集。** 检查跑的是 `iptables -S`；如果宿主机上的包根本不经过 `iptables` 表（比如 firewalld 用 `nftables` 后端，或引擎被配置为直接写 nftables 规则），它看不到任何能决定该包的规则，于是会把这台宿主机读成 `FORWARD` 里没有针对该网桥的规则，也就是 `policy` 那种情况。这样的宿主机请按它自己的防火墙来判断，而不是按这个检查。
+- **原生 nftables 规则集。** 检查读的是 `iptables` 命令看到的内容。现代宿主机上这个命令基于 nft，但它只列出通过 iptables 写入的规则，看不到直接写进 nftables 的规则，比如 firewalld 用 `nftables` 后端、或引擎被配置为直接写 nftables 规则时。这样的宿主机可能在实际不通时被读成能转发；如果它的 iptables 视图里只有一个 `DROP` 策略、别的什么都没有，就会被读成按策略丢弃，这时**添加规则**加的是 iptables 规则，压不过原生 nftables 的丢弃。如果在这样的宿主机上修复后警告依然存在，说明真正做决定的不是这个检查所读的防火墙：请按那个防火墙自己来判断。
 - **已经建立的流量。** conntrack 条目会比放行它的规则活得更久，所以规则改动后 Box 可能还会正常工作一会儿。
 - **规则之外的原因。** 规则正常但上行网络无法解析或无法路由的宿主机，不会在这里被报告。
 

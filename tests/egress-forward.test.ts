@@ -401,9 +401,36 @@ describe("reading a rule the way iptables prints it", () => {
   });
 
   test("a goto does not come back: when its chain ends, the rules after it in FORWARD are not walked", () => {
-    // A jump comes back to the next rule, which accepts. A goto does not, so the policy decides.
+    // A jump comes back to the next rule, which accepts. A goto does not, so the policy decides, and a rule MiniBox
+    // appended at the end of FORWARD would be walked past the same way: nothing it adds would ever be reached.
     expect(judge(zoneRules("-j")).dropped).toBe(false);
-    expect(judge(zoneRules("-g"))).toMatchObject({ dropped: true, cause: "policy" });
+    expect(judge(zoneRules("-g"))).toMatchObject({ dropped: true, cause: "unreachable" });
+  });
+
+  test("a RETURN in FORWARD itself is unreachable for a rule at the end too, and the reading says why", () => {
+    const verdict = judge(["-P FORWARD DROP", `-A FORWARD -i ${BRIDGE} -j RETURN`]);
+    expect(verdict).toMatchObject({ dropped: true, cause: "unreachable" });
+    expect(verdict.detail).toContain("RETURN or -g");
+  });
+
+  test("a goto inside a jumped-to chain hands back to FORWARD, whose end is still reached", () => {
+    const verdict = judge([
+      "-P FORWARD DROP",
+      "-A FORWARD -j ZONES",
+      `-A ZONES -i ${BRIDGE} -g ZONE`,
+      "-A ZONE -p icmp -j ACCEPT",
+    ]);
+    expect(verdict).toMatchObject({ dropped: true, cause: "policy" });
+  });
+
+  test("a goto after an unread rule is unsure before it is unreachable", () => {
+    const verdict = judge([
+      "-P FORWARD DROP",
+      `-A FORWARD -i ${BRIDGE} -p tcp -m tcp --dport 443 -j ACCEPT`,
+      `-A FORWARD -i ${BRIDGE} -g ZONE`,
+    ]);
+    expect(verdict.cause).toBeNull();
+    expect(verdict.backends[0]?.unsure).toBe(true);
   });
 
   test("a goto to a chain that accepts is still an accept", () => {

@@ -60,6 +60,32 @@ async function gated(name = "gated") {
 const errors = () => lines.filter((line) => line.includes('"level":"error"'));
 const forwardCalls = () => runtime.callsTo("checkHostForward").length;
 
+describe("a host that cannot be read does not fill the log", () => {
+  test("a host that stays unreadable is logged once, and reading it again is said once", async () => {
+    await gated();
+    runtime.checkHostForward = async () => {
+      throw new Error("helper failed");
+    };
+    for (let pass = 0; pass < 3; pass++) await watcher.tick();
+    expect(errors().filter((line) => line.includes("egress.forward_pass_failed"))).toHaveLength(1);
+    runtime.checkHostForward = async () => FORWARDING;
+    await watcher.tick();
+    await watcher.tick();
+    expect(lines.filter((line) => line.includes("egress.forward_pass_recovered"))).toHaveLength(1);
+  });
+
+  test("an offline host is not read at all, and is read again once it is back", async () => {
+    await gated();
+    host.host.status = "offline";
+    await watcher.tick();
+    expect(forwardCalls()).toBe(0);
+    expect(lines.filter((line) => line.includes("egress.forward"))).toEqual([]);
+    host.host.status = "online";
+    await watcher.tick();
+    expect(forwardCalls()).toBe(1);
+  });
+});
+
 describe("the pass reads the host only when it has something to read", () => {
   test("a host with no proxy-only box makes no engine call at all", async () => {
     await newBox("plain");
@@ -277,6 +303,21 @@ describe("the owner's repair, and nothing before it", () => {
     await expect(watcher.repair(host)).rejects.toMatchObject({
       status: 409,
       key: "egress_forward_not_repairable_rule",
+    });
+    expect(runtime.callsTo("allowHostForward")).toEqual([]);
+  });
+
+  test("a drop behind a RETURN or a -g is refused too: a rule at the end of FORWARD would never be reached", async () => {
+    runtime.forwardVerdict = {
+      forwarding: false,
+      cause: "unreachable",
+      detail: "iptables FORWARD policy is DROP, and a RETURN or -g in FORWARD leaves br- to it",
+    };
+    await gated();
+    await watcher.tick();
+    await expect(watcher.repair(host)).rejects.toMatchObject({
+      status: 409,
+      key: "egress_forward_not_repairable_unreachable",
     });
     expect(runtime.callsTo("allowHostForward")).toEqual([]);
   });

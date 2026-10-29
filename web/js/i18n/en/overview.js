@@ -63,6 +63,8 @@ export default {
     "The host's FORWARD rules drop the egress uplink ({bridge}), so its {count} proxy-only box(es) ({boxes}) cannot reach the internet. Open boxes are unaffected. Confirm to let MiniBox add the rule, or add it by hand.",
   "ov.text.forward_blocked_rule":
     "The host's own rules drop the egress uplink ({bridge}) on purpose, so its {count} proxy-only box(es) ({boxes}) cannot reach the internet. MiniBox has no rule to add here: change the DROP by hand if these boxes should get out. Open boxes are unaffected.",
+  "ov.text.forward_blocked_unreachable":
+    "The host's FORWARD rules drop the egress uplink ({bridge}), so its {count} proxy-only box(es) ({boxes}) cannot reach the internet. A rule in FORWARD hands that traffic to another chain for good (-g) or ends the walk (RETURN), so a rule MiniBox appended to FORWARD would never be reached. Add the allowance in that chain, or above that rule, by hand. Open boxes are unaffected.",
   "ov.text.forward_blocked_unclear":
     "The egress uplink ({bridge}) looks dropped on this host, but one of its rules is one MiniBox cannot read, so it cannot say why. Its {count} proxy-only box(es) ({boxes}) may have no internet. Read the rules by hand; MiniBox offers no rule here.",
   "actv.subtitle": "Every operation MiniBox has recorded: who acted, on what, and how it ended.",

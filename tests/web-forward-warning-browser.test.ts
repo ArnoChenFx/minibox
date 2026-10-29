@@ -25,6 +25,11 @@ const DROPPED_RULE = {
   cause: "rule" as const,
   detail: "iptables drops traffic from br- by a rule of its own",
 };
+const DROPPED_UNREACHABLE = {
+  forwarding: false,
+  cause: "unreachable" as const,
+  detail: "iptables FORWARD policy is DROP, and a RETURN or -g in FORWARD leaves br- to it",
+};
 const UNCLEAR = { forwarding: false, cause: null, detail: "iptables: a rule MiniBox does not read may accept br-" };
 
 describe.skipIf(!executablePath)("the forward warning on the overview (real browser)", () => {
@@ -70,7 +75,7 @@ describe.skipIf(!executablePath)("the forward warning on the overview (real brow
 
   /** Signs in, sets what the check would answer, runs a pass, and opens the overview at `width`. */
   async function openWith(
-    verdict: typeof DROPPED_POLICY | typeof DROPPED_RULE | typeof UNCLEAR,
+    verdict: typeof DROPPED_POLICY | typeof DROPPED_RULE | typeof DROPPED_UNREACHABLE | typeof UNCLEAR,
     width = 1280,
     locale = "en",
   ): Promise<{ wide: boolean }> {
@@ -114,6 +119,12 @@ describe.skipIf(!executablePath)("the forward warning on the overview (real brow
     await openWith(DROPPED_RULE);
     expect(await row().locator("[data-repair]").count()).toBe(0);
     expect(await row().innerText()).toContain("on purpose");
+  });
+
+  test("a drop behind a goto offers no button, and says a rule at the end would never be reached", async () => {
+    await openWith(DROPPED_UNREACHABLE);
+    expect(await row().locator("[data-repair]").count()).toBe(0);
+    expect(await row().innerText()).toContain("never be reached");
   });
 
   test("an unclear reading offers no button either", async () => {

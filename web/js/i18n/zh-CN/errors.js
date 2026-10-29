@@ -248,6 +248,8 @@ export default {
     "上次检查发现这台宿主机的转发规则正常，没有需要添加的规则。检查会按自己的间隔再次运行。",
   "err.egress_forward_not_repairable_rule":
     "MiniBox 不会改动这台宿主机的转发规则：宿主机自己的一条 DROP 或 REJECT 规则匹配了来自上行网桥的流量，说明它是在按写好的规则办事，MiniBox 的规则会把那个决定推翻。如果这不是你想要的效果，请手动改掉那条 DROP。",
+  "err.egress_forward_not_repairable_unreachable":
+    "MiniBox 不会改动这台宿主机的转发规则：FORWARD 里有一条规则用 -g 把上行网络的流量永久交给了另一条链，或用 RETURN 结束了遍历，所以 MiniBox 追加在 FORWARD 末尾的规则永远走不到。请手动把放行规则加到那条链里，或加在那条规则之前。",
   "err.egress_forward_not_repairable_unclear":
     "MiniBox 不会改动这台宿主机的转发规则：其中有一条规则 MiniBox 读不懂，说不清是什么在丢上行网络的流量。请手动查看规则；如果你确知应当放行，再手动添加。",
   "err.egress_forward_unchecked":
