@@ -1,4 +1,5 @@
 import { type ActivityLog, tracked } from "../activity";
+import type { BackupScheduleStore } from "../backup/schedule-store";
 import type { AuditNote, EventInput, EventRefs, EventStatus, EventTarget } from "../events/types";
 import { ulid } from "../events/ulid";
 import type { HostManager } from "../host/manager";
@@ -94,6 +95,8 @@ export interface ExecutorDeps {
   readonly notify?: Notifications;
   /** Backups of DATA_DIR. Backup operations read it from the context. */
   readonly backups?: BackupService;
+  /** The one backup schedule of this instance. Its operations read it from the context. */
+  readonly backupSchedule?: BackupScheduleStore;
   /** Off-site targets. Target operations read it from the context. */
   readonly targets?: TargetService;
   /** The owner's SSH keys. SSH key operations read it from the context. */
@@ -187,6 +190,7 @@ export class Executor {
       previewBaseDomain: ctx.previewBaseDomain ?? this.deps.previewBaseDomain ?? null,
       notify: ctx.notify ?? this.deps.notify,
       backups: ctx.backups ?? this.deps.backups,
+      backupSchedule: ctx.backupSchedule ?? this.deps.backupSchedule,
       targets: ctx.targets ?? this.deps.targets,
       sshKeys: ctx.sshKeys ?? this.deps.sshKeys,
       recordActivity: (entry) => this.deps.activity.add(entry),

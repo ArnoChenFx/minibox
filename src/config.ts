@@ -31,6 +31,11 @@ export interface Config {
   backupDir: string;
   /** How many backups `BACKUP_KEEP` retains, newest first. 0 keeps every backup, which is the default. */
   backupKeep: number;
+  /**
+   * The passphrase a scheduled backup is sealed with, from `BACKUP_PASSPHRASE`. Null when it is unset, which leaves a due
+   * run failed with a message saying so, since a schedule has nobody to ask.
+   */
+  backupPassphrase: string | null;
   dockerSocket: string;
   labelPrefix: string;
   baseTemplateTag: string;
@@ -232,6 +237,25 @@ function parseBackupKeep(value: string | undefined): number {
   return intInRange(value, 0, 0, MAX_BACKUP_KEEP);
 }
 
+/**
+ * The passphrase a scheduled backup is sealed with. The same rules as a passphrase on the command line: 12 to 1024
+ * characters, with no leading or trailing spaces and no line breaks. Blank means no schedule can run, and an invalid
+ * value stops startup: unlike `BACKUP_KEEP`, a typo here cannot delete anything, but it would leave every run failed.
+ */
+function parseBackupPassphrase(value: string | undefined): string | null {
+  // Blank is off. Anything else is used exactly as given: trimming it would seal a scheduled backup with a passphrase
+  // that is not the one the operator types, so an untrimmed value is refused instead.
+  if ((value ?? "").trim() === "") return null;
+  const passphrase = value ?? "";
+  const length = [...passphrase].length;
+  if (length < 12 || length > 1024 || passphrase !== passphrase.trim() || /[\r\n\0]/.test(passphrase)) {
+    throw new Error(
+      "BACKUP_PASSPHRASE: the passphrase must be 12 to 1024 characters, with no leading or trailing spaces and no line breaks",
+    );
+  }
+  return passphrase;
+}
+
 function parseHostOvercommit(value: string | undefined): number {
   const v = nonBlank(value);
   if (v === undefined) return 1;
@@ -323,6 +347,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     dataDir,
     backupDir,
     backupKeep: parseBackupKeep(get("BACKUP_KEEP")),
+    backupPassphrase: parseBackupPassphrase(get("BACKUP_PASSPHRASE")),
     labelPrefix,
     dockerSocket: get("DOCKER_SOCKET")?.trim() || "/var/run/docker.sock",
     baseTemplateTag: get("BASE_TEMPLATE")?.trim() || `${labelPrefix}-template:base`,

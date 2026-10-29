@@ -191,15 +191,55 @@ A backup that `BACKUP_KEEP` removes is gone for good. Push the ones you want to 
 
 Bad or unreadable records are logged and skipped; healthy records remain visible. Retention failures are logged and preserve completed archives. Startup maintenance failures do not stop the server. If the whole archive directory is unreadable, listing and creating backups fail; check its permissions.
 
-### Schedules
+### Scheduled backups
 
-MiniBox does not create backups on a schedule yet. To back up on a schedule, run `minibox backup` from cron or a task scheduler, and keep the passphrase where only that scheduler can read it:
+MiniBox can back itself up on a schedule, so you do not need cron. A schedule is one rule for the whole instance: every few hours, or once a day at a time you choose. It is off by default, and a set schedule survives a restart because it is a file in the data directory.
+
+A scheduled run needs a passphrase, and nobody is there to type one, so MiniBox reads it from `BACKUP_PASSPHRASE` in `.env`:
+
+```bash
+BACKUP_PASSPHRASE='correct horse battery staple'
+```
+
+The rules are the same as a passphrase you type: 12 to 1024 characters, with no leading or trailing spaces and no line breaks. Blank leaves the passphrase unset, and a due run then fails once with a message saying so. An invalid value stops MiniBox at startup rather than leaving every run failed.
+
+Set the schedule in **Settings → Backups**, under **Schedule**, with **Set a schedule**:
+
+1. Choose **Every few hours** and a whole number of hours from 1 to 720, or **Once a day** and a time of day. The daily time is in your browser's time zone, which the dialog names.
+2. Click **Save schedule**.
+
+The card then shows the rule, its **Next run** and its **Last run**, in your local time and with the zone. **Change schedule** edits it, and **Turn off** removes it. Turning a schedule off keeps the backups it already made.
+
+The same rule is available over the REST API and the command-line tool:
+
+```bash
+minibox backup schedule set --every-hours 6
+minibox backup schedule set --at 02:30 --timezone Asia/Shanghai
+minibox backup schedule get
+minibox backup schedule clear
+```
+
+`PUT /api/backups/schedule` sets it with `{ "everyHours": 6 }`, or with `{ "at": "02:30", "timezone": "Asia/Shanghai" }`, not both. `GET` on the same path reads it, `DELETE` removes it, and a `null` schedule means none is set. A daily time takes an IANA zone such as `Asia/Shanghai`; without one it is UTC, and a UTC offset such as `+08:00` is refused. The MCP storage toolset offers `get_backup_schedule`, `set_backup_schedule` and `clear_backup_schedule`. These operations are for the owner only.
+
+What a run does:
+
+- A due run makes one backup, through the same service that `minibox backup` uses. It lands in the server's backup folder, `DATA_DIR/backups/` or `BACKUP_DIR`, so a scheduled backup and a manual one are the same kind of archive.
+- `BACKUP_KEEP` applies afterwards, exactly as it does to a manual backup. A schedule therefore cannot fill the disk on its own: with `BACKUP_KEEP=7` it keeps the newest seven and removes the older ones. See [Keep only the newest backups](#keep-only-the-newest-backups).
+- A failed run is recorded on the schedule and logged once, and nothing runs again until the next slot. It does not retry in a loop.
+- A run that fell due while MiniBox was down happens once when it comes back, not once per missed slot. An every-hours schedule keeps to its original times, so a late run does not move the later ones; a daily schedule runs at its next time.
+- Schedules are checked every minute. A backup made on a schedule appears in `GET /api/backups` and in the **Tasks** panel like any other, with the audit event `backup.scheduled`.
+
+Scheduled backups are sealed with the passphrase in `BACKUP_PASSPHRASE`, which stays in `.env` on the server. Keep it apart from the archives: it is what opens them.
+
+### Cron, if you prefer it
+
+A schedule inside MiniBox covers the usual case, and cron is still fine for people who prefer it. Running `minibox backup` from cron or a task scheduler also works, and it can download the archive to another machine with `--out`, which an in-app schedule does not do:
 
 ```
 30 3 * * * MINIBOX_URL=http://127.0.0.1:3920 MINIBOX_ACCESS_KEY=… MINIBOX_BACKUP_PASSPHRASE=… minibox backup
 ```
 
-Without `--out`, each run adds an archive to the server's backup folder, and `BACKUP_KEEP` decides how many stay. With `--out`, the archive is downloaded to the machine that runs the job, and the copy on the server counts against `BACKUP_KEEP` like any other.
+Without `--out`, each run adds an archive to the server's backup folder, and `BACKUP_KEEP` decides how many stay. With `--out`, the archive is downloaded to the machine that runs the job, and the copy on the server counts against `BACKUP_KEEP` like any other. Keep the passphrase where only that scheduler can read it. A cron job and a schedule both set would each make their own backups, so pick one.
 
 A pulled checkpoint package expires 24 hours after the pull. Objects on targets stay until you remove them.
 

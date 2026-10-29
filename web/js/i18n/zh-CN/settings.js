@@ -405,6 +405,22 @@ export default {
   "st.tokenPruneFailed": "无法删除已失效的令牌",
   "st.tokenCreateFailed": "无法创建令牌",
   "st.tokenNone": "还没有 Agent 令牌。",
+  "st.backups": "备份",
+  "st.backupsHelp":
+    "按计划备份 MiniBox 的数据目录，无需外部 cron。按计划备份使用服务器上的 BACKUP_PASSPHRASE 封装，BACKUP_KEEP 决定保留几份。设置之前为关闭状态。",
+  "st.backupSchedule": "计划",
+  "st.backupScheduleOffHelp": "只有运行 minibox backup 或调用 API 时才会创建备份。",
+  "st.backupScheduleNote":
+    "MiniBox 停机期间到点的运行会在启动后执行一次，不会把错过的每次都补上。BACKUP_KEEP 只保留最新的几份。",
+  "st.backupRunOk": "{time}，已创建备份",
+  "st.backupRunFailed": "{time}，失败：{error}",
+  "st.backupScheduleTitle": "备份计划",
+  "st.backupScheduleDesc": "在后台备份数据目录。",
+  "st.backupScheduleHelp":
+    "按计划备份在 MiniBox 内运行，因此需要在 .env 中设置 BACKUP_PASSPHRASE。失败的运行只记录一次日志，并等待下一个时间点。",
+  "st.backupScheduleSaved": "备份计划已保存",
+  "st.backupScheduleOffDone": "备份计划已关闭",
+  "st.backupScheduleFailed": "备份计划修改失败",
   "st.targets": "异地目标",
   "st.targetsHelp":
     "把检查点包和备份复制到 S3 兼容的存储桶或 SFTP 文件夹，需要时再拉回本机。凭据保存为密钥，保存后不再显示。",

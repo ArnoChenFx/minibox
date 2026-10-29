@@ -84,6 +84,7 @@ Listing and closing sessions are REST and CLI only (`GET`/`DELETE /api/boxes/{id
 | `export_checkpoint`, `import_checkpoint`, `copy_checkpoint` | owner | Checkpoint packages and host copies. Each returns a task |
 | `get_checkpoint_schedule`, `set_checkpoint_schedule`, `clear_checkpoint_schedule` | owner | A box's checkpoint schedule |
 | `create_backup`, `list_backups`, `delete_backup` | owner | Backups of the data directory |
+| `get_backup_schedule`, `set_backup_schedule`, `clear_backup_schedule` | owner | The instance's backup schedule |
 | `list_targets`, `test_target`, `add_target`, `check_target`, `list_target_objects`, `remove_target`, `push_to_target`, `pull_from_target` | owner | Off-site targets |
 
 ## tools

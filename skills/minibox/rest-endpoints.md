@@ -179,6 +179,7 @@ All paths are jailed inside the volume. `{id}` is a `vol_…` or a volume name; 
 | `GET` | `/api/notify/channels` | owner | `hasSecret` only, never the secret |
 | `PUT` | `/api/notify/channels/{id}` | owner | Create or change a channel |
 | `POST` | `/api/backups` | owner | `{ "passphrase" }`. `202` |
+| `GET`/`PUT`/`DELETE` | `/api/backups/schedule` | owner | `everyHours`, or `at` + `timezone`. One schedule for the instance |
 | `GET` | `/api/targets` | owner | Off-site targets |
 
 Not in the OpenAPI document: `POST /api/packages` (raw `.mbckpt` upload), `GET /api/packages/{id}/download`, the SSE streams above, the terminal WebSocket at `/api/boxes/{id}/terminal`, the SSH WebSocket at `/api/ssh/{box}`, and the preview routes `/box/{name-or-id}/{port}/…`.

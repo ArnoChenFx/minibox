@@ -79,7 +79,98 @@ async function refuseExisting(path: string, overwrite: boolean): Promise<void> {
 export async function backupCommand(argv: string[], env: Env, io: CliIo): Promise<number> {
   if (argv[0] === "ls") return await backupListCommand(argv.slice(1), env, io);
   if (argv[0] === "rm") return await backupRemoveCommand(argv.slice(1), env, io);
+  if (argv[0] === "schedule") return await backupScheduleCommand(argv.slice(1), env, io);
   return await backupCreateCommand(argv, env, io);
+}
+
+/** A backup schedule as the server returns it. */
+interface ScheduleRow {
+  mode: "interval" | "daily";
+  everyHours: number | null;
+  at: string | null;
+  timezone: string | null;
+  timezoneUnknown: boolean;
+  nextRunAt: string;
+  lastRun: { at: string; status: string; backupId: string | null; bytes: number | null; error: string | null } | null;
+}
+
+const SCHEDULE_HINT =
+  "minibox backup schedule takes get, set or clear. set takes --every-hours N or --at HH:MM with --timezone ZONE.";
+
+/** The rule in words, as the console says it. */
+function ruleText(schedule: ScheduleRow): string {
+  if (schedule.mode === "daily") {
+    return `every day at ${schedule.at ?? "?"} (${schedule.timezoneUnknown ? "UTC" : (schedule.timezone ?? "UTC")})`;
+  }
+  return schedule.everyHours === 1 ? "every hour" : `every ${schedule.everyHours} hours`;
+}
+
+function lastRunText(schedule: ScheduleRow): string {
+  const run = schedule.lastRun;
+  if (!run) return "none yet";
+  if (run.status === "ok") return `${run.at}, backup ${run.backupId ?? ""}`.trimEnd();
+  return `${run.at}, failed: ${run.error ?? ""}`;
+}
+
+/** `minibox backup schedule` reads, sets or clears the one backup schedule of the instance. */
+async function backupScheduleCommand(argv: string[], env: Env, io: CliIo): Promise<number> {
+  const [sub, ...rest] = argv;
+  if (sub === "get") return await backupScheduleGetCommand(rest, env, io);
+  if (sub === "set") return await backupScheduleSetCommand(rest, env, io);
+  if (sub === "clear") return await backupScheduleClearCommand(rest, env, io);
+  throw new Error(SCHEDULE_HINT);
+}
+
+async function backupScheduleGetCommand(argv: string[], env: Env, io: CliIo): Promise<number> {
+  const options = parseOptions(argv, [], ["--json"]);
+  if (options.positional.length > 0) throw new Error("minibox backup schedule get takes no argument");
+  const res = await request(env, "GET", "/api/backups/schedule");
+  if (res.status >= 400) return fail(io, res.status, res.json, res.text);
+  if (options.switches.has("--json")) return printJson(io, res.json);
+  const schedule = (res.json as { schedule?: ScheduleRow | null } | null)?.schedule ?? null;
+  if (!schedule) {
+    io.stdout("No backup schedule is set.\n");
+    return 0;
+  }
+  io.stdout(`Backup ${ruleText(schedule)}\n`);
+  io.stdout(`Next run: ${schedule.nextRunAt}\n`);
+  io.stdout(`Last run: ${lastRunText(schedule)}\n`);
+  return 0;
+}
+
+async function backupScheduleSetCommand(argv: string[], env: Env, io: CliIo): Promise<number> {
+  const options = parseOptions(argv, ["--every-hours", "--at", "--timezone"], ["--json"]);
+  if (options.positional.length > 0) throw new Error("minibox backup schedule set takes no argument");
+  const hours = options.values.get("--every-hours");
+  const at = options.values.get("--at");
+  const timezone = options.values.get("--timezone");
+  if (hours === undefined && at === undefined) throw new Error(SCHEDULE_HINT);
+  if (hours !== undefined && at !== undefined)
+    throw new Error("minibox backup schedule set takes --every-hours or --at, not both");
+  if (timezone !== undefined && at === undefined)
+    throw new Error("minibox backup schedule set takes --timezone only with --at");
+  const body: Record<string, unknown> = {};
+  if (hours !== undefined) body.everyHours = Number(hours);
+  if (at !== undefined) {
+    body.at = at;
+    if (timezone !== undefined) body.timezone = timezone;
+  }
+  const res = await request(env, "PUT", "/api/backups/schedule", body);
+  if (res.status >= 400) return fail(io, res.status, res.json, res.text);
+  if (options.switches.has("--json")) return printJson(io, res.json);
+  const schedule = (res.json as { schedule: ScheduleRow }).schedule;
+  io.stdout(`Backup ${ruleText(schedule)}\nNext run: ${schedule.nextRunAt}\n`);
+  return 0;
+}
+
+async function backupScheduleClearCommand(argv: string[], env: Env, io: CliIo): Promise<number> {
+  const options = parseOptions(argv, [], ["--json"]);
+  if (options.positional.length > 0) throw new Error("minibox backup schedule clear takes no argument");
+  const res = await request(env, "DELETE", "/api/backups/schedule");
+  if (res.status >= 400) return fail(io, res.status, res.json, res.text);
+  if (options.switches.has("--json")) return printJson(io, res.json);
+  io.stdout("Backup schedule cleared.\n");
+  return 0;
 }
 
 async function backupCreateCommand(argv: string[], env: Env, io: CliIo): Promise<number> {

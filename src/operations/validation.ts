@@ -358,28 +358,27 @@ function checkScheduleTimezone(value: unknown): Checked<string | undefined> {
   return zone ? accept(zone) : reject(msg("schedule_timezone_invalid"), "timezone");
 }
 
-export const scheduleEveryHours = () =>
+/** `what` names the work a rule schedules, so a backup schedule says so and a checkpoint schedule keeps its wording. */
+export const scheduleEveryHours = (what = "checkpoint") =>
   field(checkScheduleHours, {
     type: "integer",
     minimum: SCHEDULE_HOURS_MIN,
     maximum: SCHEDULE_HOURS_MAX,
-    description: `Take a checkpoint every this many hours, an integer from ${SCHEDULE_HOURS_MIN} to ${SCHEDULE_HOURS_MAX}. Send either this or at.`,
+    description: `Take a ${what} every this many hours, an integer from ${SCHEDULE_HOURS_MIN} to ${SCHEDULE_HOURS_MAX}. Send either this or at.`,
   }).optional();
 
-export const scheduleAt = () =>
+export const scheduleAt = (what = "checkpoint") =>
   field(checkScheduleTime, {
     type: "string",
     pattern: SCHEDULE_TIME_RE.source,
-    description:
-      "Take a checkpoint once a day at this time, HH:MM in timezone, such as 02:30. Send either this or everyHours.",
+    description: `Take a ${what} once a day at this time, HH:MM in timezone, such as 02:30. Send either this or everyHours.`,
   }).optional();
 
-export const scheduleTimezone = () =>
+export const scheduleTimezone = (what = "checkpoint") =>
   field(checkScheduleTimezone, {
     type: "string",
     maxLength: 64,
-    description:
-      "IANA time zone of the daily time, such as Asia/Shanghai. Defaults to UTC. An every-hours schedule has no zone, so it is not stored for one.",
+    description: `IANA time zone of the daily time, such as Asia/Shanghai. Defaults to UTC. An every-hours schedule has no zone, so a ${what} schedule is not stored for one.`,
   }).optional();
 
 export const cpusWithDefault = (defaultValue: number) =>

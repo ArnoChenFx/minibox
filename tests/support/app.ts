@@ -32,6 +32,7 @@ export function testConfig(overrides: Partial<Config> = {}): Config {
     dataDir,
     backupDir: join(dataDir, "backups"),
     backupKeep: 0,
+    backupPassphrase: null,
     dockerSocket: "/nonexistent-minibox-test.sock",
     labelPrefix,
     baseTemplateTag: `${labelPrefix}-template:base`,

@@ -246,6 +246,35 @@ export const CheckpointScheduleSchema = z.object({
   lastRun: ScheduleLastRunSchema.nullable(),
 });
 
+/** The outcome of one scheduled backup run. `backupId` is the archive it made, null when the run failed. */
+const BackupScheduleLastRunSchema = z.object({
+  at: z.string(),
+  status: z.enum(["ok", "failed"]),
+  backupId: z.string().nullable(),
+  bytes: z.number().int().nullable(),
+  error: z.string().nullable(),
+});
+
+/**
+ * The instance's backup schedule. Exactly one of `everyHours` and `at` is set, as `mode` says. `null` means no schedule,
+ * which is the default.
+ */
+export const BackupScheduleSchema = z.object({
+  version: z.number().int(),
+  mode: z.enum(["interval", "daily"]),
+  everyHours: z.number().int().nullable(),
+  at: z.string().nullable(),
+  /** IANA zone of the daily time. Null for an interval, and for a daily time saved before zones, which runs in UTC. */
+  timezone: z.string().nullable(),
+  /** True when the saved zone is not one this server knows. The schedule then runs in UTC until it is set again. */
+  timezoneUnknown: z.boolean(),
+  createdBy: z.string().nullable(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  nextRunAt: z.string(),
+  lastRun: BackupScheduleLastRunSchema.nullable(),
+});
+
 /** A volume a rollback replaced or restored, and the path the box mounts it at. */
 const RollbackVolumeSchema = z.object({
   id: z.string(),
