@@ -107,9 +107,9 @@ These operations are refused with an `unsupported` error and never run: commit a
 
 Failures are reported with one of these kinds: `not_found`, `conflict`, `invalid`, `unsupported`, `unavailable`, `engine` and `aborted`.
 
-## Revoke, upgrade and re-pair
+## Remove, revoke, upgrade and re-pair
 
-**Revoke** in the console disconnects the agent at once and blocks it from reconnecting. A revoked agent keeps running idle until its container is removed.
+In the console, an agent host has only **Remove**. Removing it revokes the agent first: the agent is disconnected at once, is blocked from reconnecting, and MiniBox forgets its record. A host that still holds boxes, volumes or checkpoints cannot be removed. To cut off its agent at once anyway, call `POST /api/hosts/{id}/revoke`. A removed or revoked agent keeps running idle until its container is removed.
 
 To upgrade, pull the newer image, remove the old container and run the command again with the same data volume. The agent keeps its identity, so the host and its boxes stay the same:
 
@@ -122,10 +122,10 @@ docker run -d --restart unless-stopped \
   ghcr.io/arnochenfx/minibox-agent --server https://minibox.example.com
 ```
 
-To put a revoked machine back in use, remove its host first. Then create a new pairing code, and run the command with a new data volume, such as `-v minibox-agent-2:/data`. The old volume still holds the revoked identity.
+To put the machine back in use, remove its host first if it is still listed. Then create a new pairing code, and run the command with a new data volume, such as `-v minibox-agent-2:/data`. The old volume still holds the revoked identity.
 
 ## Security
 
-Mounting `/var/run/docker.sock` gives the agent control of that machine's Docker engine. Anyone who can use the agent can control the machine's containers, so run agents only on machines you control. Revoke an agent you no longer trust.
+Mounting `/var/run/docker.sock` gives the agent control of that machine's Docker engine. Anyone who can use the agent can control the machine's containers, so run agents only on machines you control. Remove the host of an agent you no longer trust, or revoke the agent through the REST API while its host still holds boxes.
 
 The activity log records creating a pairing code, revoking an agent and removing a host. The server log records each accepted connection and each disconnection with its reason.
