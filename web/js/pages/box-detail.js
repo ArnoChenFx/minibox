@@ -31,11 +31,20 @@ const CHART_POINTS = 240;
 /** How often the box and its history are read again while the live stream is down. */
 const FALLBACK_MS = 3000;
 
-/** The tabs an agent host refuses: it holds no helper for the file browser and no relay for a preview. */
-const AGENT_REFUSED_TABS = new Set(["files", "ports"]);
+/**
+ * The tabs an agent host refuses, each with the feature it loses: it holds no helper for the file browser and no relay
+ * for a preview. The port list itself still reads, so the tab names the preview, not the ports.
+ */
+const AGENT_REFUSED_TABS = new Map([
+  ["files", "bd.agentFeatureFiles"],
+  ["ports", "bd.agentFeaturePorts"],
+]);
 
-/** Whether a tab of this box is one its host refuses, so the tab bar can say why before it is opened. */
-const refusedTab = (key, onAgent) => onAgent && AGENT_REFUSED_TABS.has(key);
+/** The tooltip of a tab its host refuses, so the tab bar says why before it is opened; empty for any other tab. */
+const refusedTabTitle = (key, onAgent) => {
+  const feature = onAgent ? AGENT_REFUSED_TABS.get(key) : undefined;
+  return feature ? ` title="${esc(t("bd.agentTab", { feature: t(feature) }))}"` : "";
+};
 
 /** The box's tabs in the order the tab bar shows them. Settings holds the sections that used to be tabs of their own. */
 const TABS = [
@@ -108,6 +117,7 @@ export function render(view, id, tab = "overview", sub = undefined) {
         <button class="btn" data-action="rebuild">${icon("refresh")}${t("bd.rebuild")}</button>
         <button class="btn" data-action="delete" title="${t("bd.deleteTitle")}">${icon("trash")}${t("act.delete")}</button>
       </div>
+      ${onAgent ? `<p class="help detail-agent-note" id="bdAgentNote">${esc(t("bd.agentHeadNote"))}</p>` : ""}
     </div>`;
   };
 
@@ -165,9 +175,9 @@ export function render(view, id, tab = "overview", sub = undefined) {
   const mount = async () => {
     const token = ++mounts;
     try {
-      // The page decides from the host list whether the box sits on an agent host, so it is read before the box is drawn.
-      await refreshHosts();
-      await fetchBox();
+      // The page decides from the host list whether the box sits on an agent host, so both are read before the box is
+      // drawn, side by side rather than one after the other.
+      await Promise.all([refreshHosts(), fetchBox()]);
     } catch (e) {
       if (disposed || token !== mounts) return;
       painted = false;
@@ -190,7 +200,7 @@ export function render(view, id, tab = "overview", sub = undefined) {
     view.innerHTML = `${headShown}
     <div class="tabs" role="tablist">${TABS.map(
       ([k, label, ic]) =>
-        `<a class="tab" role="tab" aria-selected="${k === tab}"${refusedTab(k, onAgentHost()) ? ` title="${esc(t("bd.agentTab", { feature: t(label) }))}"` : ""} href="${boxHash(box.id, k, k === tab ? section : "")}">${icon(ic)}${t(label)}</a>`,
+        `<a class="tab" role="tab" aria-selected="${k === tab}"${refusedTabTitle(k, onAgentHost())} href="${boxHash(box.id, k, k === tab ? section : "")}">${icon(ic)}${t(label)}</a>`,
     ).join("")}</div>
     <div id="tabBody"></div>`;
     painted = true;

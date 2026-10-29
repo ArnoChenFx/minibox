@@ -10,7 +10,7 @@ Checkpoints are not a backup of the whole server. They are stored on the host th
 
 ## Create a checkpoint
 
-**An agent host does not support checkpoints yet.** A checkpoint commits a system image and copies the box's volumes through a helper container, and an agent host can run neither, so the take is refused with `501 agent_host_unsupported`. The **Create checkpoint** button in the box's title bar and the one on the checkpoints card are both off on an agent host, with the reason as their tooltip, rather than failing after a click. Checkpoints kept on other hosts still list, fork, export, pin and delete.
+**An agent host does not support checkpoints yet.** A checkpoint commits a system image and copies the box's volumes through a helper container, and an agent host can run neither, so the take is refused with `501 agent_host_unsupported`. The **Create checkpoint** button in the box's title bar and the one on the checkpoints card are both off on an agent host, with the reason as their tooltip, rather than failing after a click. One line under the title bar says the same, so the reason is there on a phone, where the buttons show only their icons. When you import or copy a checkpoint, an agent host is listed but cannot be picked. Checkpoints kept on other hosts still list, fork, export, pin and delete.
 
 1. Open the box, click **Settings**, and then **Checkpoints**.
 2. Click **Create checkpoint**. The same button is in the title bar of the box, on every tab.

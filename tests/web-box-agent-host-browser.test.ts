@@ -62,6 +62,31 @@ function watch(page: Page): string[] {
 
 const boxUrl = (base: string, box: BoxRow, tab: string) => `${base}/#/boxes/${encodeURIComponent(box.id)}/${tab}`;
 
+/** Answers a Box's own `GET` with the box moved to the `edge` host, so the console's host list decides what it is. */
+async function boxOnEdge(route: Route) {
+  const request = route.request();
+  if (request.method() !== "GET" || new URL(request.url()).pathname.endsWith("/stats")) return route.fallback();
+  const response = await route.fetch();
+  const body = (await response.json()) as { box: Record<string, unknown> };
+  await route.fulfill({ response, json: { ...body, box: { ...body.box, hostId: "edge" } } });
+}
+
+/**
+ * Holds `GET /api/hosts` until `sent()` sees the request it waits for (or two seconds pass), then answers it as
+ * `hostsAs` does. `held.before` says whether that request was sent while the host list was still unanswered.
+ */
+function holdHosts(hosts: HostRow[], sent: () => boolean) {
+  const held = { before: false };
+  const answer = hostsAs(hosts);
+  const handler = async (route: Route) => {
+    const until = Date.now() + 2_000;
+    while (!sent() && Date.now() < until) await Bun.sleep(25);
+    held.before = sent();
+    await answer(route);
+  };
+  return { held, handler };
+}
+
 describe.skipIf(!executablePath)("a Box on an agent host (real browser)", () => {
   let app: App | undefined;
   let server: ReturnType<typeof startServer> | undefined;
@@ -311,6 +336,152 @@ describe.skipIf(!executablePath)("a Box on an agent host (real browser)", () => 
   );
 
   test(
+    "on a phone the head says why its buttons are off, and each refused tab names the feature it lacks",
+    async () => {
+      const context = await signedIn({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+      try {
+        const page = await context.newPage();
+        await page.route("**/api/hosts", hostsAs([{ id: "edge", name: "Edge lab", transport: "agent" }]));
+        await page.route("**/api/boxes/*", boxOnEdge);
+
+        await page.goto(boxUrl(base, box, "overview"));
+        // A touch screen shows no tooltip, so the reason is a line of its own in the head, not only a `title`.
+        const note = page.locator("#bdAgentNote");
+        await webExpect(note).toBeVisible();
+        await webExpect(note).toHaveText(english("bd.agentHeadNote"));
+        const box390 = await note.boundingBox();
+        expect(box390?.width ?? 0).toBeGreaterThan(300);
+        await webExpect(page.locator(".detail-head [data-action='checkpoint']")).toBeDisabled();
+
+        // The refused tabs name what is missing, not the tab's own label.
+        const files = page.locator("#view [role='tab']", { hasText: english("bd.tabFiles") });
+        const ports = page.locator("#view [role='tab']", { hasText: english("bd.tabPorts") });
+        await webExpect(files).toHaveAttribute("title", "File browsing is not available on an agent host");
+        await webExpect(ports).toHaveAttribute("title", "Port preview is not available on an agent host");
+      } finally {
+        await context.close();
+      }
+    },
+    TIMEOUT_MS,
+  );
+
+  test(
+    "the Chinese tab tooltip reads as Chinese",
+    async () => {
+      const context = await signedIn({ locale: "zh-CN" });
+      try {
+        const page = await context.newPage();
+        await page.route("**/api/hosts", hostsAs([{ id: "edge", name: "Edge lab", transport: "agent" }]));
+        await page.route("**/api/boxes/*", boxOnEdge);
+        await page.goto(boxUrl(base, box, "overview"));
+        await webExpect(page.locator("#view [role='tab'][title='Agent 宿主机不支持文件浏览']")).toHaveCount(1);
+        await webExpect(page.locator("#view [role='tab'][title='Agent 宿主机不支持端口预览']")).toHaveCount(1);
+        await webExpect(page.locator("#bdAgentNote")).toContainText("Agent 只运行 Box");
+      } finally {
+        await context.close();
+      }
+    },
+    TIMEOUT_MS,
+  );
+
+  test(
+    "the Box page asks for the box while the host list is still on its way",
+    async () => {
+      const context = await signedIn();
+      try {
+        const page = await context.newPage();
+        const requests = watch(page);
+        const boxPath = `/api/boxes/${box.id}`;
+        const { held, handler } = holdHosts([{ id: "edge", name: "Edge lab", transport: "agent" }], () =>
+          requests.includes(boxPath),
+        );
+        await page.route("**/api/hosts", handler);
+        // The live stream refreshes the box once it connects, a read of its own; it is held off so the box read this
+        // test sees is the one the page sends as it mounts.
+        await page.route("**/api/events/stream", (route) => route.abort());
+        await page.route("**/api/boxes/*", boxOnEdge);
+        await page.goto(boxUrl(base, box, "overview"));
+        // Once both answers are in, the page is drawn for the agent host as usual.
+        await webExpect(page.locator("#bdAgentNote")).toBeVisible();
+        expect(held.before).toBe(true);
+      } finally {
+        await context.close();
+      }
+    },
+    TIMEOUT_MS,
+  );
+
+  test(
+    "the storage pages ask for their rows while the host list is still on its way",
+    async () => {
+      const context = await signedIn();
+      try {
+        const page = await context.newPage();
+        const requests = watch(page);
+        const volumes = holdHosts([{ id: "edge", name: "Edge lab", transport: "unix" }], () =>
+          requests.includes("/api/volumes"),
+        );
+        await page.route("**/api/hosts", volumes.handler);
+        // The live stream reloads the table once it connects; it is held off so only the page's first reads count.
+        await page.route("**/api/events/stream", (route) => route.abort());
+        await page.goto(`${base}/#/storage/volumes`);
+        await webExpect(page.locator("#volRows .vol-name").first()).toBeVisible();
+        expect(volumes.held.before).toBe(true);
+
+        // A fresh page, so the host list is not already in hand from the volumes page.
+        const second = await context.newPage();
+        const secondRequests = watch(second);
+        const checkpoints = holdHosts([{ id: "edge", name: "Edge lab", transport: "unix" }], () =>
+          secondRequests.includes("/api/checkpoints"),
+        );
+        await second.route("**/api/hosts", checkpoints.handler);
+        await second.route("**/api/events/stream", (route) => route.abort());
+        await second.goto(`${base}/#/storage/checkpoints`);
+        await webExpect(second.locator("#sckRows .sck-group").first()).toBeVisible();
+        expect(checkpoints.held.before).toBe(true);
+      } finally {
+        await context.close();
+      }
+    },
+    TIMEOUT_MS,
+  );
+
+  test(
+    "the storage checkpoints page says why a take is off, and an import cannot pick the agent host",
+    async () => {
+      const context = await signedIn();
+      try {
+        const page = await context.newPage();
+        const requests = watch(page);
+        await page.route("**/api/hosts", hostsAs([{ id: "edge", name: "Edge lab", transport: "agent" }]));
+        await page.route(/\/api\/boxes\?/, async (route) => {
+          const response = await route.fetch();
+          const body = (await response.json()) as { boxes: Record<string, unknown>[] };
+          await route.fulfill({
+            response,
+            json: { ...body, boxes: body.boxes.map((row) => ({ ...row, hostId: "edge" })) },
+          });
+        });
+
+        await page.goto(`${base}/#/storage/checkpoints`);
+        await webExpect(page.locator("#sckRows .sck-group").first()).toBeVisible();
+        await webExpect(page.locator("#sckAgentNote")).toBeVisible();
+        await webExpect(page.locator("#sckAgentNote")).toHaveText(english("ck.agentNote"));
+
+        await page.locator("[data-action='ck-import']").click();
+        const edge = page.locator("#ckImportHost option[value='edge']");
+        await webExpect(edge).toBeDisabled();
+        await webExpect(edge).toHaveText(english("ck.agentHostOption").replace("{name}", "Edge lab"));
+        await webExpect(page.locator("#ckImportHost")).not.toHaveValue("edge");
+        expect(requests.filter((path) => path.endsWith("/checkpoints/import"))).toEqual([]);
+      } finally {
+        await context.close();
+      }
+    },
+    TIMEOUT_MS,
+  );
+
+  test(
     "a volume on a host that is not an agent keeps all three buttons",
     async () => {
       const context = await signedIn();
@@ -342,6 +513,7 @@ describe.skipIf(!executablePath)("a Box on an agent host (real browser)", () => 
           await webExpect(row.locator(`[data-action='${action}']`)).toBeEnabled();
         }
         await webExpect(page.locator("#volAgentNote")).toBeHidden();
+        await webExpect(page.locator("#sckAgentNote")).toHaveCount(0);
         // The file browser opens and asks for its listing, which this host answers.
         await row.locator("[data-action='browse']").click();
         await webExpect.poll(() => requests.some((path) => path.includes("/files"))).toBe(true);
@@ -378,6 +550,7 @@ describe.skipIf(!executablePath)("a Box on an agent host (real browser)", () => 
         const checkpoint = page.locator(".detail-head [data-action='checkpoint']");
         await webExpect(checkpoint).toBeEnabled();
         await webExpect(checkpoint).not.toHaveAttribute("title", english("bd.agentCheckpoints"));
+        await webExpect(page.locator("#bdAgentNote")).toHaveCount(0);
         // Move and Save as template are offered again, with no reason attached.
         await webExpect(page.locator(".detail-head [data-action='move']")).toBeEnabled();
         await webExpect(page.locator(".detail-head [data-action='move']")).not.toHaveAttribute(

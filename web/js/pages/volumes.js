@@ -418,10 +418,10 @@ export function render(view) {
   });
 
   const load = async () => {
-    // The host list decides whether a volume sits on an agent host, so it is read before the table draws.
-    await refreshHosts();
-    hosts = hostsNow();
-    const [poolBody, volumeBody, boxBody, checkpointBody] = await Promise.all([
+    // The host list decides whether a volume sits on an agent host, so it is read before the table draws, alongside the
+    // other reads rather than ahead of them.
+    const [, poolBody, volumeBody, boxBody, checkpointBody] = await Promise.all([
+      refreshHosts(),
       api("/api/pools?refresh=true"),
       api("/api/volumes"),
       // The owner's name is only a label: without the box list, a mount of the owner still names it. Volumes name
@@ -430,6 +430,7 @@ export function render(view) {
       // The latest checkpoint column is a hint: the table still draws without it.
       api("/api/checkpoints").catch(() => ({ checkpoints: [] })),
     ]);
+    hosts = hostsNow();
     pools = poolBody.pools;
     savedPools = poolBody.pools;
     roles = { ...roles, ...poolBody.roles };

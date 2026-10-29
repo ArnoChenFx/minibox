@@ -129,6 +129,9 @@ export function mountStorageCheckpoints(root, { focus = "" } = {}) {
       ? `<div class="sck-filter help">${esc(t("ck.focusOnly", { box: shown[0]?.name ?? focus }))} <a href="#/storage/checkpoints">${esc(t("ck.focusAll"))}</a></div>`
       : "";
     const total = shown.reduce((sum, group) => sum + group.rows.length, 0);
+    // The take button of a group head is an icon, and a disabled one answers no tap, so the reason its title holds is
+    // said once above the table for a phone, as the volumes page does.
+    const agentGroups = shown.some((group) => group.box && boxOnAgentHost(group.box, hosts));
     const body = shown.length
       ? shown
           .map((group) => {
@@ -155,6 +158,7 @@ export function mountStorageCheckpoints(root, { focus = "" } = {}) {
       <div class="card">
         <div class="card-head"><h3>${esc(t("ck.timeline"))}</h3><span class="subtle">${esc(t("ck.timelineCount", { n: total, boxes: shown.filter((group) => group.rows.length).length }))}</span></div>
         ${filter}
+        ${agentGroups ? `<p class="help vol-agent-note" id="sckAgentNote">${esc(t("ck.agentNote"))}</p>` : ""}
         <div class="table-wrap" id="sckWrap"><table class="table sck-table">
           <colgroup><col class="sck-c-time" /><col /><col class="sck-c-kind" /><col class="sck-c-contents" /><col class="sck-c-size" /><col class="sck-c-actions" /></colgroup>
           <thead><tr><th>${esc(t("ck.colTaken"))}</th><th>${esc(t("ck.colLabel"))}</th><th>${esc(t("ck.colKind"))}</th><th>${esc(t("ck.colContents"))}</th><th class="num">${esc(t("bd.colSize"))}</th><th class="actions-head">${esc(t("bx.colActions"))}</th></tr></thead>
@@ -167,10 +171,10 @@ export function mountStorageCheckpoints(root, { focus = "" } = {}) {
   const load = async () => {
     const token = ++seq;
     try {
-      // The host list decides whether a box sits on an agent host, so it is read before the groups draw.
-      await refreshHosts();
-      hosts = hostsNow();
-      const [{ checkpoints }, { boxes }, usageBody, pendingBody] = await Promise.all([
+      // The host list decides whether a box sits on an agent host, so it is read before the groups draw, alongside the
+      // other reads rather than ahead of them.
+      const [, { checkpoints }, { boxes }, usageBody, pendingBody] = await Promise.all([
+        refreshHosts(),
         api("/api/checkpoints"),
         api("/api/boxes?stats=false"),
         api("/api/checkpoints/usage").catch(() => null),
@@ -179,6 +183,7 @@ export function mountStorageCheckpoints(root, { focus = "" } = {}) {
         api("/api/rollbacks").catch(() => ({ rollbacks: [] })),
       ]);
       if (disposed || token !== seq) return;
+      hosts = hostsNow();
       usage = usageBody;
       const pendings = (pendingBody.rollbacks ?? []).map((entry) => [entry.box.boxId, entry.rollback]);
       groups = groupCheckpoints(checkpoints, boxes, new Map(pendings));

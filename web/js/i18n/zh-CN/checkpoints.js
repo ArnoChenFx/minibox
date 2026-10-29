@@ -132,6 +132,10 @@ export default {
   "ck.importDesc": "从 MiniBox 导出的包中添加一个检查点。只有封装该包时使用的口令才能打开它。",
   "ck.importFile": "包文件",
   "ck.importFileHelp": "从 MiniBox 实例导出的 .mbckpt 文件。",
+  "ck.reasonCopyAgentOnly": "其他宿主机都是 Agent 宿主机，不能存放检查点。",
+  "ck.agentHostOption": "{name}（Agent 宿主机，不能存放检查点）",
+  "ck.agentNote":
+    "Agent 宿主机只运行 Box，上面的 Box 不能创建检查点，所以它的相机按钮不可用；保存在其他宿主机上的检查点照常可用。",
   "ck.importHostHelp": "检查点将导入到此主机。要在该主机上派生它，需要它所基于的模板。",
   "ck.importChoose": "选择文件",
   "ck.importNoneChosen": "未选择文件",
