@@ -4,7 +4,7 @@ import { type Browser, type BrowserContext, chromium, expect as webExpect, type 
 
 import type { App } from "../src/app";
 import { startServer } from "../src/server";
-import { createDeclaredTemplate, readRecipe } from "../src/services/template-builds";
+import { createDeclaredTemplate, readRecipe, editRecipe, templateAndRecipe } from "../src/services/template-builds";
 import { initOf, readPorts } from "../web/js/lib/template-edit.js";
 import { createTestApp, silenceLogs, TEST_KEY } from "./support/app";
 import { chromiumFor } from "./support/chromium";
@@ -56,7 +56,7 @@ describe("the setup an edit sends", () => {
   });
 
   test("ports without a command still make a setup", () => {
-    expect(initOf("", [8080])).toEqual({ forwardPorts: [8080] });
+    expect(initOf("", [8080])).toEqual({ postCreate: [], forwardPorts: [8080] });
   });
 });
 
@@ -254,7 +254,7 @@ describe.skipIf(!executablePath)("editing a template from the Templates page (re
 
       const body = JSON.parse(lastPatch()?.body ?? "{}") as Record<string, unknown>;
       expect(body).not.toHaveProperty("source");
-      expect(body.init).toEqual({ forwardPorts: [8080] });
+      expect(body.init).toEqual({ postCreate: [], forwardPorts: [8080] });
       const host = app?.hosts.get();
       if (!host) throw new Error("the test app has a host");
       expect(readRecipe(host, "official-node")?.source).toEqual({ kind: "official", name: "node" });
@@ -286,11 +286,15 @@ describe.skipIf(!executablePath)("editing a template from the Templates page (re
         await webExpect(ok).toHaveText("Saving…");
         await webExpect(ok).toBeDisabled();
         // A second press while the first is in flight sends nothing more.
-        await ok.click({ force: true });
+        await ok.dispatchEvent("click");
         expect(sent.filter((request) => request.method === "PATCH")).toHaveLength(1);
 
+        const response = page.waitForResponse(
+          (reply) => reply.request().method() === "PATCH" && reply.url().includes("/api/templates/"),
+        );
         held.resolve();
         await settled.promise;
+        expect((await response).status()).toBe(200);
         await webExpect(dialog()).toHaveCount(0);
         const host = app?.hosts.get();
         if (!host) throw new Error("the test app has a host");
@@ -323,6 +327,42 @@ describe.skipIf(!executablePath)("editing a template from the Templates page (re
     async () => {
       await webExpect(card("base")).toBeVisible();
       await webExpect(card("base").getByRole("button", { name: "Edit", exact: true })).toHaveCount(0);
+    },
+    TIMEOUT_MS,
+  );
+  test(
+    "opening focus never steals a field the operator already chose",
+    async () => {
+      const active = await page.evaluate<string>(`(async () => {
+      const { openDialog } = await import('/js/lib/ui.js');
+      const dialog = openDialog({ title: 'Focus', body: '<input id="focusFirst"><input id="focusSecond">' });
+      dialog.root.querySelector('#focusSecond').focus();
+      await new Promise(resolve => setTimeout(resolve, 50));
+      const active = document.activeElement.id;
+      dialog.close();
+      return active;
+    })()`);
+      expect(active).toBe("focusSecond");
+    },
+    TIMEOUT_MS,
+  );
+  test(
+    "changing ports preserves a multiline argv that the one-line command field normalizes",
+    async () => {
+      const host = app?.hosts.get();
+      if (!host) throw new Error("the test app has a host");
+      const argv = ["printf", "%s", "first\nsecond", "", "$LITERAL"];
+      const [declared] = await templateAndRecipe(host, "mbtest-template:tool");
+      editRecipe(host, declared, { init: { postCreate: argv, forwardPorts: [] } });
+      await page.reload();
+      await card("tool").getByRole("button", { name: "Edit", exact: true }).click();
+      await webExpect(dialog()).toBeVisible();
+      await dialog().locator("#tePorts").fill("3030");
+      const response = page.waitForResponse((reply) => reply.request().method() === "PATCH");
+      await dialog().getByRole("button", { name: "Save changes" }).click();
+      expect((await response).status()).toBe(200);
+      await webExpect(dialog()).toHaveCount(0);
+      expect(readRecipe(host, "tool")?.init).toEqual({ postCreate: argv, forwardPorts: [3030] });
     },
     TIMEOUT_MS,
   );

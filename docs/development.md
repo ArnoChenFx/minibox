@@ -232,3 +232,7 @@ Only maintainers publish releases. A normal change does not include these steps.
 The release workflow fails when the tag and `package.json` disagree. A tag with a suffix, such as `v1.0.0-rc.1`, is published as a prerelease and does not move the `latest` image tag.
 
 The running version comes from `MINIBOX_VERSION`, which the release image sets from its tag. A source checkout uses `git describe --tags`, and otherwise `package.json`.
+
+The SSH/credential integration fixtures require `openssl` in addition to Docker.
+
+Run `bun run check:unused` to check unused files, exports and types. `knip.json` lists the server, CLI, agent, backup worker, subprocess fixtures, scripts, HTML and site test entry points. Paired browser `.d.ts` files are checked by the typechecker instead of treated as runtime entry points. Exports used inside their own module are allowed: browser rendering tests also call some of these helpers from subprocesses, which a static import graph cannot see.

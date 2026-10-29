@@ -7,6 +7,7 @@ import {
   mkdirSync,
   openSync,
   readFileSync,
+  realpathSync,
   renameSync,
   rmSync,
   statSync,
@@ -49,11 +50,32 @@ export function resolveBackupDir(value: string | undefined, dataDir: string, roo
   return resolvePath(value, root, home, join(dataDir, "backups"));
 }
 
+/**
+ * `path` with the symlinks of its existing ancestors resolved, without requiring the final directory to exist yet. It
+ * never throws: an ancestor that cannot be read (EACCES, EPERM, ELOOP…) keeps its literal resolved path from there on,
+ * so a check made while loading the config never stops the server from starting.
+ */
+export function resolvedPath(path: string): string {
+  const absolute = resolve(path);
+  try {
+    return realpathSync(absolute);
+  } catch (error) {
+    const parent = dirname(absolute);
+    if (!["ENOENT", "ENOTDIR"].includes((error as NodeJS.ErrnoException).code ?? "") || parent === absolute) {
+      return absolute;
+    }
+    return join(resolvedPath(parent), basename(absolute));
+  }
+}
+
+/** Whether the already resolved `target` is `base` or sits under it, by plain path comparison. */
+export function pathWithin(target: string, base: string): boolean {
+  return target === base || target.startsWith(base.endsWith(sep) ? base : `${base}${sep}`);
+}
+
 /** Whether `path` is `dir` or sits under it, compared on resolved paths so `..` and symlinks cannot slip out. */
 export function isWithinDir(path: string, dir: string): boolean {
-  const target = resolve(path);
-  const base = resolve(dir);
-  return target === base || target.startsWith(base.endsWith(sep) ? base : `${base}${sep}`);
+  return pathWithin(resolvedPath(path), resolvedPath(dir));
 }
 
 /**

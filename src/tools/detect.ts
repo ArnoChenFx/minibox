@@ -2,7 +2,7 @@ import { detectCommand, shellQuote } from "./commands";
 import { TOOLS_PREFIX, type CatalogEntry } from "./types";
 
 /** Seconds one entry's detect command may run inside the batch. */
-export const DETECT_PROBE_SEC = 20;
+const DETECT_PROBE_SEC = 20;
 
 const RECORD = "MBTOOL";
 

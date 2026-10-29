@@ -120,15 +120,8 @@ describe("POST /api/volumes/delete on several hosts", () => {
       token: maker.secret,
       body: { ids: ["large-mine", "small-mine"], confirm: true },
     });
-    expect(res.status).toBe(200);
-    const deleted = res.json as unknown as DeleteReply;
-    expect(deleted.volumes.map((row) => [row.name, row.status])).toEqual([
-      ["large-mine", "refused"],
-      ["small-mine", "removed"],
-    ]);
-    expect(deleted.volumes.find((row) => row.name === "large-mine")?.error).toMatchObject({
-      key: "volume_delete_forbidden",
-    });
-    expect(namesOn(c)).toEqual(["large-mine"]);
+    expect(res.status).toBe(403);
+    expect(res.json.error?.key).toBe("storage_admin_required");
+    expect(namesOn(c).toSorted()).toEqual(["large-mine", "small-mine"]);
   });
 });

@@ -2,6 +2,8 @@
 
 Tools are programs that you install into a box, such as AI coding agents, language runtimes and command-line utilities. MiniBox has a catalog of tools. You can also add your own.
 
+Check each tool's dependency note against the box template. The base and `node` templates include Node.js 26; the `python`, `go` and `minimal` templates do not include Node.js. npm-based agents such as Claude Code, Codex, OpenCode, Pi and Qoder still need Node.js inside the box even though the tools writer can install their packages. Add the required runtime to a derived template before using those tools. Installing a tool on the shared tools volume does not install its runtime into every box image.
+
 ## Choose tools when you create a box
 
 In the create dialog, the **Tools** section lists the tools in the catalog. Tick the tools you want. Use **Search tools** to filter the list by name, description or category.

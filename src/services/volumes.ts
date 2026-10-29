@@ -31,7 +31,7 @@ import type { RecordNote } from "./volume-owner";
 import { errorOutcome, hostOffline, messageOutcome, type OutcomeError, volumesInUse } from "./volume-refs";
 import { protectedReason, removeGuarded } from "./volume-remove";
 
-export interface VolumeMountView {
+interface VolumeMountView {
   boxId: string;
   boxName: string;
   path: string;
@@ -39,7 +39,7 @@ export interface VolumeMountView {
 }
 
 /** The usage a volume view shows. The trend is what this process has sampled, so it starts empty after a restart. */
-export interface VolumeUsageView {
+interface VolumeUsageView {
   /** `share` for an NFS volume, whose figure is the usage of the whole share rather than of the volume. */
   scope: UsageScope;
   level: UsageLevel;
@@ -73,6 +73,11 @@ export interface VolumeView {
   engineMissing: boolean;
   /** The box that owned this volume was deleted and kept it. Deleting the volume frees its space once no box mounts it. */
   ownerMissing: boolean;
+  /**
+   * The tools volume boxes on this host mount, which no delete removes. A spare tools-role volume beside it is false, so
+   * it can be deleted by name like any other volume.
+   */
+  sharedTools: boolean;
 }
 
 export interface PoolsView {
@@ -143,6 +148,7 @@ function viewOf(host: HostCtx, volume: VolumeRecord, engineMissing: boolean): Vo
     rwMounts: mounts.filter((mount) => mount.mode === "rw").length,
     engineMissing,
     ownerMissing: ownerGone(host, volume),
+    sharedTools: protectedReason(host, volume, { named: true }) !== null,
   };
 }
 
@@ -302,7 +308,7 @@ function raiseOutcome(error: OutcomeError): never {
 
 /**
  * Deletes one volume the way a batch delete deletes each of its volumes: the same checks, the same recycle bin copy and
- * the same second look under the spec lock. The shared tools volume is refused, and so is a volume a box spec mounts, a
+ * the same second look under the spec lock. The shared tools volume is refused (a spare tools volume is not), and so is a volume a box spec mounts, a
  * container in any state mounts, or a pending rollback keeps. Under the spec lock, where no create or rebuild can be
  * part way through mounting it, the volume is checked again: it must still have the record it had, not be the tools
  * volume or a system volume, and nothing may have begun to use it. Its data is first kept in the recycle bin, unless
@@ -311,7 +317,13 @@ function raiseOutcome(error: OutcomeError): never {
 export async function deleteVolume(
   host: HostCtx,
   ref: string,
-  opts: { skipTrash?: boolean; createdBy?: string | null; record?: RecordNote; teardown?: boolean } = {},
+  opts: {
+    skipTrash?: boolean;
+    createdBy?: string | null;
+    record?: RecordNote;
+    teardown?: boolean;
+    named?: boolean;
+  } = {},
 ): Promise<{ name: string; trash: TrashRef | null }> {
   const volume = requireVolumeRecord(host, ref);
   const outcome = await removeGuarded(host, volume, {
@@ -319,6 +331,7 @@ export async function deleteVolume(
     principal: opts.createdBy ?? null,
     record: opts.record,
     teardown: opts.teardown,
+    named: opts.named,
   });
   if (outcome.status !== "removed") raiseOutcome(outcome.error);
   log.info("volume.deleted", { id: volume.id, name: volume.name, trash: outcome.trash !== null });
@@ -326,7 +339,7 @@ export async function deleteVolume(
 }
 
 /** Why a batch delete does not remove a volume. `in_use`, `forbidden` and `tools` are refusals; the rest are failures. */
-export type DeleteBlock = "in_use" | "forbidden" | "tools" | "not_found" | "offline" | "unavailable";
+type DeleteBlock = "in_use" | "forbidden" | "tools" | "not_found" | "offline" | "unavailable";
 
 const REFUSED_BLOCKS: ReadonlySet<DeleteBlock> = new Set(["in_use", "forbidden", "tools"]);
 
@@ -382,7 +395,8 @@ async function planOne(
   if (!(await may(volume))) return { ref, volume, host: null, blocked: "forbidden", detail: null };
   const host = hosts.find((item) => item.host.id === volume.hostId) ?? null;
   if (!host) return { ref, volume, host, blocked: "not_found", detail: null };
-  if (protectedReason(host, volume)) return { ref, volume, host: null, blocked: "tools", detail: null };
+  if (protectedReason(host, volume, { named: true }))
+    return { ref, volume, host: null, blocked: "tools", detail: null };
   if (hostOffline(host)) return { ref, volume, host, blocked: "offline", detail: null };
   try {
     const inUse = (await usageOf(host)).has(volume.engineName);
@@ -431,6 +445,7 @@ async function deleteOne(
     skipTrash: opts.skipTrash,
     principal: opts.createdBy,
     record: opts.record,
+    named: true,
   });
   if (outcome.status === "removed") {
     log.info("volume.deleted", { id: volume.id, name: volume.name, trash: outcome.trash !== null });

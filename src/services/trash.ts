@@ -117,7 +117,7 @@ export async function discardCopy(host: HostCtx, copy: TrashRef | null, record?:
  * A volume a pending rollback replaced is kept only at a path the box no longer mounts. Two volumes at one path could not
  * be restored as one box, and the rollback's safety checkpoint holds the replaced data in any case.
  */
-export async function trashBox(
+async function trashBox(
   host: HostCtx,
   box: Box,
   createdBy: string | null,

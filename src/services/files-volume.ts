@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 
 import type { HostCtx } from "../host/registry";
-import { notFound, toAppError } from "../lib/errors";
+import { notFound } from "../lib/errors";
 import { msg } from "../lib/messages";
 import { isRuntimeError, type HelperSpec, type HelperResult } from "../runtime";
 import type { VolumeRecord } from "../volumes/types";
@@ -126,8 +126,4 @@ export async function resolveVolume(
 ): Promise<{ id: string; name: string; record: VolumeRecord }> {
   const record = requireVolume(host, ref);
   return { id: record.id, name: record.name, record };
-}
-
-export function mapFileError(e: unknown): never {
-  throw toAppError(e);
 }

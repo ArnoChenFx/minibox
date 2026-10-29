@@ -34,7 +34,7 @@ describe("the scope catalog the new-token dialog reads", () => {
       catalog.presets.filter((p) => p.scopes.includes(scope as never)).map((p) => p.name);
     expect(holders("secret:use")).toEqual(["admin"]);
     expect(holders("trash:skip")).toEqual([]);
-    expect(holders("volume:delete")).toEqual([]);
+    expect(holders("volume:delete")).toEqual(["admin"]);
   });
 
   test("the preset descriptions match the scope sets", () => {
@@ -46,7 +46,7 @@ describe("the scope catalog the new-token dialog reads", () => {
         (x, y) => scopes("operator").indexOf(x) - scopes("operator").indexOf(y),
       ),
     );
-    expect(lost("admin", "operator")).toEqual(["secret:use"]);
+    expect(lost("admin", "operator")).toEqual(["volume:delete", "secret:use"]);
     expect(lost("operator", "admin")).toEqual([]);
     expect(catalog.presets.find((p) => p.name === "sandboxed-agent")?.quotas).toMatchObject({
       maxBoxes: 5,
@@ -213,12 +213,12 @@ describe("creating a token with the dialog's body", () => {
   });
 
   test("only the owner creates tokens, so the sensitive scopes are the owner's own grants", async () => {
-    // volume:delete stays in the console's flagged group for the owner's own tokens, and no preset carries it.
+    // The owner can save a sensitive scope on a custom token without granting admin identity.
     const owner = await call(harness.base, "/api/tokens", { body: { name: "by-owner", scopes: ["volume:delete"] } });
     expect(owner.status).toBe(201);
     expect((owner.json.record as unknown as { scopes: string[] }).scopes).toEqual(["volume:delete"]);
 
-    // A token cannot create one, not even the admin preset that holds every other scope.
+    // Token management is owner-only, including for an admin token.
     for (const input of [
       { name: "admin", preset: "admin" as const },
       { name: "operator", preset: "operator" as const },

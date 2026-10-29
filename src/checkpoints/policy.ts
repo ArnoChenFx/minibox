@@ -18,7 +18,7 @@ export interface CheckpointPolicy {
 }
 
 /** The share of the capacity limit from which usage is reported as a warning. */
-export const CAPACITY_WARN_RATIO = 0.8;
+const CAPACITY_WARN_RATIO = 0.8;
 
 export type CapacityState = "unlimited" | "ok" | "warning" | "exceeded";
 

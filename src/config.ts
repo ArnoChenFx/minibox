@@ -17,9 +17,9 @@ import { log } from "./lib/logger";
 import { parsePreviewBaseDomain } from "./preview/domain";
 
 export const ROOT = join(import.meta.dir, "..");
-export const ENV_PATH = join(ROOT, ".env");
+const ENV_PATH = join(ROOT, ".env");
 
-export type AccessKeySource = "env" | "env-file" | "data-dir" | "generated";
+type AccessKeySource = "env" | "env-file" | "data-dir" | "generated";
 
 export interface Config {
   host: string;

@@ -16,11 +16,11 @@ import type { BoxView, TokenGrants } from "../tokens/model";
 import type { TokenStore } from "../tokens/store";
 
 /** `read` never changes state, `write` changes it, `destructive` removes data that cannot be recovered. */
-export type Kind = "read" | "write" | "destructive";
+type Kind = "read" | "write" | "destructive";
 
 export type Toolset = "core" | "session" | "network" | "storage" | "tools" | "meta" | "rebuild" | "move" | "self";
 
-export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
 /** The access key, or a browser session. Every owner credential has the id `owner`. */
 export interface OwnerPrincipal {
@@ -117,7 +117,7 @@ export interface OperationContext {
 }
 
 /** One entry of the activity feed, as an operation records it. */
-export interface ActivityRecord {
+interface ActivityRecord {
   readonly action: string;
   readonly target: string;
   readonly ok: boolean;
@@ -149,14 +149,14 @@ export interface RestBinding {
   readonly stream?: boolean;
 }
 
-export interface McpMetadata {
+interface McpMetadata {
   readonly toolset: Toolset;
   readonly name: string;
   readonly description: string;
 }
 
 /** The descriptive part of an operation. The typed definition and the erased registry entry both carry it. */
-export interface OperationMeta {
+interface OperationMeta {
   readonly name: string;
   readonly tag: string;
   readonly summary: string;
@@ -184,7 +184,7 @@ export interface OperationMeta {
  * How an operation appears in the event log. Both members are optional: without `target` an event has no object,
  * and without `detail` it records the validated input.
  */
-export interface AuditSpec<I, O, R> {
+interface AuditSpec<I, O, R> {
   /** The object acted on. `resolved` is `undefined` when resolution failed or never ran; `result` only on success. */
   target?(input: I, resolved: R | undefined, result: O | undefined): EventTarget | undefined;
   /**

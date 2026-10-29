@@ -10,7 +10,7 @@ import { previewLaunchPath } from "../preview/domain";
 import { previewUrl } from "../preview/path";
 import { type Box, getBox } from "./boxes";
 
-export type PortSource = "listening" | "manual";
+type PortSource = "listening" | "manual";
 
 export interface BoxPort {
   readonly port: number;

@@ -71,6 +71,10 @@ export class VolumeUsageWatcher {
 
   /** One pass over every host. Safe to call from tests without starting the timer. A failure is logged, never thrown. */
   async tick(): Promise<void> {
+    const current = new Set(
+      this.options.hosts.list().flatMap((host) => host.volumes.list().map((volume) => volume.id)),
+    );
+    for (const id of this.levels.keys()) if (!current.has(id)) this.levels.delete(id);
     await Promise.all(
       this.options.hosts
         .list()

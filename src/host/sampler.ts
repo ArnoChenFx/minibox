@@ -827,6 +827,5 @@ export class HostSampler {
   }
 }
 
-export { DEMAND_LEASE_MS } from "./sampler-constants";
 export type { SamplerOptions, BoxTotals } from "./sampler-types";
 export { summarizeBoxes } from "./sampler-helpers";

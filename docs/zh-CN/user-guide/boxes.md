@@ -195,7 +195,7 @@ minibox box startup-command rm my-box
 ## 删除 Box
 
 1. 打开 Box，点击**删除 Box**。
-2. 若要移除仅该 Box 使用的卷，勾选**同时删除这个 Box 自有的数据卷**。
+2. 若要移除仅该 Box 使用的卷，勾选**同时删除这个 Box 自有的数据卷**。只有所有者或未收窄的 admin 令牌可以这样做，其他令牌登录时不显示此选项。
 3. 点击**删除 Box**。
 
 删除 Box 时，无论是否勾选删除卷，MiniBox 都会把 Box 的 workspace 与 home 数据副本保留在[回收站](checkpoints.md#回收站)中，保留 `TRASH_RETENTION_DAYS` 天，默认 7 天。要恢复该 Box，可在**回收站**页面恢复对应记录，它会作为新 Box 创建。若要删除且不保留副本，请勾选**删除时不保留副本**。只有所有者，或持有 `trash:skip` 权限的令牌可以这样做。

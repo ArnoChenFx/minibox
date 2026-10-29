@@ -36,7 +36,7 @@ function relayBinary(): string | null {
  * has no loopback of its own, so the tests that need a working preview run the relay here, where it reaches the test's
  * upstream on 127.0.0.1 the way the box's own service would answer it.
  */
-export function localExec(command: string, args: string[]): ExecSession {
+function localExec(command: string, args: string[]): ExecSession {
   const child = spawn(command, args, { stdio: ["pipe", "pipe", "pipe"] }) as ChildProcessByStdio<
     Writable,
     Readable,

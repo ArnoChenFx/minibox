@@ -54,7 +54,7 @@ function messageOutput(error: Msg) {
   return { key: error.key, message: error.text, params: error.params };
 }
 
-export const boxStartupGet = defineOperation({
+const boxStartupGet = defineOperation({
   name: "box.startup.get",
   tag: "boxes",
   summary: "Read a box's startup command and its status",
@@ -77,7 +77,7 @@ export const boxStartupGet = defineOperation({
   run: async ({ host }, input) => startupOutput(await readStartupCommand(host, input.id)),
 });
 
-export const boxStartupSet = defineOperation({
+const boxStartupSet = defineOperation({
   name: "box.startup.set",
   tag: "boxes",
   summary: "Set a box's startup command",
@@ -116,7 +116,7 @@ export const boxStartupSet = defineOperation({
     ),
 });
 
-export const boxStartupDelete = defineOperation({
+const boxStartupDelete = defineOperation({
   name: "box.startup.delete",
   tag: "boxes",
   summary: "Remove a box's startup command",
@@ -144,7 +144,7 @@ export const boxStartupDelete = defineOperation({
     startupOutput(await clearStartupCommand(host, input.id, requireRevision(input.expectedRevision))),
 });
 
-export const boxStartupRun = defineOperation({
+const boxStartupRun = defineOperation({
   name: "box.startup.run",
   tag: "boxes",
   summary: "Run a box's startup command again now",

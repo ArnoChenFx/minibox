@@ -4,7 +4,7 @@ import type { BoxEnv, BoxSpec } from "../specs/types";
 import type { SecretStore } from "./store";
 
 /** The first entry that names a secret which is not set, or `undefined` when every reference resolves. */
-export function unsetSecret(store: SecretStore, env: readonly BoxEnv[]): BoxEnv | undefined {
+function unsetSecret(store: SecretStore, env: readonly BoxEnv[]): BoxEnv | undefined {
   return env.find((entry) => entry.secretRef !== undefined && store.meta(entry.secretRef) === null);
 }
 
@@ -12,7 +12,7 @@ export function unsetSecret(store: SecretStore, env: readonly BoxEnv[]): BoxEnv 
  * The refusal for an env entry whose secret is not set. A create, rebuild or update is a bad request (400). A start
  * is a conflict with the box as it is stored (409): the box cannot be started until the secret is set again.
  */
-export function missingSecret(entry: BoxEnv, status: "bad_request" | "conflict"): AppError {
+function missingSecret(entry: BoxEnv, status: "bad_request" | "conflict"): AppError {
   const text = msg("env_secret_missing", { name: entry.secretRef ?? "", env: entry.name });
   const hint = msg("env_secret_missing_hint");
   return status === "bad_request" ? badRequest(text, { field: "env" }, { hint }) : conflict(text, { hint });

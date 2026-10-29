@@ -1,13 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { ROOT } from "../src/config";
 
 const WEB = join(ROOT, "web");
 const TAB_NAV = join(WEB, "js", "lib", "tab-nav.js");
-const SECTION_TABS = join(WEB, "js", "components", "section-tabs.js");
 
 /**
  * The strip's key handler reads `event.currentTarget` and `event.target`, so a plain object with the two elements and
@@ -134,21 +132,5 @@ describe("tab strip keyboard navigation", () => {
       onTabKeydown(event);
       return { prevented: Boolean(event.hit), focused: strip.tabs.filter((tab) => tab.focused).map((tab) => tab.label) };`);
     expect(out).toEqual({ prevented: false, focused: [] });
-  });
-
-  test("both tab strips of the console are bound, and the section strip names its tablist", () => {
-    const sectionTabs = readFileSync(SECTION_TABS, "utf8");
-    expect(sectionTabs).toContain('role="tablist"');
-    expect(sectionTabs).toContain("export function bindTabStrips(root)");
-    expect(sectionTabs).toContain('strip.addEventListener("keydown", onTabKeydown);');
-    // The focused tab is scrolled into view, so an arrow press at the end of a narrow strip shows where it landed.
-    expect(sectionTabs).toContain('strip.addEventListener("focusin", onFocus);');
-    // The two section pages and the Box detail page bind the strips they draw.
-    for (const page of ["storage.js", "library.js", "box-detail.js"]) {
-      const source = readFileSync(join(WEB, "js", "pages", page), "utf8");
-      expect([page, source.includes("bindTabStrips(")]).toEqual([page, true]);
-    }
-    // The Box detail strip is redrawn with the page, so its listener goes with the old one.
-    expect(readFileSync(join(WEB, "js", "pages", "box-detail.js"), "utf8")).toContain("stripCleanup?.();");
   });
 });

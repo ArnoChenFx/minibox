@@ -111,7 +111,7 @@ interface Local extends Held {
   body(): AsyncIterable<Uint8Array>;
 }
 
-export function targetView(record: TargetRecord, credentials: boolean): TargetView {
+function targetView(record: TargetRecord, credentials: boolean): TargetView {
   const address =
     record.kind === "s3" ? `${record.endpoint}/${record.bucket}` : `${record.user}@${record.host}:${record.port}`;
   return {
@@ -129,7 +129,7 @@ export function targetView(record: TargetRecord, credentials: boolean): TargetVi
 }
 
 /** Maps a target failure to the response the caller gets. Anything else is not a target failure and passes through. */
-export function toTargetError(e: unknown): unknown {
+function toTargetError(e: unknown): unknown {
   if (!(e instanceof TargetFailure)) return e;
   switch (e.reason) {
     case "unreachable":

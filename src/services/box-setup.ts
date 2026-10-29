@@ -12,7 +12,7 @@ import { exposeBoxPort } from "./ports";
 import { startInBox, within } from "./tmux-exec";
 
 /** A postCreateCommand that runs longer than this is stopped. The box is kept. */
-export const POST_CREATE_TIMEOUT_SEC = 1800;
+const POST_CREATE_TIMEOUT_SEC = 1800;
 /** How long a finished command's output may take to reach the log. A background child that keeps a pipe open must not hold the task. */
 const OUTPUT_DRAIN_MS = 2000;
 /** A partial line longer than this is logged as it is, so a command that prints no newline cannot grow the buffer without bound. */

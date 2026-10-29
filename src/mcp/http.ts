@@ -8,7 +8,7 @@ import { mcpTools } from "../operations/projections";
 import { OPERATIONS } from "../operations/registry";
 import { RUN_ID_PATTERN } from "../operations/run";
 import { type Operation, OWNER, type Principal, type Toolset } from "../operations/types";
-import { scopeAllowed } from "../tokens/model";
+import { scopeAllowed, mayManageStorage, STORAGE_ADMIN_OPERATIONS } from "../tokens/model";
 import { SELF_SCOPE } from "../tokens/self-policy";
 import { MCP_INSTRUCTIONS, SELF_MCP_INSTRUCTIONS } from "./instructions";
 import { OWNER_KEY_HEADER, OWNER_KEY_OP, OWNER_KEY_STATUS, type OwnerKeyOutcome } from "./owner-key";
@@ -157,7 +157,10 @@ function callableBy(principal: Principal): readonly Operation[] {
   if (principal.type === "owner") return OPERATIONS.filter((operation) => operation.scope !== SELF_SCOPE);
   if (principal.type === "box-self") return OPERATIONS.filter((operation) => operation.scope === SELF_SCOPE);
   return OPERATIONS.filter(
-    (operation) => principal.type === "token" && scopeAllowed(principal.grants, operation.scope),
+    (operation) =>
+      principal.type === "token" &&
+      scopeAllowed(principal.grants, operation.scope) &&
+      (!STORAGE_ADMIN_OPERATIONS.has(operation.name) || mayManageStorage(principal)),
   );
 }
 
@@ -305,6 +308,7 @@ async function callTool(
       message: err.message,
       hint: err.hint ?? null,
       retryable: err.retryable,
+      ...(err.key === undefined ? {} : { key: err.key, params: err.params }),
       ...(err.details === undefined ? {} : { details: err.details }),
     };
     return toolResult(id, payload, true, headers);

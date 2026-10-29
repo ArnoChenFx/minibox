@@ -10,7 +10,7 @@ export const IDENTITY_FILE = "agent.json";
 export const KEY_FILE = "agent-key.pem";
 
 /** What an agent keeps once it is paired. The private key is a separate file, so this record holds no secret. */
-export const IdentitySchema = z.object({
+const IdentitySchema = z.object({
   agentId: z.string().min(1).max(64),
   hostId: z.string().min(1).max(64),
   server: z.string().url().max(512),

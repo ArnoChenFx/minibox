@@ -96,7 +96,7 @@ export interface ImageItem {
   size: number;
 }
 
-export function toImageItem(host: HostCtx, img: ImageSummary): ImageItem {
+function toImageItem(host: HostCtx, img: ImageSummary): ImageItem {
   const labels = parseImageLabels(img.labels, host.keys);
   const tags = img.repoTags.filter((t) => t !== "<none>:<none>");
   const ref = tags[0] ?? img.id;

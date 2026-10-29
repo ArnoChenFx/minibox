@@ -36,7 +36,7 @@ import { startupNow } from "./startup";
 import { copyRecipe } from "./template-builds";
 
 /** What a move keeps. Volumes are copied to the target, or attached again where the storage is shared. */
-export const MOVE_KEEPS = ["id", "name", "volumes", "env", "history"] as const;
+const MOVE_KEEPS = ["id", "name", "volumes", "env", "history"] as const;
 
 /** Path inside the helper containers where a volume is mounted. */
 const HELPER_PATH = "/mnt";
@@ -48,9 +48,9 @@ const MB = 1024 * 1024;
  * the record moves and the data stays. `tools`: the target's shared tools volume takes the place of this box's, and the
  * tools themselves are not copied.
  */
-export type VolumeAction = "copy" | "remount" | "tools";
+type VolumeAction = "copy" | "remount" | "tools";
 
-export interface MoveVolume {
+interface MoveVolume {
   readonly mount: BoxMount;
   readonly source: VolumeRecord;
   readonly action: VolumeAction;
@@ -81,7 +81,7 @@ export interface MovePreview {
   readonly revision: { readonly current: number; readonly next: number };
 }
 
-export interface Leftover {
+interface Leftover {
   readonly kind: "container" | "volume";
   readonly name: string;
 }

@@ -186,7 +186,7 @@ function commandAudit(input: {
   };
 }
 
-export const execRun = defineOperation({
+const execRun = defineOperation({
   name: "exec.run",
   tag: "exec",
   summary: "Run a command in a box",
@@ -281,7 +281,7 @@ export const execRun = defineOperation({
   },
 });
 
-export const execGet = defineOperation({
+const execGet = defineOperation({
   name: "exec.get",
   tag: "exec",
   summary: "Read an exec",
@@ -318,7 +318,7 @@ export const execGet = defineOperation({
   },
 });
 
-export const execKill = defineOperation({
+const execKill = defineOperation({
   name: "exec.kill",
   tag: "exec",
   summary: "Kill an exec",
@@ -352,7 +352,7 @@ export const execKill = defineOperation({
   },
 });
 
-export const execOutput = defineOperation({
+const execOutput = defineOperation({
   name: "exec.output",
   tag: "exec",
   summary: "Read saved exec output",

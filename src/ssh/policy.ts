@@ -18,7 +18,7 @@ export const REMOTE_FORWARD_REQUESTS: ReadonlySet<string> = new Set([
   "cancel-streamlocal-forward@openssh.com",
 ]);
 /** Longest command line a client may send, in bytes. */
-export const SSH_COMMAND_MAX = 16 * 1024;
+const SSH_COMMAND_MAX = 16 * 1024;
 
 const ENV_NAME = /^(LANG|LC_[A-Z_]+|TERM|COLORTERM)$/;
 const ENV_VALUE_MAX = 1024;

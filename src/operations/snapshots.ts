@@ -97,7 +97,7 @@ export const snapshotFork = defineOperation({
   },
 });
 
-export const snapshotList = defineOperation({
+const snapshotList = defineOperation({
   name: "snapshot.list",
   tag: "snapshots",
   summary: "List snapshots",
@@ -122,7 +122,7 @@ export const snapshotList = defineOperation({
   },
 });
 
-export const snapshotDelete = defineOperation({
+const snapshotDelete = defineOperation({
   name: "snapshot.delete",
   tag: "snapshots",
   summary: "Delete a snapshot",

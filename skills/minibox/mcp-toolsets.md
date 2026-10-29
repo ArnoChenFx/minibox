@@ -26,7 +26,7 @@ A URL with several toolsets: `http://127.0.0.1:3920/mcp?toolsets=core,meta,sessi
 | `create_box` | `box:write`, plus `volume:write` for the volumes it creates and `volume:attach` for a volume it mounts | Create and start. `name`, `template`, `cpus`, `memoryMb`, `profile`, `mounts`, `env`, `idleTimeoutSec`, `ttlSec`, `host`, `tools`, `startupCommand`, `selfToken`, `repo`. A `mounts` entry is `{ volume, path, mode }` to mount a volume that exists, or `{ role }` to have MiniBox create one of the box's role volumes; a role the list omits is not created, `tools` mounts the shared tools volume, and a role entry may add `pool` to put its new volume on a pool other than the role's rule picks (`pool_not_found` when the host has none). Returns `box`, plus `setup.taskId` and `clone.taskId` |
 | `get_box` | `box:read` | One box, including `revision`, `mounts`, `state`, `sleeping`, `stopReason` |
 | `update_box` | `box:write` | `name`, `cpus`, `memoryMb`, `pids`, `labels`, `idleTimeoutSec`, `ttlSec`. Needs `expectedRevision`. Template, mounts, env, network, egress and profile changes are refused with `confirmation_required`; use `rebuild_box` |
-| `delete_box` | `box:delete` | `deleteVolume`, `skipTrash` (owner or `trash:skip`). The data goes to the recycle bin first |
+| `delete_box` | `box:delete` | `deleteVolume` (owner or unmodified admin token, else `storage_admin_required`), `skipTrash` (owner or `trash:skip`). The data goes to the recycle bin first |
 | `box_action` | `box:write` | `action`: `start`, `stop` or `restart` |
 | `exec` | `exec` | `argv` or `cmd`, `cwd`, `env`, `stdin`, `user`, `timeoutSec`, `background` |
 | `exec_get` | `exec` | `execId`, `waitMs` (max 25000) |
@@ -73,13 +73,13 @@ Listing and closing sessions are REST and CLI only (`GET`/`DELETE /api/boxes/{id
 |---|---|---|
 | `list_volumes`, `get_volume`, `measure_volume` | `volume:read` | Volumes and their cached size |
 | `snapshot_volume` | `checkpoint:create` | `id`, `label`, `pinned`. Snapshots one volume on its own, as a checkpoint whose record names no box. Returns a task |
-| `create_volume` | `volume:write` | `name`, `pool`, `role`, `confirm` |
-| `delete_volume` | `volume:write` | `id`, `confirm`, `skipTrash` |
-| `delete_volumes` | `volume:delete` | `ids`, `confirm`. One result per volume |
+| `create_volume` | `volume:write` | `name`, `pool`, `role`, `confirm`. Owner or unmodified admin only |
+| `delete_volume` | `volume:write` | `id`, `confirm`, `skipTrash`. Owner or unmodified admin only |
+| `delete_volumes` | `volume:delete` | `ids`, `confirm`. One result per volume. Owner or unmodified admin only |
 | `attach_volume`, `detach_volume` | `volume:attach` (+ `volume:write` for `mode: "rw"`) | `id`, `box`, `path`, `mode`, `confirm`, `safetyCheckpoint`, `expectedRevision`. Rebuilds the box |
-| `list_pools`, `replace_pools` | owner | Storage pools |
+| `list_pools`, `replace_pools` | `pool:read` / `pool:admin` | Storage pools. Owner or unmodified admin only |
 | `set_volume_limits` | owner | Soft and hard limits, and the action at the hard limit |
-| `prune_volumes` | owner | Orphaned volumes. `dryRun` defaults to `true`; removal needs `dryRun: false` and the `ids` the dry run listed |
+| `prune_volumes` | `volume:prune` | Orphaned volumes. `dryRun` defaults to `true`; removal needs `dryRun: false` and the `ids` the dry run listed. Owner or unmodified admin only |
 | `list_trash`, `restore_trash`, `purge_trash`, `empty_trash` | owner | The recycle bin. `empty_trash` needs `confirm: true` |
 | `export_checkpoint`, `import_checkpoint`, `copy_checkpoint` | owner | Checkpoint packages and host copies. Each returns a task |
 | `get_checkpoint_schedule`, `set_checkpoint_schedule`, `clear_checkpoint_schedule` | owner | A box's checkpoint schedule |

@@ -21,7 +21,6 @@ import {
   type TokenCreateInput,
   type VolumeScope,
 } from "../tokens/model";
-import type { TokenInfo } from "../tokens/store";
 import { defineOperation } from "./define";
 import { addFailure, field } from "./validation";
 
@@ -252,7 +251,7 @@ const QuotasSchema = z.object({
   maxCheckpoints: z.number().nullable(),
 });
 
-export const TokenInfoSchema = z.object({
+const TokenInfoSchema = z.object({
   id: z.string(),
   name: z.string(),
   prefix: z.string(),
@@ -351,7 +350,7 @@ function draftOf(input: z.output<typeof tokenCreateInput>): TokenCreateInput {
   };
 }
 
-export const tokenCreate = defineOperation({
+const tokenCreate = defineOperation({
   name: "token.create",
   tag: "tokens",
   summary: "Create an agent API token",
@@ -393,7 +392,7 @@ export const tokenCreate = defineOperation({
   },
 });
 
-export const tokenList = defineOperation({
+const tokenList = defineOperation({
   name: "token.list",
   tag: "tokens",
   summary: "List agent API tokens",
@@ -415,7 +414,7 @@ const FailedBoxSchema = z.object({
 
 type FailedBox = z.infer<typeof FailedBoxSchema>;
 
-export const tokenRevoke = defineOperation({
+const tokenRevoke = defineOperation({
   name: "token.revoke",
   tag: "tokens",
   summary: "Revoke an agent API token",
@@ -478,7 +477,7 @@ export const tokenRevoke = defineOperation({
   },
 });
 
-export const tokenDelete = defineOperation({
+const tokenDelete = defineOperation({
   name: "token.delete",
   tag: "tokens",
   summary: "Delete a revoked or expired agent API token",
@@ -507,7 +506,7 @@ export const tokenDelete = defineOperation({
   },
 });
 
-export const tokenPrune = defineOperation({
+const tokenPrune = defineOperation({
   name: "token.prune",
   tag: "tokens",
   summary: "Delete every revoked or expired agent API token",
@@ -533,5 +532,3 @@ export const tokenPrune = defineOperation({
 });
 
 export const tokenOperations = [tokenList, tokenCreate, tokenRevoke, tokenDelete, tokenPrune];
-
-export type { TokenInfo };

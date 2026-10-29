@@ -54,7 +54,7 @@ export function mergeLimits(current: VolumeLimits, patch: LimitPatch): VolumeLim
 }
 
 /** A volume whose action is `stop` and whose last sample is at or over its hard limit. Boxes that mount it stay stopped. */
-export function overHardStop(volume: VolumeRecord): boolean {
+function overHardStop(volume: VolumeRecord): boolean {
   return volume.limits.action === "stop" && usageLevel(volume.bytes, volume.limits) === "hard";
 }
 

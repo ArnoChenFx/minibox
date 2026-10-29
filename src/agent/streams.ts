@@ -22,8 +22,7 @@ export type OpenStream =
  *   its own set rather than as a value in `open`: the id is taken (so a duplicate is refused) but names no stream yet.
  * - **`close()` is final for streams and for the connection, not for ids.** It detaches every open stream without
  *   reporting an end for any of them, and an operation that is still starting when it runs ends what it opened and
- *   answers `unavailable`. A request under an id that was already open when `close()` ran is refused as an id in use,
- *   because a detaching stream keeps its id until it is drained.
+ *   answers `unavailable`. Closing clears open ids; the executor refuses further requests as unavailable.
  * - **Nothing is detached twice.** An exec's stream is destroyed once, whether a cancel, an end or a `close()` reaches
  *   it first; an abort-based stream's controller is aborted once, with the same rule. The registries only hand out the
  *   stream that is still recorded, so a second caller finds nothing and does nothing.

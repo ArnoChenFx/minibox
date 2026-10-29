@@ -7,7 +7,7 @@ export interface SseFrame {
   comment?: string;
 }
 
-export function parseFrame(block: string): SseFrame {
+function parseFrame(block: string): SseFrame {
   const frame: SseFrame = {};
   for (const line of block.split("\n")) {
     if (line.startsWith(":")) frame.comment = line.slice(1).trim();

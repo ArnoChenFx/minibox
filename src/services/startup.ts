@@ -16,7 +16,7 @@ import { classifyTmuxFailure, paneLines, paneTarget, sessionTarget } from "../tm
 import { type BoxRun, runInBox, runTmux, unsupportedImage, within } from "./tmux-exec";
 
 /** How long a request that runs a launch itself waits for it. A launch still running after this finishes in the background. */
-export const STARTUP_LAUNCH_BUDGET_MS = 5_000;
+const STARTUP_LAUNCH_BUDGET_MS = 5_000;
 /** Rows of history a status reads. This is tmux's default, so the start marker of a long run stays in reach. */
 const HISTORY_LINES = 2000;
 const WORKDIR = "/workspace";

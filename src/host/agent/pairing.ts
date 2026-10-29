@@ -3,8 +3,8 @@ import { createHash, randomBytes } from "node:crypto";
 import { AppError } from "../../lib/errors";
 import { msg } from "../../lib/messages";
 
-export const PAIRING_TTL_MS = 10 * 60_000;
-export const PAIRING_MAX_OUTSTANDING = 50;
+const PAIRING_TTL_MS = 10 * 60_000;
+const PAIRING_MAX_OUTSTANDING = 50;
 
 /** Crockford base32: no I, L, O or U, so a code copied from a screen is not misread. */
 const ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
@@ -28,7 +28,7 @@ interface Entry extends PairingGrant {
 }
 
 /** Writes a code as the operator reads it. */
-export function formatCode(code: string): string {
+function formatCode(code: string): string {
   return `${code.slice(0, 5)}-${code.slice(5)}`;
 }
 

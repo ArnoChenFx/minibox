@@ -67,7 +67,7 @@ export interface BoxEgress extends Omit<EgressPolicy, "mode"> {
   subnet: string;
 }
 
-export function isEgressPreset(value: string): value is EgressPreset {
+function isEgressPreset(value: string): value is EgressPreset {
   return (EGRESS_PRESETS as readonly string[]).includes(value);
 }
 

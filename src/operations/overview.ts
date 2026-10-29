@@ -493,7 +493,7 @@ async function overviewOf(ctx: OperationContext, now: number): Promise<OverviewV
   return { inProgress, attention };
 }
 
-export const overviewGet = defineOperation({
+const overviewGet = defineOperation({
   name: "overview.get",
   tag: "overview",
   summary: "Read what agents are doing now and what needs attention",

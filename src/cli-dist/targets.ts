@@ -1,5 +1,5 @@
-export type CliOs = "linux" | "darwin" | "windows";
-export type CliArch = "x64" | "arm64";
+type CliOs = "linux" | "darwin" | "windows";
+type CliArch = "x64" | "arm64";
 
 export interface CliTarget {
   /** The `<os>-<arch>` part of the download path, for example `linux-x64`. */

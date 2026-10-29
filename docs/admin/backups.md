@@ -58,15 +58,15 @@ BACKUP_DIR=/mnt/backups
 ```
 
 - An absolute path is used as it is. A relative path resolves from the project root, the folder that holds `src/`, exactly as `DATA_DIR` does, so `BACKUP_DIR=archives` is `<project>/archives`. A leading `~/` expands to the home directory of the user that runs MiniBox.
-- The folder is created on the first backup that needs it, with mode `700`, together with any folder above it. An existing folder is tightened to `700` when the filesystem allows it, because an archive holds every secret of the instance. The archives themselves are mode `600`.
+- New backup directories use mode `700`, and the default `DATA_DIR/backups` directory is kept at `700`. An existing custom `BACKUP_DIR` retains its permissions; a shared directory produces a warning. Archives and records use mode `600`.
 - The user that runs MiniBox must be able to write the folder. A folder it cannot create or write makes the backup fail, and the failure leaves no archive and no record behind. Nothing is created at startup, so an unset or unusable `BACKUP_DIR` does not stop MiniBox from starting.
-- Point it at a folder for backups alone. MiniBox only reads, writes and (with `BACKUP_KEEP`) deletes its own `<id>.mbbak` and `<id>.json` files there, but a folder shared with other tools is harder to reason about, and its mode is tightened to `700`.
-- A `BACKUP_DIR` inside `DATA_DIR` is left out of the archive, as `DATA_DIR/backups/` always is, so a backup never contains backups. A `BACKUP_DIR` outside `DATA_DIR` is not part of the data directory at all.
+- Use a dedicated backup folder that untrusted users cannot write. MiniBox maintains its own archives, records and staging files, and leaves unrelated files alone.
+- Symlinks use their actual targets for containment and exclusion. A `BACKUP_DIR` inside `DATA_DIR` is left out of the archive, as `DATA_DIR/backups/` always is, so a backup never contains backups. A `BACKUP_DIR` outside `DATA_DIR` is not part of the data directory at all.
 - `BACKUP_DIR` cannot be `DATA_DIR` itself, nor a folder above it such as `/mnt` or the project root. Those would exclude the whole data directory from the archive, leaving a backup that reports success but holds nothing, so MiniBox refuses to start and names the problem.
-- Everything else works the same: `minibox backup ls`, `minibox backup rm`, `GET /api/backups`, the download route and the off-site targets read and write the archives in this folder. A backup pulled from a target lands there too.
+- `minibox backup ls`, `minibox backup rm`, `GET /api/backups`, the download route and the off-site targets read and write the archives in this folder. A backup pulled from a target lands there too.
 - Backups downloaded with `--out` are written where you say, not in this folder.
 
-A backup started before `BACKUP_DIR` was set stays where it was written: MiniBox does not move old archives, and a listing shows only the folder it is configured to use. Move the old files yourself, or leave them where they are.
+Changing `BACKUP_DIR` does not move archives. Listings show only the configured folder. Move both the archive and its record manually when changing folders.
 
 ## Restore a backup
 
@@ -188,6 +188,8 @@ Order and timing:
 - `BACKUP_KEEP=0`, a blank value and an unset value all keep every backup. That is the default. A value that is not a whole number, or is negative, also keeps every backup instead of guessing: a typo must never delete archives. A number above 10000 is treated the same way.
 
 A backup that `BACKUP_KEEP` removes is gone for good. Push the ones you want to keep to an [off-site target](#off-site-targets) first.
+
+Bad or unreadable records are logged and skipped; healthy records remain visible. Retention failures are logged and preserve completed archives. Startup maintenance failures do not stop the server. If the whole archive directory is unreadable, listing and creating backups fail; check its permissions.
 
 ### Schedules
 

@@ -107,7 +107,7 @@ function takeInput(input: CheckpointCreateInput): TakeCheckpointInput {
   };
 }
 
-export const checkpointList = defineOperation({
+const checkpointList = defineOperation({
   name: "checkpoint.list",
   tag: "checkpoints",
   summary: "List checkpoints",
@@ -133,7 +133,7 @@ export const checkpointList = defineOperation({
  * Owner-only: the repository's size is a host figure, like the host metrics. The scope is one no token holds, so the
  * route and the executor both refuse a token.
  */
-export const checkpointUsage = defineOperation({
+const checkpointUsage = defineOperation({
   name: "checkpoint.usage",
   tag: "checkpoints",
   summary: "Read the checkpoint repository's size against its limit",
@@ -146,7 +146,7 @@ export const checkpointUsage = defineOperation({
   run: async ({ host }) => usageOf(host),
 });
 
-export const checkpointGet = defineOperation({
+const checkpointGet = defineOperation({
   name: "checkpoint.get",
   tag: "checkpoints",
   summary: "Get one checkpoint",
@@ -161,7 +161,7 @@ export const checkpointGet = defineOperation({
   run: async (_ctx, _input, checkpoint) => ({ checkpoint }),
 });
 
-export const checkpointCreate = defineOperation({
+const checkpointCreate = defineOperation({
   name: "checkpoint.create",
   tag: "checkpoints",
   summary: "Take a checkpoint of a box",
@@ -189,7 +189,7 @@ export const checkpointCreate = defineOperation({
   }),
 });
 
-export const checkpointFork = defineOperation({
+const checkpointFork = defineOperation({
   name: "checkpoint.fork",
   tag: "checkpoints",
   summary: "Create a box from a checkpoint",
@@ -244,7 +244,7 @@ export const checkpointFork = defineOperation({
   },
 });
 
-export const checkpointUpdate = defineOperation({
+const checkpointUpdate = defineOperation({
   name: "checkpoint.update",
   tag: "checkpoints",
   summary: "Pin or relabel a checkpoint",
@@ -274,7 +274,7 @@ export const checkpointUpdate = defineOperation({
   }),
 });
 
-export const checkpointDelete = defineOperation({
+const checkpointDelete = defineOperation({
   name: "checkpoint.delete",
   tag: "checkpoints",
   summary: "Delete a checkpoint",
@@ -300,7 +300,7 @@ export const checkpointDelete = defineOperation({
   },
 });
 
-export const boxRollback = defineOperation({
+const boxRollback = defineOperation({
   name: "box.rollback",
   tag: "checkpoints",
   summary: "Roll a box back to one of its checkpoints",
@@ -349,7 +349,7 @@ export const boxRollback = defineOperation({
 
 const replacedVolumes = z.array(z.object({ id: z.string(), name: z.string() }));
 
-export const boxRollbackGet = defineOperation({
+const boxRollbackGet = defineOperation({
   name: "box.rollback.get",
   tag: "checkpoints",
   summary: "Read the rollback of a box that waits for its confirm or undo",
@@ -378,7 +378,7 @@ const RollbackBoxRefSchema = z.object({
  * that cannot be read is logged and skipped, so one failing record does not fail the list. A token sees only the boxes
  * its grants cover.
  */
-export const boxRollbackList = defineOperation({
+const boxRollbackList = defineOperation({
   name: "box.rollback.list",
   tag: "checkpoints",
   summary: "Read every rollback that waits for its confirm or undo",
@@ -431,7 +431,7 @@ export const boxRollbackList = defineOperation({
  * Deletes the volumes a rollback replaced. Those volumes are no longer mounted, and the safety checkpoint still holds
  * their data, so this step is the only one that removes them.
  */
-export const boxRollbackConfirm = defineOperation({
+const boxRollbackConfirm = defineOperation({
   name: "box.rollback.confirm",
   tag: "checkpoints",
   summary: "Confirm a rollback: delete the volumes it replaced",
@@ -461,7 +461,7 @@ export const boxRollbackConfirm = defineOperation({
  * Mounts the volumes a rollback replaced again, and deletes the ones it restored. The box is rebuilt, so the revision
  * rules of a rebuild apply, and so does the power lock. Data written since the rollback is lost.
  */
-export const boxRollbackUndo = defineOperation({
+const boxRollbackUndo = defineOperation({
   name: "box.rollback.undo",
   tag: "checkpoints",
   summary: "Undo a rollback: mount the volumes it replaced again",

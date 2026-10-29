@@ -19,6 +19,8 @@ import {
   hostAllowed,
   type ImageView,
   mayGiveStartupCommand,
+  mayManageStorage,
+  STORAGE_ADMIN_OPERATIONS,
   mayUseSecrets,
   profileForToken,
   profileRank,
@@ -45,6 +47,9 @@ export async function authorizeOperation(request: AuthorizeRequest): Promise<boo
   if (principal.type === "owner") return request.operation.scope !== SELF_SCOPE;
   if (principal.type === "box-self") return selfAllowed(request, principal);
   if (principal.type !== "token") return false;
+  if (STORAGE_ADMIN_OPERATIONS.has(request.operation.name) && !mayManageStorage(principal)) {
+    throw refusal("storage_admin_required");
+  }
   const phase = request.phase ?? "scope";
   if (phase === "scope") return scopeAllowed(principal.grants, request.operation.scope);
   if (phase === "resource") return resourceAllowed(request, principal);
@@ -67,7 +72,10 @@ async function resourceAllowed(request: AuthorizeRequest, principal: TokenPrinci
   const scope = request.scope ?? "";
   const resource = request.resource;
   if (!resource) return scopeAllowed(principal.grants, scope);
+  if (scope === "volume:delete" && !mayManageStorage(principal)) return false;
   const record = recordOf(host, resource);
+  // Default Box provisioning is internal; rebuild/attach cannot manufacture arbitrary independent volumes.
+  if (!record && request.operation.name !== "box.create" && !mayManageStorage(principal)) return false;
   if (!record) {
     if (resource.id !== undefined || scope === "volume:delete") return false;
     if (await inspectVolumeOrNull(host, resource.name)) return false;
@@ -79,7 +87,7 @@ async function resourceAllowed(request: AuthorizeRequest, principal: TokenPrinci
   if (scope === "volume:write") return volumeWritable(principal, record, views);
   if (scope === "volume:attach") return volumeVisible(principal, record, views);
   if (scope === "volume:delete")
-    return hostAllowed(principal.grants.hosts, record.hostId) && record.createdBy === principal.id;
+    return hostAllowed(principal.grants.hosts, record.hostId) && volumeVisible(principal, record, views);
   return false;
 }
 
@@ -326,7 +334,7 @@ async function assertImageUsable(
   throw refusal(refusedAs);
 }
 
-export function imageViewOf(host: HostCtx, labels: Record<string, string>): ImageView {
+function imageViewOf(host: HostCtx, labels: Record<string, string>): ImageView {
   return {
     createdBy: labels[host.keys.createdBy] || null,
     sourceId: labels[host.keys.snapshotOfId] || null,
@@ -456,11 +464,14 @@ const volumeRule: Rule = async ({ principal, host, resolved }) => {
   }
 };
 
-/** Deleting a volume is its creator's alone. A grant lets a token mount a volume, not remove it. */
+/**
+ * Deleting a volume is volume administration: `volume.delete` is a storage administrator operation, so only the owner
+ * or an unmodified admin token reaches this rule, and it may delete any volume it can see.
+ */
 const volumeDeleteRule: Rule = async ({ principal, host, resolved }) => {
   const view = resolved as { id: string; name: string } | undefined;
   const record = view ? host.volumes.resolve(view.id, host.host.id) : null;
-  if (!view || !record || record.createdBy !== principal.id) {
+  if (!view || !record || !volumeVisible(principal, record, specViews(host.specs.list()))) {
     throw refusal("volume_not_granted", { volume: view?.name ?? "" });
   }
 };
@@ -586,6 +597,9 @@ const RULES: ReadonlyMap<string, Rule> = new Map<string, Rule>([
   ],
   ["volume.list", noAccess],
   ["volume.get", volumeRule],
+  ["pool.list", noAccess],
+  ["pool.replace", noAccess],
+  ["volume.prune", noAccess],
   ["volume.create", noAccess],
   ["volume.delete", volumeDeleteRule],
   ["volume.delete.batch", noAccess],
@@ -641,4 +655,15 @@ const RULES: ReadonlyMap<string, Rule> = new Map<string, Rule>([
 /** Whether a token may reach an operation at all. The tests use it to hold every token-reachable operation to a rule. */
 export function hasAccessRule(operation: string): boolean {
   return RULES.has(operation);
+}
+
+/** Check image visibility before a recipe resolver can disclose whether it has a source. */
+export async function assertTemplateAccess(
+  principal: TokenPrincipal,
+  host: HostCtx,
+  ref: string,
+  write: boolean,
+): Promise<void> {
+  if (write) await assertOwnedImage(principal, host, ref, "template");
+  else await assertImageUsable(principal, host, ref, "template");
 }

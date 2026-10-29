@@ -16,7 +16,7 @@ const BODY_MAX = 500;
 const LAST_SENT_MAX = 1000;
 
 /** Defaults a test or an operator may override. Retries stop at `maxAttempts`, so a dead endpoint costs a bounded number of sends. */
-export const NOTIFY_DEFAULTS = {
+const NOTIFY_DEFAULTS = {
   timeoutMs: 10_000,
   maxAttempts: 3,
   backoffCapMs: 30_000,

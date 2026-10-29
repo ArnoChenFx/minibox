@@ -66,7 +66,7 @@ export async function planRollback(
   return { box, spec, checkpoint, restores };
 }
 
-export function rollbackPreview(plan: RollbackPlan, diff: ContainerChange[]): RollbackPreview {
+function rollbackPreview(plan: RollbackPlan, diff: ContainerChange[]): RollbackPreview {
   return {
     checkpoint: { id: plan.checkpoint.id, label: plan.checkpoint.label, createdAt: plan.checkpoint.createdAt },
     restores: plan.restores.map(({ mount, volume }) => ({ path: mount.path, role: volume.role, volume: volume.name })),

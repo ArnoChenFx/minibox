@@ -11,12 +11,12 @@ import type { StoragePreview } from "./volumes";
 const HOLDING_OPS: ReadonlySet<string> = new Set(["trash.restore", "trash.purge"]);
 
 /** Why an entry is left in the recycle bin: an export or copy of it runs, a restore or purge runs, or its host is offline. */
-export type TrashBlock = "exporting" | "busy" | "offline";
+type TrashBlock = "exporting" | "busy" | "offline";
 
-export type EmptiedStatus = "candidate" | "removed" | "refused" | "failed";
+type EmptiedStatus = "candidate" | "removed" | "refused" | "failed";
 
 /** One recycle bin entry an empty looked at. A preview row is a `candidate`, or `refused` with the reason it stays. */
-export interface EmptiedEntry {
+interface EmptiedEntry {
   id: string;
   hostId: string;
   kind: TrashKind;
@@ -31,7 +31,7 @@ export interface EmptiedEntry {
 /** An entry after the purge: what happened to it. */
 export type PurgedEntry = EmptiedEntry & { status: Exclude<EmptiedStatus, "candidate"> };
 
-export interface EmptiedHost {
+interface EmptiedHost {
   hostId: string;
   name: string;
   status: "checked" | "offline" | "failed";

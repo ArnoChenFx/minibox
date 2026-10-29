@@ -108,8 +108,12 @@ describe("symlink resolution (B1c/B1d/B1e)", () => {
     const tar = await new Response(
       await runtime.getArchive(created.id, "/minibox-volume/a/etc/alpine-release"),
     ).arrayBuffer();
-    const { firstFileData } = await import("../src/services/files-tar");
-    expect(firstFileData(Buffer.from(tar))?.data.toString("utf8")).toBe("OUTSIDE");
+    const { parseTar } = await import("../src/services/files-tar");
+    expect(
+      parseTar(Buffer.from(tar))
+        .find((entry) => entry.type === "file")
+        ?.data.toString("utf8"),
+    ).toBe("OUTSIDE");
   });
 
   test("refuses a symlink chain a→b, b→.. (B1c)", async () => {
@@ -228,8 +232,8 @@ describe("volume file API", () => {
     const tar = await new Response(
       await runtime.getArchive(created.id, "/minibox-volume/escape/pr79_secret"),
     ).arrayBuffer();
-    const { firstFileData } = await import("../src/services/files-tar");
-    const first = firstFileData(Buffer.from(tar));
+    const { parseTar } = await import("../src/services/files-tar");
+    const first = parseTar(Buffer.from(tar)).find((entry) => entry.type === "file");
     expect(first?.data.toString("utf8")).toBe("secret-outside");
   });
 

@@ -16,7 +16,7 @@ export interface Booking {
   readonly memoryBytes: number;
 }
 
-export const NO_BOOKING: Booking = { cpus: 0, memoryBytes: 0 };
+const NO_BOOKING: Booking = { cpus: 0, memoryBytes: 0 };
 
 export const bookingOf = (cpus: number, memoryMb: number): Booking => ({ cpus, memoryBytes: memoryMb * MB });
 

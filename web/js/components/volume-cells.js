@@ -11,7 +11,6 @@ import { esc } from "../lib/dom.js";
 import { dateTime, relTime } from "../lib/format.js";
 import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
-import { snapshotPlan } from "../lib/volume-row.js";
 import { unselectableReason } from "../lib/volume-select.js";
 import { mountModeLabel } from "./mount-editor.js";
 
@@ -28,8 +27,8 @@ const CAPABILITIES = ["shareable", "snapshots", "quota", "clone", "crossHost"];
 
 export const roleLabel = (role) => t(ROLES.find(([name]) => name === role)?.[1] ?? "vol.unknown");
 
-/** Why a volume cannot be selected, in words for its checkbox's tooltip. */
-function selectReasonText(reason) {
+/** Why a volume cannot be selected or deleted, in words for its checkbox's or delete button's tooltip. */
+export function selectReasonText(reason) {
   return reason === "tools" ? t("vol.selectTools") : t("vol.selectMounted");
 }
 
@@ -74,7 +73,8 @@ export function groupLabel(group) {
 
 /**
  * The status cell: a record the engine has lost or whose owner box was deleted, else whether a box mounts it. A volume no
- * box mounts says it can be cleaned up, except the shared tools volume, which boxes mount on demand.
+ * box mounts says it can be cleaned up, except the shared tools volume, which boxes mount on demand. A spare tools-role
+ * volume can be deleted but Prune orphans skips it, so its hint says only that.
  */
 export function statusHtml(volume, staged) {
   const badges = [];
@@ -97,10 +97,9 @@ export function statusHtml(volume, staged) {
       badges.push(
         `<span class="vol-staged" title="${esc(t("vol.statusStagedText", { boxes: staged.join(", ") }))}">${esc(t("vol.statusStaged"))}</span>`,
       );
-    } else if (volume.role !== "tools") {
-      badges.push(
-        `<span class="vol-hint" title="${esc(t("vol.cleanupHintText"))}">${esc(t("vol.cleanupHint"))}</span>`,
-      );
+    } else if (!volume.sharedTools) {
+      const hint = volume.role === "tools" ? t("vol.cleanupHintSpareTools") : t("vol.cleanupHintText");
+      badges.push(`<span class="vol-hint" title="${esc(hint)}">${esc(t("vol.cleanupHint"))}</span>`);
     }
   }
   return `<div class="vol-status">${badges.join("")}</div>`;
@@ -140,14 +139,10 @@ export function latestHtml(checkpoint) {
 }
 
 /** One button of a volume's actions cell, with the reason it is disabled when it is. */
-export function rowButton(action, volume, iconName, label, { danger = false, block = "" } = {}) {
-  const title = block ? `${label}: ${t(block)}` : label;
-  return `<button type="button" class="icon-btn${danger ? " danger" : ""}" data-action="${action}" data-id="${esc(volume.id)}" data-name="${esc(volume.name)}" title="${esc(title)}" aria-label="${esc(label)}"${block ? " disabled" : ""}>${icon(iconName)}</button>`;
-}
-
-/** The snapshot button of a volume, disabled when its plan says the snapshot cannot be taken. */
-export function snapshotButton(volume) {
-  return rowButton("snapshot", volume, "camera", t("vol.snapshot"), { block: snapshotPlan(volume).block });
+export function rowButton(action, volume, iconName, label, { danger = false, block = "", blockText = "" } = {}) {
+  const reason = blockText || (block ? t(block) : "");
+  const title = reason ? `${label}: ${reason}` : label;
+  return `<button type="button" class="icon-btn${danger ? " danger" : ""}" data-action="${action}" data-id="${esc(volume.id)}" data-name="${esc(volume.name)}" title="${esc(title)}" aria-label="${esc(label)}"${reason ? " disabled" : ""}>${icon(iconName)}</button>`;
 }
 
 /** The checkbox that picks one volume, disabled with the reason when the server would refuse it. */

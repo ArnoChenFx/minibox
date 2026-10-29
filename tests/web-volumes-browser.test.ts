@@ -330,6 +330,85 @@ describe.skipIf(!executablePath)("the volumes page flags a volume that cannot be
   );
 });
 
+describe.skipIf(!executablePath)(
+  "the volumes page deletes a spare tools volume but not the shared one (real browser)",
+  () => {
+    let app: App | undefined;
+    let server: ReturnType<typeof startServer> | undefined;
+    let browser: Browser | undefined;
+    let context: BrowserContext | undefined;
+    let page: Page;
+    let shared = "";
+
+    beforeAll(async () => {
+      const harness = createTestApp();
+      app = harness.app;
+      const host = app.hosts.get();
+      harness.runtime.seedImage(app.cfg.baseTemplateTag, {
+        [host.keys.template]: "true",
+        [host.keys.templateName]: "base",
+      });
+      // The box makes the shared tools volume and mounts it; the spare one sits beside it, mounted by nothing.
+      await boxes.createBox(host, { name: "alpha", cpus: 1, memoryMb: 512 });
+      await createVolume(host, { name: "spare-tools", role: "tools", createdBy: "owner" });
+      shared = host.volumes.list().find((volume) => volume.role === "tools" && volume.name !== "spare-tools")!.name;
+
+      server = startServer(app);
+      const consoleUrl = `http://127.0.0.1:${server.port}`;
+      browser = await chromium.launch({ executablePath: executablePath ?? undefined, args: ["--no-sandbox"] });
+      context = await browser.newContext({ viewport: VIEWPORT });
+      const login = await context.request.post(`${consoleUrl}/api/auth/login`, {
+        data: { key: TEST_KEY },
+        headers: { origin: consoleUrl },
+      });
+      expect(login.status()).toBe(200);
+      page = await context.newPage();
+      await page.goto(`${consoleUrl}/#/storage/volumes`);
+    }, 60_000);
+
+    afterAll(async () => {
+      await context?.close();
+      await browser?.close();
+      server?.stop(true);
+      app?.throttle.stop();
+      app?.sessions.stop();
+      app?.tokens.stop();
+      app?.events.close();
+    });
+
+    test(
+      "the shared tools volume cannot be picked or deleted, and says why",
+      async () => {
+        await webExpect(row(page, shared)).toBeVisible();
+        await webExpect(pick(page, shared)).toBeDisabled();
+        const remove = row(page, shared).locator('[data-action="delete"]');
+        await webExpect(remove).toBeDisabled();
+        await webExpect(remove).toHaveAttribute("title", "Delete: The shared tools volume cannot be deleted");
+        await webExpect(row(page, shared).locator(".vol-hint")).toHaveCount(0);
+      },
+      TIMEOUT_MS,
+    );
+
+    test(
+      "a spare tools volume can be picked, is flagged for cleanup, and its delete button removes it",
+      async () => {
+        await webExpect(pick(page, "spare-tools")).toBeEnabled();
+        await webExpect(row(page, "spare-tools").locator(".vol-hint")).toHaveAttribute(
+          "title",
+          /spare tools volume.*Clean up orphaned volumes skips tools volumes/,
+        );
+        await row(page, "spare-tools").locator('[data-action="delete"]').click();
+        await webExpect(dialog(page)).toContainText("Delete this volume?");
+        await dialog(page).locator("#cfm-ok").click();
+        await webExpect(page.locator("#toasts")).toContainText("Volume deleted");
+        await webExpect(row(page, "spare-tools")).toHaveCount(0);
+        await webExpect(row(page, shared)).toBeVisible();
+      },
+      TIMEOUT_MS,
+    );
+  },
+);
+
 describe.skipIf(!executablePath)("the volumes page on a phone (real browser)", () => {
   let app: App | undefined;
   let server: ReturnType<typeof startServer> | undefined;

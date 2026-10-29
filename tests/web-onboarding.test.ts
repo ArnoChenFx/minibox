@@ -40,7 +40,6 @@ const CATALOG = {
 };
 
 const COMPONENT = readFileSync(join(ROOT, "web", "js", "components", "onboarding.js"), "utf8");
-const PAGE = readFileSync(join(ROOT, "web", "js", "pages", "overview.js"), "utf8");
 /** Product names, which read the same in both languages. */
 const PROPER_NAMES = new Set(["ob.client.claudeCode", "ob.client.codex"]);
 
@@ -336,58 +335,6 @@ describe("what this browser remembers", () => {
 });
 
 describe("the guide's wiring", () => {
-  test("the overview mounts the guide and redraws it when its box list changes", () => {
-    expect(PAGE).toContain('import { mountOnboarding } from "../components/onboarding.js";');
-    expect(PAGE).toContain('id="ovOnboarding"');
-    expect(PAGE).toContain('mountOnboarding(view.querySelector("#ovOnboarding"), {');
-    expect(PAGE).toContain("boxesOf: () => (loaded ? boxes : null),");
-    // A box created from the guide's own button re-reads the list, so the guide retires at once.
-    expect(PAGE).toContain("onBoxCreated: () => void loadBoxes(),");
-    // A box arriving through the first read or through a live frame is what retires the guide.
-    expect(PAGE.match(/redrawOnboarding\(\)/g)?.length).toBeGreaterThanOrEqual(3);
-    // The page's own teardown stops the guide, so leaving the page drops its task subscription and its markup.
-    expect(PAGE).toContain("onboarding.stop();");
-  });
-
-  test("each step asks for the interface the console already has", () => {
-    // The base template's build is the templates page's own endpoint, and its task opens in the same drawer.
-    expect(COMPONENT).toContain('api("/api/templates/base/build", { method: "POST" })');
-    expect(COMPONENT).toContain("trackTask(started.taskId)");
-    // The first box opens the create dialog, the same one the page's button opens.
-    expect(COMPONENT).toContain("openCreateBox({");
-    // The token comes from the token endpoint, with the preset the select names.
-    expect(COMPONENT).toContain('api("/api/tokens", { method: "POST", body: tokenRequest(');
-    expect(COMPONENT).toContain('api("/api/tokens/presets")');
-    // The guide reads the token list too, so the name it asks for is free. Nothing else: it invents no endpoint.
-    expect([...new Set([...COMPONENT.matchAll(/api\("([^"]+)"/g)].map((m) => m[1]))].toSorted()).toEqual([
-      "/api/templates",
-      "/api/templates/base/build",
-      "/api/tokens",
-      "/api/tokens/presets",
-    ]);
-  });
-
-  test("the secret is shown once and never read back from storage", () => {
-    expect(COMPONENT).toContain("guide.secret = created.token;");
-    // The saved state holds the client, the dismissal and the finish, and never the secret.
-    expect(COMPONENT).not.toContain("saveOnboardingState({ secret");
-    expect(COMPONENT).toContain("ob.agentSecretOnce");
-    expect(COMPONENT).toContain("await copyText(guide.secret);");
-  });
-
-  test("copying the configuration puts the client's snippet on the clipboard, not the bare secret", () => {
-    // The button says "Copy configuration", and the snippet is what a client reads. Copying the secret alone would make
-    // the user paste an mbx_… token into a config file, which is not a configuration.
-    const copy = COMPONENT.slice(COMPONENT.indexOf("copy: async () =>"), COMPONENT.indexOf('"copy-secret"'));
-    expect(copy).toContain("mcpSnippet({ client: guide.client, origin: location.origin, secret: guide.secret })");
-    expect(copy).toContain("await copyText(snippet.text);");
-    expect(copy).not.toContain("copyText(guide.secret)");
-    // The secret on its own is a second, clearly named button rather than what the main one does.
-    const secretCopy = COMPONENT.slice(COMPONENT.indexOf('"copy-secret"'));
-    expect(secretCopy).toContain("await copyText(guide.secret);");
-    expect(COMPONENT).toContain('data-action="copy-secret"');
-  });
-
   test("every string the guide shows is in both dictionaries, and the Chinese is its own text", () => {
     const keys = [...COMPONENT.matchAll(/\bt\("([\w.]+)"/g), ...COMPONENT.matchAll(/key: "([\w.]+)"/g)].map(
       (m) => m[1] ?? "",

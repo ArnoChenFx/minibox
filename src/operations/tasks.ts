@@ -48,7 +48,7 @@ export function tasksOf(tasks: TaskReader | undefined): TaskReader {
   return tasks;
 }
 
-export const taskList = defineOperation({
+const taskList = defineOperation({
   name: "task.list",
   tag: "tasks",
   summary: "List tasks",
@@ -83,7 +83,7 @@ export const taskList = defineOperation({
   },
 });
 
-export const taskGet = defineOperation({
+const taskGet = defineOperation({
   name: "task.get",
   tag: "tasks",
   summary: "Get a task",
@@ -103,7 +103,7 @@ export const taskGet = defineOperation({
   },
 });
 
-export const taskCancel = defineOperation({
+const taskCancel = defineOperation({
   name: "task.cancel",
   tag: "tasks",
   summary: "Cancel a task",

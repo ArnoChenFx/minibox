@@ -341,20 +341,27 @@ describe("a rebuild and an edit of one template", () => {
       expect((await finishedTask(harness.base, started.json.taskId ?? "")).status).toBe("succeeded");
 
       // Hold the rebuild inside its build, once it already read the recipe it will write back.
+      const buildsBefore = harness.runtime.callsTo("buildImage").length;
       const held = harness.runtime.hold("buildImage");
-      const rebuilding = await call(harness.base, "/api/templates/mbtest-template:tool/rebuild", { method: "POST" });
-      expect(rebuilding.status).toBe(202);
-      for (let i = 0; i < 200 && harness.runtime.callsTo("buildImage").length === 0; i++) await Bun.sleep(10);
-      expect(harness.runtime.callsTo("buildImage").length).toBe(1);
+      try {
+        const rebuilding = await call(harness.base, "/api/templates/mbtest-template:tool/rebuild", { method: "POST" });
+        expect(rebuilding.status).toBe(202);
+        for (let i = 0; i < 200 && harness.runtime.callsTo("buildImage").length === buildsBefore; i++)
+          await Bun.sleep(10);
+        expect(harness.runtime.callsTo("buildImage").length).toBe(buildsBefore + 1);
 
-      const edited = await call(harness.base, editPath("mbtest-template:tool"), {
-        method: "PATCH",
-        body: { source: { kind: "dockerfile", text: FROM_ALPINE_21 } },
-      });
-      expect(refused(edited)).toEqual({ status: 409, key: "template_busy" });
+        const edited = await call(harness.base, editPath("mbtest-template:tool"), {
+          method: "PATCH",
+          body: { source: { kind: "dockerfile", text: FROM_ALPINE_21 } },
+        });
+        expect(refused(edited)).toEqual({ status: 409, key: "template_busy" });
 
-      held.release();
-      expect((await finishedTask(harness.base, rebuilding.json.taskId ?? "")).status).toBe("succeeded");
+        held.release();
+        expect((await finishedTask(harness.base, rebuilding.json.taskId ?? "")).status).toBe("succeeded");
+      } finally {
+        held.release();
+        await harness.app.tasks.drain();
+      }
       // The rebuild's own source is what the recipe holds: the refused edit wrote nothing to lose.
       expect(readRecipe(harness.app.hosts.get(), "tool")?.source).toEqual({ kind: "dockerfile", text: FROM_ALPINE });
     } finally {

@@ -549,12 +549,12 @@ describe.skipIf(!executablePath)("the terminal's height (real browser)", () => {
           const page = await context.newPage();
           await openTerminal(page);
           await drag(page, 60);
-          await page.waitForTimeout(300);
-          expect((await shape(page)).focused).toBe(true);
+          await webExpect.poll(async () => (await shape(page)).focused).toBe(true);
           const before = (harnessOf().runtime.tmux.paneText(consoleBoxId, "console") ?? "").length;
           await page.keyboard.type("h");
-          const typed = [...(harnessOf().runtime.tmux.paneText(consoleBoxId, "console") ?? "")].slice(before);
-          expect(typed).toEqual(["h"]);
+          await webExpect
+            .poll(() => [...(harnessOf().runtime.tmux.paneText(consoleBoxId, "console") ?? "")].slice(before))
+            .toEqual(["h"]);
         } finally {
           await context.close();
         }

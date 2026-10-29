@@ -1,7 +1,8 @@
-import { AppError } from "../lib/errors";
+import { AppError, notFound } from "../lib/errors";
 import { msg } from "../lib/messages";
 import type { TemplateInit } from "../services/template-builds";
 import type { BoxMount } from "../specs/types";
+import { mayManageStorage, refusal } from "../tokens/model";
 import { type CreateMount, isRoleMount, mountPointOf, type RoleRequest, roleRequests } from "../volumes/create-mounts";
 import { findSharedTools, leftoverWorkspace } from "../volumes/engine";
 import { poolForRole } from "../volumes/pools";
@@ -56,6 +57,14 @@ export async function assertCanSkipTrash(ctx: OperationContext): Promise<void> {
 }
 
 /**
+ * Deleting a box together with its volumes is explicit volume deletion, so it needs the identity that may delete volumes:
+ * the owner or an unmodified admin token. A box-scoped token may still delete the box and keep its volumes.
+ */
+export function assertCanDeleteBoxVolumes(ctx: OperationContext): void {
+  if (!mayManageStorage(ctx.principal)) throw refusal("storage_admin_required");
+}
+
+/**
  * Whether the caller may delete one volume. A batch or a prune asks per volume, so a refusal for one volume leaves the
  * others to be judged on their own.
  */
@@ -94,7 +103,8 @@ export async function assertTemplateSetupAllowed(ctx: OperationContext, setup: T
 /**
  * Checks the mounts a create, update or rebuild asks for. A mount the box already has, with the same volume, path and
  * mode, is kept and is not checked again. Any other mount needs `volume:attach` on its volume, and a read-write one
- * also needs `volume:write`. A name with no record is a volume to create, so it needs `volume:write` either way.
+ * also needs `volume:write`. A name with no record is a new independent volume, which is volume administration: only
+ * the owner or an unmodified admin token may ask for one (`storage_admin_required`), and it needs `volume:write` too.
  */
 export async function assertCanChangeMounts(
   ctx: OperationContext,
@@ -108,6 +118,7 @@ export async function assertCanChangeMounts(
       (item) => item.volume === engineName && item.path === mount.path && item.mode === mount.mode,
     );
     if (kept) continue;
+    if (!record && !mayManageStorage(ctx.principal)) throw refusal("storage_admin_required");
     const volume: VolumeRef = record ?? { name: mount.volume };
     await assertCanAttach(ctx, volume);
     if (!record || mount.mode === "rw") await assertCanWrite(ctx, volume);
@@ -140,13 +151,16 @@ async function assertCanCreateRoleVolumes(
   boxName: string,
   requests: readonly RoleRequest[],
 ): Promise<void> {
+  if (requests.some((request) => request.pool !== undefined) && !mayManageStorage(ctx.principal)) {
+    throw refusal("storage_admin_required");
+  }
   const roles = requests.map((request) => request.role);
   for (const request of requests) {
     if (request.pool !== undefined && !poolNamed(ctx, request.pool)) {
       throw new AppError(400, "validation_failed", msg("pool_not_found", { pool: request.pool }), { field: "mounts" });
     }
   }
-  if (roles.includes("workspace")) {
+  if (requests.some((request) => request.role === "workspace" && request.pool === undefined)) {
     const leftover = await leftoverWorkspace(ctx.host, boxName);
     if (leftover) {
       const volume: VolumeRef = leftover.record ?? { name: leftover.engineName };
@@ -171,7 +185,9 @@ function poolNamed(ctx: OperationContext, name: string): StoragePool | null {
 /**
  * Checks the mounts a create asks for. A mount of a recorded volume is an attachment: `volume:attach` on it, and
  * `volume:write` for a read-write one. A role mount makes a new volume, so it needs `volume:write`, and the tools role
- * also needs `volume:attach` when the shared tools volume already exists.
+ * also needs `volume:attach` when the shared tools volume already exists. A create never makes a volume from a name,
+ * so a name with no record on this host is `404 volume_not_found` for every caller, as the create itself would answer,
+ * rather than the `storage_admin_required` a rebuild gives a new name.
  */
 export async function assertCanCreateMounts(
   ctx: OperationContext,
@@ -181,6 +197,12 @@ export async function assertCanCreateMounts(
   const attached: BoxMount[] = mounts.flatMap((mount) =>
     isRoleMount(mount) ? [] : [{ volume: mount.volume, ...mountPointOf(mount) }],
   );
+  for (const mount of attached) {
+    const record = ctx.host.volumes.resolve(mount.volume, ctx.host.host.id);
+    if (!record || record.hostId !== ctx.host.host.id) {
+      throw notFound(msg("volume_not_found", { volume: mount.volume }));
+    }
+  }
   await assertCanChangeMounts(ctx, attached, []);
   await assertCanCreateRoleVolumes(ctx, boxName, roleRequests(mounts));
 }

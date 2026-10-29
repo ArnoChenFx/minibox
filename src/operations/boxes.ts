@@ -44,6 +44,7 @@ import {
   assertCanChangeMounts,
   assertCanCreateDefaultMounts,
   assertCanCreateMounts,
+  assertCanDeleteBoxVolumes,
   assertCanSkipTrash,
   assertTemplateSetupAllowed,
 } from "./authz";
@@ -141,7 +142,7 @@ export const boxList = defineOperation({
   },
 });
 
-export const boxGet = defineOperation({
+const boxGet = defineOperation({
   name: "box.get",
   tag: "boxes",
   summary: "Get one box",
@@ -420,11 +421,12 @@ export const boxDelete = defineOperation({
     toolset: "core",
     name: "delete_box",
     description:
-      "Delete a box and its container. Its data is first kept in the recycle bin for the retention period, and restore_trash brings it back as a new box. Pass deleteVolume to remove volumes that this box owns and that no other box mounts. Independent volumes, including the shared tools volume, are kept. Pass skipTrash true to delete without keeping a copy; that needs the owner, or a token with the trash:skip scope.",
+      "Delete a box and its container. Its data is first kept in the recycle bin for the retention period, and restore_trash brings it back as a new box. Pass deleteVolume to remove volumes that this box owns and that no other box mounts; that needs the owner or an unmodified admin token, and any other token gets 403 storage_admin_required before anything is deleted. Independent volumes, including the shared tools volume, are kept. Pass skipTrash true to delete without keeping a copy; that needs the owner, or a token with the trash:skip scope.",
   },
   hostFor: (ctx, input) => hostOfBox(ctx, input.id),
   resolve: ({ host }, input) => getBox(host, input.id),
   precondition: async (ctx, input) => {
+    if (input.deleteVolume) assertCanDeleteBoxVolumes(ctx);
     if (input.skipTrash) await assertCanSkipTrash(ctx);
   },
   activity: { action: () => "box.delete", target: (_input, box) => box.name },
@@ -437,7 +439,7 @@ export const boxDelete = defineOperation({
     }),
 });
 
-export const boxAction = defineOperation({
+const boxAction = defineOperation({
   name: "box.action",
   tag: "boxes",
   summary: "Start, stop or restart a box",
@@ -519,7 +521,7 @@ function inPlacePatch(input: {
   return Object.keys(patch).length > 0 ? patch : undefined;
 }
 
-export const boxUpdate = defineOperation({
+const boxUpdate = defineOperation({
   name: "box.update",
   tag: "boxes",
   summary: "Update a box in place",
@@ -596,7 +598,7 @@ export const boxUpdate = defineOperation({
   },
 });
 
-export const boxRebuild = defineOperation({
+const boxRebuild = defineOperation({
   name: "box.rebuild",
   tag: "boxes",
   summary: "Rebuild a box from its spec",
@@ -672,7 +674,7 @@ const LeftoverSchema = z.object({
   name: z.string(),
 });
 
-export const boxMove = defineOperation({
+const boxMove = defineOperation({
   name: "box.move",
   tag: "boxes",
   summary: "Move a box to another host",
@@ -756,7 +758,7 @@ export const boxLogs = defineOperation({
   run: async ({ host }, input) => ({ logs: await getLogs(host, input.id, input.tail) }),
 });
 
-export const boxStats = defineOperation({
+const boxStats = defineOperation({
   name: "box.stats",
   tag: "boxes",
   summary: "Read the current resource usage of a box",
