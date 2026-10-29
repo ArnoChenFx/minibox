@@ -120,7 +120,7 @@ export function hostFirewallMethods(
     },
 
     async allowHostForward(owner, bridge) {
-      if (!/^[A-Za-z0-9][A-Za-z0-9_.-]{0,14}$/.test(bridge))
+      if (bridge !== "" && !/^[A-Za-z0-9][A-Za-z0-9_.-]{0,14}$/.test(bridge))
         throw new RuntimeError("invalid", `${bridge} is not an interface name`);
       await images.pullImage(HOST_FIREWALL_IMAGE);
       const result = await runHelper(engine.docker, {

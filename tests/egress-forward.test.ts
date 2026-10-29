@@ -481,3 +481,20 @@ describe("the helper scripts", () => {
     expect(FORWARD_REPAIR_SCRIPT).toContain("exit 4");
   });
 });
+
+test("an unread port exception keeps a later drop or accept uncertain", () => {
+  for (const target of ["DROP", "ACCEPT"]) {
+    const verdict = judgeForwardReport(
+      report([BRIDGE], {
+        iptables: [
+          "-P FORWARD DROP",
+          `-A FORWARD -i ${BRIDGE} -p tcp -m tcp --dport 443 -j ACCEPT`,
+          `-A FORWARD -i ${BRIDGE} -j ${target}`,
+        ],
+      }),
+      PROBE,
+    );
+    expect(verdict.cause).toBeNull();
+    expect(verdict.backends[0]?.unsure).toBe(true);
+  }
+});
