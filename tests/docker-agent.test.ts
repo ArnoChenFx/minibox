@@ -161,7 +161,12 @@ describe.skipIf(!enabled)("an agent host, against a real engine", () => {
       });
       clientDone = client.run();
 
-      await waitFor(() => app.hosts.get("edge").host.status === "online", "the agent host to go online");
+      // Online comes from the link, and the engine's version from the check the connection starts, so the version is
+      // waited for as well: a read in between sees an online host that has not been asked yet.
+      await waitFor(
+        () => typeof app.hostAdmin.list().find((host) => host.id === "edge")?.dockerVersion === "string",
+        "the agent host to go online with the engine's version",
+      );
       const hosts = (await (await api("/api/hosts")).json()) as { hosts: Array<Record<string, unknown>> };
       const version = await docker.version();
       expect(hosts.hosts.find((host) => host.id === "edge")).toMatchObject({
