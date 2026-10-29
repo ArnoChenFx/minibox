@@ -4,7 +4,7 @@ import { type Browser, type BrowserContext, chromium, expect as webExpect, type 
 
 import type { App } from "../src/app";
 import { startServer } from "../src/server";
-import { createDeclaredTemplate, readRecipe } from "../src/services/template-builds";
+import { createDeclaredTemplate, readRecipe, editRecipe, templateAndRecipe } from "../src/services/template-builds";
 import { initOf, readPorts } from "../web/js/lib/template-edit.js";
 import { createTestApp, silenceLogs, TEST_KEY } from "./support/app";
 import { chromiumFor } from "./support/chromium";
@@ -343,6 +343,26 @@ describe.skipIf(!executablePath)("editing a template from the Templates page (re
       return active;
     })()`);
       expect(active).toBe("focusSecond");
+    },
+    TIMEOUT_MS,
+  );
+  test(
+    "changing ports preserves a multiline argv that the one-line command field normalizes",
+    async () => {
+      const host = app?.hosts.get();
+      if (!host) throw new Error("the test app has a host");
+      const argv = ["printf", "%s", "first\nsecond", "", "$LITERAL"];
+      const [declared] = await templateAndRecipe(host, "mbtest-template:tool");
+      editRecipe(host, declared, { init: { postCreate: argv, forwardPorts: [] } });
+      await page.reload();
+      await card("tool").getByRole("button", { name: "Edit", exact: true }).click();
+      await webExpect(dialog()).toBeVisible();
+      await dialog().locator("#tePorts").fill("3030");
+      const response = page.waitForResponse((reply) => reply.request().method() === "PATCH");
+      await dialog().getByRole("button", { name: "Save changes" }).click();
+      expect((await response).status()).toBe(200);
+      await webExpect(dialog()).toHaveCount(0);
+      expect(readRecipe(host, "tool")?.init).toEqual({ postCreate: argv, forwardPorts: [3030] });
     },
     TIMEOUT_MS,
   );

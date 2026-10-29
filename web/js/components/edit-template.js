@@ -137,6 +137,7 @@ export async function openEditTemplate({ card, onEdited } = {}) {
     footer: `<button class="btn" data-close>${esc(t("common.cancel"))}</button><button class="btn btn-primary" id="teOk">${icon(ICON)}${esc(t("tp.editConfirm"))}</button>`,
   });
   const q = (selector) => root.querySelector(selector);
+  const initialCommand = q("#tePostCreate").value;
 
   const showKind = (kind) => {
     state.kind = kind;
@@ -192,7 +193,7 @@ export async function openEditTemplate({ card, onEdited } = {}) {
         body: {
           ...(built.source === undefined ? {} : { source: built.source }),
           init:
-            q("#tePostCreate").value === commandText(recipe.postCreate)
+            q("#tePostCreate").value === initialCommand
               ? { postCreate: recipe.postCreate ?? [], forwardPorts: ports.ports }
               : initOf(q("#tePostCreate").value, ports.ports),
           ...(description === "" ? {} : { description }),
