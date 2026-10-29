@@ -498,3 +498,21 @@ test("an unread port exception keeps a later drop or accept uncertain", () => {
     expect(verdict.backends[0]?.unsure).toBe(true);
   }
 });
+
+test("an unread port exception also keeps a jump into a chain that accepts or drops uncertain", () => {
+  for (const target of ["DROP", "ACCEPT"]) {
+    const verdict = judgeForwardReport(
+      report([BRIDGE], {
+        iptables: [
+          "-P FORWARD DROP",
+          `-A FORWARD -i ${BRIDGE} -p tcp -m tcp --dport 443 -j ACCEPT`,
+          "-A FORWARD -j CUSTOM",
+          `-A CUSTOM -i ${BRIDGE} -j ${target}`,
+        ],
+      }),
+      PROBE,
+    );
+    expect(verdict.cause).toBeNull();
+    expect(verdict.backends[0]?.unsure).toBe(true);
+  }
+});

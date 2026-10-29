@@ -51,7 +51,7 @@ export default {
   "ov.forwardRepairHint": "先询问，确认后由 MiniBox 放行出站上行网络穿过宿主机的 FORWARD 链",
   "ov.forwardRepairTitle": "在 {host} 上放行出站上行网络？",
   "ov.forwardRepairMessage":
-    "MiniBox 会在 {host} 上添加一条规则：它自己的链，跳转挂在 FORWARD 末尾，上面的规则仍先行决定，只接受来自 {bridge} 且从宿主机默认路由出去的新连接及其回程。宿主机防火墙的其它部分都不动。其上的仅代理 Box 恢复上网；开放出站的 Box 本来就不受影响。",
+    "MiniBox 会在 {host} 上添加自己的链，并在 FORWARD 末尾追加一条跳转到它的规则，所以它上面的规则仍先行决定。该链接受来自 {bridge}、从宿主机默认路由出去的新连接及其回程，不管目的地是哪里。宿主机防火墙的其它部分都不动。其上的仅代理 Box 恢复上网；开放出站的 Box 本来就不受影响。",
   "ov.forwardRepairWhat":
     "如果更愿意手动处理，命令见网络出站指南：https://github.com/ArnoChenFx/minibox/blob/main/docs/zh-CN/admin/network-egress.md#仅代理的-box-无法上网时。检查确认规则正确之前，这条警告会一直保留。",
   "ov.forwardRepaired": "已添加 FORWARD 规则",

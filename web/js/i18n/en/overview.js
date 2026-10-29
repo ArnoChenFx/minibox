@@ -54,7 +54,7 @@ export default {
   "ov.forwardRepairHint": "Ask first, then let MiniBox allow the egress uplink through the host's FORWARD chain",
   "ov.forwardRepairTitle": "Allow the egress uplink on {host}?",
   "ov.forwardRepairMessage":
-    "MiniBox will add one rule on {host}: its own chain, jumped to at the end of FORWARD so every rule above it still decides first, that accepts new connections arriving on {bridge} and leaving through the host's default route, plus their replies. Nothing else on the host's firewall changes. Proxy-only boxes there get the internet back; open boxes were never affected.",
+    "MiniBox will add its own chain on {host} and append one jump to it at the end of FORWARD, so every rule above it still decides first. The chain accepts new connections arriving on {bridge} and leaving through the host's default route, wherever they are going, plus their replies. Nothing else on the host's firewall changes. Proxy-only boxes there get the internet back; open boxes were never affected.",
   "ov.forwardRepairWhat":
     "If you would rather do it by hand, the commands are in the network egress guide: https://github.com/ArnoChenFx/minibox/blob/main/docs/admin/network-egress.md#when-a-proxy-only-box-has-no-internet. The warning stays until a check finds the rules right.",
   "ov.forwardRepaired": "Added the FORWARD rule",

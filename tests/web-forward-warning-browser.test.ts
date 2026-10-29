@@ -101,10 +101,13 @@ describe.skipIf(!executablePath)("the forward warning on the overview (real brow
     await page.waitForSelector("#cfm-ok");
     const dialog = page.locator(".dialog, .modal").last();
     const text = await dialog.innerText();
-    expect(text).toContain("MiniBox will add one rule on");
-    // The wording the review objected to: it must not claim the top of FORWARD is where the rule goes.
+    expect(text).toContain("MiniBox will add its own chain on");
+    // The wording the review objected to: what is added is a chain, its rules and one jump, not "one rule", and the
+    // jump goes at the end of FORWARD, never the top.
+    expect(text).not.toContain("one rule");
     expect(text).not.toContain("jumped to from the top");
     expect(text).toContain("end of FORWARD");
+    expect(text).toContain("wherever they are going");
   });
 
   test("a drop a rule of the host's own makes offers no button, and says so in its own words", async () => {
