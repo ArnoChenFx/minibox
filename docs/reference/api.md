@@ -196,9 +196,9 @@ The tables below list every operation in [`openapi.json`](../openapi.json), grou
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/api/volumes` | List volumes |
+| `GET` | `/api/volumes` | List volumes. Each has `sharedTools`: `true` only for the shared tools volume that boxes mount, which cannot be deleted |
 | `POST` | `/api/volumes` | Create an independent volume. Only the owner may set `role: "tools"`; a token, even an unmodified admin token, gets `403 volume_tools_create_forbidden` |
-| `GET` | `/api/volumes/{id}` | Get a volume |
+| `GET` | `/api/volumes/{id}` | Get a volume, with the same `sharedTools` field |
 | `DELETE` | `/api/volumes/{id}` | Delete a volume. Its data is kept in the recycle bin unless `skipTrash=true`. The shared tools volume answers `409 volume_shared_tools`; a spare tools-role volume that boxes do not get can be deleted. The response's `trash` names the entry, or is `null` |
 | `POST` | `/api/volumes/delete` | Delete up to 100 volumes by `ids`, on any host. Without `confirm: true` the answer is `409` with `details.preview`. Each volume has its own result in `volumes`, and one failure does not stop the others. A volume outside the credential's resource grants is refused with `volume_delete_forbidden`. Takes `skipTrash` |
 | `POST` | `/api/volumes/prune` | List the orphaned volumes: MiniBox volumes that no box or container uses. With `dryRun: false` the volumes named in `ids`, which must be the ids the dry run listed, are removed; nothing else is, and a named volume that is no longer an orphan, or is the tools volume, a system volume or in use, is refused with its reason. `dryRun` defaults to `true`. Owner or unmodified admin only. `olderThan`, such as `30d`, keeps the volumes used more recently. Each host is reported in `hosts`. An offline or failing host is skipped |

@@ -171,6 +171,10 @@ export const VolumeSchema = z.object({
     description:
       "The box that owned this volume was deleted and kept it. Deleting the volume frees its space once no box mounts it.",
   }),
+  sharedTools: z.boolean().meta({
+    description:
+      "This is the shared tools volume, the one boxes on its host mount at /opt/minibox/tools, so it cannot be deleted. A spare tools-role volume beside it is false and can be deleted by name. Prune skips every tools-role volume.",
+  }),
 });
 
 const volumeTarget = (volume: Pick<VolumeView, "id" | "name">): EventTarget => ({

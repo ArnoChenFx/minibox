@@ -10,26 +10,33 @@ import {
   unselectableReason,
 } from "../web/js/lib/volume-select.js";
 
-const volume = (id: string, extra: { role?: string | null; mounts?: unknown[] } = {}) => ({
+const volume = (id: string, extra: { sharedTools?: boolean; mounts?: unknown[] } = {}) => ({
   id,
-  role: extra.role ?? null,
+  sharedTools: extra.sharedTools ?? false,
   mounts: extra.mounts ?? [],
 });
 
 describe("which volumes a batch can select", () => {
   test("the shared tools volume and a volume a box mounts cannot be selected", () => {
-    expect(unselectableReason(volume("tools", { role: "tools" }))).toBe("tools");
+    expect(unselectableReason(volume("tools", { sharedTools: true }))).toBe("tools");
     expect(unselectableReason(volume("mounted", { mounts: [{ boxName: "alpha" }] }))).toBe("mounted");
     expect(unselectableReason(volume("plain"))).toBeNull();
   });
 
+  test("a spare tools volume, which the server does not mark as shared, can be selected", () => {
+    const spare = { id: "spare", role: "tools", sharedTools: false, mounts: [] };
+    expect(unselectableReason(spare)).toBeNull();
+    expect([...toggleOne(new Set(), spare, true)]).toEqual(["spare"]);
+    expect([...toggleAll(new Set(), [spare, volume("shared", { sharedTools: true })])]).toEqual(["spare"]);
+  });
+
   test("the tools volume is reported as tools even when a box also mounts it", () => {
-    expect(unselectableReason(volume("both", { role: "tools", mounts: [{}] }))).toBe("tools");
+    expect(unselectableReason(volume("both", { sharedTools: true, mounts: [{}] }))).toBe("tools");
   });
 });
 
 describe("the header checkbox", () => {
-  const matches = [volume("a"), volume("b", { role: "tools" }), volume("c", { mounts: [{}] }), volume("d")];
+  const matches = [volume("a"), volume("b", { sharedTools: true }), volume("c", { mounts: [{}] }), volume("d")];
 
   test("selects every selectable match, and no volume that cannot be selected", () => {
     expect([...toggleAll(new Set(), matches)]).toEqual(["a", "d"]);
@@ -56,7 +63,7 @@ describe("the header checkbox", () => {
       checked: true,
       indeterminate: false,
     });
-    expect(headerState(new Set(), [volume("t", { role: "tools" })])).toEqual({
+    expect(headerState(new Set(), [volume("t", { sharedTools: true })])).toEqual({
       disabled: true,
       checked: false,
       indeterminate: false,
@@ -73,7 +80,7 @@ describe("a row's checkbox", () => {
   });
 
   test("never adds a volume that cannot be selected", () => {
-    expect([...toggleOne(new Set(), volume("tools", { role: "tools" }), true)]).toEqual([]);
+    expect([...toggleOne(new Set(), volume("tools", { sharedTools: true }), true)]).toEqual([]);
     expect([...toggleOne(new Set(), volume("mounted", { mounts: [{}] }), true)]).toEqual([]);
   });
 });

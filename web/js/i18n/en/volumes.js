@@ -187,6 +187,8 @@ export default {
   "vol.statusStagedText": "Mounts on {boxes} when its staged changes apply.",
   "vol.cleanupHint": "Can clean up",
   "vol.cleanupHintText": "No box mounts this volume. Delete it, or use Prune orphans, to free its space.",
+  "vol.cleanupHintSpareTools":
+    "A spare tools volume: boxes mount the shared one instead. Delete it to free its space; Clean up orphaned volumes skips tools volumes.",
   "vol.mountsMore": "+{n} more",
   "vol.cap.shareable": "Shared",
   "vol.cap.snapshots": "Snapshots",

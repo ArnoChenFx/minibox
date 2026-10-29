@@ -104,6 +104,39 @@ test("a spare tools volume can be deleted by name, singly or in a batch, while t
   expect(refusedShared.json.error?.key).toBe("volume_shared_tools");
 });
 
+test("the volume list and detail mark only the shared tools volume as sharedTools", async () => {
+  const h = harness();
+  expect((await call(h.base, "/api/boxes", { body: { name: "first" } })).status).toBe(201);
+  const shared = findSharedTools(h.app.hosts.get(), "local")!;
+  const spare = await call(h.base, "/api/volumes", {
+    body: { name: "spare-tools", pool: "local", role: "tools", confirm: true },
+  });
+  const plain = await call(h.base, "/api/volumes", { body: { name: "notes", confirm: true } });
+  const spareId = spare.json.volume!.id as string;
+  const plainId = plain.json.volume!.id as string;
+
+  const list = await call(h.base, "/api/volumes", { method: "GET" });
+  expect(list.status).toBe(200);
+  const flags = new Map(
+    (list.json.volumes as unknown as { id: string; sharedTools: boolean }[]).map((v) => [v.id, v.sharedTools]),
+  );
+  expect(flags.get(shared.id)).toBe(true);
+  expect(flags.get(spareId)).toBe(false);
+  expect(flags.get(plainId)).toBe(false);
+  // Every volume carries the flag, not only tools volumes.
+  expect([...flags.values()].every((flag) => typeof flag === "boolean")).toBe(true);
+
+  for (const [id, expected] of [
+    [shared.id, true],
+    [spareId, false],
+    [plainId, false],
+  ] as const) {
+    const detail = await call(h.base, `/api/volumes/${id}`, { method: "GET" });
+    expect(detail.status).toBe(200);
+    expect((detail.json.volume as unknown as { sharedTools: boolean }).sharedTools).toBe(expected);
+  }
+});
+
 test("prune never removes a tools volume, spare or shared", async () => {
   const h = harness();
   const spare = await call(h.base, "/api/volumes", {

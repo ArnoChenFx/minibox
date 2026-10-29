@@ -73,6 +73,11 @@ export interface VolumeView {
   engineMissing: boolean;
   /** The box that owned this volume was deleted and kept it. Deleting the volume frees its space once no box mounts it. */
   ownerMissing: boolean;
+  /**
+   * The tools volume boxes on this host mount, which no delete removes. A spare tools-role volume beside it is false, so
+   * it can be deleted by name like any other volume.
+   */
+  sharedTools: boolean;
 }
 
 export interface PoolsView {
@@ -143,6 +148,7 @@ function viewOf(host: HostCtx, volume: VolumeRecord, engineMissing: boolean): Vo
     rwMounts: mounts.filter((mount) => mount.mode === "rw").length,
     engineMissing,
     ownerMissing: ownerGone(host, volume),
+    sharedTools: protectedReason(host, volume, { named: true }) !== null,
   };
 }
 

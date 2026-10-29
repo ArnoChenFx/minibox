@@ -13913,6 +13913,10 @@
                           "ownerMissing": {
                             "type": "boolean",
                             "description": "The box that owned this volume was deleted and kept it. Deleting the volume frees its space once no box mounts it."
+                          },
+                          "sharedTools": {
+                            "type": "boolean",
+                            "description": "This is the shared tools volume, the one boxes on its host mount at /opt/minibox/tools, so it cannot be deleted. A spare tools-role volume beside it is false and can be deleted by name. Prune skips every tools-role volume."
                           }
                         },
                         "required": [
@@ -13936,7 +13940,8 @@
                           "unattached",
                           "rwMounts",
                           "engineMissing",
-                          "ownerMissing"
+                          "ownerMissing",
+                          "sharedTools"
                         ],
                         "additionalProperties": false
                       }
@@ -14292,6 +14297,10 @@
                         "ownerMissing": {
                           "type": "boolean",
                           "description": "The box that owned this volume was deleted and kept it. Deleting the volume frees its space once no box mounts it."
+                        },
+                        "sharedTools": {
+                          "type": "boolean",
+                          "description": "This is the shared tools volume, the one boxes on its host mount at /opt/minibox/tools, so it cannot be deleted. A spare tools-role volume beside it is false and can be deleted by name. Prune skips every tools-role volume."
                         }
                       },
                       "required": [
@@ -14315,7 +14324,8 @@
                         "unattached",
                         "rwMounts",
                         "engineMissing",
-                        "ownerMissing"
+                        "ownerMissing",
+                        "sharedTools"
                       ],
                       "additionalProperties": false
                     }
@@ -14654,6 +14664,10 @@
                         "ownerMissing": {
                           "type": "boolean",
                           "description": "The box that owned this volume was deleted and kept it. Deleting the volume frees its space once no box mounts it."
+                        },
+                        "sharedTools": {
+                          "type": "boolean",
+                          "description": "This is the shared tools volume, the one boxes on its host mount at /opt/minibox/tools, so it cannot be deleted. A spare tools-role volume beside it is false and can be deleted by name. Prune skips every tools-role volume."
                         }
                       },
                       "required": [
@@ -14677,7 +14691,8 @@
                         "unattached",
                         "rwMounts",
                         "engineMissing",
-                        "ownerMissing"
+                        "ownerMissing",
+                        "sharedTools"
                       ],
                       "additionalProperties": false
                     }
@@ -17251,6 +17266,10 @@
                         "ownerMissing": {
                           "type": "boolean",
                           "description": "The box that owned this volume was deleted and kept it. Deleting the volume frees its space once no box mounts it."
+                        },
+                        "sharedTools": {
+                          "type": "boolean",
+                          "description": "This is the shared tools volume, the one boxes on its host mount at /opt/minibox/tools, so it cannot be deleted. A spare tools-role volume beside it is false and can be deleted by name. Prune skips every tools-role volume."
                         }
                       },
                       "required": [
@@ -17274,7 +17293,8 @@
                         "unattached",
                         "rwMounts",
                         "engineMissing",
-                        "ownerMissing"
+                        "ownerMissing",
+                        "sharedTools"
                       ],
                       "additionalProperties": false
                     }
@@ -17659,6 +17679,10 @@
                         "ownerMissing": {
                           "type": "boolean",
                           "description": "The box that owned this volume was deleted and kept it. Deleting the volume frees its space once no box mounts it."
+                        },
+                        "sharedTools": {
+                          "type": "boolean",
+                          "description": "This is the shared tools volume, the one boxes on its host mount at /opt/minibox/tools, so it cannot be deleted. A spare tools-role volume beside it is false and can be deleted by name. Prune skips every tools-role volume."
                         }
                       },
                       "required": [
@@ -17682,7 +17706,8 @@
                         "unattached",
                         "rwMounts",
                         "engineMissing",
-                        "ownerMissing"
+                        "ownerMissing",
+                        "sharedTools"
                       ],
                       "additionalProperties": false
                     }
@@ -33910,6 +33935,10 @@
                     "ownerMissing": {
                       "type": "boolean",
                       "description": "The box that owned this volume was deleted and kept it. Deleting the volume frees its space once no box mounts it."
+                    },
+                    "sharedTools": {
+                      "type": "boolean",
+                      "description": "This is the shared tools volume, the one boxes on its host mount at /opt/minibox/tools, so it cannot be deleted. A spare tools-role volume beside it is false and can be deleted by name. Prune skips every tools-role volume."
                     }
                   },
                   "required": [
@@ -33933,7 +33962,8 @@
                     "unattached",
                     "rwMounts",
                     "engineMissing",
-                    "ownerMissing"
+                    "ownerMissing",
+                    "sharedTools"
                   ],
                   "additionalProperties": false
                 },

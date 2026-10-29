@@ -247,11 +247,11 @@ export default {
   "st.scope.tool:install": "Install and remove tools and templates",
   "st.scope.secret:use": "Use host secrets",
   "st.scope.trash:skip": "Delete without the recycle bin",
-  "st.scope.volume:delete": "Batch delete volumes",
+  "st.scope.volume:delete": "Delete volumes",
   "st.scopeHint.secret:use":
     "A box's environment variables and startup command can receive secrets stored on the host.",
   "st.scopeHint.trash:skip": "A deleted box skips the recycle bin and cannot be recovered.",
-  "st.scopeHint.volume:delete": "Deletes several volumes at once. Their data cannot be recovered.",
+  "st.scopeHint.volume:delete": "Deletes volumes, including several at once. Their data cannot be recovered.",
   "st.tokenBoxes": "Boxes",
   "st.tokenBoxesCreated": "Created by this token",
   "st.tokenBoxesAll": "Every box",
