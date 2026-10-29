@@ -23,7 +23,7 @@ import {
 } from "./model";
 
 /** Live tokens kept at once. Revoked tokens are kept separately, up to the same number, newest first. */
-export const MAX_TOKENS = 100;
+const MAX_TOKENS = 100;
 const SWEEP_MS = 10_000;
 const SAVE_INTERVAL_MS = 60_000;
 const FILE_VERSION = 1;

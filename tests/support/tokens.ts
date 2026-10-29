@@ -154,7 +154,7 @@ export interface CheckpointBody {
   system: { image: string; imageId: string } | null;
 }
 
-export interface RollbackPreviewBody {
+interface RollbackPreviewBody {
   checkpoint: { id: string; label: string };
   restores: { path: string; role: string | null; volume: string }[];
   revision: { current: number; next: number };

@@ -31,7 +31,7 @@ import type { RecordNote } from "./volume-owner";
 import { errorOutcome, hostOffline, messageOutcome, type OutcomeError, volumesInUse } from "./volume-refs";
 import { protectedReason, removeGuarded } from "./volume-remove";
 
-export interface VolumeMountView {
+interface VolumeMountView {
   boxId: string;
   boxName: string;
   path: string;
@@ -39,7 +39,7 @@ export interface VolumeMountView {
 }
 
 /** The usage a volume view shows. The trend is what this process has sampled, so it starts empty after a restart. */
-export interface VolumeUsageView {
+interface VolumeUsageView {
   /** `share` for an NFS volume, whose figure is the usage of the whole share rather than of the volume. */
   scope: UsageScope;
   level: UsageLevel;
@@ -326,7 +326,7 @@ export async function deleteVolume(
 }
 
 /** Why a batch delete does not remove a volume. `in_use`, `forbidden` and `tools` are refusals; the rest are failures. */
-export type DeleteBlock = "in_use" | "forbidden" | "tools" | "not_found" | "offline" | "unavailable";
+type DeleteBlock = "in_use" | "forbidden" | "tools" | "not_found" | "offline" | "unavailable";
 
 const REFUSED_BLOCKS: ReadonlySet<DeleteBlock> = new Set(["in_use", "forbidden", "tools"]);
 

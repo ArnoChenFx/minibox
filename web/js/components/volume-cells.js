@@ -11,7 +11,6 @@ import { esc } from "../lib/dom.js";
 import { dateTime, relTime } from "../lib/format.js";
 import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
-import { snapshotPlan } from "../lib/volume-row.js";
 import { unselectableReason } from "../lib/volume-select.js";
 import { mountModeLabel } from "./mount-editor.js";
 
@@ -143,11 +142,6 @@ export function latestHtml(checkpoint) {
 export function rowButton(action, volume, iconName, label, { danger = false, block = "" } = {}) {
   const title = block ? `${label}: ${t(block)}` : label;
   return `<button type="button" class="icon-btn${danger ? " danger" : ""}" data-action="${action}" data-id="${esc(volume.id)}" data-name="${esc(volume.name)}" title="${esc(title)}" aria-label="${esc(label)}"${block ? " disabled" : ""}>${icon(iconName)}</button>`;
-}
-
-/** The snapshot button of a volume, disabled when its plan says the snapshot cannot be taken. */
-export function snapshotButton(volume) {
-  return rowButton("snapshot", volume, "camera", t("vol.snapshot"), { block: snapshotPlan(volume).block });
 }
 
 /** The checkbox that picks one volume, disabled with the reason when the server would refuse it. */

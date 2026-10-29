@@ -334,7 +334,7 @@ async function assertImageUsable(
   throw refusal(refusedAs);
 }
 
-export function imageViewOf(host: HostCtx, labels: Record<string, string>): ImageView {
+function imageViewOf(host: HostCtx, labels: Record<string, string>): ImageView {
   return {
     createdBy: labels[host.keys.createdBy] || null,
     sourceId: labels[host.keys.snapshotOfId] || null,

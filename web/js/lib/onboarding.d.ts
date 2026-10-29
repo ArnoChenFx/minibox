@@ -75,8 +75,6 @@ export declare const CLIENT_IDS: readonly ClientId[];
 
 export declare const SERVER_NAME: string;
 
-export declare const ONBOARDING_STORAGE_KEY: string;
-
 export declare function onboardingShown(options: {
   boxes: readonly unknown[] | null | undefined;
   state: OnboardingState | null | undefined;

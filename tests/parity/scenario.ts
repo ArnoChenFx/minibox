@@ -27,7 +27,7 @@ const HOST = { cpu: { cores: 4 }, memory: { total: 8 * GB } } as unknown as Host
  * Replaces values that differ between runs: container and image ids, timestamps, snapshot stamps and event ids. Event
  * clock values become 0 rather than a placeholder, so each body is still JSON that the OpenAPI schema check can read.
  */
-export function normalize(text: string): string {
+function normalize(text: string): string {
   return text
     .replace(/mbx_[A-Za-z0-9_-]{20,}/g, "<token>")
     .replace(/"prefix":"mbx_[A-Za-z0-9_-]+"/g, '"prefix":"<prefix>"')

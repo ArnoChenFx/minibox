@@ -112,7 +112,7 @@ function offsetAt(timezone: string, ms: number): number {
  * with the offset before the change, so it runs that much later. A time that happens twice, when the clocks go
  * back, is the first of the two. `day` may run past the month, as with Date.UTC.
  */
-export function zonedInstant(
+function zonedInstant(
   timezone: string,
   year: number,
   month: number,
@@ -149,7 +149,7 @@ export function ruleOf(input: {
   return { mode: "daily", everyHours: null, at: input.at ?? null, timezone };
 }
 
-export const ScheduleRunSchema = z.strictObject({
+const ScheduleRunSchema = z.strictObject({
   at: z.iso.datetime(),
   status: z.enum(["ok", "skipped", "failed"]),
   reason: z.string().nullable(),

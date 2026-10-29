@@ -24,7 +24,7 @@ import type { OperationContext } from "./types";
 import { boxId, checkpointLabel, checkpointReason, field } from "./validation";
 
 /** The states an agent reports. The console shows them in the activity feed. */
-export const AGENT_STATES = ["working", "waiting", "done", "failed"] as const;
+const AGENT_STATES = ["working", "waiting", "done", "failed"] as const;
 type AgentState = (typeof AGENT_STATES)[number];
 
 const NOTE_MAX = 500;
@@ -96,7 +96,7 @@ function selfTakeInput(input: SelfCheckpointInput): TakeCheckpointInput {
   };
 }
 
-export const selfInfo = defineOperation({
+const selfInfo = defineOperation({
   name: "self.info",
   tag: "self",
   summary: "Get this box's name, size and remaining TTL",
@@ -134,7 +134,7 @@ export const selfInfo = defineOperation({
   },
 });
 
-export const selfCheckpoint = defineOperation({
+const selfCheckpoint = defineOperation({
   name: "self.checkpoint",
   tag: "self",
   summary: "Take a checkpoint of this box",
@@ -172,7 +172,7 @@ export const selfCheckpoint = defineOperation({
   },
 });
 
-export const selfTask = defineOperation({
+const selfTask = defineOperation({
   name: "self.task",
   tag: "self",
   summary: "Get a task this box started",
@@ -199,7 +199,7 @@ export const selfTask = defineOperation({
   },
 });
 
-export const selfAsk = defineOperation({
+const selfAsk = defineOperation({
   name: "self.ask",
   tag: "self",
   summary: "Ask a person a question",
@@ -225,7 +225,7 @@ export const selfAsk = defineOperation({
   },
 });
 
-export const selfQuestion = defineOperation({
+const selfQuestion = defineOperation({
   name: "self.question",
   tag: "self",
   summary: "Get a question this box asked",
@@ -252,7 +252,7 @@ export const selfQuestion = defineOperation({
   },
 });
 
-export const selfStatus = defineOperation({
+const selfStatus = defineOperation({
   name: "self.status",
   tag: "self",
   summary: "Report what this box's agent is doing",
@@ -278,7 +278,7 @@ export const selfStatus = defineOperation({
   },
 });
 
-export const boxSelfRevoke = defineOperation({
+const boxSelfRevoke = defineOperation({
   name: "box.self.revoke",
   tag: "boxes",
   summary: "Revoke a box's self token",

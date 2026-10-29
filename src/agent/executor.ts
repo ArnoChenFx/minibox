@@ -255,7 +255,7 @@ function parse<S extends z.ZodType>(op: string, schema: S, raw: unknown): z.outp
 }
 
 /** The error an agent reports for a failed call. A RuntimeError keeps its kind; anything else is an engine failure. */
-export function errorInfo(e: unknown): AgentErrorInfo {
+function errorInfo(e: unknown): AgentErrorInfo {
   if (e instanceof RuntimeError) return { kind: e.kind, message: e.message, detail: e.detail };
   if (e instanceof Error && e.name === "AbortError") return { kind: "aborted", message: e.message, detail: e.message };
   const text = e instanceof Error ? e.message : String(e);

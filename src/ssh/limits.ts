@@ -6,11 +6,11 @@ export const SSH_FAILURES_FREE = 5;
 export const SSH_LOCKOUT_BASE_MS = 30_000;
 export const SSH_LOCKOUT_MAX_MS = 60 * 60_000;
 /** Failures older than this are forgotten, unless the address is still locked out. */
-export const SSH_FAILURE_WINDOW_MS = 15 * 60_000;
+const SSH_FAILURE_WINDOW_MS = 15 * 60_000;
 /** Addresses tracked at once. The oldest is dropped past it, so a scan from many addresses cannot grow memory. */
-export const SSH_TRACKED_MAX = 10_000;
+const SSH_TRACKED_MAX = 10_000;
 /** Connections that have not logged in yet, from all addresses and from one. */
-export const SSH_PENDING_MAX = 32;
+const SSH_PENDING_MAX = 32;
 export const SSH_PENDING_PER_IP_MAX = 8;
 /** Authentication attempts one connection may make, counting key queries, before it is closed. OpenSSH allows 6. */
 export const SSH_ATTEMPTS_PER_CONNECTION = 10;

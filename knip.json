@@ -1,0 +1,20 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": [
+    "src/cli.ts",
+    "src/agent/main.ts",
+    "src/backup/snapshot-worker.ts",
+    "scripts/*.ts",
+    "tests/**/*.test.ts",
+    "tests/support/pair-writer.ts",
+    "web/*.html",
+    "web/js/{app,login,boot}.js",
+    "site/index.html",
+    "site/main.js",
+    "site/playwright.config.ts",
+    "site/e2e/**/*.pw.ts"
+  ],
+  "project": ["src/**/*.ts", "scripts/**/*.ts", "tests/**/*.ts", "web/js/**/*.{js,ts}", "site/**/*.{js,ts}"],
+  "ignore": ["web/js/**/*.d.ts"],
+  "ignoreExportsUsedInFile": true
+}

@@ -276,7 +276,7 @@ export async function templateSetupOf(host: HostCtx, ref: string): Promise<Templ
 }
 
 /** The description a template gets when none is given, so the label is never empty. */
-export function defaultDescription(source: TemplateSource): string {
+function defaultDescription(source: TemplateSource): string {
   if (source.kind === "dockerfile") return "Built from a Dockerfile";
   if (source.kind === "git") return `Built from ${source.url}${source.branch ? ` (${source.branch})` : ""}`;
   if (source.kind === "devcontainer")

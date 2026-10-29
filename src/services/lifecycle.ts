@@ -5,18 +5,16 @@ import { OWNER } from "../operations/types";
 import { ttlEndsAt, ttlExpired } from "../specs/lifetime";
 import type { BoxSpec } from "../specs/types";
 import type { TaskManager } from "../tasks/manager";
-
-export type { StopReason } from "../specs/types";
 import type { ActivityPulse } from "./activity-pulse";
 import { type Box, sleepBox } from "./boxes";
 import type { ExecManager } from "./exec";
 import type { RecordNote, TerminalService } from "./terminals";
 
 /** How long before a TTL end or an idle sleep the warning event is written. */
-export const WARN_AHEAD_MS = 5 * 60_000;
+const WARN_AHEAD_MS = 5 * 60_000;
 
 /** The SSH gateway's open connections. An open one keeps its box awake, as an attached terminal does. */
-export interface SshConnections {
+interface SshConnections {
   hasOpenConnection(boxId: string): boolean;
 }
 

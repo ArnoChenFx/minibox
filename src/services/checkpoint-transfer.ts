@@ -34,7 +34,7 @@ export interface PackageView {
   url: string;
 }
 
-export const checkpointTag = (id: string): string => `checkpoint:${id}`;
+const checkpointTag = (id: string): string => `checkpoint:${id}`;
 const volumeTag = (volumeId: string): string => `volume:${volumeId}`;
 
 /** A layer's fields without its snapshot, which is the part a package and a copy each supply for themselves. */
@@ -44,7 +44,7 @@ type LayerFields = Omit<DataLayer, "snapshotId">;
  * What a package records about its checkpoint: the record fields a new instance needs, and nothing about the source
  * host. Snapshot ids are left out, since each instance assigns its own when the package is imported.
  */
-export function manifestOf(record: CheckpointRecord): string {
+function manifestOf(record: CheckpointRecord): string {
   if (record.boxId === null || record.boxName === null || record.specRevision === null || record.spec === null) {
     throw conflict(msg("checkpoint_export_no_box", { id: record.id }));
   }

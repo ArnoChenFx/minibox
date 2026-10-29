@@ -41,7 +41,7 @@ export interface Route {
   access: RouteAccess;
 }
 
-export const OWNER_ONLY: RouteAccess = { kind: "owner" };
+const OWNER_ONLY: RouteAccess = { kind: "owner" };
 export const scopedAccess = (scope: string): RouteAccess => ({ kind: "scope", scope });
 
 /** Compile `/api/boxes/:id/logs` into a regex with named segments. */

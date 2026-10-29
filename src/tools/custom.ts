@@ -8,7 +8,7 @@ import { BUNDLED_CATALOG_DIR, parseCatalogEntry, readDirEntries } from "./catalo
 import type { CatalogEntry } from "./types";
 
 /** Mode of a saved entry. DATA_DIR is 0700, so the directory is what keeps other users out. */
-export const CUSTOM_FILE_MODE = 0o644;
+const CUSTOM_FILE_MODE = 0o644;
 
 /** A custom entry as the API reports it: the loader's view of the file, and whether it replaces a built-in id. */
 export interface CustomEntry extends CatalogEntry {
@@ -21,7 +21,7 @@ export interface SaveOptions {
   readonly bundledDir?: string;
 }
 
-export function customDir(dataDir: string): string {
+function customDir(dataDir: string): string {
   return join(dataDir, "tools.d");
 }
 

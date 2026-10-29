@@ -6,9 +6,9 @@ import { helperImage, parseDf } from "./health";
 import { DEV_OWNER, type HostDisk } from "./types";
 
 /** A reading this old is measured again before a create or a checkpoint trusts it. */
-export const HOST_DISK_MAX_AGE_MS = 30_000;
+const HOST_DISK_MAX_AGE_MS = 30_000;
 /** A measurement that has not answered by then counts as unknown, which lets the create or checkpoint go ahead. */
-export const MEASURE_DEADLINE_MS = 15_000;
+const MEASURE_DEADLINE_MS = 15_000;
 
 export function freePercent(disk: HostDisk): number {
   return disk.totalBytes > 0 ? (disk.freeBytes / disk.totalBytes) * 100 : 100;
@@ -57,7 +57,7 @@ export async function remeasureHostDisk(host: HostCtx): Promise<HostDisk | null>
 }
 
 /** The last reading if it is recent, else a fresh one. Null when the disk cannot be measured. */
-export async function currentHostDisk(host: HostCtx): Promise<HostDisk | null> {
+async function currentHostDisk(host: HostCtx): Promise<HostDisk | null> {
   const cached = host.volumes.diskOf(host.host.id);
   if (cached && Date.now() - cached.at < HOST_DISK_MAX_AGE_MS) return cached;
   return remeasureHostDisk(host);

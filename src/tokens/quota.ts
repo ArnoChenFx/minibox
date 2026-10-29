@@ -19,7 +19,7 @@ const queues = new Map<string, Promise<unknown>>();
  * Runs one unit of work after the earlier ones for the same key have finished. The queue for a key ends when its last
  * unit settles, so an idle key holds nothing.
  */
-export function serialized<T>(key: string, work: () => Promise<T>): Promise<T> {
+function serialized<T>(key: string, work: () => Promise<T>): Promise<T> {
   const previous = queues.get(key) ?? Promise.resolve();
   const next = previous.then(work);
   const settled = next.then(
@@ -48,7 +48,7 @@ const roundCpus = (value: number): number => Math.round(value * 1000) / 1000;
  * created on every host, plus the box being changed at its new size. Renaming a box is never refused for being over a
  * limit it already exceeds: only a dimension the change sets is checked.
  */
-export function assertQuota(principal: TokenPrincipal, specs: readonly BoxSpec[], change: QuotaChange): void {
+function assertQuota(principal: TokenPrincipal, specs: readonly BoxSpec[], change: QuotaChange): void {
   const quotas = principal.grants.quotas;
   const changed = change.kind === "resize" ? change.boxId : undefined;
   const others = ownedBoxes(principal, specs).filter((spec) => spec.id !== changed);

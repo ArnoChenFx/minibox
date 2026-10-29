@@ -56,7 +56,7 @@ import {
   templateSource,
 } from "./validation";
 
-export const templateList = defineOperation({
+const templateList = defineOperation({
   name: "template.list",
   tag: "templates",
   summary: "List templates",
@@ -108,7 +108,7 @@ export const templatePromote = defineOperation({
   }),
 });
 
-export const templateSave = defineOperation({
+const templateSave = defineOperation({
   name: "template.save",
   tag: "templates",
   summary: "Save a box as a template",
@@ -146,7 +146,7 @@ function sourceDetail(source: { kind: string; text?: string }): Record<string, u
   return text === undefined ? rest : { ...rest, bytes: text.length };
 }
 
-export const templateCreate = defineOperation({
+const templateCreate = defineOperation({
   name: "template.create",
   tag: "templates",
   summary: "Build a template from a Dockerfile, a repository, a build context or a devcontainer.json",
@@ -191,7 +191,7 @@ export const templateCreate = defineOperation({
   }),
 });
 
-export const templateFork = defineOperation({
+const templateFork = defineOperation({
   name: "template.fork",
   tag: "templates",
   summary: "Fork a template into a new one that can be changed on its own",
@@ -268,7 +268,7 @@ const templateInitInput = () =>
  * The source a template rebuilds from, so the console can prefill its edit dialog. Only a declared template has one; a
  * template saved from a box answers `400 template_not_declared`, as a rebuild does, because there is nothing to edit.
  */
-export const templateGet = defineOperation({
+const templateGet = defineOperation({
   name: "template.get",
   tag: "templates",
   summary: "Read the source a template rebuilds from",
@@ -322,7 +322,7 @@ function recipeView(recipe: TemplateRecipe): z.input<typeof TemplateRecipeSchema
   };
 }
 
-export const templateEdit = defineOperation({
+const templateEdit = defineOperation({
   name: "template.edit",
   tag: "templates",
   summary: "Edit the source a template rebuilds from, without building it",
@@ -386,7 +386,7 @@ export const templateEdit = defineOperation({
   }),
 });
 
-export const templateRebuild = defineOperation({
+const templateRebuild = defineOperation({
   name: "template.rebuild",
   tag: "templates",
   summary: "Rebuild a template from the source it was built from",
@@ -425,7 +425,7 @@ export const templateRebuild = defineOperation({
   }),
 });
 
-export const templateBuild = defineOperation({
+const templateBuild = defineOperation({
   name: "template.build",
   tag: "templates",
   summary: "Build the bundled base template",
@@ -449,7 +449,7 @@ export const templateBuild = defineOperation({
   },
 });
 
-export const templateSync = defineOperation({
+const templateSync = defineOperation({
   name: "template.sync",
   tag: "templates",
   summary: "Copy a template to another host",
@@ -489,7 +489,7 @@ export const templateSync = defineOperation({
   }),
 });
 
-export const templateOfficialList = defineOperation({
+const templateOfficialList = defineOperation({
   name: "template.official.list",
   tag: "templates",
   summary: "List the official templates",
@@ -515,7 +515,7 @@ export const templateOfficialList = defineOperation({
   }),
 });
 
-export const templateOfficialBuild = defineOperation({
+const templateOfficialBuild = defineOperation({
   name: "template.official.build",
   tag: "templates",
   summary: "Build an official template",
@@ -618,7 +618,7 @@ function runningTaskOf(details: unknown): string | undefined {
   return typeof taskId === "string" ? taskId : undefined;
 }
 
-export const templateDelete = defineOperation({
+const templateDelete = defineOperation({
   name: "template.delete",
   tag: "templates",
   summary: "Delete a template",

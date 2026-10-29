@@ -141,7 +141,7 @@ export const boxList = defineOperation({
   },
 });
 
-export const boxGet = defineOperation({
+const boxGet = defineOperation({
   name: "box.get",
   tag: "boxes",
   summary: "Get one box",
@@ -437,7 +437,7 @@ export const boxDelete = defineOperation({
     }),
 });
 
-export const boxAction = defineOperation({
+const boxAction = defineOperation({
   name: "box.action",
   tag: "boxes",
   summary: "Start, stop or restart a box",
@@ -519,7 +519,7 @@ function inPlacePatch(input: {
   return Object.keys(patch).length > 0 ? patch : undefined;
 }
 
-export const boxUpdate = defineOperation({
+const boxUpdate = defineOperation({
   name: "box.update",
   tag: "boxes",
   summary: "Update a box in place",
@@ -596,7 +596,7 @@ export const boxUpdate = defineOperation({
   },
 });
 
-export const boxRebuild = defineOperation({
+const boxRebuild = defineOperation({
   name: "box.rebuild",
   tag: "boxes",
   summary: "Rebuild a box from its spec",
@@ -672,7 +672,7 @@ const LeftoverSchema = z.object({
   name: z.string(),
 });
 
-export const boxMove = defineOperation({
+const boxMove = defineOperation({
   name: "box.move",
   tag: "boxes",
   summary: "Move a box to another host",
@@ -756,7 +756,7 @@ export const boxLogs = defineOperation({
   run: async ({ host }, input) => ({ logs: await getLogs(host, input.id, input.tail) }),
 });
 
-export const boxStats = defineOperation({
+const boxStats = defineOperation({
   name: "box.stats",
   tag: "boxes",
   summary: "Read the current resource usage of a box",

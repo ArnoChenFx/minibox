@@ -81,7 +81,7 @@ function createdResources(info: ContainerInfo, labels: Record<string, string>, k
  * current resources and the restart policy come from inspect; the name follows {@link nameFromContainer}.
  * Mutable fields that were never on the container go back to defaults.
  */
-export function specFromContainer(host: HostCtx, info: ContainerInfo, now: string, id: string): BoxSpec {
+function specFromContainer(host: HostCtx, info: ContainerInfo, now: string, id: string): BoxSpec {
   const labels = info.labels;
   const keys = host.keys;
   const parsed = host.keys;

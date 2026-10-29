@@ -19,7 +19,7 @@ import { assertAutomaticAllowed } from "./checkpoint-capacity";
 import { backupBox, underBox } from "./checkpoints";
 import type { RecordNote } from "./terminals";
 
-export const SCHEDULER_EVERY_MS = 60 * 1000;
+const SCHEDULER_EVERY_MS = 60 * 1000;
 
 type Outcome = Pick<ScheduleRun, "status" | "reason" | "checkpointId" | "error">;
 
@@ -28,7 +28,7 @@ const skipped = (reason: SkipReason): Outcome => ({ status: "skipped", reason, c
 /** A schedule as the API returns it: `timezoneUnknown` says its saved zone is not one this server knows, so it runs in UTC. */
 export type ScheduleView = BoxSchedule & { timezoneUnknown: boolean };
 
-export function scheduleView(schedule: BoxSchedule): ScheduleView {
+function scheduleView(schedule: BoxSchedule): ScheduleView {
   return { ...schedule, timezoneUnknown: runZoneOf(schedule).unknown !== null };
 }
 

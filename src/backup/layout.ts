@@ -5,7 +5,7 @@ import { isWithinDir } from "../data-dir";
 import { log } from "../lib/logger";
 
 /** Top-level folders a backup leaves out: exec output, staged packages, the regenerable CLI cache and backups themselves. */
-export const EXCLUDED_FOLDERS: ReadonlySet<string> = new Set(["backups", "cli", "exec", "packages"]);
+const EXCLUDED_FOLDERS: ReadonlySet<string> = new Set(["backups", "cli", "exec", "packages"]);
 /** The SQLite stores. Each is copied from a snapshot, so the live file and its journals are never read directly. */
 export const DATABASE_FILES = ["events.db", "tasks.db"] as const;
 const SQLITE_JOURNAL = /^(events|tasks)\.db-(wal|shm|journal)$/;

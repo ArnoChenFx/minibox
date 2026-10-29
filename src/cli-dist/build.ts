@@ -1,7 +1,7 @@
 import type { CliTarget } from "./targets";
 
 /** A cross-target build downloads the target's Bun runtime (about 90 MB) the first time, so the limit is generous. */
-export const CLI_BUILD_TIMEOUT_MS = 5 * 60_000;
+const CLI_BUILD_TIMEOUT_MS = 5 * 60_000;
 
 export interface CliBuildJob {
   readonly target: CliTarget;
@@ -19,7 +19,7 @@ export interface CliBuildJob {
 
 export type CliBuilder = (job: CliBuildJob) => Promise<void>;
 
-export class CliBuildError extends Error {
+class CliBuildError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "CliBuildError";

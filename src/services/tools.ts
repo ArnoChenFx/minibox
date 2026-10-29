@@ -191,7 +191,7 @@ async function imageExists(host: HostCtx, ref: string): Promise<boolean> {
  * installed. A helper failure is logged and leaves every entry not installed, which suits listings. A caller that
  * decides what to change passes `strict`, so the failure is raised instead of acting on that empty answer.
  */
-export async function detectTools(
+async function detectTools(
   host: HostCtx,
   entries: CatalogEntry[],
   box: Box | null,

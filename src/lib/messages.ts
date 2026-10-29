@@ -2,7 +2,7 @@
  * User-facing error messages. The server always answers in English and also returns a stable
  * `key` + `params` so the web UI can show a translated message (see web/js/i18n/*.js, `err.*`).
  */
-export const LABELS = {
+const LABELS = {
   name: "Name",
   boxName: "Box name",
   templateName: "Template name",

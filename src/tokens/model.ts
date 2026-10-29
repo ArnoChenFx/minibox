@@ -183,7 +183,7 @@ const LOCAL_HOSTS: HostScope = { type: "list", ids: [LOCAL_HOST_ID] };
 const NO_VOLUMES: VolumeScope = { type: "list", ids: [] };
 
 /** Agent tokens get this prefix. The owner's principal id is `owner`, and no other principal uses the prefix. */
-export const TOKEN_ID_PREFIX = "tok_";
+const TOKEN_ID_PREFIX = "tok_";
 
 export function isTokenId(id: string): boolean {
   return id.startsWith(TOKEN_ID_PREFIX);
@@ -643,7 +643,7 @@ export function profileRank(profile: string | null): number {
 }
 
 /** Tokens create and rebuild only with `standard` or `strict`. Relaxed and legacy profiles belong to the owner. */
-export const TOKEN_MIN_PROFILE_RANK = PROFILE_RANK.standard ?? 2;
+const TOKEN_MIN_PROFILE_RANK = PROFILE_RANK.standard ?? 2;
 
 /** Other principals (the owner) may choose any profile, so this only constrains tokens. */
 export function profileForToken(profile: string): boolean {

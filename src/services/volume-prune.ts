@@ -23,9 +23,9 @@ const FILLING_OPS: ReadonlySet<string> = new Set([
   "trash.restore",
 ]);
 
-export type PruneStatus = "candidate" | "removed" | "refused" | "failed";
+type PruneStatus = "candidate" | "removed" | "refused" | "failed";
 
-export interface PrunedVolume {
+interface PrunedVolume {
   id: string;
   name: string;
   /** Null only for an id the request named that matches no volume. */
@@ -45,7 +45,7 @@ export interface PrunedVolume {
   error: OutcomeError | null;
 }
 
-export interface PrunedHost {
+interface PrunedHost {
   hostId: string;
   name: string;
   status: "checked" | "offline" | "failed";
@@ -78,7 +78,7 @@ export interface PruneOptions {
 }
 
 /** When a volume was last used: the last time a box stopped mounting it, or its creation when none ever did. */
-export function lastUsedAt(volume: Pick<VolumeRecord, "createdAt" | "lastMount">): string {
+function lastUsedAt(volume: Pick<VolumeRecord, "createdAt" | "lastMount">): string {
   return volume.lastMount?.at ?? volume.createdAt;
 }
 

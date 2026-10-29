@@ -220,7 +220,7 @@ export interface PaneState {
  * `waiting`: a command is set and has not run in this box's current start. `running`: its pane is alive. `exited`: the
  * run ended, with its code. `failed`: MiniBox could not start the command.
  */
-export type StartupStatus = "none" | "cloning" | "waiting" | "running" | "exited" | "failed";
+type StartupStatus = "none" | "cloning" | "waiting" | "running" | "exited" | "failed";
 
 export interface StartupView {
   readonly status: StartupStatus;

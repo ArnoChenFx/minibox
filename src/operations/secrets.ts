@@ -24,7 +24,7 @@ function withBoxes(host: HostCtx, meta: SecretMeta) {
   return { ...meta, boxes: boxesUsing(host.specs.list(), meta.name) };
 }
 
-export const secretList = defineOperation({
+const secretList = defineOperation({
   name: "secret.list",
   tag: "secrets",
   summary: "List secrets",
@@ -42,7 +42,7 @@ export const secretList = defineOperation({
   }),
 });
 
-export const secretSet = defineOperation({
+const secretSet = defineOperation({
   name: "secret.set",
   tag: "secrets",
   summary: "Create or replace a secret",
@@ -66,7 +66,7 @@ export const secretSet = defineOperation({
   },
 });
 
-export const secretDelete = defineOperation({
+const secretDelete = defineOperation({
   name: "secret.delete",
   tag: "secrets",
   summary: "Delete a secret",

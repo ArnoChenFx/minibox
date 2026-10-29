@@ -284,7 +284,7 @@ export function blankRecord(host: HostCtx, input: NewVolume, id: string, now: st
  * An existing `prefix-ws-*` volume becomes a Volume record. Docker cannot add a label after creation,
  * so recognition is the record plus the name; volumes MiniBox creates carry `prefix.volume=true`.
  */
-export function claimInfo(host: HostCtx, info: VolumeInfo, specs: BoxSpec[], now: string): VolumeRecord | null {
+function claimInfo(host: HostCtx, info: VolumeInfo, specs: BoxSpec[], now: string): VolumeRecord | null {
   if (info.labels[host.keys.internal] === "true") return null;
   const legacy = new RegExp(`^${host.prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}-ws-.+$`).test(info.name);
   const labeled = info.labels[host.keys.box] === "true" || info.labels[host.keys.volume] === "true";

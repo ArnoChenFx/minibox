@@ -6,7 +6,7 @@ import { hostNamed, refuseAgent } from "./routing";
 import { ImagePulledSchema } from "./schemas";
 import { hostId, pullRef } from "./validation";
 
-export const imagePull = defineOperation({
+const imagePull = defineOperation({
   name: "image.pull",
   tag: "templates",
   summary: "Pull an image from its registry",

@@ -12,7 +12,7 @@ import { FakeCheckpointEngine } from "./fake-snapshots";
 export const GIB = 1024 ** 3;
 export const MIB = 1024 ** 2;
 export const SMALL_SOCKET = "/run/minibox-test/small-docker.sock";
-export const LARGE_SOCKET = "/run/minibox-test/large-docker.sock";
+const LARGE_SOCKET = "/run/minibox-test/large-docker.sock";
 
 export type HostName = "local" | "small" | "large";
 

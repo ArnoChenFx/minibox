@@ -28,7 +28,7 @@ const POST_CREATE_MAX_BYTES = 64 * 1024;
 const SPEC_VARIABLE_RE =
   /\$\{(?:localEnv|containerEnv|localWorkspaceFolder|containerWorkspaceFolder|localWorkspaceFolderBasename|containerWorkspaceFolderBasename|devcontainerId)(?::[^}]*)?\}/;
 
-export type DevcontainerBase =
+type DevcontainerBase =
   | { kind: "image"; image: string }
   | { kind: "build"; dockerfile: string; context: string; args: Record<string, string>; target?: string };
 

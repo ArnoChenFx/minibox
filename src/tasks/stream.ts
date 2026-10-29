@@ -2,7 +2,7 @@ import { sseStream } from "../events/sse-body";
 import { REPLAY_LIMIT } from "../events/stream";
 import type { TaskStreamEvent } from "./types";
 
-export interface TaskEventSource {
+interface TaskEventSource {
   after(taskId: string, after: number, limit: number): TaskStreamEvent[];
   oldest(taskId: string): number;
   head(taskId: string): number;

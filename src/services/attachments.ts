@@ -12,7 +12,7 @@ import type { VolumeRecord } from "../volumes/types";
  * The volume the image mounts at `/data` (see docs/admin/install.md). It holds the access key and the sessions
  * file, so a box that mounted it could read both.
  */
-export const DATA_VOLUME = "minibox-data";
+const DATA_VOLUME = "minibox-data";
 
 /** Network modes that join the host's network namespace or another container's. */
 const SHARED_NETWORK = /^(host|none|container:.*)$/;

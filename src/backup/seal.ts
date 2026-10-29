@@ -7,8 +7,8 @@ import { createCipheriv, createDecipheriv, createHmac, randomBytes, scrypt, timi
  * the key, so a wrong passphrase is told apart from a damaged file before any chunk is decrypted.
  */
 
-export const SEAL_MAGIC = Buffer.from("MBBACKUP", "ascii");
-export const SEAL_VERSION = 1;
+const SEAL_MAGIC = Buffer.from("MBBACKUP", "ascii");
+const SEAL_VERSION = 1;
 export const SEAL_CHUNK_BYTES = 1024 * 1024;
 export const DEFAULT_LOG_N = 17;
 /** The scrypt cost a header may name. The upper bound keeps a crafted file from forcing gigabytes of memory. */

@@ -15,7 +15,7 @@ const backupId = () => z.string().meta({ description: "Backup id (bk_…), as th
 
 const backupTarget = (id: string) => ({ kind: "backup", id, name: id });
 
-export const backupCreate = defineOperation({
+const backupCreate = defineOperation({
   name: "backup.create",
   tag: "backups",
   summary: "Create a backup of DATA_DIR",
@@ -48,7 +48,7 @@ export const backupCreate = defineOperation({
   },
 });
 
-export const backupList = defineOperation({
+const backupList = defineOperation({
   name: "backup.list",
   tag: "backups",
   summary: "List backups",
@@ -68,7 +68,7 @@ export const backupList = defineOperation({
   run: async ({ backups }) => ({ backups: backupsOf(backups).list().map(backupView) }),
 });
 
-export const backupDownload = defineOperation({
+const backupDownload = defineOperation({
   name: "backup.download",
   tag: "backups",
   summary: "Download a backup archive",
@@ -85,7 +85,7 @@ export const backupDownload = defineOperation({
   },
 });
 
-export const backupDelete = defineOperation({
+const backupDelete = defineOperation({
   name: "backup.delete",
   tag: "backups",
   summary: "Delete a backup",

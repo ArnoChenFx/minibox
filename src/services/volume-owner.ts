@@ -6,7 +6,7 @@ import type { VolumeOwner } from "../runtime";
 import type { BoxMount } from "../specs/types";
 
 /** Where a box mounts its workspace volume. The template decides the owner of that volume's root. */
-export const WORKSPACE = "/workspace";
+const WORKSPACE = "/workspace";
 
 /** Records an audit note for the operation that makes the change. Absent when nothing records, as in a test. */
 export type RecordNote = (note: AuditNote) => void;

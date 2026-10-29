@@ -606,7 +606,7 @@ export const userLabels = () =>
 const MOUNT_MAX = 16;
 const ENV_MAX = 64;
 /** Also the longest secret value: a secret is injected through the same env entry a plain value would be. */
-export const ENV_VALUE_MAX = 8192;
+const ENV_VALUE_MAX = 8192;
 const ENV_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/;
 
 function checkMounts(value: unknown): Checked<BoxMount[] | undefined> {

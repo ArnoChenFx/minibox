@@ -152,7 +152,7 @@ function toChange(change: { Path?: string; Kind?: number }): ContainerChange[] {
  * body counts the same way. Any other body is an error: an empty diff for a container that could not be read would
  * let a rebuild be confirmed without showing the writable-layer changes it throws away.
  */
-export function parseChanges(body: unknown): ContainerChange[] {
+function parseChanges(body: unknown): ContainerChange[] {
   if (Array.isArray(body)) return body.flatMap(toChange);
   if (body === null) return [];
   if (Buffer.isBuffer(body)) {
@@ -167,7 +167,7 @@ function describeBody(body: unknown): string {
   return text.length > 80 ? `${text.slice(0, 80)}…` : text;
 }
 
-export function toUpdateOptions(limits: ContainerUpdate): Record<string, unknown> {
+function toUpdateOptions(limits: ContainerUpdate): Record<string, unknown> {
   const opts: Record<string, unknown> = {};
   if (limits.cpus !== undefined) opts.NanoCpus = Math.round(limits.cpus * NANO_CPUS_PER_CPU);
   if (limits.memoryBytes !== undefined) opts.Memory = limits.memoryBytes;

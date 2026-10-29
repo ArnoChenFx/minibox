@@ -174,6 +174,3 @@ export function saveOnboardingState(patch) {
   }
   return next;
 }
-
-/** The key this browser's state is saved under, so a test and a person can find it. */
-export const ONBOARDING_STORAGE_KEY = STORAGE_KEY;
