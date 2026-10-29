@@ -171,7 +171,7 @@ export function render(view) {
       void loadDisk();
       if (loaded) renderBoxes(view, boxes);
       redrawOnboarding();
-      if (latest) drawWatch(view, latest);
+      if (latest) drawWatch(view, latest, reloadOverview);
     }),
     subscribe("sync", (frame) => {
       const next = boxesOfSync(frame);

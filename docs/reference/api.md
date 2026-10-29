@@ -433,6 +433,7 @@ The reading is the engine's own accounting, not the host filesystem's. The disk 
 | `engine` | The engine answered with an error. `detail` holds its own message. |
 
 A host id no host carries answers `404` (`host_not_found`).
+
 #### The egress forward allowance
 
 `POST /api/hosts/{id}/forward` is what the overview's **Proxy-only boxes have no internet** item offers as its button. It is a write, and it needs the owner: no token scope reaches it. MiniBox never calls it on its own.

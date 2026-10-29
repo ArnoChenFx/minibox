@@ -181,7 +181,8 @@ export function drawWatch(root, overview, refresh) {
   const host = hostFilter();
   const progress = scopeToHost(overview.inProgress, host, (row) => row.box.hostId);
   const attention = scopeToHost(overview.attention, host, (item) => item.hostId);
-  const redraw = () => drawWatch(root, overview);
+  // A toggle redraws from the same view, and keeps `refresh` so the repair button still reads again afterwards.
+  const redraw = () => drawWatch(root, overview, refresh);
   fill(root, root.querySelector("#ovProgress"), {
     key: "progress",
     items: progress,

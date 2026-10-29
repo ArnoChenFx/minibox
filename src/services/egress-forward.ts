@@ -143,10 +143,11 @@ export class EgressForwardWatcher {
     return true;
   }
 
-  private async hostPass(host: HostCtx): Promise<void> {
+  /** Reads one host and records what it found, or returns null when the pass could not run. */
+  private async hostPass(host: HostCtx): Promise<ForwardState | null> {
     const skip = skipReason(host);
     if (skip !== null) {
-      this.state.set(host.host.id, {
+      const skipped: ForwardState = {
         bridge: "",
         forwarding: false,
         detail: "",
@@ -154,12 +155,13 @@ export class EgressForwardWatcher {
         at: new Date().toISOString(),
         repaired: false,
         skipped: skip,
-      });
-      return;
+      };
+      this.state.set(host.host.id, skipped);
+      return skipped;
     }
     const boxes = proxyOnlyBoxes(host);
-    if (boxes.length === 0) return;
-    if (this.running.has(host.host.id)) return;
+    if (boxes.length === 0) return null;
+    if (this.running.has(host.host.id)) return null;
     this.running.add(host.host.id);
     this.pending.delete(host.host.id);
     try {
@@ -170,10 +172,10 @@ export class EgressForwardWatcher {
         // The uplink is missing, so no proxy has a route out. A box that starts recreates it, and that start asks for a
         // pass of its own, so this is left to the box rather than reported as a firewall problem.
         log.warn("egress.forward_uplink_missing", { host: host.host.id, network: uplink });
-        return;
+        return null;
       }
       const verdict = await host.runtime.checkHostForward(host.prefix, bridge, UPLINK_SUBNET);
-      this.record(host, bridge, boxes, verdict);
+      return this.record(host, bridge, boxes, verdict);
     } finally {
       this.running.delete(host.host.id);
     }
@@ -184,11 +186,11 @@ export class EgressForwardWatcher {
     bridge: string,
     boxes: readonly BoxSpec[],
     verdict: { forwarding: boolean; detail: string },
-  ): void {
+  ): ForwardState {
     const hostId = host.host.id;
     const names = boxes.map((spec) => spec.name);
     const previous = this.state.get(hostId);
-    this.state.set(hostId, {
+    const state: ForwardState = {
       bridge,
       forwarding: verdict.forwarding,
       detail: verdict.detail,
@@ -196,18 +198,19 @@ export class EgressForwardWatcher {
       at: new Date().toISOString(),
       repaired: previous?.repaired === true && !verdict.forwarding,
       skipped: null,
-    });
+    };
+    this.state.set(hostId, state);
     if (verdict.forwarding) {
       if (previous !== undefined && previous.forwarding === false && previous.skipped === null) {
         log.info("egress.forward_restored", { host: hostId, bridge, boxes: names });
       }
-      return;
+      return state;
     }
     // One line when the condition appears, and nothing on the passes after it: a headless operator reads the log, and a
     // pass that repeats the same line every ten minutes is noise. A first reading that already finds it blocked is an
     // appearance too, which is what a restart of MiniBox on a broken host produces. A pass a box start or a host coming
     // back asked for does not repeat it either.
-    if (previous?.forwarding === false) return;
+    if (previous?.forwarding === false) return state;
     log.error("egress.forward_blocked", {
       host: hostId,
       bridge,
@@ -215,6 +218,7 @@ export class EgressForwardWatcher {
       detail: verdict.detail,
       action: "confirm the repair on the overview, or add the FORWARD rule by hand (see docs/admin/network-egress.md)",
     });
+    return state;
   }
 
   /**
@@ -231,11 +235,12 @@ export class EgressForwardWatcher {
       throw conflict(msg("egress_forward_unchecked"));
     }
     await host.runtime.allowHostForward(host.prefix, state.bridge);
-    this.pending.add(host.host.id);
-    const next = await this.hostPass(host).then(() => this.state.get(host.host.id));
-    if (!next) throw new AppError(502, "docker_error", msg("egress_forward_unchecked"));
-    this.state.set(host.host.id, { ...next, repaired: true });
-    return { ...next, repaired: true };
+    const next = await this.hostPass(host);
+    if (next === null) throw new AppError(502, "docker_error", msg("egress_forward_unchecked"));
+    // The repair is a fact about the reading it answered with, not a verdict of its own: the next pass decides again.
+    const repaired: ForwardState = { ...next, repaired: true };
+    this.state.set(host.host.id, repaired);
+    return repaired;
   }
 }
 
