@@ -56,7 +56,7 @@ export default {
   "ov.forwardRepairMessage":
     "MiniBox will add one rule on {host}: a chain of its own, jumped to from the top of FORWARD, that accepts new connections arriving on {bridge} and their replies. Nothing else on the host's firewall changes. Proxy-only boxes there get the internet back; open boxes were never affected.",
   "ov.forwardRepairWhat":
-    "If you would rather do it by hand, the commands are in docs/admin/network-egress.md. The warning stays until a check finds the rules right.",
+    "If you would rather do it by hand, the commands are in the network egress guide: https://github.com/ArnoChenFx/minibox/blob/main/docs/admin/network-egress.md#when-a-proxy-only-box-has-no-internet. The warning stays until a check finds the rules right.",
   "ov.forwardRepaired": "Added the FORWARD rule",
   "ov.forwardRepairFailed": "Couldn't add the FORWARD rule",
   "ov.text.forward_blocked":
