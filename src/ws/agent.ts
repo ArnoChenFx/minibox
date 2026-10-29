@@ -5,6 +5,8 @@ import type { AgentHub, AgentSession } from "../host/agent/hub";
 /** A socket an agent dialed in on. The session is the hub's end of it, set when the socket opens. */
 export interface AgentSocketData {
   readonly kind: "agent";
+  /** The bucket the socket counts under for the per-address pending limit, resolved before the upgrade. */
+  readonly address: string;
   session?: AgentSession;
 }
 
@@ -16,14 +18,17 @@ export function isAgentSocket(data: object): data is AgentSocketData {
 export function agentHandlers(hub: AgentHub) {
   return {
     open(ws: ServerWebSocket<AgentSocketData>) {
-      ws.data.session = hub.attach({
-        send: (text) => {
-          ws.send(text);
+      ws.data.session = hub.attach(
+        {
+          send: (text) => {
+            ws.send(text);
+          },
+          close: (code, reason) => {
+            ws.close(code, reason);
+          },
         },
-        close: (code, reason) => {
-          ws.close(code, reason);
-        },
-      });
+        ws.data.address,
+      );
     },
     message(ws: ServerWebSocket<AgentSocketData>, message: string | Buffer) {
       if (typeof message !== "string") {

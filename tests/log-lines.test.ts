@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { demuxLogs, LogLines } from "../src/docker/logs";
+import { boundLogBytes, demuxLogs, LogLines, logsOmittedMarker } from "../src/docker/logs";
 
 /** Feeds the chunks to a LogLines in order, and returns every line it yields, a final partial line included. */
 function linesOf(...chunks: Buffer[]): string[] {
@@ -80,5 +80,29 @@ describe("LogLines reads a log stream as its bytes arrive", () => {
         expect(linesOf(stream.subarray(0, at), stream.subarray(at))).toEqual(expectedLines(stream));
       }
     }
+  });
+});
+
+describe("a one-shot log read is bounded by bytes", () => {
+  test("text under the bound is returned as it is", () => {
+    expect(boundLogBytes("one\ntwo\n", 64)).toBe("one\ntwo\n");
+    expect(boundLogBytes("", 64)).toBe("");
+  });
+
+  test("past the bound, the newest whole lines are kept behind a marker that says how much was left out", () => {
+    const text = "aaaa\nbbbb\ncccc\ndddd\n";
+    const bounded = boundLogBytes(text, 12);
+    // "cccc\ndddd\n" is the most that fits from the end starting on a line; "aaaa\nbbbb\n" (10 bytes) is dropped.
+    expect(bounded).toBe(`${logsOmittedMarker(10)}cccc\ndddd\n`);
+  });
+
+  test("a single line longer than the bound is cut on a character, not inside one", () => {
+    const text = `${"é".repeat(10)}\n`; // 21 bytes, each "é" two of them
+    const bounded = boundLogBytes(text, 6);
+    const kept = bounded.slice(bounded.indexOf("\n") + 1);
+    expect(kept.includes("\uFFFD")).toBe(false);
+    expect(Buffer.byteLength(kept)).toBeLessThanOrEqual(6);
+    expect(kept.endsWith("é\n")).toBe(true);
+    expect(bounded.startsWith("[minibox: ")).toBe(true);
   });
 });
