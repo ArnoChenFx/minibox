@@ -149,6 +149,11 @@ export function rateLimitKey(address: string): string {
   if (!ip.includes(":")) return ip;
   const groups = expandIPv6(ip);
   if (!groups) return ip;
+  // An IPv4-mapped address written in hex (`::ffff:cb00:71fc`) is the same host as its dotted form.
+  if (groups.slice(0, 5).every((group) => group === 0) && groups[5] === 0xffff) {
+    const [high = 0, low = 0] = groups.slice(6);
+    return `${high >> 8}.${high & 0xff}.${low >> 8}.${low & 0xff}`;
+  }
   return `${groups
     .slice(0, 4)
     .map((g) => g.toString(16))

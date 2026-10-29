@@ -3,6 +3,10 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import type { MovePreview } from "../web/js/components/box-move.js";
 
 let movePreviewHtml: (preview: MovePreview) => string;
+let moveTargets: (
+  box: { hostId?: string },
+  hosts: readonly { id: string; name?: string; status?: string; transport?: string }[],
+) => { options: string; usable: boolean; agentsOnly: boolean };
 const restores: (() => void)[] = [];
 
 function stubGlobal(name: string, value: unknown): void {
@@ -21,7 +25,7 @@ beforeAll(async () => {
     setItem: (key: string, value: string) => void store.set(key, String(value)),
   });
   stubGlobal("document", { documentElement: {} });
-  ({ movePreviewHtml } = await import("../web/js/components/box-move.js"));
+  ({ movePreviewHtml, moveTargets } = await import("../web/js/components/box-move.js"));
 });
 
 afterAll(() => {
@@ -60,5 +64,34 @@ describe("the move preview's checkpoint line", () => {
 
   test("a box with no checkpoints has no checkpoint line", () => {
     expect(movePreviewHtml(preview(0))).not.toContain("source host");
+  });
+});
+
+describe("the hosts a box may be moved to", () => {
+  const local = { id: "local", name: "Local", status: "online", transport: "local" };
+  const lab = { id: "lab", name: "Lab", status: "online", transport: "tcp" };
+  const edge = { id: "edge", name: "Edge", status: "online", transport: "agent" };
+  const box = { hostId: "local" };
+
+  test("an agent host is listed with the reason and cannot be picked, and an ordinary host can", () => {
+    const { options, usable, agentsOnly } = moveTargets(box, [local, lab, edge]);
+    expect(options).toContain('<option value="lab">Lab</option>');
+    expect(options).toContain('<option value="edge" disabled>Edge — an agent host cannot take a box yet</option>');
+    expect(usable).toBe(true);
+    expect(agentsOnly).toBe(false);
+  });
+
+  test("when the only other host is an agent host, there is nothing to pick, and the dialog says why", () => {
+    const { usable, agentsOnly } = moveTargets(box, [local, edge]);
+    expect(usable).toBe(false);
+    expect(agentsOnly).toBe(true);
+  });
+
+  test("the box's own host and a host that is offline are not offered at all, and none left is not 'agents only'", () => {
+    const offline = { ...lab, status: "offline" };
+    const { options, usable, agentsOnly } = moveTargets(box, [local, offline]);
+    expect(options).toBe("");
+    expect(usable).toBe(false);
+    expect(agentsOnly).toBe(false);
   });
 });

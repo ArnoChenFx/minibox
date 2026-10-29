@@ -117,6 +117,9 @@ describe("pairing codes", () => {
     book.create("edge", "Edge");
     expect(book.waitingName("Edge", "edge")).toBeNull();
     expect(book.waitingName("Edge", "lab")?.hostId).toBe("edge");
+    // A code for a host that exists by now can pair nothing, so it holds no name.
+    expect(book.waitingName("Edge", "lab", (hostId) => hostId === "edge")).toBeNull();
+    expect(book.waitingName("Edge", "lab", (hostId) => hostId === "elsewhere")?.hostId).toBe("edge");
   });
 
   test("a new code for a host replaces the one still waiting: only the newest pairs", () => {
@@ -337,7 +340,7 @@ describe("the control plane's agent API, over HTTP and a real socket", () => {
     expect(res.status).toBe(409);
   });
 
-  test("a name another host holds cannot be paired under, and the conflict names the host that has it", async () => {
+  test("a name another host holds cannot be given to a new pairing code, and the conflict names the host that has it", async () => {
     const { code } = (await (await post("/api/hosts/pairing", { id: "edge", name: "Edge lab" })).json()) as {
       code: string;
     };
@@ -381,6 +384,39 @@ describe("the control plane's agent API, over HTTP and a real socket", () => {
       status: "online",
       agent: { connected: true, version: AGENT_VERSION },
     });
+  });
+
+  test("removing an agent host deletes its shared tools volume on the machine, and nothing else there", async () => {
+    const { code } = (await (await post("/api/hosts/pairing", { id: "edge", name: "Edge" })).json()) as {
+      code: string;
+    };
+    const stored = await enrollAgent(code, tempDir());
+    runAgent(stored, edgeEngine);
+    await waitFor(() => app.agents.status(stored.identity.agentId)?.connected === true, "the agent to connect");
+    await waitFor(() => app.hosts.get("edge").host.status === "online", "the host to go online");
+    // Something of somebody else's on that engine, which MiniBox must leave as it is.
+    const bystander = edgeEngine.seedContainer({ image: "alpine:3.20", name: "bystander", running: true, labels: {} });
+    edgeEngine.volumes.set("bystanders-volume", { name: "bystanders-volume", labels: {} });
+
+    const made = await post("/api/boxes", { name: "alpha", cpus: 1, memoryMb: 256, host: "edge" });
+    expect(made.status).toBe(201);
+    const { box } = (await made.json()) as { box: { boxId: string } };
+    // The box and its own volumes go; the host's shared tools volume is the one no box delete may take.
+    const removedBox = await api(`/api/boxes/${box.boxId}?deleteVolume=true&skipTrash=true`, { method: "DELETE" });
+    expect(removedBox.status).toBe(200);
+    const tools = app.hosts
+      .get("edge")
+      .volumes.list()
+      .find((volume) => volume.hostId === "edge" && volume.role === "tools")?.engineName;
+    expect(tools).toBeDefined();
+    expect(edgeEngine.volumes.has(tools ?? "")).toBe(true);
+
+    const removed = await api("/api/hosts/edge", { method: "DELETE" });
+    expect(removed.status).toBe(200);
+    expect(edgeEngine.volumes.has(tools ?? "")).toBe(false);
+    // Nothing else on the machine was touched: the bystander's container and volume are where they were.
+    expect(edgeEngine.containers.has(bystander)).toBe(true);
+    expect(edgeEngine.volumes.has("bystanders-volume")).toBe(true);
   });
 
   test("a log read past 4 MiB comes back over the agent's socket in one frame, and the agent stays connected", async () => {

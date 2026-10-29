@@ -211,6 +211,8 @@ export default {
   "cb.selfToken": "Give the box's agent a self token",
   "cb.selfTokenHelp":
     "The agent can then ask you questions and report its status, through a token that reaches this box only. The token is rotated on every start and removed on stop. Off by default.",
+  "cb.selfTokenAgent":
+    "A box on an agent host cannot have a self token: the agent cannot write the token file into a box.",
   "cb.submit": "Create and start",
   "cb.creating": "Creating…",
   "cb.cpuRange": "CPU must be between 0.1 and {max} cores.",
@@ -308,6 +310,9 @@ export default {
     "Preview first. Nothing changes until you apply. The box keeps its id, name, volumes, env and history. Checkpoints stay on the source host.",
   "mv.host": "Target host",
   "mv.noHosts": "There is no other online host to move this box to. Add a host first.",
+  "mv.agentTarget": "an agent host cannot take a box yet",
+  "mv.agentsOnly":
+    "The only other hosts are agent hosts, and a box cannot move to or from an agent host yet. Add a host that is not an agent host first.",
   "mv.preview": "Preview",
   "mv.apply": "Move box",
   "mv.noPreview": "The move did not return a preview. Try again.",

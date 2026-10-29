@@ -22,6 +22,9 @@ afterAll(restoreLogs);
 const TIMEOUT_MS = 30_000;
 const VIEWPORT = { width: 1280, height: 800 };
 
+/** The grey of a plain `.help` line (`--text-3`), which a note meant to warn must not end up in. */
+const GREY_HELP = "rgb(139, 139, 148)";
+
 /** The English text of a dictionary key, which a locator looks for. */
 const english = (key: string): string => en[key] ?? key;
 
@@ -36,6 +39,7 @@ interface HostRow {
   id: string;
   name: string;
   transport: string;
+  status?: string;
 }
 
 /** Answers `GET /api/hosts` with `hosts`, keeping the response's own headers and status. */
@@ -184,6 +188,85 @@ describe.skipIf(!executablePath)("a Box on an agent host (real browser)", () => 
   );
 
   test(
+    "the create dialog turns the self token off for an agent host and says why, and gives it back for another host",
+    async () => {
+      const context = await signedIn();
+      try {
+        const page = await context.newPage();
+        await page.route("**/api/hosts", hostsAs([{ id: "edge", name: "Edge lab", transport: "agent" }]));
+        await page.goto(`${base}/#/boxes`);
+        await page.locator('[data-action="create"]').first().click();
+        const token = page.locator("#cbSelfToken");
+        const help = page.locator("#cbSelfTokenHelp");
+        await webExpect(page.locator("#cbHost")).toBeVisible();
+
+        // On the local host it is an ordinary option, and it can be ticked.
+        await page.locator("#cbHost").selectOption("local");
+        await webExpect(token).toBeEnabled();
+        await webExpect(help).toHaveText(english("cb.selfTokenHelp"));
+        await page.locator("#cbSelfTokenRow").click();
+        await webExpect(token).toBeChecked();
+
+        // On the agent host it is off, unticked so the request cannot ask for it, and the reason replaces its help.
+        await page.locator("#cbHost").selectOption("edge");
+        await webExpect(token).toBeDisabled();
+        await webExpect(token).not.toBeChecked();
+        await webExpect(page.locator("#cbSelfTokenRow")).toHaveClass(/is-disabled/);
+        await webExpect(help).toHaveText(english("cb.selfTokenAgent"));
+
+        // Back on an ordinary host it returns as it was.
+        await page.locator("#cbHost").selectOption("local");
+        await webExpect(token).toBeEnabled();
+        await webExpect(token).not.toBeChecked();
+        await webExpect(help).toHaveText(english("cb.selfTokenHelp"));
+      } finally {
+        await context.close();
+      }
+    },
+    TIMEOUT_MS,
+  );
+
+  test(
+    "the move dialog lists an agent host as a target that cannot be picked, and says so when it is the only other host",
+    async () => {
+      const context = await signedIn();
+      try {
+        const page = await context.newPage();
+        const edge = { id: "edge", name: "Edge lab", transport: "agent", status: "online" };
+        const lab = { id: "lab", name: "Lab", transport: "tcp", status: "online" };
+
+        await page.route("**/api/hosts", hostsAs([lab, edge]));
+        await page.goto(boxUrl(base, box, "overview"));
+        await page.locator('[data-action="move"]').click();
+        const targets = page.locator("#mvHost option");
+        await webExpect(targets).toHaveCount(2);
+        await webExpect(targets.nth(0)).toHaveText("Lab");
+        await webExpect(targets.nth(0)).toBeEnabled();
+        await webExpect(targets.nth(1)).toHaveText(`Edge lab — ${english("mv.agentTarget")}`);
+        await webExpect(targets.nth(1)).toBeDisabled();
+        // The first target that can be picked is the one chosen, and the preview button is there for it.
+        await webExpect(page.locator("#mvHost")).toHaveValue("lab");
+        await webExpect(page.locator("#mvPreviewBtn")).toBeVisible();
+        await page.keyboard.press("Escape");
+
+        await page.unroute("**/api/hosts");
+        await page.route("**/api/hosts", hostsAs([edge]));
+        await page.goto(boxUrl(base, box, "files"));
+        await page.goto(boxUrl(base, box, "overview"));
+        await page.locator('[data-action="move"]').click();
+        await webExpect(page.locator("#mvHost")).toHaveCount(0);
+        await webExpect(page.locator("#mvPreviewBtn")).toHaveCount(0);
+        await webExpect(page.locator(".dialog, [role='dialog']").last()).toContainText(english("mv.agentsOnly"));
+        // That sentence is the whole answer: the plain "no other host" line would tell someone with an agent host to add one.
+        await webExpect(page.locator(".dialog, [role='dialog']").last()).not.toContainText(english("mv.noHosts"));
+      } finally {
+        await context.close();
+      }
+    },
+    TIMEOUT_MS,
+  );
+
+  test(
     "the checkpoint button in the head is disabled and says why, and the settings card says the same",
     async () => {
       const context = await signedIn();
@@ -310,6 +393,10 @@ describe.skipIf(!executablePath)("a Box on an agent host (real browser)", () => 
         // One line above the table says it for the whole page, instead of the long sentence on every row.
         await webExpect(page.locator("#volAgentNote")).toBeVisible();
         await webExpect(page.locator("#volAgentNote")).toHaveText(english("vol.agentHostNote"));
+        // It is the warning-coloured 13px line it was written to be, not the grey 12px of the `.help` it also is: the
+        // two rules have the same weight, so only the later one wins unless the note's rule names both classes.
+        await webExpect(page.locator("#volAgentNote")).toHaveCSS("font-size", "13px");
+        await webExpect(page.locator("#volAgentNote")).not.toHaveCSS("color", GREY_HELP);
         // Nothing the three buttons would send was sent: no file listing, no usage read, no checkpoint.
         expect(requests.filter((path) => path.includes("/files"))).toEqual([]);
         expect(requests.filter((path) => path.endsWith("/usage"))).toEqual([]);
@@ -467,6 +554,8 @@ describe.skipIf(!executablePath)("a Box on an agent host (real browser)", () => 
         await webExpect(page.locator("#sckRows .sck-group").first()).toBeVisible();
         await webExpect(page.locator("#sckAgentNote")).toBeVisible();
         await webExpect(page.locator("#sckAgentNote")).toHaveText(english("ck.agentNote"));
+        await webExpect(page.locator("#sckAgentNote")).toHaveCSS("font-size", "13px");
+        await webExpect(page.locator("#sckAgentNote")).not.toHaveCSS("color", GREY_HELP);
 
         await page.locator("[data-action='ck-import']").click();
         const edge = page.locator("#ckImportHost option[value='edge']");

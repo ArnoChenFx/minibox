@@ -19,7 +19,8 @@
 
 ### 修复与权限
 
-- 控制台的 Agent 宿主机只保留 **移除** 按钮，移除时会先吊销 Agent；确认框写明 Agent 立即断开且无法再连、机器上的容器和卷不会被删除，以及要用 `docker rm -f` 删掉空转的 Agent 容器。`POST /api/hosts/{id}/revoke` 保留不变，用于宿主机仍有 Box 时立即切断 Agent。
+- 对 #287、#289、#290、#291 的独立复审修正：移动对话框把 Agent 宿主机置灰并写明原因（只剩 Agent 宿主机时只说明原因，不再给预览按钮），创建对话框在 Agent 宿主机上关闭自助令牌，卷页的 Agent 说明条恢复成警告色，`checkpoint.import` 目标是 Agent 宿主机时直接 `501`；移除 Agent 宿主机的确认框与文档如实写明会删除共享工具卷；同 id 的等待配对码在该宿主机被另行添加后不再占着名字，已移除宿主机的标签只用名字；已认证的 Agent 不占未认证名额，`attach` 写失败时归还名额，十六进制写法的 IPv4 映射地址归入同一个限流桶，Agent 的拨号与 hello 超时各记一行日志。
+- 控制台的 Agent 宿主机只保留 **移除** 按钮，移除时会先吊销 Agent；确认框写明 Agent 立即断开且无法再连、机器上的容器不会被删除、卷只删 MiniBox 自己的共享工具卷，以及要用 `docker rm -f` 删掉空转的 Agent 容器。`POST /api/hosts/{id}/revoke` 保留不变，用于宿主机仍有 Box 时立即切断 Agent。
 - **宿主机不能重名**（Refs [#192](https://github.com/ArnoChenFx/minibox/issues/192)）：添加宿主机、生成配对码和 Agent 配对时，名称（按 NFC、去首尾空白、不分大小写比较，不填时用 id）已被其他宿主机或其他未使用的配对码占用会返回 `409` `host_name_taken` / `host_name_taken_by_id` / `host_name_pending`；同一 id 重新生成配对码会立即替换旧码（旧码返回 `agent_pairing_replaced`）。已有重名的 hosts 文件照常加载，控制台和提示在重名处显示 `名称 · id`。
 - 存储池管理、显式选池及卷创建/删除要求所有者或未收窄的 admin 令牌；Box 默认配卷及授权范围内的文件、终端、端口、检查点和 SSH 按对应规则执行。
 - 删除 Box 时同时删除其卷（`deleteVolume=true`，REST 与 MCP `delete_box`）同样要求所有者或未收窄的 admin 令牌；其他令牌（包括按 id、标签或 created-by-me 限定、持有 `trash:skip` 的令牌）返回 `403 storage_admin_required`，Box 与卷都不改动。不带该参数删除 Box 不受影响。

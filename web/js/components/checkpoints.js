@@ -746,7 +746,6 @@ export function contentsText(checkpoint) {
   return parts.join(" · ") || "—";
 }
 
-/** An icon button for one checkpoint, as on the storage page's timeline. A disabled one gives its reason as the title. */
 /** The copy rule, refused when every other host is an agent host: none of them can hold the copy. */
 function copyRule(rule, checkpoint, hosts) {
   if (!rule.allowed) return rule;
@@ -754,6 +753,7 @@ function copyRule(rule, checkpoint, hosts) {
   return target ? rule : { allowed: false, reason: "ck.reasonCopyAgentOnly" };
 }
 
+/** An icon button for one checkpoint, as on the storage page's timeline. A disabled one gives its reason as the title. */
 function rowButton(action, checkpoint, iconName, label, rule, { danger = false } = {}) {
   const state = rule.allowed ? `title="${esc(label)}"` : `title="${esc(t(rule.reason))}" disabled`;
   return `<button type="button" class="icon-btn${danger ? " danger" : ""}" data-action="${action}" data-id="${esc(checkpoint.id)}" aria-label="${esc(label)}" ${state}>${icon(iconName)}</button>`;

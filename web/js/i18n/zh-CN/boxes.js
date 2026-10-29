@@ -204,6 +204,7 @@ export default {
   "cb.selfToken": "为 Box 的 Agent 启用自助令牌",
   "cb.selfTokenHelp":
     "启用后，Agent 可以通过只能访问这个 Box 的令牌向你提问，并报告状态。令牌在每次启动时轮换，停止时移除。默认关闭。",
+  "cb.selfTokenAgent": "Agent 宿主机上的 Box 不能启用自助令牌：Agent 无法把令牌文件写进 Box。",
   "cb.submit": "创建并启动",
   "cb.creating": "正在创建…",
   "cb.cpuRange": "CPU 须在 0.1 到 {max} 核之间。",
@@ -292,6 +293,8 @@ export default {
   "mv.help": "请先预览，应用前不会改变任何内容。Box 保留其 ID、名称、卷、环境变量和历史。检查点留在原宿主机。",
   "mv.host": "目标宿主机",
   "mv.noHosts": "没有其他在线的宿主机可以迁移到。请先添加宿主机。",
+  "mv.agentTarget": "Agent 宿主机暂不能接收 Box",
+  "mv.agentsOnly": "其他宿主机都是 Agent 宿主机，Box 暂不能迁入或迁出 Agent 宿主机。请先添加一台不是 Agent 的宿主机。",
   "mv.preview": "预览",
   "mv.apply": "迁移 Box",
   "mv.noPreview": "迁移没有返回预览，请重试。",

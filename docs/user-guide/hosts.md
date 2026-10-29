@@ -146,7 +146,7 @@ An **agent host has no such reading.** The agent carries the operations a box ne
 
 Click **Remove** next to the host, and confirm. A host that still has boxes, volumes or checkpoints cannot be removed. The **local** host cannot be removed.
 
-An agent host has only **Remove**. Removing it revokes its agent first: the agent is disconnected at once and cannot reconnect, and MiniBox forgets its record. To use the machine again, pair it with a new code and a new data volume, as the [agent reference](../reference/agent.md#remove-revoke-upgrade-and-re-pair) describes. Removing deletes no container or volume on the machine, and the agent's container keeps running idle there. Stop and remove that container on the machine with `docker rm -f`.
+An agent host has only **Remove**. Removing it revokes its agent first: the agent is disconnected at once and cannot reconnect, and MiniBox forgets its record. To use the machine again, pair it with a new code and a new data volume, as the [agent reference](../reference/agent.md#remove-revoke-upgrade-and-re-pair) describes. Removing deletes no container on the machine, and the only volume it deletes is MiniBox's own shared tools volume there (`<prefix>-tools-<host id>`), which only MiniBox's boxes mount. The agent's container keeps running idle there. Stop and remove that container on the machine with `docker rm -f`.
 
 To cut off an agent at once while its host still holds boxes, volumes or checkpoints, call `POST /api/hosts/{id}/revoke`. The endpoint is kept for this and for existing scripts. A revoked host stays listed, marked **Revoked**, until you remove it.
 

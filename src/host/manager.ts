@@ -523,8 +523,8 @@ export class HostManager {
       if (this.options.registry.has(grant.hostId) || this.stored.has(grant.hostId)) {
         throw conflict(msg("host_exists", { host: grant.hostId }));
       }
-      // The code was checked for its name when it was issued; a name another host has taken since then is refused here,
-      // as the id check above already answers after the code is spent.
+      // A waiting code holds its name against every other host, so the name cannot have been taken since it was issued.
+      // This is a guard that should not fire: it answers a name that is held anyway, not by a check the code ever needed.
       const name = this.freeName(grant.name, grant.hostId);
       const now = this.now().toISOString();
       const record = this.options.agents.enroll({
@@ -632,20 +632,25 @@ export class HostManager {
    * which names the host that holds it, when another host has it, or with `host_name_taken_by_id` when the name is the
    * id a host without a name would be named after, so the operator knows to give one. A waiting pairing code for another
    * host holds its name too, refused with `host_name_pending`; a code for `id` itself does not, as a new code for that id
-   * replaces it. Names are compared with `foldName`, and a name is never compared with an id: ids address a host, a name
-   * is only the label a person reads.
+   * replaces it, and neither does a code for a host that exists by now. Names are compared with `foldName`, and a name is
+   * never compared with an id: ids address a host, a name is only the label a person reads. Every caller has refused an
+   * `id` that is already a host before it asks, so no host is excused from the comparison.
    */
   private freeName(raw: string | undefined, id: string): string {
     const given = raw?.trim() ?? "";
     const name = given || id;
     const taken = foldName(name);
     const holder =
-      this.options.registry.list().find((ctx) => ctx.host.id !== id && foldName(ctx.host.name) === taken)?.host.id ??
-      [...this.stored.values()].find((host) => host.id !== id && foldName(host.name) === taken)?.id;
+      this.options.registry.list().find((ctx) => foldName(ctx.host.name) === taken)?.host.id ??
+      [...this.stored.values()].find((host) => foldName(host.name) === taken)?.id;
     if (holder !== undefined) {
       throw conflict(msg(given ? "host_name_taken" : "host_name_taken_by_id", { name, host: holder }));
     }
-    const waiting = this.options.agents.waitingName(name, id);
+    const waiting = this.options.agents.waitingName(
+      name,
+      id,
+      (hostId) => this.options.registry.has(hostId) || this.stored.has(hostId),
+    );
     if (waiting !== null) throw conflict(msg("host_name_pending", { name, host: waiting.hostId }));
     return name;
   }

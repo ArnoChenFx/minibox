@@ -146,7 +146,7 @@ minibox box create trainer --host auto --host-label gpu=true --host-label org/ar
 
 点击该宿主机旁的 **移除** 并确认。仍持有 Box、卷或检查点的宿主机无法移除。**local** 宿主机无法移除。
 
-Agent 宿主机只有 **移除** 按钮。移除时会先吊销它的 Agent：Agent 立即断开且无法再次连接，MiniBox 随后删除其记录。要再用这台机器，请用新的配对码和新的数据卷重新配对，见 [Agent 参考（英文）](../../reference/agent.md#remove-revoke-upgrade-and-re-pair)。移除不会删除机器上的任何容器或卷，Agent 的容器会在机器上空转。请在机器上使用 `docker rm -f` 停止并删除该容器。
+Agent 宿主机只有 **移除** 按钮。移除时会先吊销它的 Agent：Agent 立即断开且无法再次连接，MiniBox 随后删除其记录。要再用这台机器，请用新的配对码和新的数据卷重新配对，见 [Agent 参考（英文）](../../reference/agent.md#remove-revoke-upgrade-and-re-pair)。移除不会删除机器上的任何容器，唯一会删除的卷是 MiniBox 在那里创建的共享工具卷（`<前缀>-tools-<宿主机 id>`），只有 MiniBox 的 Box 会挂载它。Agent 的容器会在机器上空转。请在机器上使用 `docker rm -f` 停止并删除该容器。
 
 宿主机仍持有 Box、卷或检查点、又需要立即切断其 Agent 时，请调用 `POST /api/hosts/{id}/revoke`。这个接口为此保留，已有脚本也照常可用。被吊销的宿主机会留在列表中并标记为 **已吊销**，直到你移除它。
 

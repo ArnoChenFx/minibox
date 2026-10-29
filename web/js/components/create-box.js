@@ -352,7 +352,7 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
     : `<label class="check-row" id="cbSelfTokenRow">
         <input class="sr-only" type="checkbox" id="cbSelfToken" />
         <span class="check-mark" aria-hidden="true">${icon("check")}</span>
-        <span class="check-body"><span class="check-title"><strong>${t("cb.selfToken")}</strong></span><span class="help">${t("cb.selfTokenHelp")}</span></span>
+        <span class="check-body"><span class="check-title"><strong>${t("cb.selfToken")}</strong></span><span class="help" id="cbSelfTokenHelp">${t("cb.selfTokenHelp")}</span></span>
       </label>`;
   const repoSection = snapshot
     ? ""
@@ -487,6 +487,20 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
     if (pick === AUTO_HOST || agentHost(pick)) return undefined;
     return { card, host: pick };
   };
+  /**
+   * A box on an agent host cannot have a self token, because the agent cannot write a file into a box. The option is off
+   * there, with the reason where its help was, and it is cleared so the request never asks for it. A host that `auto`
+   * will pick is not known yet, and the server answers for that one.
+   */
+  const syncSelfToken = () => {
+    const input = q("#cbSelfToken");
+    if (!input) return;
+    const refused = agentHost(q("#cbHost")?.value ?? initialHost);
+    input.disabled = refused;
+    if (refused) input.checked = false;
+    q("#cbSelfTokenRow").classList.toggle("is-disabled", refused);
+    q("#cbSelfTokenHelp").textContent = t(refused ? "cb.selfTokenAgent" : "cb.selfTokenHelp");
+  };
   const syncNote = () => {
     const note = q("#cbSync");
     const copy = pendingCopy();
@@ -523,6 +537,7 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
     q("#cbHostHelp").textContent = t(q("#cbHost").value === AUTO_HOST ? "cb.hostAutoHelp" : "cb.hostHelp");
     validateRes();
     syncNote();
+    syncSelfToken();
     // The shared tools volume, and so the names the tools row would create, belong to the host.
     if (state.volumesMode === "custom") refreshMounts();
   });
@@ -903,6 +918,7 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
   }
   sync();
   syncNote();
+  syncSelfToken();
   if (!snapshot) {
     // The pool list probes every pool, so it is read beside the dialog. A row's pool control appears once it lands, and
     // the rule's pool is what the preview names until then: the server would make the volume on that pool anyway.

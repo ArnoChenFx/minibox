@@ -141,8 +141,14 @@ export class AgentClient {
       let connected = false;
       let executor: AgentExecutor | null = null;
       let heartbeat: ReturnType<typeof setInterval> | undefined;
-      // Dialing has its own budget; the hello's starts only once the socket is open.
-      let helloTimer = setTimeout(() => ws.close(), this.options.connectTimeoutMs ?? AGENT_CONNECT_TIMEOUT_MS);
+      // Dialing has its own budget; the hello's starts only once the socket is open. Each is logged when it runs out, since
+      // the close that follows has no code of its own to tell the two apart.
+      const connectBudget = this.options.connectTimeoutMs ?? AGENT_CONNECT_TIMEOUT_MS;
+      const helloBudget = this.options.helloTimeoutMs ?? AGENT_HELLO_TIMEOUT_MS;
+      let helloTimer = setTimeout(() => {
+        log.warn("agent.connect_timeout", { ms: connectBudget });
+        ws.close();
+      }, connectBudget);
       let settled = false;
 
       const send = (frame: AgentFrame) => {
@@ -173,7 +179,10 @@ export class AgentClient {
       ws.addEventListener("open", () => {
         if (settled || connected) return;
         clearTimeout(helloTimer);
-        helloTimer = setTimeout(() => ws.close(), this.options.helloTimeoutMs ?? AGENT_HELLO_TIMEOUT_MS);
+        helloTimer = setTimeout(() => {
+          log.warn("agent.hello_timeout", { ms: helloBudget });
+          ws.close();
+        }, helloBudget);
       });
       ws.addEventListener("message", (event) => {
         const frame = parseFrame(ServerFrameSchema, String(event.data));

@@ -67,7 +67,7 @@ A socket that gets through the upgrade but is past a limit as it opens is closed
 
 The address is the connection's TCP peer, or the client address in `X-Forwarded-For` when `TRUST_PROXY` is on. **With `TRUST_PROXY` off, a reverse proxy or tunnel in front of MiniBox makes every client share one address, and therefore one 8-socket limit.** If real agents are refused with `agent_pending_limit` behind such a proxy, turn `TRUST_PROXY` on (only behind a proxy you control that overwrites the header), or connect the agents directly.
 
-A socket that has not sent its hello yet may not send a frame larger than 4 KiB; one that does is closed with `1009`. A hello is a few hundred bytes, so no real handshake is affected. After the hello, a frame may be up to 16 MiB, the limit every MiniBox socket shares. A one-shot log read returns at most 2 MiB of text: the newest whole lines, after a line that says how many bytes of older output were left out. Follow the log stream to see everything.
+A socket that has not sent its hello yet may not send a frame larger than 4 KiB; one that does is closed with `1009`. A hello is a few hundred bytes, so no real handshake is affected. The length is checked before the frame is parsed, so a large frame costs no parsing, but the server has received it by then: what bounds that is the 16 MiB every MiniBox socket may send, which is also the limit after the hello. A frame that size from each of the 64 sockets that may be waiting is about a gigabyte of memory for as long as it takes to close them. A one-shot log read returns at most 2 MiB of text: the newest whole lines, after a line that says how many bytes of older output were left out. Follow the log stream to see everything.
 
 While connected, the agent sends a heartbeat every 10 seconds. The server closes a connection that stays silent for 30 seconds. After a disconnect, the agent reconnects with exponential backoff, starting at 1 second, doubling to at most 30 seconds, with about 20 percent of jitter either way.
 
@@ -84,7 +84,7 @@ The server closes a connection with one of these codes:
 | `4411` | Too many connections were already waiting for a hello (8 from one address, or 64 in total), so this one was closed without being challenged. The agent retries. |
 | `4426` | The agent speaks another protocol version. Update the image. |
 
-A refusal before the upgrade is an HTTP status, not a close code: `429` with `agent_pending_limit` or `agent_pending_total_limit` means a pending limit was reached, and the agent logs it as `agent.saturated` and retries. The agent logs every close with its code (`agent.closed` at info for a normal `1000`/`1001`, such as a server restart), so a log line tells a saturation (`4411`) apart from a network drop (`1006`) or a revocation (`4403`).
+A refusal before the upgrade is an HTTP status, not a close code: `429` with `agent_pending_limit` or `agent_pending_total_limit` means a pending limit was reached, and the agent logs it as `agent.saturated` and retries. The agent logs every close the server makes with its code (`agent.closed` at info for a normal `1000`/`1001`, such as a server restart, `agent.disconnected` for the rest), so a log line tells a saturation (`4411`) apart from a network drop (`1006`). A revocation is logged as `agent.refused`, from the `refused` frame that comes before the `4403` close. When the agent gives up itself, because dialing took longer than 30 seconds or the hello was not answered in 5, it logs `agent.connect_timeout` or `agent.hello_timeout` before it closes the socket, since that close carries no code of its own.
 
 ## Protocol version
 
@@ -109,7 +109,7 @@ Failures are reported with one of these kinds: `not_found`, `conflict`, `invalid
 
 ## Remove, revoke, upgrade and re-pair
 
-In the console, an agent host has only **Remove**. Removing it revokes the agent first: the agent is disconnected at once, is blocked from reconnecting, and MiniBox forgets its record. A host that still holds boxes, volumes or checkpoints cannot be removed. To cut off its agent at once anyway, call `POST /api/hosts/{id}/revoke`. A removed or revoked agent keeps running idle until its container is removed.
+In the console, an agent host has only **Remove**. Removing it revokes the agent first: the agent is disconnected at once, is blocked from reconnecting, and MiniBox forgets its record. A host that still holds boxes, volumes or checkpoints cannot be removed. The host's shared tools volume does not count: MiniBox deletes it on the machine, through the agent, just before the host goes, and deletes nothing else there. To cut off its agent at once anyway, call `POST /api/hosts/{id}/revoke`. A removed or revoked agent keeps running idle until its container is removed.
 
 To upgrade, pull the newer image, remove the old container and run the command again with the same data volume. The agent keeps its identity, so the host and its boxes stay the same:
 
