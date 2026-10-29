@@ -28,7 +28,7 @@ import {
   type VolumeView,
 } from "../services/volumes";
 import { requireRevision } from "../specs/revision";
-import { hostAllowed, refusal, specViews, volumeVisible } from "../tokens/model";
+import { hostAllowed, specViews, volumeVisible } from "../tokens/model";
 import { assertCheckpointQuota, underCheckpointQuota } from "../tokens/quota";
 import { ageMs } from "../volumes/age";
 import { assertHostDiskRoom } from "../volumes/disk";
@@ -241,10 +241,10 @@ const volumeCreate = defineOperation({
   conflicts: true,
   input: z.object({
     name: volumeName(),
-    pool: z
-      .string()
-      .optional()
-      .meta({ description: "Storage pool. Omitted, the role rule or the default pool is used." }),
+    pool: z.string().optional().meta({
+      description:
+        "Storage pool (owner or unmodified admin token only). Omitted, the role rule or the default pool is used.",
+    }),
     role: z.enum(ROLES).nullable().optional().meta({ description: "Optional role. Null is a general volume." }),
     confirm: storageConfirmFlag(),
   }),
@@ -254,13 +254,13 @@ const volumeCreate = defineOperation({
     toolset: "storage",
     name: "create_volume",
     description:
-      "Create an independent volume. It is not deleted when a box is deleted. New local volumes are chowned to uid 1000 when the base template image exists. Send confirm true; without it the call changes nothing and returns confirmation_required with details.preview.",
+      "Create an independent volume (owner or unmodified admin token only). It is not deleted when a box is deleted. New local volumes are chowned to uid 1000 when the base template image exists. Send confirm true; without it the call changes nothing and returns confirmation_required with details.preview.",
   },
   activity: { action: () => "volume.create", target: (input) => input.name },
   audit: { target: ({ name }, _resolved, result) => ({ kind: "volume", id: result?.volume.id, name }) },
   run: async ({ host, principal }, input) => {
     const request = { name: input.name, pool: input.pool, role: input.role ?? null, createdBy: principal.id };
-    if (principal.type === "token" && request.role === "tools") throw refusal("volume_create_forbidden");
+
     if (!input.confirm) throw confirmationRequired(previewCreateVolume(host, request));
     return { volume: await createVolume(host, request) };
   },
@@ -396,7 +396,7 @@ const volumeDeleteBatch = defineOperation({
     toolset: "storage",
     name: "delete_volumes",
     description:
-      "Delete several volumes, on any host, in one call. Each is deleted as delete_volume deletes it: its data is kept in the recycle bin unless skipTrash is true, and a volume that a box or container uses is refused. Each volume gets its own result, and one failure does not stop the others. A token deletes only the volumes it created. Send confirm true; without it the call changes nothing and returns confirmation_required with details.preview.",
+      "Delete several volumes, on any host, in one call. Each is deleted as delete_volume deletes it: its data is kept in the recycle bin unless skipTrash is true, and a volume that a box or container uses is refused. Each volume gets its own result, and one failure does not stop the others. Only the owner or an unmodified admin token can delete volumes, within the token’s resource grants. Send confirm true; without it the call changes nothing and returns confirmation_required with details.preview.",
   },
   precondition: async (ctx, input) => {
     if (input.skipTrash) await assertCanSkipTrash(ctx);

@@ -325,6 +325,7 @@ export class AgentExecutor {
   }
 
   private async run(id: string, op: string, raw: unknown): Promise<Reply> {
+    if (this.streams.isClosed) throw new RuntimeError("unavailable", "the connection closed");
     const r = this.runtime;
     switch (op) {
       case "ping":

@@ -1,4 +1,5 @@
 export default {
+  "err.storage_admin_required": "选择存储池及创建、删除卷需要所有者或未收窄的管理员令牌。",
   "err.invalid_json_object": "请求体必须是 JSON 对象。",
   "err.invalid_json": "请求体不是合法的 JSON。",
   "err.field_required": "{label}不能为空。",

@@ -404,11 +404,11 @@ describe("presets and file access", () => {
     expect(scopeAllowed(sshOnly, "exec")).toBe(false);
   });
 
-  test("volume:delete is its own scope that no preset holds, volume:write is not enough, and pruning is the owner's alone", () => {
+  test("volume:delete is an admin preset scope; an individual scope does not grant storage administrator identity", () => {
     expect(requiredScopes("volume:delete")).toEqual(["volume:delete"]);
     expect(requiredScopes("volume:prune")).toBe("owner");
     expect(compileToken({ name: "o", preset: "operator" }).scopes).not.toContain("volume:delete");
-    expect(compileToken({ name: "a", preset: "admin" }).scopes).not.toContain("volume:delete");
+    expect(compileToken({ name: "a", preset: "admin" }).scopes).toContain("volume:delete");
     expect(compileToken({ name: "s", preset: "sandboxed-agent" }).scopes).not.toContain("volume:delete");
     expect(compileToken({ name: "r", preset: "readonly" }).scopes).not.toContain("volume:delete");
     const sandbox = grantsOf(compileToken({ name: "s", preset: "sandboxed-agent" }));

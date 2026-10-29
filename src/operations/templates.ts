@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import type { HostCtx } from "../host/registry";
-import { type ErrorCode, AppError, notFound } from "../lib/errors";
+import { type ErrorCode, AppError, conflict, notFound } from "../lib/errors";
 import { type MessageKey, msg } from "../lib/messages";
 import { NAME_RE } from "../lib/validation";
 import { assertNoSecretInImage } from "../secrets/env";
@@ -29,6 +29,7 @@ import {
   templateSourceImage,
 } from "../services/templates";
 import type { TaskError, TaskReader } from "../tasks/types";
+import { assertTemplateAccess } from "../tokens/authorize";
 import { templateVisible } from "../tokens/model";
 import { defineOperation } from "./define";
 import { fromEveryHost, hostById, hostNamed, hostOfBox, hostOfImage, imageHosts, refuseAgent } from "./routing";
@@ -290,7 +291,10 @@ export const templateGet = defineOperation({
       "Read the source a template rebuilds from: its kind, the fields of that source (the Dockerfile text for a dockerfile, the url and optional branch, subdir, path, dockerfile and secretRef for the others), and the setup a box created from it gets. A template saved from a box has no source, so it answers 400 template_not_declared. Optional host names the host that holds the template; without it the first host that holds it. Returns the recipe.",
   },
   hostFor: (ctx, input) => hostOfImage(ctx, input.ref, input.host),
-  precondition: async ({ host }) => refuseAgent(host, "templates"),
+  precondition: async ({ host, principal }, input) => {
+    refuseAgent(host, "templates");
+    if (principal.type === "token") await assertTemplateAccess(principal, host, input.ref, false);
+  },
   resolve: ({ host }, input) => templateAndRecipe(host, input.ref),
   run: async (_ctx, _input, [declared]) => ({ recipe: recipeView(declared.recipe) }),
 });
@@ -351,7 +355,10 @@ export const templateEdit = defineOperation({
       "Change what a template rebuilds from without building it: its source, the setup a box created from it gets, and its description. The template's current image is kept, so boxes created before the next rebuild are unaffected; rebuild_template then builds the edited source. A template built from a Dockerfile, a repository, a build context or a devcontainer.json can be edited, and a template saved from a box cannot, because it has no source to build from. An official template's source cannot be replaced either, because its Dockerfile ships with MiniBox; its setup and description can. A new description re-commits the image under the same tag, so its card shows the new one. Omitted source, init and description fields keep the values the template has; init null clears the setup. Optional host names the host that holds the template; without it the first host that holds it. Editing needs the tool:install scope: the owner may edit any template, and a token only the templates it created, the same ones it may delete. Returns the template's ref, name and build kind.",
   },
   hostFor: (ctx, input) => hostOfImage(ctx, input.ref, input.host),
-  precondition: async ({ host }) => refuseAgent(host, "templates"),
+  precondition: async ({ host, principal }, input) => {
+    refuseAgent(host, "templates");
+    if (principal.type === "token") await assertTemplateAccess(principal, host, input.ref, true);
+  },
   resolve: ({ host }, input) => templateAndRecipe(host, input.ref),
   activity: { action: () => "template.edit", target: (_input, resolved) => resolved[0].name },
   audit: {
@@ -364,14 +371,18 @@ export const templateEdit = defineOperation({
       init: input.init,
     }),
   },
-  run: async ({ host }, _input, [declared, image]) => ({
-    template: await holdingTemplate(host, declared.name, () =>
-      editTemplate(host, declared, image, {
-        source: _input.source,
-        init: _input.init,
-        description: _input.description,
-      }),
-    ),
+  run: async ({ host }, input, [declared, image]) => ({
+    template: await holdingTemplate(host, declared.name, async () => {
+      const [current, currentImage] = await templateAndRecipe(host, `${host.prefix}-template:${declared.name}`);
+      if (currentImage.id !== image.id || JSON.stringify(current.recipe) !== JSON.stringify(declared.recipe)) {
+        throw conflict(msg("template_busy", { name: declared.name }));
+      }
+      return editTemplate(host, current, currentImage, {
+        source: input.source,
+        init: input.init,
+        description: input.description,
+      });
+    }),
   }),
 });
 

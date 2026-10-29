@@ -2,6 +2,13 @@
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## Unreleased — issue #286
+
+- **权限变化**：存储池选择、池管理及显式卷创建/删除只允许所有者和未收窄的 admin 令牌；已有受限令牌升级后立即受约束。默认 Box 配卷、授权 Box 的文件/终端/端口/检查点与带 box:ssh 的 SSH 保留。
+- 修复模板编辑的并发陈旧快照、单字段清空和 argv 参数往返；旧镜像不再形成重复模板卡片。
+- 备份跳过坏记录，维护失败不删除完整归档或阻止启动；正确排除符号链接指向的归档目录，自定义已有目录保留权限。
+- 修复 320px 首次引导控件溢出，收敛 task stream 去重状态、卷状态回收、Docker inspect 并发和工具模块依赖。
+
 ## [Unreleased]
 
 ### 新增

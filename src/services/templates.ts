@@ -33,17 +33,22 @@ export type TemplateItem = ImageItem & { buildKind?: BuildKind; postCreate?: str
 export async function listTemplates(host: HostCtx): Promise<TemplateItem[]> {
   const images = await listImagesByLabel(host, host.keys.template);
   const prefix = `${host.prefix}-template:`;
-  return images.map((image) => {
-    const tag = image.tags.find((t) => t.startsWith(prefix));
-    const buildKind = tag === undefined ? null : buildKindOf(host, tag.slice(prefix.length), image.id);
-    const init = tag === undefined ? null : templateInitOf(host, tag.slice(prefix.length), image.id);
-    return {
-      ...image,
-      ...(buildKind === null ? {} : { buildKind }),
-      ...(init?.postCreate === undefined ? {} : { postCreate: init.postCreate }),
-      ...(init?.forwardPorts === undefined ? {} : { forwardPorts: init.forwardPorts }),
-    };
-  });
+  return images
+    .filter((image) => {
+      const recipe = image.name ? readRecipe(host, image.name) : null;
+      return image.tags.some((tag) => tag.startsWith(prefix)) || !recipe || recipe.imageId === image.id;
+    })
+    .map((image) => {
+      const tag = image.tags.find((t) => t.startsWith(prefix));
+      const buildKind = tag === undefined ? null : buildKindOf(host, tag.slice(prefix.length), image.id);
+      const init = tag === undefined ? null : templateInitOf(host, tag.slice(prefix.length), image.id);
+      return {
+        ...image,
+        ...(buildKind === null ? {} : { buildKind }),
+        ...(init?.postCreate === undefined ? {} : { postCreate: init.postCreate }),
+        ...(init?.forwardPorts === undefined ? {} : { forwardPorts: init.forwardPorts }),
+      };
+    });
 }
 
 /**
@@ -322,6 +327,11 @@ export async function editTemplate(
       ? image
       : await relabelTemplate(host, declared, image, description);
   const recipe = editRecipe(host, declared, edit, relabelled.id);
+  if (relabelled.id !== image.id) {
+    await host.runtime.removeImage(image.id, { force: false }).catch((error: unknown) => {
+      log.warn("template.previous_image_kept", { image: image.id, error: String(error) });
+    });
+  }
   log.info("template.edited", { name: declared.name, kind: recipe.source.kind });
   return { ref: `${host.prefix}-template:${declared.name}`, name: declared.name, buildKind: recipe.source.kind };
 }

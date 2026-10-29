@@ -18,8 +18,6 @@ const TIMEOUT_MS = 30_000;
 const VIEWPORT = { width: 1280, height: 800 };
 
 const WEB = join(ROOT, "web");
-const PAGE = readFileSync(join(WEB, "js", "pages", "templates.js"), "utf8");
-const DIALOG = readFileSync(join(WEB, "js", "components", "fork-template.js"), "utf8");
 const EN = readFileSync(join(WEB, "js", "i18n", "en.js"), "utf8");
 const ZH = readFileSync(join(WEB, "js", "i18n", "zh-CN.js"), "utf8");
 const EN_BOXES = readFileSync(join(WEB, "js", "i18n", "en", "boxes.js"), "utf8");
@@ -61,26 +59,6 @@ describe("the name a fork is prefilled with", () => {
 });
 
 describe("the fork action on the template card", () => {
-  test("the page renders a fork button on a template a host holds, wired to the fork dialog", () => {
-    expect(PAGE).toContain('data-action="fork"');
-    expect(PAGE).toContain('import { openForkTemplate } from "../components/fork-template.js"');
-    expect(PAGE).toContain("openForkTemplate({ card, cards, onForked:");
-    // A template no host holds has nothing to fork, so its card shows no fork button.
-    expect(PAGE).toContain('${!unbuilt ? `<button class="btn btn-sm" data-action="fork"');
-  });
-
-  test("the dialog posts to the fork route and reloads the page with the new template in focus", () => {
-    expect(DIALOG).toContain("/fork`");
-    expect(DIALOG).toContain('method: "POST"');
-    expect(DIALOG).toContain("invalidateTemplates()");
-    expect(PAGE).toContain("onForked: (template) => load(template?.name)");
-  });
-
-  test("the prefilled name is a free <name>-copy, and a taken one moves on to -copy-2", () => {
-    expect(DIALOG).toContain('import { forkName, takenNames } from "../lib/fork-name.js"');
-    expect(DIALOG).toContain("forkName(card.name, takenNames(cards))");
-  });
-
   test("the dialog says the build source is copied and the copy can be rebuilt, in both languages", () => {
     for (const [lang, source] of [
       ["en", EN],

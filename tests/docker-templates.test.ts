@@ -24,6 +24,7 @@ import type { Runtime } from "../src/runtime";
 import { startServer } from "../src/server";
 import * as boxes from "../src/services/boxes";
 import { createSnapshot, deleteSnapshot } from "../src/services/snapshots";
+import { createDeclaredTemplate } from "../src/services/template-builds";
 import { deleteTemplate } from "../src/services/templates";
 import { silenceLogs, testConfig } from "./support/app";
 import { call, finishedTask, refused } from "./support/tokens";
@@ -193,6 +194,49 @@ describe.skipIf(!enabled)("Saving a box as a template on a real engine", () => {
       expect(refused(promoted)).toEqual({ status: 409, key: "template_name_taken" });
       expect((await runtime.inspectImage(TEMPLATE)).id).toBe(before);
       await deleteSnapshot(host, ref);
+    },
+    LONG,
+  );
+  test(
+    "declared source edits, description commits and rebuild keep one valid recipe on the real engine",
+    async () => {
+      const ref = `${prefix}-template:review-edit`;
+      try {
+        await createDeclaredTemplate(
+          host,
+          { name: "review-edit", source: { kind: "dockerfile", text: `FROM ${IMAGE}\n` }, createdBy: "owner" },
+          {},
+        );
+        const before = (await runtime.inspectImage(ref)).id;
+        const path = `/api/templates/${encodeURIComponent(ref)}`;
+        expect(
+          (
+            await call(base, path, {
+              method: "PATCH",
+              body: {
+                source: { kind: "dockerfile", text: `FROM ${IMAGE}\nENV REVIEW_LITERAL=literal\n` },
+                init: { postCreate: ["printf", "%s", "$REVIEW_LITERAL"], forwardPorts: [3000] },
+              },
+            })
+          ).status,
+        ).toBe(200);
+        expect((await runtime.inspectImage(ref)).id).toBe(before);
+        expect((await call(base, path, { method: "PATCH", body: { description: "Reviewed source" } })).status).toBe(
+          200,
+        );
+        expect((await runtime.inspectImage(ref)).id).not.toBe(before);
+        const recipe = await call(base, `${path}/recipe`);
+        expect(recipe.status).toBe(200);
+        expect(recipe.json.recipe?.postCreate).toEqual(["printf", "%s", "$REVIEW_LITERAL"]);
+        const listed = await call(base, "/api/templates");
+        expect(listed.json.templates?.filter((template) => template.name === "review-edit")).toHaveLength(1);
+        const started = await call(base, `${path}/rebuild`, { body: {} });
+        expect(started.status).toBe(202);
+        expect((await finishedTask(base, started.json.taskId ?? "")).status).toBe("succeeded");
+        expect((await call(base, `${path}/recipe`)).status).toBe(200);
+      } finally {
+        await deleteTemplate(host, ref).catch(() => {});
+      }
     },
     LONG,
   );

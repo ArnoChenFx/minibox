@@ -12,6 +12,7 @@ import { assertSecretsSet, containerEnv } from "../secrets/env";
 import { newBoxId, isBoxId } from "../specs/revision";
 import type { BoxMount, MountMode, BoxSpec } from "../specs/types";
 import { loadCatalog } from "../tools/catalog";
+import { desiredToolsOf } from "../tools/desired";
 import { VolumeChanges } from "../volumes/changes";
 import { type CreateMount, isRoleMount, mountPointOf, rolePoolsOf, roleRequests } from "../volumes/create-mounts";
 import { assertVolumesPresent, healSharedToolsMounts, poolsUsed, trackPoolRoots } from "../volumes/engine";
@@ -35,7 +36,6 @@ import {
 import { ensureImageOn } from "./images";
 import { assertSelfTokenHost, provisionSelfToken, selfTokenTmpfs } from "./self-token";
 import { scheduleStartup } from "./startup";
-import { desiredToolsOf } from "./tools";
 import { type RecordNote, writableWorkspaceVolume, alignVolumeRoot } from "./volume-owner";
 
 function assertMountList(mounts: BoxMount[]): void {

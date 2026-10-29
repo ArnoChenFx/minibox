@@ -73,6 +73,14 @@ export function bindPermissions(root, catalog, { onPreset = () => {} } = {}) {
     const preset = presetOf(current);
     const scopes = chosen();
     const custom = !sameScopes(scopes, preset.scopes);
+    const deletion = boxes.find((box) => box.value === "volume:delete");
+    if (deletion) {
+      const form = root.querySelector("#stTokenForm");
+      const admin =
+        current === "admin" && !custom && form?.elements.boxes.value === "*" && form?.elements.hosts.value === "*";
+      deletion.disabled = !admin;
+      deletion.closest("label").title = admin ? "" : t("st.storageAdminPolicy");
+    }
     for (const button of buttons) {
       const on = button.dataset.preset === current;
       button.setAttribute("aria-pressed", String(on));
@@ -99,9 +107,11 @@ export function bindPermissions(root, catalog, { onPreset = () => {} } = {}) {
     button.addEventListener("click", () => {
       apply(button.dataset.preset);
       onPreset(presetOf(button.dataset.preset));
+      paint();
     });
   }
   for (const box of boxes) box.addEventListener("change", paint);
+  root.querySelector("#stTokenForm")?.addEventListener("change", paint);
   root.querySelector("#stPermReset").addEventListener("click", () => apply(current));
   apply(current);
   return { preset: () => current, scopes: chosen };

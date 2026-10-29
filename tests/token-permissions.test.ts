@@ -34,7 +34,7 @@ describe("the scope catalog the new-token dialog reads", () => {
       catalog.presets.filter((p) => p.scopes.includes(scope as never)).map((p) => p.name);
     expect(holders("secret:use")).toEqual(["admin"]);
     expect(holders("trash:skip")).toEqual([]);
-    expect(holders("volume:delete")).toEqual([]);
+    expect(holders("volume:delete")).toEqual(["admin"]);
   });
 
   test("the preset descriptions match the scope sets", () => {
@@ -46,7 +46,7 @@ describe("the scope catalog the new-token dialog reads", () => {
         (x, y) => scopes("operator").indexOf(x) - scopes("operator").indexOf(y),
       ),
     );
-    expect(lost("admin", "operator")).toEqual(["secret:use"]);
+    expect(lost("admin", "operator")).toEqual(["volume:delete", "secret:use"]);
     expect(lost("operator", "admin")).toEqual([]);
     expect(catalog.presets.find((p) => p.name === "sandboxed-agent")?.quotas).toMatchObject({
       maxBoxes: 5,

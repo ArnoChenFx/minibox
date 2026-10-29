@@ -131,3 +131,18 @@ Early versions of MiniBox ran boxes as root. Those boxes keep running as root. N
   ```
 
 A rebuild does not change the files in a volume. A recursive `chown` on a large volume is a one-time task that you run yourself.
+
+## Storage administration after issue #286
+
+Only the owner and an **unmodified admin token** may select a storage pool or explicitly create/delete volumes (including batch deletion and orphan pruning), or list/change storage pools. This rule applies immediately to saved tokens after an upgrade. `volume:write`, `volume:delete`, a token named “admin”, and a custom token with every scope do not grant administrator identity.
+
+The server derives this capability from its stored admin preset, full audit policy and unrestricted box/host grants. Editing scopes or narrowing boxes/hosts removes it. Existing unmodified admin records remain compatible; no new credential field is trusted from the client. Other owner-only operations, including token management, remain owner-only.
+
+| Caller | Storage management / explicit pool | Box functions |
+| --- | --- | --- |
+| Owner | Allowed | Allowed |
+| Unmodified admin | Allowed within host/resource grants, with confirmation/audit | Existing scopes apply |
+| Operator / sandboxed / custom / narrowed admin | Refused, even with volume scopes | Existing box/resource scopes apply |
+| Box self-token | Refused | Existing self operations only |
+
+A permitted Box create without a pool still receives its default role volumes as a server lifecycle operation. Scoped tokens retain file writes, terminal/exec, ports, checkpoints and activity on their granted boxes; SSH still requires `box:ssh`. Rebuild cannot manufacture an arbitrary named volume. `volume:write` remains useful for writing accessible volumes and does not grant independent volume creation.

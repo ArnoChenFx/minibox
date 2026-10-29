@@ -7,6 +7,7 @@ import {
   mkdirSync,
   openSync,
   readFileSync,
+  realpathSync,
   renameSync,
   rmSync,
   statSync,
@@ -49,10 +50,23 @@ export function resolveBackupDir(value: string | undefined, dataDir: string, roo
   return resolvePath(value, root, home, join(dataDir, "backups"));
 }
 
+/** Resolve symlinks in existing ancestors without requiring the final directory to exist yet. */
+function realPath(path: string): string {
+  const absolute = resolve(path);
+  try {
+    return realpathSync(absolute);
+  } catch (error) {
+    if (!["ENOENT", "ENOTDIR"].includes((error as NodeJS.ErrnoException).code ?? "")) throw error;
+    const parent = dirname(absolute);
+    if (parent === absolute) throw error;
+    return join(realPath(parent), basename(absolute));
+  }
+}
+
 /** Whether `path` is `dir` or sits under it, compared on resolved paths so `..` and symlinks cannot slip out. */
 export function isWithinDir(path: string, dir: string): boolean {
-  const target = resolve(path);
-  const base = resolve(dir);
+  const target = realPath(path);
+  const base = realPath(dir);
   return target === base || target.startsWith(base.endsWith(sep) ? base : `${base}${sep}`);
 }
 

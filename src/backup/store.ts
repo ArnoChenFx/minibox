@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { existsSync, readdirSync, readFileSync, renameSync, rmSync, statSync, unlinkSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 
 import { z } from "zod";
@@ -79,10 +79,16 @@ export class BackupStore {
     return join(this.dir(), `.${id}.part`);
   }
 
-  /** The directory exists before anything is written into it, and holds nothing but backups: mode 700. */
+  /** New backup folders are private; an existing custom folder retains the operator’s chosen permissions. */
   ensureDir(): void {
     ensureDataDir(this.dataDir);
-    ensurePrivateDir(this.dir());
+    if (this.insideDataDir()) ensurePrivateDir(this.dir());
+    else {
+      const created = mkdirSync(this.dir(), { recursive: true, mode: 0o700 });
+      if (created === undefined && (statSync(this.dir()).mode & 0o077) !== 0) {
+        log.warn("backup.directory_shared", { path: this.dir() });
+      }
+    }
   }
 
   allocateId(): string {
@@ -98,8 +104,8 @@ export class BackupStore {
     try {
       text = readFileSync(this.recordPath(id), "utf8");
     } catch (e) {
-      if (isEnoent(e)) return null;
-      throw e;
+      if (!isEnoent(e)) log.warn("backup.record_unreadable", { id, error: String(e) });
+      return null;
     }
     try {
       const parsed = BackupRecordSchema.safeParse(JSON.parse(text));
@@ -148,8 +154,8 @@ export class BackupStore {
     try {
       return statSync(this.pathFor(id)).size;
     } catch (e) {
-      if (isEnoent(e)) return null;
-      throw e;
+      if (!isEnoent(e)) log.warn("backup.record_unreadable", { id, error: String(e) });
+      return null;
     }
   }
 
@@ -162,7 +168,10 @@ export class BackupStore {
     const names = this.names();
     for (const name of names) {
       const orphan = this.isOrphanArchive(name, names);
-      if (!name.startsWith(".") && !orphan) continue;
+      const partial = name.startsWith(".") && name.endsWith(".part") && isBackupId(name.slice(1, -5));
+      const temporaryRecord = /^\.bk_[0-9a-z]{8,32}\.json\.[0-9a-f]+\.tmp$/.test(name);
+      const snapshot = /^\.snapshot-[A-Za-z0-9]+$/.test(name);
+      if (!partial && !temporaryRecord && !snapshot && !orphan) continue;
       rmSync(join(this.dir(), name), { recursive: true, force: true });
       removed += 1;
     }

@@ -202,3 +202,18 @@ minibox files write my-volume notes.txt --content "hello"
 ```
 
 全部 `minibox files` 命令见 [CLI 参考（英文）](../../reference/cli.md)。要在 Box 页面上浏览、上传与下载文件，参见[文件](files.md)。
+
+## #286 后的存储管理权限
+
+只有所有者和**未收窄的管理员令牌**可以选择存储池、显式创建或删除卷（含批量删除、清理孤立卷），以及列出和修改存储池。升级后已有令牌立即受此限制。单独持有 `volume:write`、`volume:delete`，令牌命名为 admin，或自定义全部 scope，都不会成为管理员。
+
+服务端依据保存的 admin 预设、完整审计策略以及全范围 Box/宿主机授权派生管理能力。修改 scope 或收窄 Box/宿主机范围会移除此能力；已有未收窄的 admin 记录保持兼容，不信任客户端新增身份字段。令牌管理等其他 owner-only 功能仍只属于所有者。
+
+| 调用者 | 存储管理 / 显式选择池 | Box 功能 |
+| --- | --- | --- |
+| 所有者 | 允许 | 允许 |
+| 未收窄 admin | 在宿主机/资源授权内允许，保留确认与审计 | 按既有 scope |
+| operator / sandboxed / 自定义 / 收窄 admin | 拒绝，即使带卷管理 scope | 按既有 Box/资源 scope |
+| Box self-token | 拒绝 | 仅既有 self 操作 |
+
+有权创建 Box 的令牌不指定 pool 时，默认角色卷仍由服务器配备。受限令牌仍可在授权 Box 内操作文件、终端、端口、检查点、活动，SSH 仍需 `box:ssh`。重建不能凭任意新卷名创建独立卷。`volume:write` 保留用于可访问卷的写入，不等同于卷创建能力。

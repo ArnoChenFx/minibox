@@ -2,6 +2,7 @@ import { AppError } from "../lib/errors";
 import { msg } from "../lib/messages";
 import type { TemplateInit } from "../services/template-builds";
 import type { BoxMount } from "../specs/types";
+import { mayManageStorage, refusal } from "../tokens/model";
 import { type CreateMount, isRoleMount, mountPointOf, type RoleRequest, roleRequests } from "../volumes/create-mounts";
 import { findSharedTools, leftoverWorkspace } from "../volumes/engine";
 import { poolForRole } from "../volumes/pools";
@@ -140,13 +141,16 @@ async function assertCanCreateRoleVolumes(
   boxName: string,
   requests: readonly RoleRequest[],
 ): Promise<void> {
+  if (requests.some((request) => request.pool !== undefined) && !mayManageStorage(ctx.principal)) {
+    throw refusal("storage_admin_required");
+  }
   const roles = requests.map((request) => request.role);
   for (const request of requests) {
     if (request.pool !== undefined && !poolNamed(ctx, request.pool)) {
       throw new AppError(400, "validation_failed", msg("pool_not_found", { pool: request.pool }), { field: "mounts" });
     }
   }
-  if (roles.includes("workspace")) {
+  if (requests.some((request) => request.role === "workspace" && request.pool === undefined)) {
     const leftover = await leftoverWorkspace(ctx.host, boxName);
     if (leftover) {
       const volume: VolumeRef = leftover.record ?? { name: leftover.engineName };

@@ -158,6 +158,8 @@ export function editRecipe(
       ...(declared.recipe.init?.forwardPorts === undefined ? {} : { forwardPorts: declared.recipe.init.forwardPorts }),
       ...(init.forwardPorts === undefined ? {} : { forwardPorts: init.forwardPorts }),
     };
+    if (merged.postCreate?.length === 0) delete merged.postCreate;
+    if (merged.forwardPorts?.length === 0) delete merged.forwardPorts;
     if (Object.keys(merged).length === 0) delete next.init;
     else next.init = merged;
   }

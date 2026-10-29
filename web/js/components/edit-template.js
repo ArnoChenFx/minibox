@@ -191,7 +191,10 @@ export async function openEditTemplate({ card, onEdited } = {}) {
         method: "PATCH",
         body: {
           ...(built.source === undefined ? {} : { source: built.source }),
-          init: initOf(q("#tePostCreate").value, ports.ports),
+          init:
+            q("#tePostCreate").value === commandText(recipe.postCreate)
+              ? { postCreate: recipe.postCreate ?? [], forwardPorts: ports.ports }
+              : initOf(q("#tePostCreate").value, ports.ports),
           ...(description === "" ? {} : { description }),
         },
       });

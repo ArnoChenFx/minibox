@@ -37,15 +37,13 @@ const resetFrame = (after: number) => `event: reset\ndata: ${JSON.stringify({ af
 export function taskStream(options: TaskStreamOptions): ReadableStream<Uint8Array> {
   const { taskId, store } = options;
   const replayLimit = options.replayLimit ?? REPLAY_LIMIT;
-  const sent = new Set<number>();
   let last = 0;
 
   return sseStream(options, (shell) => {
     const { frames, notify } = shell;
 
     const queueEvent = (event: TaskStreamEvent) => {
-      if (sent.has(event.seq)) return;
-      sent.add(event.seq);
+      if (event.seq <= last) return;
       last = Math.max(last, event.seq);
       if (!frames.push(eventFrame(event))) {
         frames.clear();

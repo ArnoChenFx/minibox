@@ -64,12 +64,17 @@ export class BackupService {
   constructor(private readonly options: BackupServiceOptions) {
     this.store = new BackupStore(options.dataDir, { dir: options.backupDir });
     this.keep = options.keep ?? 0;
-    this.exclude = this.store.insideDataDir() ? [] : [this.store.dir()];
+    this.exclude = [this.store.dir()];
   }
 
   /** Removes what a crash left behind. Runs once at startup, before any backup can be running. */
   sweepPartial(): number {
-    return this.store.sweepPartial();
+    try {
+      return this.store.sweepPartial();
+    } catch (error) {
+      log.error("backup.sweep_failed", { error: String(error) });
+      return 0;
+    }
   }
 
   /**
@@ -77,7 +82,12 @@ export class BackupService {
    * backup just made is protected: two backups can share a millisecond, and a tie must not delete the newest one.
    */
   applyRetention(protect?: string): RetentionResult {
-    return applyBackupRetention(this.store, this.keep, { protect });
+    try {
+      return applyBackupRetention(this.store, this.keep, { protect });
+    } catch (error) {
+      log.error("backup.retention_failed", { error: String(error) });
+      return { removed: [], kept: 0 };
+    }
   }
 
   async create(passphrase: string, createdBy: string | null, progress?: (line: string) => void): Promise<BackupRecord> {

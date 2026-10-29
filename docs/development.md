@@ -232,3 +232,5 @@ Only maintainers publish releases. A normal change does not include these steps.
 The release workflow fails when the tag and `package.json` disagree. A tag with a suffix, such as `v1.0.0-rc.1`, is published as a prerelease and does not move the `latest` image tag.
 
 The running version comes from `MINIBOX_VERSION`, which the release image sets from its tag. A source checkout uses `git describe --tags`, and otherwise `package.json`.
+
+The SSH/credential integration fixtures require `openssl` in addition to Docker. Browser layout validation must record the Chromium version and available fonts; keep 320px/390px checks against the whole page, not only its inner container. See [issue #286 follow-up decisions](reviews/issue-286.md).

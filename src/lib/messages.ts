@@ -477,6 +477,8 @@ export const MESSAGES = {
     "A prune that removes volumes must name them: send the ids its dry run listed, and only those are removed.",
   volume_attach_forbidden: "This credential may not attach volume {volume}.",
   volume_write_forbidden: "This credential may not write volume {volume}.",
+  storage_admin_required:
+    "Storage pool selection and volume administration require the owner or an unmodified admin token.",
   volume_create_forbidden: "This credential may not create volumes.",
   volume_chown_failed: "Could not change ownership of a new volume: {detail}",
   volume_prepare_failed: "Could not prepare the volume directory: {detail}",

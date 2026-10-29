@@ -56,7 +56,7 @@ describe("the setup an edit sends", () => {
   });
 
   test("ports without a command still make a setup", () => {
-    expect(initOf("", [8080])).toEqual({ forwardPorts: [8080] });
+    expect(initOf("", [8080])).toEqual({ postCreate: [], forwardPorts: [8080] });
   });
 });
 
@@ -254,7 +254,7 @@ describe.skipIf(!executablePath)("editing a template from the Templates page (re
 
       const body = JSON.parse(lastPatch()?.body ?? "{}") as Record<string, unknown>;
       expect(body).not.toHaveProperty("source");
-      expect(body.init).toEqual({ forwardPorts: [8080] });
+      expect(body.init).toEqual({ postCreate: [], forwardPorts: [8080] });
       const host = app?.hosts.get();
       if (!host) throw new Error("the test app has a host");
       expect(readRecipe(host, "official-node")?.source).toEqual({ kind: "official", name: "node" });
@@ -286,7 +286,7 @@ describe.skipIf(!executablePath)("editing a template from the Templates page (re
         await webExpect(ok).toHaveText("Saving…");
         await webExpect(ok).toBeDisabled();
         // A second press while the first is in flight sends nothing more.
-        await ok.click({ force: true });
+        await ok.dispatchEvent("click");
         expect(sent.filter((request) => request.method === "PATCH")).toHaveLength(1);
 
         held.resolve();

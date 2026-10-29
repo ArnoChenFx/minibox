@@ -1,4 +1,6 @@
 export default {
+  "st.storageAdminPolicy":
+    "Only an unmodified admin token can select storage pools or create/delete volumes. Volume write still controls writing to accessible volumes.",
   "st.subtitle":
     "Runtime configuration is read-only. Edit <code>.env</code> in the project root and restart the service to change it.",
   "st.runtime": "Runtime configuration",
@@ -209,7 +211,7 @@ export default {
   "st.presetDesc.sandboxed-agent":
     "Like Operator, but cannot attach volumes, install tools or SSH in, and has default quotas (5 boxes, 8 cores, 16 GB).",
   "st.presetDesc.admin":
-    "Nearly every permission, including host secrets, and every box and host by default. Excludes skipping the recycle bin and batch volume delete.",
+    "Nearly every permission, including host secrets, and every box and host by default. Includes storage pool and volume administration; excludes skipping the recycle bin.",
   "st.tokenPermissions": "Permissions",
   "st.tokenPermissionsCount": "{n} of {total} selected",
   "st.tokenCustom": "Custom",
@@ -218,7 +220,7 @@ export default {
   "st.tokenScopesReset": "Reset to preset",
   "st.tokenScopesEmpty": "Select at least one permission.",
   "st.tokenAdminAudit":
-    "An admin token with changed permissions sees only events in its own scope, not the full audit log.",
+    "Changing an admin token’s permissions or narrowing its boxes/hosts removes storage administration and full audit access.",
   "st.tokenScopesList": "Permission list",
   "st.tokenDanger": "Risky",
   "st.scopeGroup.box": "Boxes",
@@ -240,7 +242,7 @@ export default {
   "st.scope.checkpoint:create": "Create and manage checkpoints",
   "st.scope.checkpoint:restore": "Roll back to a checkpoint",
   "st.scope.volume:read": "View volumes",
-  "st.scope.volume:write": "Create and delete single volumes, write mounted volumes",
+  "st.scope.volume:write": "Write accessible volumes (independent creation/deletion also requires admin)",
   "st.scope.volume:attach": "Attach existing volumes to a box",
   "st.scope.tool:install": "Install and remove tools and templates",
   "st.scope.secret:use": "Use host secrets",

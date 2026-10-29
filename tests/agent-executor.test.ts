@@ -384,3 +384,13 @@ describe("the connection state around a request", () => {
     expect(runtime.ops()).toContain("ping");
   });
 });
+
+test("a closed connection cannot open fresh event or log streams", async () => {
+  const runtime = new FakeRuntime();
+  const { sink, frames } = recorder();
+  const executor = new AgentExecutor(runtime, sink);
+  executor.close();
+  await executor.request("late", "events", { filter: {} });
+  expect(responseTo(frames, "late")).toMatchObject({ ok: false, error: { kind: "unavailable" } });
+  expect(runtime.ops()).toEqual([]);
+});

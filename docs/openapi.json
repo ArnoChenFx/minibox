@@ -838,7 +838,7 @@
                         }
                       ]
                     },
-                    "description": "Mounts this box gets. An entry is { volume, path, mode } to mount a volume that exists, or { role } to have MiniBox create that role's volume for this box: workspace at /workspace read-write, home at /home/dev read-write, tools at /opt/minibox/tools read-only, cache at /home/dev/.cache read-write. A role the list omits is not created. The tools role mounts the host's shared tools volume, and creates it when the host has none. Omitted, MiniBox creates workspace, home, tools and cache. An empty list creates a box with no mounts. Mounting an existing volume needs volume:attach, and a read-write one also needs volume:write. A role volume is new, so every role mount needs volume:write, and the tools role also needs volume:attach when the shared volume already exists. A role mount may also name pool, the storage pool its new volume goes to instead of the one the role's rule picks; a pool this host does not have is refused with pool_not_found, and the tools role's shared volume is one per pool."
+                    "description": "Mounts this box gets. An entry is { volume, path, mode } to mount a volume that exists, or { role } to have MiniBox create that role's volume for this box: workspace at /workspace read-write, home at /home/dev read-write, tools at /opt/minibox/tools read-only, cache at /home/dev/.cache read-write. A role the list omits is not created. The tools role mounts the host's shared tools volume, and creates it when the host has none. Omitted, MiniBox creates workspace, home, tools and cache. An empty list creates a box with no mounts. Mounting an existing volume needs volume:attach, and a read-write one also needs volume:write. A role volume is new, so every role mount needs volume:write, and the tools role also needs volume:attach when the shared volume already exists. Only the owner or an unmodified admin token may select a pool. A role mount may also name pool, the storage pool its new volume goes to instead of the one the role's rule picks; a pool this host does not have is refused with pool_not_found, and the tools role's shared volume is one per pool."
                   },
                   "env": {
                     "type": "array",
@@ -14054,7 +14054,7 @@
                     "description": "Volume name: letters, digits, dots, underscores and hyphens, starting with a letter or digit. Surrounding spaces are trimmed."
                   },
                   "pool": {
-                    "description": "Storage pool. Omitted, the role rule or the default pool is used.",
+                    "description": "Storage pool (owner or unmodified admin token only). Omitted, the role rule or the default pool is used.",
                     "type": "string"
                   },
                   "role": {

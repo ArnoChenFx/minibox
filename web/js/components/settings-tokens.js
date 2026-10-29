@@ -174,6 +174,10 @@ async function createToken(view) {
   });
   const form = root.querySelector("#stTokenForm");
   const boxes = form.elements.boxes;
+  const storageNote = document.createElement("p");
+  storageNote.className = "help";
+  storageNote.textContent = t("st.storageAdminPolicy");
+  form.append(storageNote);
   const syncBoxes = () => {
     root.querySelector("[data-box-ids]").hidden = boxes.value !== "ids";
     root.querySelector("[data-box-tags]").hidden = boxes.value !== "tags";

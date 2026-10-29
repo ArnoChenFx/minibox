@@ -1,4 +1,6 @@
 export default {
+  "err.storage_admin_required":
+    "Storage pool selection and volume administration require the owner or an unmodified admin token.",
   "err.invalid_json_object": "Request body must be a JSON object.",
   "err.invalid_json": "Request body is not valid JSON.",
   "err.field_required": "{label} is required.",

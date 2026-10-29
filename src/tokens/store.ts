@@ -8,6 +8,7 @@ import { log } from "../lib/logger";
 import { msg } from "../lib/messages";
 import type { TokenPrincipal } from "../operations/types";
 import {
+  storageAdminPolicy,
   type BoxScope,
   type HostScope,
   isPreset,
@@ -356,6 +357,7 @@ export class TokenStore {
 
 function toPrincipal(record: TokenRecord): TokenPrincipal {
   const grants: TokenGrants = {
+    ...(storageAdminPolicy(record) ? { storageAdmin: true } : {}),
     scopes: record.scopes,
     boxes: record.boxes,
     volumes: record.volumes,
