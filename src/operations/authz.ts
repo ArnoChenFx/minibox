@@ -103,7 +103,8 @@ export async function assertTemplateSetupAllowed(ctx: OperationContext, setup: T
 /**
  * Checks the mounts a create, update or rebuild asks for. A mount the box already has, with the same volume, path and
  * mode, is kept and is not checked again. Any other mount needs `volume:attach` on its volume, and a read-write one
- * also needs `volume:write`. A name with no record is a volume to create, so it needs `volume:write` either way.
+ * also needs `volume:write`. A name with no record is a new independent volume, which is volume administration: only
+ * the owner or an unmodified admin token may ask for one (`storage_admin_required`), and it needs `volume:write` too.
  */
 export async function assertCanChangeMounts(
   ctx: OperationContext,
@@ -117,6 +118,7 @@ export async function assertCanChangeMounts(
       (item) => item.volume === engineName && item.path === mount.path && item.mode === mount.mode,
     );
     if (kept) continue;
+    if (!record && !mayManageStorage(ctx.principal)) throw refusal("storage_admin_required");
     const volume: VolumeRef = record ?? { name: mount.volume };
     await assertCanAttach(ctx, volume);
     if (!record || mount.mode === "rw") await assertCanWrite(ctx, volume);

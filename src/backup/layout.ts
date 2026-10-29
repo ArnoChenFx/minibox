@@ -1,7 +1,7 @@
 import { readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 
-import { isWithinDir } from "../data-dir";
+import { pathWithin, resolvedPath } from "../data-dir";
 import { log } from "../lib/logger";
 
 /** Top-level folders a backup leaves out: exec output, staged packages, the regenerable CLI cache and backups themselves. */
@@ -42,14 +42,18 @@ export function includedEntry(rel: string): boolean {
 /** Every directory and regular file under DATA_DIR that a backup includes, in archive order: parents before children. */
 export async function listEntries(dataDir: string, options: ListOptions = {}): Promise<ArchiveEntry[]> {
   const entries: ArchiveEntry[] = [];
-  const walk = async (rel: string, depth: number): Promise<void> => {
+  // The excluded folders and DATA_DIR are resolved once. Each entry's resolved path is then its folder's plus its name,
+  // and only a symlink needs a lookup of its own, so a large data directory is not one realpath call per entry.
+  const excluded = (options.exclude ?? []).map(resolvedPath);
+  const walk = async (rel: string, real: string, depth: number): Promise<void> => {
     if (depth > MAX_DEPTH) throw new Error(`${rel} is nested too deeply to back up`);
     const dir = rel === "" ? dataDir : join(dataDir, rel);
     for (const dirent of await readdir(dir, { withFileTypes: true })) {
       const child = rel === "" ? dirent.name : `${rel}/${dirent.name}`;
       if (!includedEntry(child)) continue;
       const abs = join(dataDir, child);
-      if (options.exclude?.some((path) => isWithinDir(abs, path))) continue;
+      const realChild = dirent.isSymbolicLink() ? resolvedPath(abs) : join(real, dirent.name);
+      if (excluded.some((path) => pathWithin(realChild, path))) continue;
       const info = dirent.isSymbolicLink() ? await stat(abs).catch(() => null) : dirent;
       if (info === null) {
         log.warn("backup.entry_skipped", { path: child, reason: "dangling link" });
@@ -57,7 +61,7 @@ export async function listEntries(dataDir: string, options: ListOptions = {}): P
       }
       if (info.isDirectory()) {
         entries.push({ rel: child, abs, kind: "dir" });
-        await walk(child, depth + 1);
+        await walk(child, realChild, depth + 1);
       } else if (info.isFile()) {
         entries.push({ rel: child, abs, kind: "file" });
       } else {
@@ -65,6 +69,6 @@ export async function listEntries(dataDir: string, options: ListOptions = {}): P
       }
     }
   };
-  await walk("", 0);
+  await walk("", resolvedPath(dataDir), 0);
   return entries.toSorted((a, b) => (a.rel < b.rel ? -1 : a.rel > b.rel ? 1 : 0));
 }

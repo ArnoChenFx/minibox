@@ -47,6 +47,38 @@ test("real paths exclude backup aliases and refuse an alias for the data directo
   expect(backupDirRefusal(join(alias, "new"), data)).toBeNull();
 });
 
+test("a data directory reached through a symlink, and a symlinked folder inside it, are matched on real paths", async () => {
+  const root = temp();
+  const real = join(root, "real-data");
+  const archives = join(real, "archives");
+  mkdirSync(join(archives, "nested"), { recursive: true });
+  writeFileSync(join(archives, "nested", "old.mbbak"), "old");
+  mkdirSync(join(real, "boxes"));
+  writeFileSync(join(real, "boxes", "kept.json"), "{}");
+  // An entry inside DATA_DIR that links into the excluded folder is left out as well.
+  symlinkSync(archives, join(real, "boxes", "into-archives"), "dir");
+  const data = join(root, "data-link");
+  symlinkSync(real, data, "dir");
+  const rels = (await listEntries(data, { exclude: [archives] })).map((e) => e.rel);
+  expect(rels).toContain("boxes/kept.json");
+  expect(rels.some((rel) => rel.startsWith("archives"))).toBe(false);
+  expect(rels.some((rel) => rel.startsWith("boxes/into-archives"))).toBe(false);
+  // The excluded folder named through a path with `..` still matches.
+  const viaDots = (await listEntries(real, { exclude: [join(real, "boxes", "..", "archives")] })).map((e) => e.rel);
+  expect(viaDots.some((rel) => rel.startsWith("archives"))).toBe(false);
+  expect(viaDots).toContain("boxes/kept.json");
+});
+
+test("an excluded folder under an unreadable ancestor does not stop a backup listing", async () => {
+  const root = temp();
+  const data = join(root, "data");
+  mkdirSync(data);
+  writeFileSync(join(data, "kept.json"), "{}");
+  const loop = join(root, "loop");
+  symlinkSync(loop, loop);
+  expect((await listEntries(data, { exclude: [join(loop, "backups")] })).map((e) => e.rel)).toEqual(["kept.json"]);
+});
+
 test("custom shared backup folders retain their mode; archives stay private", async () => {
   const root = temp();
   const dir = join(root, "shared");

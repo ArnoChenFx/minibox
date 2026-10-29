@@ -228,7 +228,8 @@ describe("volumes a token may mount", () => {
       body: { confirm: true, mounts },
       headers,
     });
-    expect(refused(byToken)).toEqual({ status: 403, key: "volume_attach_forbidden" });
+    // The pool root has no volume record, so naming it asks for a new independent volume: volume administration.
+    expect(refused(byToken)).toEqual({ status: 403, key: "storage_admin_required" });
 
     const byOwner = await call(harness.base, `/api/boxes/${id}/rebuild`, { body: { confirm: true, mounts }, headers });
     expect(refused(byOwner)).toEqual({ status: 403, key: "volume_reserved" });

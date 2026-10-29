@@ -472,9 +472,17 @@ export function isSharedTools(host: HostCtx, volume: VolumeRecord): boolean {
   return volume.role === "tools" && volume.ownership === "independent" && volume.hostId === host.host.id;
 }
 
-/** The independent tools volume for one pool on this host, if one already exists. */
+/**
+ * The independent tools volume for one pool on this host, if one already exists. When the pool holds more than one, the
+ * one MiniBox made itself (named `<prefix>-tools-<host>`) wins, so a tools volume made by hand never takes its place.
+ */
 export function findSharedTools(host: HostCtx, poolName: string): VolumeRecord | null {
-  return host.volumes.list().find((volume) => isSharedTools(host, volume) && volume.pool === poolName) ?? null;
+  const found = host.volumes.list().filter((volume) => isSharedTools(host, volume) && volume.pool === poolName);
+  return found.find((volume) => volume.name === sharedToolsName(host)) ?? found[0] ?? null;
+}
+
+function sharedToolsName(host: HostCtx): string {
+  return `${host.prefix}-tools-${host.host.id}`;
 }
 
 /**
@@ -560,7 +568,7 @@ export function defaultRolePlans(
       role,
       existing,
       input: {
-        name: shared ? `${host.prefix}-tools-${host.host.id}` : `${box.name}-${role}`,
+        name: shared ? sharedToolsName(host) : `${box.name}-${role}`,
         pool: pool.name,
         role,
         ownership: shared ? "independent" : "owned",

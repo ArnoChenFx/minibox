@@ -28,7 +28,7 @@ import {
   type VolumeView,
 } from "../services/volumes";
 import { requireRevision } from "../specs/revision";
-import { hostAllowed, specViews, volumeVisible } from "../tokens/model";
+import { hostAllowed, refusal, specViews, volumeVisible } from "../tokens/model";
 import { assertCheckpointQuota, underCheckpointQuota } from "../tokens/quota";
 import { ageMs } from "../volumes/age";
 import { assertHostDiskRoom } from "../volumes/disk";
@@ -245,7 +245,10 @@ const volumeCreate = defineOperation({
       description:
         "Storage pool (owner or unmodified admin token only). Omitted, the role rule or the default pool is used.",
     }),
-    role: z.enum(ROLES).nullable().optional().meta({ description: "Optional role. Null is a general volume." }),
+    role: z.enum(ROLES).nullable().optional().meta({
+      description:
+        "Optional role. Null is a general volume. Only the owner may create a tools volume; a token gets 403.",
+    }),
     confirm: storageConfirmFlag(),
   }),
   output: z.object({ volume: VolumeSchema }),
@@ -260,7 +263,8 @@ const volumeCreate = defineOperation({
   audit: { target: ({ name }, _resolved, result) => ({ kind: "volume", id: result?.volume.id, name }) },
   run: async ({ host, principal }, input) => {
     const request = { name: input.name, pool: input.pool, role: input.role ?? null, createdBy: principal.id };
-
+    // A tools volume is mounted into the owner's boxes, so only the owner may make one by hand, not even an admin token.
+    if (principal.type !== "owner" && request.role === "tools") throw refusal("volume_tools_create_forbidden");
     if (!input.confirm) throw confirmationRequired(previewCreateVolume(host, request));
     return { volume: await createVolume(host, request) };
   },
@@ -291,7 +295,7 @@ const volumeDelete = defineOperation({
     toolset: "storage",
     name: "delete_volume",
     description:
-      "Delete a volume and its engine data. The data is first kept in the recycle bin for the retention period, and restore_trash brings it back as a new volume. Cache and tools volumes keep nothing. The shared tools volume, a system volume, and a volume that a box or a container uses are refused. Pass skipTrash true to delete without keeping a copy; that needs the owner, or a token with the trash:skip scope. Send confirm true; without it the call changes nothing and returns confirmation_required with details.preview.",
+      "Delete a volume and its engine data. The data is first kept in the recycle bin for the retention period, and restore_trash brings it back as a new volume. Cache and tools volumes keep nothing. The shared tools volume (the one boxes mount), a system volume, and a volume that a box or a container uses are refused; a spare tools-role volume that boxes do not get may be deleted. Pass skipTrash true to delete without keeping a copy; that needs the owner, or a token with the trash:skip scope. Send confirm true; without it the call changes nothing and returns confirmation_required with details.preview.",
   },
   hostFor: (ctx, input) => hostOfVolume(ctx, input.id),
   resolve: ({ host }, input) => getVolume(host, input.id),
@@ -302,7 +306,7 @@ const volumeDelete = defineOperation({
   audit: { target: (_input, volume) => volume && volumeTarget(volume) },
   run: async ({ host, principal, record }, input, volume) => {
     if (!input.confirm) throw confirmationRequired(previewDeleteVolume(volume, input.skipTrash));
-    return deleteVolume(host, input.id, { skipTrash: input.skipTrash, createdBy: principal.id, record });
+    return deleteVolume(host, input.id, { skipTrash: input.skipTrash, createdBy: principal.id, record, named: true });
   },
 });
 
@@ -454,7 +458,7 @@ const volumePrune = defineOperation({
     toolset: "storage",
     name: "prune_volumes",
     description:
-      "Find or remove orphaned volumes: volumes MiniBox made that no box spec mounts or owns and no container mounts. The shared tools volume and MiniBox's internal volumes are never orphans, and a volume created or last used within the last five minutes is left alone. dryRun defaults to true and only lists the orphans. To remove them, send dryRun false with ids set to the ids the dry run listed: only those are removed, and one that is no longer an orphan is refused. olderThan such as 30d keeps the volumes used more recently. A removed volume's data is kept in the recycle bin, except a cache volume's, which cannot be restored. Only the owner may prune.",
+      "Find or remove orphaned volumes: volumes MiniBox made that no box spec mounts or owns and no container mounts. The shared tools volume and MiniBox's internal volumes are never orphans, and a volume created or last used within the last five minutes is left alone. dryRun defaults to true and only lists the orphans. To remove them, send dryRun false with ids set to the ids the dry run listed: only those are removed, and one that is no longer an orphan is refused. olderThan such as 30d keeps the volumes used more recently. A removed volume's data is kept in the recycle bin, except a cache volume's, which cannot be restored. Only the owner or an unmodified admin token may prune, and an admin token removes only the orphans within its resource grants.",
   },
   activity: { action: () => "volume.prune", target: () => "volumes", when: (input) => !input.dryRun },
   run: async (ctx, input) => {

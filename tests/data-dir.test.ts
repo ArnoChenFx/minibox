@@ -1,5 +1,16 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -76,6 +87,34 @@ describe("isWithinDir", () => {
   test("`..` cannot escape the folder", () => {
     expect(isWithinDir("/data/backups/../secrets", "/data/backups")).toBe(false);
     expect(isWithinDir("/data/backups/sub/..", "/data/backups")).toBe(true);
+  });
+});
+
+describe("isWithinDir on folders that cannot be resolved", () => {
+  let dir = "";
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "minibox-within-"));
+  });
+  afterEach(() => {
+    const locked = join(dir, "locked");
+    if (existsSync(locked)) chmodSync(locked, 0o700);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  test.skipIf(process.getuid?.() === 0)("an ancestor without search permission falls back to the literal path", () => {
+    const locked = join(dir, "locked");
+    mkdirSync(join(locked, "inner"), { recursive: true });
+    chmodSync(locked, 0o000);
+    expect(() => isWithinDir(join(locked, "inner", "backups"), join(dir, "data"))).not.toThrow();
+    expect(isWithinDir(join(locked, "inner", "backups"), join(dir, "data"))).toBe(false);
+    expect(isWithinDir(join(locked, "inner", "backups"), locked)).toBe(true);
+  });
+
+  test("a symlink loop in an ancestor falls back to the literal path", () => {
+    const loop = join(dir, "loop");
+    symlinkSync(loop, loop);
+    expect(isWithinDir(join(loop, "backups"), join(dir, "data"))).toBe(false);
+    expect(isWithinDir(join(loop, "backups"), loop)).toBe(true);
   });
 });
 

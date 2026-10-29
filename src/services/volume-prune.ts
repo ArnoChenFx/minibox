@@ -68,7 +68,7 @@ export interface PruneOptions {
   readonly olderThanMs: number | null;
   /** The principal that removes the volumes. It is recorded on each recycle bin entry a removal keeps. */
   readonly principal: string;
-  /** Whether the caller may delete one volume. A token may delete only the volumes it created. */
+  /** Whether the caller may delete one volume: one its resource grants cover (the owner may delete any). */
   readonly may: (volume: VolumeRecord) => Promise<boolean>;
   readonly tasks?: TaskReader;
   readonly record?: RecordNote;
