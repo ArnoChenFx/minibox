@@ -58,7 +58,8 @@ describe("the labels of a network", () => {
 
   test("a list names each network's labels, and a network made without any has none", async () => {
     const { methods } = engineOf([held("labelled", { "minibox-agent.host": "edge" }), held("bare", null)]);
-    expect(await methods.listNetworks()).toEqual([
+    // What this is about is the labels, so the rest of a summary (the bridge interface another change adds) is not pinned.
+    expect(await methods.listNetworks()).toMatchObject([
       { name: "labelled", subnets: ["172.30.0.0/24"], labels: { "minibox-agent.host": "edge" } },
       { name: "bare", subnets: ["172.30.0.0/24"], labels: {} },
     ]);
