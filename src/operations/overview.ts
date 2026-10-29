@@ -378,6 +378,9 @@ async function overcommitAttention(host: HostCtx): Promise<Attention[]> {
  */
 function forwardAttention(hosts: readonly HostCtx[]): Attention[] {
   return hosts.flatMap((host): Attention[] => {
+    // An offline host is already listed as offline, and its last reading is from before it went away. The host coming
+    // back asks for a fresh reading, which is what decides this item again.
+    if (host.host.status === "offline") return [];
     const state = host.forward.stateOf(host.host.id);
     if (!state || state.forwarding || state.skipped !== null || state.bridge === "") return [];
     return [

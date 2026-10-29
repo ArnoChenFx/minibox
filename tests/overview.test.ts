@@ -617,6 +617,17 @@ describe("what needs attention", () => {
     expect((await overview(h.base)).attention).toEqual([]);
   });
 
+  test("an offline host is not also listed for forwarding, since its last reading is from before it went away", async () => {
+    const h = start();
+    await makeBox(h.base, "agent", undefined, { egress: { mode: "proxy-only", domains: ["example.com"] } });
+    h.runtime.forwardVerdict = { forwarding: false, detail: "iptables FORWARD policy is DROP" };
+    await h.app.egressForward.tick();
+    expect((await overview(h.base)).attention.map((item) => item.kind)).toEqual(["host.forward_blocked"]);
+
+    h.app.hosts.get().host.status = "offline";
+    expect((await overview(h.base)).attention.map((item) => item.kind)).toEqual(["host.offline"]);
+  });
+
   test("the item clears once a pass finds the rules right, since the check is what decides", async () => {
     const h = start();
     await makeBox(h.base, "agent", undefined, { egress: { mode: "proxy-only", domains: ["example.com"] } });
