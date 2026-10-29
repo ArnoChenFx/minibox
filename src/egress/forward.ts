@@ -274,9 +274,9 @@ function decide(chains: Map<string, Chain>, name: string, probe: ForwardProbe, s
     }
     switch (rule.target.kind) {
       case "accept":
-        return { kind: "accept" };
+        return unsure ? { kind: "none", unsure: true } : { kind: "accept" };
       case "drop":
-        return { kind: "drop", cause: "rule" };
+        return unsure ? { kind: "none", unsure: true } : { kind: "drop", cause: "rule" };
       case "return":
         // `RETURN` in a built-in chain ends the traversal, which leaves the packet to the chain's policy.
         if (BUILT_IN_CHAINS.has(name)) return { kind: "return" };
@@ -285,7 +285,9 @@ function decide(chains: Map<string, Chain>, name: string, probe: ForwardProbe, s
       case "chain": {
         const inner = decide(chains, rule.target.name, probe, source, depth + 1);
         // A jump that returns decides nothing, so the caller keeps walking; one that accepted or dropped is the answer.
-        if (inner.kind === "accept" || inner.kind === "drop") return inner;
+        if (inner.kind === "accept" || inner.kind === "drop") {
+          return unsure ? { kind: "none", unsure: true } : inner;
+        }
         if (inner.kind === "none" && inner.unsure) unsure = true;
         if (inner.kind === "return") unsure = true;
         break;
