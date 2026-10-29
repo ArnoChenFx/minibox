@@ -1,4 +1,5 @@
 import type { TrashRef } from "../checkpoints/types";
+import { hostLabel } from "../host/label";
 import type { HostCtx } from "../host/registry";
 import { badRequest, conflict } from "../lib/errors";
 import { msg } from "../lib/messages";
@@ -103,9 +104,15 @@ export async function pruneVolumes(hosts: readonly HostCtx[], opts: PruneOptions
   for (const host of hosts) {
     const hostId = host.host.id;
     const name = host.host.name;
+    // A message quotes a shared name with its id, so a result that lists several hosts never says two of them alike. The
+    // `name` field stays the host's own name, next to its `hostId`.
+    const label = hostLabel(
+      host.host,
+      hosts.map((item) => item.host),
+    );
     const wanted = named?.volumes.filter((volume) => volume.hostId === hostId) ?? null;
     if (hostOffline(host)) {
-      const error = messageOutcome(msg("volume_host_offline", { host: name }));
+      const error = messageOutcome(msg("volume_host_offline", { host: label }));
       result.hosts.push({ hostId, name, status: "offline", error });
       if (!opts.dryRun) for (const volume of wanted ?? []) report(rowOf(volume, { status: "refused", error }));
       continue;
@@ -114,7 +121,7 @@ export async function pruneVolumes(hosts: readonly HostCtx[], opts: PruneOptions
     try {
       scan = await scanOrphans(host, opts);
     } catch (e) {
-      const error = hostFailure(e, name);
+      const error = hostFailure(e, label);
       result.hosts.push({ hostId, name, status: "failed", error });
       if (!opts.dryRun) for (const volume of wanted ?? []) report(rowOf(volume, { status: "refused", error }));
       continue;

@@ -19,7 +19,7 @@ import { abortError } from "../../lib/abort";
 import { log } from "../../lib/logger";
 import { msg } from "../../lib/messages";
 import type { Runtime } from "../../runtime";
-import type { PairingBook, PairingCode, PairingGrant } from "./pairing";
+import type { PairingBook, PairingCode, PairingGrant, WaitingName } from "./pairing";
 import {
   type AgentLink,
   AgentRuntime,
@@ -34,6 +34,36 @@ import type { AgentRecord, AgentStore } from "./store";
 const AGENT_SILENT_MS = 3 * AGENT_HEARTBEAT_MS;
 
 const NOT_CONNECTED = "the agent is not connected";
+
+/**
+ * How many sockets one address may have open without a verified hello at once. Each of them holds a challenge, a hello
+ * timer and a descriptor, and none has proved who it is, so a single caller could otherwise take every place there is and
+ * lock every real agent out. A paired agent holds one socket at a time and a handshake takes milliseconds, so eight
+ * sockets waiting at once leaves room for a fleet behind one address, with jittered retries for the rest.
+ */
+export const AGENT_PENDING_PER_ADDRESS_MAX = 8;
+
+/**
+ * How many sockets may be open without a verified hello at once, counted across the control plane: the backstop behind
+ * the per-address limit, so a crowd spread over many addresses cannot take the door either. A paired agent holds one
+ * socket at a time and a fleet reconnecting after a restart opens one each, so 64 leaves room for a few dozen agents
+ * retrying at once while a crowd of strangers is refused.
+ *
+ * Both numbers are constants, not settings: a deployment cannot widen them, and `AgentHubOptions` carries them only so a
+ * test can reach a limit without opening sixty-four sockets.
+ */
+export const AGENT_PENDING_MAX = 64;
+
+/**
+ * The most bytes a socket may send before its hello verifies. A hello is a few hundred bytes, so a socket that has not
+ * proved who it is has no use for a large frame; the limit is checked before the frame is parsed. Authenticated frames
+ * are not bounded here, only by the server's frame limit (`MAX_SOCKET_FRAME_BYTES`, 16 MiB): a `containerLogs` answer is
+ * one frame, which the engine adapter keeps to `MAX_LOG_READ_BYTES` of text.
+ */
+export const AGENT_HELLO_MAX_BYTES = 4 * 1024;
+
+/** Refusals are logged at most once per this many milliseconds, so a flood of sockets cannot flood the log as well. */
+const PENDING_LOG_INTERVAL_MS = 60_000;
 
 /** What the hub needs from a WebSocket. The Bun socket fits it; a test passes a recorder. */
 export interface AgentSocket {
@@ -67,6 +97,20 @@ export interface AgentHubOptions {
   readonly pairing: PairingBook;
   readonly serverVersion: string;
   readonly now?: () => Date;
+  /** How many sockets may wait for a hello at once. Defaults to `AGENT_PENDING_MAX`. A test seam, not a setting. */
+  readonly pendingMax?: number;
+  /** How many sockets one address may wait with at once. Defaults to `AGENT_PENDING_PER_ADDRESS_MAX`. */
+  readonly pendingPerAddressMax?: number;
+}
+
+/**
+ * Why a socket may not wait for a hello: its own address already has `max` sockets waiting, or the control plane has `max`
+ * waiting in all. The server asks before it upgrades, so the caller is answered with 429 instead of an opened socket.
+ */
+export interface PendingRefusal {
+  readonly scope: "address" | "total";
+  readonly pending: number;
+  readonly max: number;
 }
 
 type Refusal = { readonly code: "auth_failed" | "protocol_mismatch" | "revoked"; readonly message: string };
@@ -75,6 +119,8 @@ type Outcome = { readonly ok: true; readonly result: unknown } | { readonly ok: 
 /** One socket from the moment it opens. Until its hello verifies, `agentId` is null and only the hello timer runs. */
 interface Session {
   readonly socket: AgentSocket;
+  /** The bucket the socket is counted under, from `clientAddress` + `rateLimitKey`: the peer, or the proxy's client. */
+  readonly address: string;
   readonly nonce: string;
   agentId: string | null;
   done: boolean;
@@ -103,6 +149,9 @@ function inertHandle(id: string, opened: Promise<unknown>): StreamHandle {
   return { id, opened, input: () => {}, inputEnd: () => {}, cancel: () => {} };
 }
 
+/** The hub's end of a socket it refused before it became a session: nothing arrives, and there is nothing to detach. */
+const NO_SESSION: AgentSession = { receive: () => {}, detach: () => {} };
+
 /**
  * The control plane's side of the agent connections. It verifies each agent's key, keeps one live connection per agent,
  * and carries requests and streams over it. It implements `AgentLink`, so an `AgentRuntime` reaches a host through it.
@@ -114,9 +163,16 @@ export class AgentHub implements AgentLink {
   private readonly seen = new Map<string, string>();
   private readonly listeners = new Set<(event: AgentEvent) => void>();
   private readonly now: () => Date;
+  private readonly pendingMax: number;
+  private readonly pendingPerAddressMax: number;
+  /** When a pending refusal was last logged, and how many were dropped since. See `logPendingRefusal`. */
+  private refusalLoggedAt = Number.NEGATIVE_INFINITY;
+  private refusalSuppressed = 0;
 
   constructor(private readonly options: AgentHubOptions) {
     this.now = options.now ?? (() => new Date());
+    this.pendingMax = options.pendingMax ?? AGENT_PENDING_MAX;
+    this.pendingPerAddressMax = options.pendingPerAddressMax ?? AGENT_PENDING_PER_ADDRESS_MAX;
   }
 
   /** A pairing code for a host that does not exist yet. */
@@ -127,6 +183,11 @@ export class AgentHub implements AgentLink {
   /** Spends a pairing code. A code allows one pairing, so a second spend is refused. */
   spendCode(code: string): PairingGrant {
     return this.options.pairing.redeem(code);
+  }
+
+  /** The waiting pairing code, for a host other than `forHost`, that holds `name`, or null when none does. */
+  waitingName(name: string, forHost: string): WaitingName | null {
+    return this.options.pairing.waitingName(name, forHost);
   }
 
   /** Records a paired agent. The id is generated here, so no caller picks one. */
@@ -164,9 +225,34 @@ export class AgentHub implements AgentLink {
     };
   }
 
-  /** Takes a socket that just opened. The challenge is sent at once, and the socket must answer it with a hello in time. */
-  attach(socket: AgentSocket): AgentSession {
-    const session: Session = { socket, nonce: newId(), agentId: null, done: false, timer: undefined };
+  /**
+   * Whether a socket from `address` may wait for a hello, or why it may not. The server asks this before it upgrades, so
+   * an over-limit caller is answered with 429 and no socket at all; `attach` asks again, so the count cannot be talked
+   * past between the check and the open.
+   */
+  pendingRefusal(address: string): PendingRefusal | null {
+    const forAddress = this.pendingFor(address);
+    if (forAddress >= this.pendingPerAddressMax) {
+      return { scope: "address", pending: forAddress, max: this.pendingPerAddressMax };
+    }
+    const total = this.pendingCount();
+    if (total >= this.pendingMax) return { scope: "total", pending: total, max: this.pendingMax };
+    return null;
+  }
+
+  /**
+   * Takes a socket that just opened from `address`. The challenge is sent at once, and the socket must answer it with a
+   * hello in time. A socket that arrives while its address or the control plane is full is closed instead: it never
+   * becomes a session, so it holds no nonce, no timer and no entry in `all`.
+   */
+  attach(socket: AgentSocket, address: string): AgentSession {
+    const refusal = this.pendingRefusal(address);
+    if (refusal) {
+      this.logPendingRefusal(address, refusal);
+      socket.close(AGENT_CLOSE.tooManyPending, "too many sockets waiting for a hello");
+      return NO_SESSION;
+    }
+    const session: Session = { socket, address, nonce: newId(), agentId: null, done: false, timer: undefined };
     this.all.add(session);
     this.send(session, {
       type: "challenge",
@@ -259,6 +345,12 @@ export class AgentHub implements AgentLink {
 
   private receive(session: Session, text: string): void {
     if (session.done) return;
+    // A socket that has not proved who it is may send nothing large: its hello is a few hundred bytes. The length is read
+    // before the frame is parsed, so a stranger cannot spend a multi-megabyte JSON parse on one frame.
+    if (session.agentId === null && Buffer.byteLength(text) > AGENT_HELLO_MAX_BYTES) {
+      this.end(session, 1009, "frame too large before the hello");
+      return;
+    }
     const frame = parseFrame(AgentFrameSchema, text);
     if (!frame) return;
     if (frame.type === "hello") {
@@ -292,6 +384,8 @@ export class AgentHub implements AgentLink {
       });
       return;
     }
+    // From here the session is authenticated, so `pendingCount` no longer counts it: the pending slot is given back
+    // here, at the one moment authentication succeeds, rather than in each of the ending paths below.
     session.agentId = frame.agentId;
     this.seen.set(frame.agentId, this.now().toISOString());
     this.save(frame.agentId, { version: frame.version, protocol: frame.protocol });
@@ -342,6 +436,42 @@ export class AgentHub implements AgentLink {
     this.calls.delete(id);
     if (call.sink && call.opened) call.sink.end(error, exit);
     else call.settle({ ok: false, error: runtimeErrorOf(failureOf(error)) });
+  }
+
+  /**
+   * The sockets open without a verified hello. It is read from `all` rather than kept as a counter, so a session gives its
+   * slot back the moment its hello verifies, and no ending path can leak one or give one back twice.
+   */
+  private pendingCount(): number {
+    let pending = 0;
+    for (const session of this.all) if (session.agentId === null) pending += 1;
+    return pending;
+  }
+
+  /** The sockets from one address that are still waiting for a hello. */
+  private pendingFor(address: string): number {
+    let pending = 0;
+    for (const session of this.all) if (session.agentId === null && session.address === address) pending += 1;
+    return pending;
+  }
+
+  /** One line per minute, however many sockets are refused: a flood must not flood the log too. */
+  private logPendingRefusal(address: string, refusal: PendingRefusal): void {
+    const now = this.now().getTime();
+    if (now - this.refusalLoggedAt < PENDING_LOG_INTERVAL_MS) {
+      this.refusalSuppressed += 1;
+      return;
+    }
+    const suppressed = this.refusalSuppressed;
+    this.refusalLoggedAt = now;
+    this.refusalSuppressed = 0;
+    log.warn("agent.pending_limit", {
+      address,
+      scope: refusal.scope,
+      pending: refusal.pending,
+      max: refusal.max,
+      ...(suppressed > 0 ? { suppressed } : {}),
+    });
   }
 
   private detach(session: Session): void {

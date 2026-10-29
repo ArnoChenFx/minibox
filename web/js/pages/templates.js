@@ -8,6 +8,7 @@ import { openNewTemplate } from "../components/template-dialog.js";
 import { api, enc } from "../lib/api.js";
 import { delegate, esc } from "../lib/dom.js";
 import { bytes, dateTime, shortId } from "../lib/format.js";
+import { hostLabel } from "../lib/host-list.js";
 import { hostName, hostsNow, multiHost, refreshHosts } from "../lib/hosts.js";
 import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
@@ -55,7 +56,7 @@ function presenceHtml(card) {
   const unbuilt = isUnbuilt(card);
   return hostsNow()
     .map((host) => {
-      const name = esc(host.name ?? host.id);
+      const name = esc(hostLabel(host, hostsNow()));
       if (card.holders.includes(host.id)) {
         return `<div class="row between"><span>${name}</span><span class="badge badge-success">${esc(t("tp.present"))}</span></div>`;
       }

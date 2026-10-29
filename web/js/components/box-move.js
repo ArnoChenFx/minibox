@@ -1,5 +1,6 @@
 import { api, enc } from "../lib/api.js";
 import { esc } from "../lib/dom.js";
+import { hostLabel } from "../lib/host-list.js";
 import { hostName, hostsNow, refreshHosts } from "../lib/hosts.js";
 import { t } from "../lib/i18n.js";
 import { movedBoxHash } from "../lib/routes.js";
@@ -60,7 +61,7 @@ export function movePreviewHtml(preview) {
 function hostOptions(box) {
   return hostsNow()
     .filter((host) => host.id !== box.hostId && host.status === "online")
-    .map((host) => `<option value="${esc(host.id)}">${esc(host.name ?? host.id)}</option>`)
+    .map((host) => `<option value="${esc(host.id)}">${esc(hostLabel(host, hostsNow()))}</option>`)
     .join("");
 }
 

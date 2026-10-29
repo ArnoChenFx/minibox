@@ -284,4 +284,18 @@ describe("what an empty leaves", () => {
 
     expect(await purgeScanned(hosts, scan, { ids: null })).toEqual([]);
   });
+
+  test("two hosts of one name keep their own name in the report, and the message tells them apart by id", async () => {
+    const local = harness.app.hosts.get();
+    // A hosts file written before names had to be unique can still hold two hosts of one name.
+    const twin = (id: string) => ({
+      ...local,
+      host: { ...local.host, id, name: "NAS", transport: "ssh" as const, status: "offline" as const },
+    });
+    const scan = await scanTrash([twin("nas-1"), twin("nas-2")], { ids: null });
+    expect(scan.hosts.map((host) => [host.hostId, host.name, host.error?.message])).toEqual([
+      ["nas-1", "NAS", expect.stringContaining("NAS · nas-1")],
+      ["nas-2", "NAS", expect.stringContaining("NAS · nas-2")],
+    ]);
+  });
 });

@@ -289,6 +289,10 @@ export default {
   "err.host_labels_need_auto":
     "hostLabels 只用于 host: auto 选择宿主机。请把 host 设为 auto 由标签挑选，或指定一台宿主机并去掉 hostLabels。",
   "err.host_exists": "已存在 id 为「{host}」的宿主机。",
+  "err.host_name_taken": "名称「{name}」已被宿主机「{host}」使用。请给这台宿主机换一个名称。",
+  "err.host_name_taken_by_id":
+    "这台宿主机没有填名称，会以标识「{name}」作名称，但宿主机「{host}」已在用这个名称。请给这台宿主机填一个名称。",
+  "err.host_name_pending": "名称「{name}」正被宿主机「{host}」一个尚未使用的配对码占用。请使用那个配对码，或等它过期。",
   "err.host_not_found": "找不到宿主机「{host}」。",
   "err.host_is_local": "不能移除本机宿主机。",
   "err.host_in_use": "宿主机「{host}」仍有 {count} 个 Box、卷或检查点。请先移除它们。",
@@ -306,6 +310,7 @@ export default {
   "err.agent_pairing_unknown": "配对码无效。请到「设置 → 宿主机」重新生成。",
   "err.agent_pairing_used": "这个配对码已经用过。请到「设置 → 宿主机」重新生成。",
   "err.agent_pairing_expired": "这个配对码已过期。请到「设置 → 宿主机」重新生成。",
+  "err.agent_pairing_replaced": "这台宿主机已生成了更新的配对码，这个码已作废。请使用最新的配对码。",
   "err.agent_pairing_limit": "最多同时保留 {max} 个配对码。请等待其中一个配对或过期后再试。",
   "err.agent_pairing_request_invalid": "配对请求无效。请用当前版本的 MiniBox 重新运行 Agent 镜像。",
   "err.agent_key_invalid": "Agent 的公钥必须是 PEM 格式的 Ed25519 密钥。",
@@ -314,6 +319,12 @@ export default {
   "err.agent_refused_auth": "Agent 无法证明自己的身份。请到「设置 → 宿主机」重新配对。",
   "err.agent_refused_revoked": "这个 Agent 已被吊销。请先移除它的宿主机，再重新配对。",
   "err.agent_refused_protocol": "当前 MiniBox 使用 Agent 协议 {protocol}。请更新 Agent 镜像。",
+  "err.agent_pending_limit":
+    "等待认证的 Agent 连接太多（同一地址最多 {max} 个）。真实的 Agent 会自己重试，其他程序请停止连接。",
+  "err.agent_pending_total_limit":
+    "所有地址上等待认证的 Agent 连接太多（总共最多 {max} 个）。真实的 Agent 会自己重试，其他程序请停止连接。",
+  "err.agent_pending_limit_hint":
+    "从不发送 hello 的连接会一直占着名额，直到超时。如果真实 Agent 被拒绝，请检查 MiniBox 前面的代理或隧道：TRUST_PROXY 关闭时，所有客户端共用一个地址和同一个上限。",
   "err.runtime_unsupported": "该宿主机无法执行此操作：{detail}",
   "err.move_agent_unsupported":
     "Box 无法通过任一方式迁移到 Agent 宿主机或从其迁出：Agent 不复制镜像、卷和归档，两种方式所需的辅助容器在它上面也会被拒绝。请直接在 Agent 宿主机上创建 Box。",

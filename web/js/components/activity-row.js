@@ -1,13 +1,15 @@
 import { esc } from "../lib/dom.js";
 import { countTag, describe, detailsJson, iconOf, isFailed, opLabel, statusBadge } from "../lib/event-view.js";
 import { dateTime, relTime } from "../lib/format.js";
+import { hostTargetName } from "../lib/hosts.js";
 import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
 
 /** A compact event summary shared by the overview and a box; only the box offers expandable audit details. */
 export function activityRow(event, { expandable = false, open = false } = {}) {
   const iso = new Date(event.ts).toISOString();
-  const target = event.target?.name ?? event.target?.id ?? "";
+  const target =
+    event.target?.kind === "host" ? hostTargetName(event.target) : (event.target?.name ?? event.target?.id ?? "");
   const detail = expandable ? describe(event) : "";
   const failed = isFailed(event);
   const summary = `<span class="ico ${failed ? "fail" : ""}">${icon(failed ? "alert" : iconOf(event.op))}</span>

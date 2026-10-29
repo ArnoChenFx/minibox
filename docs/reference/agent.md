@@ -56,7 +56,18 @@ Keep the volume to keep the agent's identity. If the key file is lost, the agent
 
 Event and log readers buffer at most 1,024 items or 4 MiB per stream. If a consumer falls behind that budget, MiniBox cancels that stream and reports an `unavailable` buffer-limit error instead of silently dropping frames. Other streams and the host connection continue working. Retry the reader after resolving the slow consumer. Aborting a reader discards its pending items; an ordinary stream end still delivers buffered items before its final error, if any.
 
-The agent opens a WebSocket to `/api/agent/connect` on the MiniBox address, using `wss://` for `https://` and `ws://` for `http://`. It proves its identity by signing a challenge that the server sends on each connection with its private key. The server must receive that hello within 15 seconds, or it closes the connection.
+The agent opens a WebSocket to `/api/agent/connect` on the MiniBox address, using `wss://` for `https://` and `ws://` for `http://`. It proves its identity by signing a challenge that the server sends on each connection with its private key. The server must receive that hello within 5 seconds of the connection opening, or it closes the connection. The agent gives dialing (DNS, TCP, TLS and the upgrade) its own 30 seconds, so a slow link does not spend the hello's time.
+
+A connection that is not yet authenticated holds one of a limited number of places, so a flood of sockets that never say hello is refused rather than kept open; an authenticated agent holds no such place. There are two limits, both constants rather than settings:
+
+- **Per address, 8 sockets.** One caller cannot take every place there is. A socket past the limit is answered `429` **before** the upgrade, with the error key `agent_pending_limit`, so nothing is opened at all.
+- **In total, 64 sockets.** This is the backstop, so a crowd spread over many addresses cannot take the door either. A socket past it is answered `429` the same way, with the error key `agent_pending_total_limit`.
+
+A socket that gets through the upgrade but is past a limit as it opens is closed with `4411` instead. Either way the agent retries with backoff: it is a real agent, and the places are held only until the sockets holding them time out.
+
+The address is the connection's TCP peer, or the client address in `X-Forwarded-For` when `TRUST_PROXY` is on. **With `TRUST_PROXY` off, a reverse proxy or tunnel in front of MiniBox makes every client share one address, and therefore one 8-socket limit.** If real agents are refused with `agent_pending_limit` behind such a proxy, turn `TRUST_PROXY` on (only behind a proxy you control that overwrites the header), or connect the agents directly.
+
+A socket that has not sent its hello yet may not send a frame larger than 4 KiB; one that does is closed with `1009`. A hello is a few hundred bytes, so no real handshake is affected. After the hello, a frame may be up to 16 MiB, the limit every MiniBox socket shares. A one-shot log read returns at most 2 MiB of text: the newest whole lines, after a line that says how many bytes of older output were left out. Follow the log stream to see everything.
 
 While connected, the agent sends a heartbeat every 10 seconds. The server closes a connection that stays silent for 30 seconds. After a disconnect, the agent reconnects with exponential backoff, starting at 1 second, doubling to at most 30 seconds, with about 20 percent of jitter either way.
 
@@ -64,12 +75,16 @@ The server closes a connection with one of these codes:
 
 | Code | Meaning |
 |---|---|
+| `1009` | A frame arrived that was larger than the socket allows. |
 | `4401` | The agent could not prove its identity. Pair it again. |
 | `4403` | The agent was revoked. |
-| `4408` | No valid hello arrived within 15 seconds. |
+| `4408` | No valid hello arrived within 5 seconds. |
 | `4409` | A newer connection from the same agent replaced this one. |
 | `4410` | The connection was silent for 30 seconds. |
+| `4411` | Too many connections were already waiting for a hello (8 from one address, or 64 in total), so this one was closed without being challenged. The agent retries. |
 | `4426` | The agent speaks another protocol version. Update the image. |
+
+A refusal before the upgrade is an HTTP status, not a close code: `429` with `agent_pending_limit` or `agent_pending_total_limit` means a pending limit was reached, and the agent logs it as `agent.saturated` and retries. The agent logs every close with its code (`agent.closed` at info for a normal `1000`/`1001`, such as a server restart), so a log line tells a saturation (`4411`) apart from a network drop (`1006`) or a revocation (`4403`).
 
 ## Protocol version
 
@@ -94,9 +109,9 @@ A box therefore cannot be moved to or from an agent host, by either the direct p
 
 Failures are reported with one of these kinds: `not_found`, `conflict`, `invalid`, `unsupported`, `unavailable`, `engine` and `aborted`.
 
-## Revoke, upgrade and re-pair
+## Remove, revoke, upgrade and re-pair
 
-**Revoke** in the console disconnects the agent at once and blocks it from reconnecting. A revoked agent keeps running idle until its container is removed.
+In the console, an agent host has only **Remove**. Removing it revokes the agent first: the agent is disconnected at once, is blocked from reconnecting, and MiniBox forgets its record. A host that still holds boxes, volumes or checkpoints cannot be removed. To cut off its agent at once anyway, call `POST /api/hosts/{id}/revoke`. A removed or revoked agent keeps running idle until its container is removed.
 
 To upgrade, pull the newer image, remove the old container and run the command again with the same data volume. The agent keeps its identity, so the host and its boxes stay the same:
 
@@ -109,10 +124,10 @@ docker run -d --restart unless-stopped \
   ghcr.io/arnochenfx/minibox-agent --server https://minibox.example.com
 ```
 
-To put a revoked machine back in use, remove its host first. Then create a new pairing code, and run the command with a new data volume, such as `-v minibox-agent-2:/data`. The old volume still holds the revoked identity.
+To put the machine back in use, remove its host first if it is still listed. Then create a new pairing code, and run the command with a new data volume, such as `-v minibox-agent-2:/data`. The old volume still holds the revoked identity.
 
 ## Security
 
-Mounting `/var/run/docker.sock` gives the agent control of that machine's Docker engine. Anyone who can use the agent can control the machine's containers, so run agents only on machines you control. Revoke an agent you no longer trust.
+Mounting `/var/run/docker.sock` gives the agent control of that machine's Docker engine. Anyone who can use the agent can control the machine's containers, so run agents only on machines you control. Remove the host of an agent you no longer trust, or revoke the agent through the REST API while its host still holds boxes.
 
 The activity log records creating a pairing code, revoking an agent and removing a host. The server log records each accepted connection and each disconnection with its reason.

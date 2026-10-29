@@ -44,6 +44,9 @@ async function waitFor(condition: () => boolean, what: string): Promise<void> {
   }
 }
 
+/** One 1,200-byte log line, numbered so the first and last kept can be told apart. */
+const logLine = (i: number) => `${String(i).padStart(6, "0")} ${"x".repeat(1_192)}\n`;
+
 describe("pairing codes", () => {
   test("a typed code is read the way it was meant: case, spaces, dashes and look-alike letters do not matter", () => {
     expect(normalizeCode("ab12c-d3fO")).toBe("AB12CD3F0");
@@ -86,6 +89,49 @@ describe("pairing codes", () => {
 
   test("a code is issued in the shape the operator types: two groups of five", () => {
     expect(new PairingBook().create("edge", "Edge").code).toMatch(CODE_PATTERN);
+  });
+
+  test("a waiting code holds its name until it is spent or expires, and a spent one holds nothing", () => {
+    let now = 1_000;
+    const book = new PairingBook(60_000, 50, () => now);
+    const first = book.create("edge", " Edge Lab ");
+    // The name is held trimmed, folded and in NFC, so a second code under any spelling of it is refused.
+    expect(book.waitingName("edge lab", "other")).toEqual({ hostId: "edge", name: " Edge Lab " });
+    expect(book.waitingName("EDGE LAB ", "other")?.hostId).toBe("edge");
+    expect(book.waitingName("edge-lab", "other")).toBeNull();
+    book.redeem(first.code);
+    expect(book.waitingName("edge lab", "other")).toBeNull();
+    book.create("other", "Other");
+    now += 60_001;
+    expect(book.waitingName("other", "edge")).toBeNull();
+  });
+
+  test("a name spelt with a combining accent is the same name as its precomposed spelling", () => {
+    const book = new PairingBook();
+    book.create("cafe", "Cafe\u0301");
+    expect(book.waitingName("Caf\u00e9", "other")?.hostId).toBe("cafe");
+  });
+
+  test("a code does not hold its name against its own host", () => {
+    const book = new PairingBook();
+    book.create("edge", "Edge");
+    expect(book.waitingName("Edge", "edge")).toBeNull();
+    expect(book.waitingName("Edge", "lab")?.hostId).toBe("edge");
+  });
+
+  test("a new code for a host replaces the one still waiting: only the newest pairs", () => {
+    const book = new PairingBook();
+    const lost = book.create("edge", "Edge");
+    const fresh = book.create("edge", "Edge");
+    expect(() => book.redeem(lost.code)).toThrow("A newer pairing code was created for this host");
+    expect(book.redeem(fresh.code)).toEqual({ hostId: "edge", name: "Edge" });
+  });
+
+  test("a replaced code no longer counts against the limit of waiting codes", () => {
+    const book = new PairingBook(60_000, 2);
+    for (let i = 0; i < 5; i += 1) book.create("edge", "Edge");
+    book.create("lab", "Lab");
+    expect(() => book.create("third", "Third")).toThrow();
   });
 });
 
@@ -291,6 +337,29 @@ describe("the control plane's agent API, over HTTP and a real socket", () => {
     expect(res.status).toBe(409);
   });
 
+  test("a name another host holds cannot be paired under, and the conflict names the host that has it", async () => {
+    const { code } = (await (await post("/api/hosts/pairing", { id: "edge", name: "Edge lab" })).json()) as {
+      code: string;
+    };
+    const paired = await pairWithCode(code, pairingKey());
+    expect(paired.status).toBe(201);
+    const again = await post("/api/hosts/pairing", { id: "edge2", name: "edge lab" });
+    expect(again.status).toBe(409);
+    expect(((await again.json()) as { error: { key: string; params: Record<string, string> } }).error).toMatchObject({
+      code: "conflict",
+      key: "host_name_taken",
+      params: { name: "edge lab", host: "edge" },
+    });
+  });
+
+  test("a code waiting under a name keeps that name for the host it will create", async () => {
+    const first = await post("/api/hosts/pairing", { id: "edge", name: "Edge lab" });
+    expect(first.status).toBe(201);
+    const second = await post("/api/hosts/pairing", { id: "edge2", name: "edge lab" });
+    expect(second.status).toBe(409);
+    expect(((await second.json()) as { error: { key: string } }).error.key).toBe("host_name_pending");
+  });
+
   test("an agent dials in, the host goes online, and a box created on it runs on the agent's engine", async () => {
     const { code } = (await (await post("/api/hosts/pairing", { id: "edge", name: "Edge" })).json()) as {
       code: string;
@@ -312,6 +381,32 @@ describe("the control plane's agent API, over HTTP and a real socket", () => {
       status: "online",
       agent: { connected: true, version: AGENT_VERSION },
     });
+  });
+
+  test("a log read past 4 MiB comes back over the agent's socket in one frame, and the agent stays connected", async () => {
+    const { code } = (await (await post("/api/hosts/pairing", { id: "edge", name: "Edge" })).json()) as {
+      code: string;
+    };
+    const stored = await enrollAgent(code, tempDir());
+    runAgent(stored, edgeEngine);
+    await waitFor(() => app.agents.status(stored.identity.agentId)?.connected === true, "the agent to connect");
+    await waitFor(() => app.hosts.get("edge").host.status === "online", "the host to go online");
+    const made = await post("/api/boxes", { name: "chatty", cpus: 1, memoryMb: 256, host: "edge" });
+    expect(made.status).toBe(201);
+    const box = ((await made.json()) as { box: { id: string } }).box;
+
+    // 5,000 lines of 1,200 bytes: about 6 MiB, past the 4 MiB a frame was once held to, in one `containerLogs` answer.
+    edgeEngine.appendLogs(box.id, Array.from({ length: 5_000 }, (_, i) => logLine(i)).join(""));
+    const read = await api(`/api/boxes/chatty/logs?tail=5000`);
+    expect(read.status).toBe(200);
+    const { logs } = (await read.json()) as { logs: string };
+    expect(Buffer.byteLength(logs)).toBeGreaterThan(4 * 1024 * 1024);
+    expect(logs.startsWith(logLine(0))).toBe(true);
+    expect(logs.endsWith(logLine(4_999))).toBe(true);
+
+    // The same socket answers the next call: the large frame did not close it.
+    expect(app.agents.status(stored.identity.agentId)?.connected).toBe(true);
+    expect((await api(`/api/boxes/chatty/logs?tail=1`)).status).toBe(200);
   });
 
   test("a revoked agent is dropped at once, cannot dial in again, and its host is offline", async () => {

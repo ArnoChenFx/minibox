@@ -4,7 +4,7 @@ import { mountTasks } from "./components/tasks.js";
 import { api } from "./lib/api.js";
 import { $, $$, esc } from "./lib/dom.js";
 import { pct } from "./lib/format.js";
-import { hostFilterShown } from "./lib/host-list.js";
+import { hostFilterShown, hostLabel } from "./lib/host-list.js";
 import { onHosts, refreshHosts, setHostFilter } from "./lib/hosts.js";
 import { applyI18n, bindLangButton, t } from "./lib/i18n.js";
 import { icon } from "./lib/icons.js";
@@ -107,7 +107,7 @@ function initHostFilter() {
   onHosts((list, current) => {
     select.hidden = !hostFilterShown(list);
     select.innerHTML = [`<option value="">${esc(t("shell.allHosts"))}</option>`]
-      .concat(list.map((host) => `<option value="${esc(host.id)}">${esc(host.name)}</option>`))
+      .concat(list.map((host) => `<option value="${esc(host.id)}">${esc(hostLabel(host, list))}</option>`))
       .join("");
     select.value = current;
   });

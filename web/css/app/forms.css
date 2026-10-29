@@ -403,6 +403,13 @@ input[type="range"] {
 .segmented + .help {
   margin-top: 4px;
 }
+/* A row of choices that picks which form to fill in is its own block, one stack gap above the form it reveals, so the
+   method selector and its form read as two parts rather than one crowded column. Every panel is a sibling of the row,
+   not only the first one, so the selector is `~` and not `+`: with `+` only the agent panel got the gap and the
+   endpoint panel, hidden behind it, stayed flush against the choices. */
+.segmented ~ [data-method-panel] {
+  margin-top: 16px;
+}
 .segmented.segmented-3 {
   grid-template-columns: repeat(3, 1fr);
 }

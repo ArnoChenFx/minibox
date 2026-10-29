@@ -44,7 +44,7 @@ import { assertHostDiskRoom } from "../volumes/disk";
 import { assertCanCreateDefaultMounts, assertCanWrite } from "./authz";
 import { boxTarget, DEFAULT_RESOURCES } from "./boxes";
 import { defineOperation } from "./define";
-import { fromEveryHost, hostOfBox, hostOfCheckpoint } from "./routing";
+import { fromEveryHost, hostOfBox, hostOfCheckpoint, refuseAgent } from "./routing";
 import { BoxSchema, CheckpointSchema, CheckpointUsageSchema, OkSchema, PendingRollbackSchema } from "./schemas";
 import {
   boxId,
@@ -175,6 +175,11 @@ const checkpointCreate = defineOperation({
   hostFor: (ctx, input) => hostOfBox(ctx, input.id),
   resolve: ({ host }, input) => getBox(host, input.id),
   beforeTask: async (ctx, input, box) => {
+    // A backup commits a system image and copies the volumes through a helper, and an agent host can run neither. The
+    // refusal names the feature, as export and copy do, instead of surfacing later as a generic unsupported operation.
+    // It sits here rather than in `precondition` because that hook also promises a 422 in the OpenAPI document, which
+    // this operation never answers with; a refusal here is still the response, not a failed task.
+    refuseAgent(ctx.host, "checkpoints");
     assertTakeable(ctx.host, box, takeInput(input));
     assertCheckpointQuota(ctx);
     await assertHostDiskRoom(ctx.host);

@@ -193,6 +193,9 @@ export default {
   "vol.snapshotOwnedText": "为拥有此卷的 {box} 创建检查点，检查点总会包含此卷。",
   "vol.snapshotSelfText": "直接为此卷本身创建快照，记录中只有这个卷、不含任何 Box。",
   "vol.snapshotSelfMountedText": "直接为此卷本身创建快照，记录中只有这个卷、不含任何 Box。挂载它的 Box 照常运行。",
+  "vol.agentHost": "此卷位于 Agent 宿主机上，而 Agent 宿主机只运行 Box：无法浏览文件、统计已用空间或创建快照。",
+  "vol.agentHostNote":
+    "Agent 宿主机上的卷只用于运行 Box，因此这里无法浏览文件、统计已用空间或创建快照；其他宿主机上的卷不受影响。",
   "vol.snapshotExcluded": "此卷不参与检查点",
   "vol.snapshotNoBox": "所属 Box 已删除",
   "vol.mountTo": "挂载到 Box",
