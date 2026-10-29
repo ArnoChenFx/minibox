@@ -62,8 +62,8 @@ export class EgressForwardWatcher {
   private firstPass: ReturnType<typeof setTimeout> | undefined;
   private readonly everyMs: number;
   private readonly state = new Map<string, ForwardState>();
-  /** Hosts whose pass is still running, so two passes never read the same host at once. */
-  private readonly running = new Set<string>();
+  /** The pass each host is running, so two passes never read the same host at once and the repair can wait for one. */
+  private readonly running = new Map<string, Promise<ForwardState | null>>();
   /** Hosts asked to read again at their next opportunity, by a box starting or a host coming back online. */
   private readonly pending = new Set<string>();
 
@@ -161,24 +161,28 @@ export class EgressForwardWatcher {
     }
     const boxes = proxyOnlyBoxes(host);
     if (boxes.length === 0) return null;
-    if (this.running.has(host.host.id)) return null;
-    this.running.add(host.host.id);
+    // A pass already reading this host is shared rather than repeated, so a tick and a repair never overlap.
+    const inFlight = this.running.get(host.host.id);
+    if (inFlight) return inFlight;
+    const pass = this.read(host, boxes).finally(() => this.running.delete(host.host.id));
+    this.running.set(host.host.id, pass);
+    return pass;
+  }
+
+  /** The engine calls of one pass: the uplink's bridge, then the host's rules. */
+  private async read(host: HostCtx, boxes: readonly BoxSpec[]): Promise<ForwardState | null> {
     this.pending.delete(host.host.id);
-    try {
-      const uplink = egressUplinkName(host.prefix);
-      const network = (await host.runtime.listNetworks()).find((candidate) => candidate.name === uplink);
-      const bridge = network?.bridge ?? null;
-      if (bridge === null) {
-        // The uplink is missing, so no proxy has a route out. A box that starts recreates it, and that start asks for a
-        // pass of its own, so this is left to the box rather than reported as a firewall problem.
-        log.warn("egress.forward_uplink_missing", { host: host.host.id, network: uplink });
-        return null;
-      }
-      const verdict = await host.runtime.checkHostForward(host.prefix, bridge, UPLINK_SUBNET);
-      return this.record(host, bridge, boxes, verdict);
-    } finally {
-      this.running.delete(host.host.id);
+    const uplink = egressUplinkName(host.prefix);
+    const network = (await host.runtime.listNetworks()).find((candidate) => candidate.name === uplink);
+    const bridge = network?.bridge ?? null;
+    if (bridge === null) {
+      // The uplink is missing, so no proxy has a route out. A box that starts recreates it, and that start asks for a
+      // pass of its own, so this is left to the box rather than reported as a firewall problem.
+      log.warn("egress.forward_uplink_missing", { host: host.host.id, network: uplink });
+      return null;
     }
+    const verdict = await host.runtime.checkHostForward(host.prefix, bridge, UPLINK_SUBNET);
+    return this.record(host, bridge, boxes, verdict);
   }
 
   private record(
@@ -235,6 +239,11 @@ export class EgressForwardWatcher {
       throw conflict(msg("egress_forward_unchecked"));
     }
     await host.runtime.allowHostForward(host.prefix, state.bridge);
+    // A pass that was already reading the host when the rule went in could answer with the rules before it, so it is
+    // waited out and a fresh one reads what the repair left behind.
+    // A pass that was already reading the host when the rule went in could answer with the rules before it, so it is
+    // waited out and a fresh one reads what the repair left behind.
+    await this.running.get(host.host.id)?.catch(() => null);
     const next = await this.hostPass(host);
     if (next === null) throw new AppError(502, "docker_error", msg("egress_forward_unchecked"));
     // The repair is a fact about the reading it answered with, not a verdict of its own: the next pass decides again.

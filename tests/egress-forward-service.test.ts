@@ -178,6 +178,35 @@ describe("the owner's repair, and nothing before it", () => {
     expect(state).toMatchObject({ forwarding: true, repaired: true });
   });
 
+  test("a pass already reading the host is waited out, so the repair's answer is a reading taken after the rule", async () => {
+    runtime.forwardVerdict = DROPPED;
+    await gated();
+    await watcher.tick();
+    // The pass in flight when the repair runs read the rules as they were before it, and the repair's own pass reads
+    // them as they are after it. Holding the first one makes that order visible: without the wait, the repair would
+    // answer with the reading taken before the rule went in.
+    const gate = Promise.withResolvers<void>();
+    const entered = Promise.withResolvers<void>();
+    const reads = [DROPPED, FORWARDING];
+    let calls = 0;
+    runtime.checkHostForward = async () => {
+      const verdict = reads[calls] ?? FORWARDING;
+      calls += 1;
+      if (calls === 1) {
+        entered.resolve();
+        await gate.promise;
+      }
+      return verdict;
+    };
+    watcher.hostOnline(host.host.id);
+    const pass = watcher.tick();
+    await entered.promise;
+    const repaired = watcher.repair(host);
+    gate.resolve();
+    await pass;
+    expect(await repaired).toMatchObject({ forwarding: true, repaired: true });
+  });
+
   test("a repair that did not work still reports the condition, so the warning stays", async () => {
     runtime.forwardVerdict = DROPPED;
     await gated();
