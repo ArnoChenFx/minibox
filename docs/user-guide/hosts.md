@@ -115,7 +115,7 @@ A host whose running boxes reserve more CPU or memory than its capacity times `H
 There are two paths, and the choice is the `via` field of `POST /api/boxes/:id/move`:
 
 - **direct** (the default, and what MiniBox did before this path existed): the template image is sent to the target when the target does not have it, and the volumes are copied as archives.
-- **checkpoint**: MiniBox takes a checkpoint of the box, copies that checkpoint to the target, makes the box there from the copy, and removes the box from the old host. It needs no image transfer, because [the checkpoint copy](checkpoints.md#copy-to-another-host) carries the template the checkpoint names when the target lacks it. It is the path to reach a host that cannot accept an image sent to it.
+- **checkpoint**: MiniBox checkpoints the box, copies the checkpoint to the target, restores the volumes, and removes the source box. The target still needs the template image; the checkpoint copy sends it when missing. Both hosts must support image transfer and checkpoint helpers.
 
 Either way:
 
@@ -127,7 +127,7 @@ What differs between the two paths:
 
 - A direct move leaves the box's checkpoints on the old host. The preview counts them. A checkpoint holds volume data, and copying every checkpoint would make a move slow. To keep one with the box, [copy it](checkpoints.md#copy-to-another-host) to the new host, or [export](checkpoints.md#export-and-import) it and import it there.
 - A checkpoint move takes its own checkpoint for the transfer and removes it afterwards, on both hosts, so a move leaves no extra checkpoint behind. It carries only what a checkpoint holds: the workspace, the home, and any recorded volume the box mounts. A cache volume is made again empty on the target.
-- A checkpoint move pauses the box while its checkpoint is taken, then resumes it, and the rest of the move reads only the checkpoint. A direct move pauses it for the volume copy. Either way, a failed move leaves the box running where it was.
+- Both paths keep a running source box paused until the move commits and its source container is removed. A failed move resumes the source. A stopped box stays stopped.
 
 Refusals name why, in the message:
 

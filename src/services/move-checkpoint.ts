@@ -62,6 +62,7 @@ interface CheckpointMovePlan {
 interface CheckpointRunState {
   created: string | null;
   tokenIssued: boolean;
+  paused: boolean;
 }
 
 /** The 409 a checkpoint move answers without `confirm`. It carries the same preview the direct move carries. */
@@ -275,7 +276,7 @@ async function runCheckpointMove(
   const { spec } = plan;
   const oldId = spec.containerId;
   const changes = new VolumeChanges();
-  const state: CheckpointRunState = { created: null, tokenIssued: false };
+  const state: CheckpointRunState = { created: null, tokenIssued: false, paused: false };
   const say = (text: string): void => progress?.log?.(`${text}\n`);
   let sourceCheckpoint: CheckpointView | null = null;
   let copy: CheckpointView | null = null;
@@ -293,7 +294,10 @@ async function runCheckpointMove(
       },
       null,
       progress,
+      false,
+      { keepStopped: true },
     );
+    state.paused = plan.running;
     throwIfCancelled(progress);
     if (sourceCheckpoint.data.length > 0) {
       say(`Copying the checkpoint to ${to.host.id}.`);
@@ -430,6 +434,16 @@ async function undoCheckpointMove(
     }
   }
   if (state.tokenIssued) to.selfTokens.revoke(spec.id);
+  if (state.paused) {
+    try {
+      await from.runtime.unpauseContainer(spec.containerId);
+      if (state.tokenIssued) {
+        await provisionSelfToken(from, { boxId: spec.id, name: spec.name }, spec.containerId);
+      }
+    } catch (e) {
+      log.warn("box.move_rollback_failed", { id: spec.id, container: spec.containerId, error: String(e) });
+    }
+  }
   if (copy) {
     await deleteCheckpoint(to, copy.id).catch((e: unknown) => {
       log.warn("box.move_rollback_failed", { id: spec.id, checkpoint: copy.id, error: String(e) });

@@ -302,6 +302,7 @@ export default {
   "rb.doneText":
     "{name} is running from the new container. Its id changed; volumes, the stable id and the name were kept.",
   "rb.failed": "Rebuild failed",
+  "mv.via.checkpointOption": "checkpoint: restore volume data from a checkpoint",
   "mv.viaLabel": "How the box travels",
   "mv.via": "Path: {via}",
   "mv.via.direct": "direct: the template image is sent and the volumes are copied as archives",

@@ -204,6 +204,30 @@ describe("moving a box through a checkpoint", () => {
     expect(local.volumes.list().some((record) => record.engineName === source)).toBe(false);
   });
 
+  test("the source stays paused through target start and is never resumed on success", async () => {
+    const box = await boxOn(cluster, undefined, "dev", { mounts: undefined });
+    const start = cluster.engines.small.startContainer.bind(cluster.engines.small);
+    let checked = false;
+    cluster.engines.small.startContainer = async (id) => {
+      expect(containersOf(cluster, "local", box.boxId).map((container) => container.paused)).toEqual([true]);
+      checked = true;
+      await start(id);
+    };
+    expect((await confirmed(box.boxId, { host: "small", via: "checkpoint" }, box.revision)).status).toBe("succeeded");
+    expect(checked).toBe(true);
+    expect(cluster.engines.local.calls.filter((call) => call.op === "unpauseContainer")).toHaveLength(0);
+  });
+
+  test("rollback restores the source self token when target delivery fails", async () => {
+    const box = await boxOn(cluster, undefined, "dev", { mounts: undefined, selfToken: true });
+    expect(cluster.app.selfTokens.has(box.boxId)).toBe(true);
+    cluster.engines.small.fail("writeContainerFile", new RuntimeError("engine", "token delivery refused"));
+    const done = await confirmed(box.boxId, { host: "small", via: "checkpoint" }, box.revision);
+    expect(done.status).toBe("failed");
+    expect((await viewOf(box.boxId)).hostId).toBe("local");
+    expect(cluster.app.selfTokens.has(box.boxId)).toBe(true);
+  });
+
   test("a stopped box stays stopped on the target, and the container is created without a start", async () => {
     const box = await boxOn(cluster, undefined, "dev", { mounts: undefined });
     const stopped = await cluster.api(`/api/boxes/${box.boxId}/stop`, { method: "POST" });

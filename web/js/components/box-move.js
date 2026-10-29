@@ -84,7 +84,7 @@ export async function openMove(box) {
         <div class="field"><label class="label" for="mvVia">${esc(t("mv.viaLabel"))}</label>
           <select class="select" id="mvVia">
             <option value="direct">${esc(t("mv.via.direct"))}</option>
-            <option value="checkpoint">${esc(t("mv.via.checkpoint"))}</option>
+            <option value="checkpoint">${esc(t("mv.via.checkpointOption"))}</option>
           </select></div>
         <div class="error-text" id="mvErr"></div>
         <div class="move-preview" id="mvPreview" hidden></div>`
@@ -103,8 +103,16 @@ export async function openMove(box) {
       headers: { "if-match": String(box.revision) },
     });
 
+  const invalidatePreview = () => {
+    root.querySelector("#mvPreview").hidden = true;
+    root.querySelector("#mvApply").hidden = true;
+  };
+  root.querySelector("#mvHost").addEventListener("change", invalidatePreview);
+  root.querySelector("#mvVia").addEventListener("change", invalidatePreview);
+
   root.querySelector("#mvPreviewBtn").addEventListener("click", async (event) => {
     const to = root.querySelector("#mvHost").value;
+    const via = root.querySelector("#mvVia").value;
     root.querySelector("#mvErr").textContent = "";
     root.querySelector("#mvApply").hidden = true;
     try {
@@ -112,6 +120,7 @@ export async function openMove(box) {
       root.querySelector("#mvErr").textContent = t("mv.noPreview");
     } catch (err) {
       if (err?.code === "confirmation_required" && err.details?.preview) {
+        if (root.querySelector("#mvHost").value !== to || root.querySelector("#mvVia").value !== via) return;
         root.querySelector("#mvPreview").hidden = false;
         root.querySelector("#mvPreview").innerHTML = movePreviewHtml(err.details.preview);
         root.querySelector("#mvApply").hidden = false;

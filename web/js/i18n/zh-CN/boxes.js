@@ -287,6 +287,7 @@ export default {
   "rb.done": "Box 已重建",
   "rb.doneText": "{name} 已在新容器中运行。容器 ID 已变化；卷、稳定 ID 和名称都保留了下来。",
   "rb.failed": "重建失败",
+  "mv.via.checkpointOption": "检查点：用检查点恢复卷数据",
   "mv.viaLabel": "迁移方式",
   "mv.via": "方式：{via}",
   "mv.via.direct": "直接：发送模板镜像，卷以归档形式复制",
