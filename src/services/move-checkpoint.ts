@@ -5,7 +5,7 @@ import { log } from "../lib/logger";
 import { msg } from "../lib/messages";
 import { type ImageDetails, isRuntimeError } from "../runtime";
 import { assertSecretsSet, containerEnv } from "../secrets/env";
-import { REBUILD_LOSES } from "../specs/plan";
+import { type PlannedRebuild, REBUILD_LOSES } from "../specs/plan";
 import type { BoxMount, BoxSpec } from "../specs/types";
 import { VolumeChanges } from "../volumes/changes";
 import { assertVolumesPresent, mountedByAnotherBox } from "../volumes/engine";
@@ -313,28 +313,7 @@ async function runCheckpointMove(
     if (spec.network === to.security.network) await ensureBoxNetwork(to);
     const name = await targetContainerName(to, spec.id);
     const template = { ref: spec.template.ref, image: spec.template.image, digest: plan.image.id };
-    say(`Creating the box on ${to.host.id}.`);
-    const created = await to.runtime.createContainer(
-      containerSpec(
-        to,
-        spec,
-        {
-          changes: [],
-          templateRef: spec.template.image,
-          mounts,
-          env: spec.env,
-          network: spec.network,
-          egress: null,
-          profile: spec.profile,
-          containerName: name,
-        },
-        template,
-        name,
-        containerEnv(to.secrets, spec.env),
-      ),
-    );
-    state.created = created.id;
-    await assertFresh(to, created.id, template, {
+    const planned: PlannedRebuild = {
       changes: [],
       templateRef: spec.template.image,
       mounts,
@@ -343,7 +322,13 @@ async function runCheckpointMove(
       egress: null,
       profile: spec.profile,
       containerName: name,
-    });
+    };
+    say(`Creating the box on ${to.host.id}.`);
+    const created = await to.runtime.createContainer(
+      containerSpec(to, spec, planned, template, name, containerEnv(to.secrets, spec.env)),
+    );
+    state.created = created.id;
+    await assertFresh(to, created.id, template, planned);
     if (plan.starts) {
       say(`Starting the box on ${to.host.id}.`);
       await to.runtime.startContainer(created.id);

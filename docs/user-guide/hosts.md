@@ -119,7 +119,7 @@ What differs between the two paths:
 
 - A direct move leaves the box's checkpoints on the old host. The preview counts them. A checkpoint holds volume data, and copying every checkpoint would make a move slow. To keep one with the box, [copy it](checkpoints.md#copy-to-another-host) to the new host, or [export](checkpoints.md#export-and-import) it and import it there.
 - A checkpoint move takes its own checkpoint for the transfer and removes it afterwards, on both hosts, so a move leaves no extra checkpoint behind. It carries only what a checkpoint holds: the workspace, the home, and any recorded volume the box mounts. A cache volume is made again empty on the target.
-- A checkpoint move pauses the box for the backup and resumes it if the move fails. A direct move pauses it for the volume copy.
+- A checkpoint move pauses the box while its checkpoint is taken, then resumes it, and the rest of the move reads only the checkpoint. A direct move pauses it for the volume copy. Either way, a failed move leaves the box running where it was.
 
 Refusals name why, in the message:
 
