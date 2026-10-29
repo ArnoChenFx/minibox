@@ -26,7 +26,7 @@ export const MANIFEST_VERSION = 1;
 
 /** Longest body of one file in a package. A restic pack is a few tens of MB, so this is a backstop. */
 export const MAX_ENTRY_BYTES = 256 * 1024 * 1024;
-export const MAX_ENTRIES = 200_000;
+const MAX_ENTRIES = 200_000;
 
 const BLOCK = 512;
 const TRAILER_MIN_BYTES = 2 * BLOCK;
@@ -343,7 +343,7 @@ const LayerSchema = z.strictObject({
  * What a package records beside its data: the checkpoint's record fields that a new instance needs, and nothing about
  * the source host. Snapshot ids are left out, since each instance assigns its own.
  */
-export const ManifestSchema = z
+const ManifestSchema = z
   .strictObject({
     version: z.literal(MANIFEST_VERSION),
     id: z.string().refine(isCheckpointId, "not a checkpoint id"),

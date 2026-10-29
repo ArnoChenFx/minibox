@@ -228,6 +228,107 @@ describe("requests over the connection", () => {
 });
 
 describe("streams over the connection", () => {
+  for (const payload of ["line", "x".repeat(128 * 1024)]) {
+    test(`a slow log consumer is cancelled with an explicit error (${payload.length} bytes per item)`, async () => {
+      const { hub, enroll, key } = setup();
+      const record = enroll();
+      const { socket, session } = connect(hub, key, record.agentId);
+      const runtime = hub.runtimeFor(record.agentId);
+      const logs = runtime.followLogs("box", { tail: 0, timestamps: false })[Symbol.asyncIterator]();
+      const first = logs.next();
+      const id = String(framesOf(socket, "request").at(-1)?.id);
+      session.receive(JSON.stringify({ type: "response", id, ok: true, result: {} }));
+      session.receive(JSON.stringify({ type: "item", id, value: "first" }));
+      expect(await first).toEqual({ done: false, value: "first" });
+      // A single producer burst while the iterator is suspended: exercise both item and byte budgets.
+      for (let i = 0; i < 2048; i++) session.receive(JSON.stringify({ type: "item", id, value: payload }));
+      await expect(logs.next()).rejects.toMatchObject({
+        kind: "unavailable",
+        message: expect.stringContaining("buffer limit"),
+      });
+      expect(framesOf(socket, "cancel")).toEqual([{ type: "cancel", id }]);
+      expect(hub.status(record.agentId)?.connected).toBe(true);
+      const ping = runtime.ping();
+      const pingId = framesOf(socket, "request").at(-1)?.id;
+      session.receive(JSON.stringify({ type: "response", id: pingId, ok: true, result: {} }));
+      await ping;
+    });
+  }
+
+  test("a consumer that keeps up reads a long stream in order, including queued items before an end error", async () => {
+    const { hub, enroll, key } = setup();
+    const record = enroll();
+    const { socket, session } = connect(hub, key, record.agentId);
+    const source = hub.runtimeFor(record.agentId).followLogs("box", { tail: 0, timestamps: false });
+    const logs = source[Symbol.asyncIterator]();
+    let reading = logs.next();
+    const id = String(framesOf(socket, "request").at(-1)?.id);
+    session.receive(JSON.stringify({ type: "response", id, ok: true, result: {} }));
+    for (let i = 0; i < 2048; i++) {
+      session.receive(JSON.stringify({ type: "item", id, value: String(i) }));
+      expect(await reading).toEqual({ done: false, value: String(i) });
+      if (i < 2047) reading = logs.next();
+    }
+    for (const value of ["last-a", "last-b"]) session.receive(JSON.stringify({ type: "item", id, value }));
+    session.receive(
+      JSON.stringify({ type: "end", id, error: { kind: "engine", message: "source failed", detail: "source failed" } }),
+    );
+    expect(await logs.next()).toEqual({ done: false, value: "last-a" });
+    expect(await logs.next()).toEqual({ done: false, value: "last-b" });
+    await expect(logs.next()).rejects.toMatchObject({ kind: "engine", message: "source failed" });
+  });
+
+  test("aborting a suspended log reader discards queued items and detaches the agent stream", async () => {
+    const { hub, enroll, key } = setup();
+    const record = enroll();
+    const { socket, session } = connect(hub, key, record.agentId);
+    const abort = new AbortController();
+    const source = hub
+      .runtimeFor(record.agentId)
+      .followLogs("box", { tail: 0, timestamps: false, signal: abort.signal });
+    const logs = source[Symbol.asyncIterator]();
+    const first = logs.next();
+    const id = String(framesOf(socket, "request").at(-1)?.id);
+    session.receive(JSON.stringify({ type: "response", id, ok: true, result: {} }));
+    session.receive(JSON.stringify({ type: "item", id, value: "first" }));
+    await first;
+    session.receive(JSON.stringify({ type: "item", id, value: "stale" }));
+    abort.abort();
+    expect(await logs.next()).toMatchObject({ done: true });
+    expect(framesOf(socket, "cancel")).toEqual([{ type: "cancel", id }]);
+  });
+
+  test("a stalled event reader is bounded and a replacement reader can open on the same connection", async () => {
+    const { hub, enroll, key } = setup();
+    const record = enroll();
+    const { socket, session } = connect(hub, key, record.agentId);
+    const runtime = hub.runtimeFor(record.agentId);
+    const events = runtime.events({})[Symbol.asyncIterator]();
+    const first = events.next();
+    const id = String(framesOf(socket, "request").at(-1)?.id);
+    const event = {
+      type: "container",
+      action: "start",
+      id: "box",
+      attributes: {},
+      time: "2026-10-29T00:00:00Z",
+      timeNano: 1,
+    };
+    session.receive(JSON.stringify({ type: "response", id, ok: true, result: {} }));
+    session.receive(JSON.stringify({ type: "item", id, value: event }));
+    expect((await first).value).toEqual(event);
+    for (let i = 0; i < 2048; i++) session.receive(JSON.stringify({ type: "item", id, value: event }));
+    await expect(events.next()).rejects.toMatchObject({ kind: "unavailable" });
+    const replacement = runtime.events({ since: 1 })[Symbol.asyncIterator]();
+    const next = replacement.next();
+    const newId = String(framesOf(socket, "request").at(-1)?.id);
+    expect(newId).not.toBe(id);
+    session.receive(JSON.stringify({ type: "response", id: newId, ok: true, result: {} }));
+    session.receive(JSON.stringify({ type: "item", id: newId, value: event }));
+    expect((await next).value).toEqual(event);
+    await replacement.return?.();
+  });
+
   test("a stream opens, delivers its output, items and exit to the sink, and then ends", async () => {
     const { hub, enroll, key } = setup();
     const record = enroll();

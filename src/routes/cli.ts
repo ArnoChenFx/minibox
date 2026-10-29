@@ -42,7 +42,7 @@ async function binaryRoute({ app, params, req, server }: RouteCtx): Promise<Resp
 }
 
 /** The public CLI downloads. No caller is needed: the binaries hold no secrets and only the sha256 list describes them. */
-export const cliRoutes: Route[] = [
+const cliRoutes: Route[] = [
   route("GET", "/cli/install.sh", installerRoute("install.sh"), { public: true }),
   route("GET", "/cli/install.ps1", installerRoute("install.ps1"), { public: true }),
   route("GET", "/cli/checksums.txt", async ({ app }) => text(await app.cli.checksums()), { public: true }),

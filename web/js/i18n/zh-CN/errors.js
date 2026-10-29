@@ -1,4 +1,5 @@
 export default {
+  "err.storage_admin_required": "选择存储池及创建、删除卷需要所有者或未收窄的管理员令牌。",
   "err.invalid_json_object": "请求体必须是 JSON 对象。",
   "err.invalid_json": "请求体不是合法的 JSON。",
   "err.field_required": "{label}不能为空。",
@@ -359,7 +360,7 @@ export default {
   "err.volume_host_offline": "宿主机 {host} 离线，因此未检查其卷。",
   "err.volume_host_failed": "宿主机 {host} 无法列出其容器，因此未检查其卷：{detail}",
   "err.volume_older_than_invalid": "olderThan 必须是整数加上 s、m、h、d 或 w，例如 30d。",
-  "err.volume_delete_forbidden": "此凭据只能删除它自己创建的卷：{volume}。",
+  "err.volume_delete_forbidden": "卷 {volume} 不在此凭据的资源范围内，未删除。",
   "err.volume_shared_tools": "卷 {volume} 是共享的工具卷，保存着所有 Box 的工具，因此不会删除。",
   "err.volume_system": "卷 {volume} 是 MiniBox 的系统卷，因此不会删除。",
   "err.volume_not_orphan": "卷 {volume} 已不再是孤立卷，因此保留。",
@@ -367,6 +368,7 @@ export default {
   "err.volume_attach_forbidden": "此凭据不能挂载卷 {volume}。",
   "err.volume_write_forbidden": "此凭据不能写入卷 {volume}。",
   "err.volume_create_forbidden": "此凭据不能创建卷。",
+  "err.volume_tools_create_forbidden": "只有所有者可以创建工具卷，令牌（包括 admin 令牌）都不行。",
   "err.volume_chown_failed": "无法修改新卷的所有者：{detail}",
   "err.volume_prepare_failed": "无法准备卷目录：{detail}",
   "err.storage_permission_denied": "存储池 {pool} 拒绝创建卷目录（权限不足）：{detail}",

@@ -11,7 +11,7 @@ const TYPES: Record<string, string> = {
   webmanifest: "application/manifest+json",
 };
 
-export function contentType(path: string): string {
+function contentType(path: string): string {
   const ext = path.split(".").pop()?.toLowerCase() ?? "";
   return TYPES[ext] ?? "application/octet-stream";
 }

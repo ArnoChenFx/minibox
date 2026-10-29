@@ -174,7 +174,7 @@ function operationObject(op: Operation, binding: RestBinding): JsonSchema {
   };
 }
 
-export interface OpenApiDocument {
+interface OpenApiDocument {
   openapi: "3.1.0";
   info: { title: string; version: string; description: string; license: { name: string } };
   tags: { name: string }[];
@@ -184,7 +184,7 @@ export interface OpenApiDocument {
 }
 
 /** The OpenAPI document for the operations in the registry. Routes that have not been migrated are not in it. */
-export function buildOpenApi(operations: readonly Operation[], version: string): OpenApiDocument {
+function buildOpenApi(operations: readonly Operation[], version: string): OpenApiDocument {
   const paths: Record<string, Record<string, JsonSchema>> = {};
   for (const op of operations) {
     for (const binding of op.rest) {

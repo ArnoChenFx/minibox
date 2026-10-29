@@ -19,7 +19,7 @@ export function selfAllowed(request: AuthorizeRequest, principal: BoxSelfPrincip
  * Whether a resolved box or task belongs to the box with this id. A box is matched by its stable id, a task by the
  * principal that started it. Anything else is not the box's.
  */
-export function ownsResolved(resolved: unknown, boxId: string): boolean {
+function ownsResolved(resolved: unknown, boxId: string): boolean {
   if (typeof resolved !== "object" || resolved === null) return false;
   if ("boxId" in resolved && typeof resolved.boxId === "string") return resolved.boxId === boxId;
   if ("principalId" in resolved && typeof resolved.principalId === "string") return resolved.principalId === boxId;

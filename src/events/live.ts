@@ -10,12 +10,12 @@ import { allBoxViews, boxVisible, hostAllowed, taskVisible, viewOfBox } from "..
 import type { LiveSource } from "./stream";
 
 /** The state every host had when a stream started. A host whose sampler is not current lists no boxes. */
-export interface SyncFrame {
+interface SyncFrame {
   hosts: { hostId: string; state: LinkState; boxes: Box[] }[];
 }
 
 /** One frame of live state. The event name is the kind, so a client dispatches on it without reading the data. */
-export function liveFrame(kind: string, data: unknown): string {
+function liveFrame(kind: string, data: unknown): string {
   return `event: ${kind}\ndata: ${JSON.stringify(data)}\n\n`;
 }
 

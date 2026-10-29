@@ -14,6 +14,7 @@ import {
   roleLabel,
   rowButton,
   selectCellHtml,
+  selectReasonText,
   statusHtml,
 } from "../components/volume-cells.js";
 import { usageCellHtml } from "../components/volume-usage.js";
@@ -35,7 +36,7 @@ import {
   volumeSearchFields,
 } from "../lib/volume-list.js";
 import { agentVolumeBlock, latestByVolume, snapshotPlan, stagedMountsByVolume } from "../lib/volume-row.js";
-import { headerState, keepSelectable, toggleAll, toggleOne } from "../lib/volume-select.js";
+import { headerState, keepSelectable, toggleAll, toggleOne, unselectableReason } from "../lib/volume-select.js";
 
 /**
  * The storage page's Volumes tab. It reads the volumes, the pools, the boxes and the latest checkpoint of each volume,
@@ -51,6 +52,18 @@ const VOLUME_COLUMNS = 9;
 
 /** How many volumes a list or group shows before its "show all" toggle. */
 const VOLUME_LIMIT = 10;
+
+/**
+ * The row's delete button. It is disabled, with the reason, for the volumes the server refuses to delete: the shared tools
+ * volume and a volume a box mounts. A spare tools-role volume can be deleted.
+ */
+function deleteButton(volume) {
+  const reason = unselectableReason(volume);
+  return rowButton("delete", volume, "trash", t("vol.delete"), {
+    danger: true,
+    blockText: reason ? selectReasonText(reason) : "",
+  });
+}
 
 function volumeRow(volume, { selected, pools, latest, staged, hosts }) {
   // An agent host runs boxes only, so its volumes cannot be browsed, measured or snapshotted. The reason is one key for
@@ -79,7 +92,7 @@ function volumeRow(volume, { selected, pools, latest, staged, hosts }) {
       ${rowButton("browse", volume, "folder", t("vol.browse"), { block: agent })}
       ${rowButton("snapshot", volume, "camera", t("vol.snapshot"), { block: agent || snapshotPlan(volume).block })}
       ${rowButton("mount-to", volume, "link", t("vol.mountTo"))}
-      ${rowButton("delete", volume, "trash", t("vol.delete"), { danger: true })}
+      ${deleteButton(volume)}
     </div></td>
   </tr>`;
 }

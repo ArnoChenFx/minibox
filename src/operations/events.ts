@@ -105,7 +105,7 @@ const filterShape = {
 /** The filters a client may ask for. The event stream takes these, and the list takes them with paging on top. */
 export const eventFilterInput = z.object(filterShape);
 
-export const eventsListInput = z.object({
+const eventsListInput = z.object({
   ...filterShape,
   cursor: field(checkCursor, {
     type: "integer",
@@ -141,7 +141,7 @@ export function filterOf(input: {
   };
 }
 
-export const eventList = defineOperation({
+const eventList = defineOperation({
   name: "events.list",
   tag: "events",
   summary: "List recorded events, newest first",

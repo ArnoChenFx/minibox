@@ -177,6 +177,8 @@ export default {
   "vol.statusStagedText": "在 {boxes} 应用暂存变更后挂载。",
   "vol.cleanupHint": "可清理",
   "vol.cleanupHintText": "没有 Box 挂载此卷。删除它或使用「清理孤立卷」可释放空间。",
+  "vol.cleanupHintSpareTools":
+    "这是一个闲置的工具卷，Box 挂载的是共享工具卷。删除它可释放空间；「清理孤立卷」会跳过工具卷。",
   "vol.mountsMore": "另有 {n} 个",
   "vol.cap.shareable": "共享",
   "vol.cap.snapshots": "快照",

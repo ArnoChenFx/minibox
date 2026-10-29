@@ -5,7 +5,7 @@ import type { BoxSpec } from "../specs/types";
 
 /**
  * Scopes a token may carry. Operations keep their own scope strings; `requiredScopes` maps those onto this list.
- * Anything that maps to no scope here is the owner's alone: token management, pool administration, pool listing,
+ * Anything that maps to no scope here is the owner's alone, except the explicit admin storage capability: token management,
  * the custom tool catalog, template build, task cancellation, the console's session and system routes.
  */
 export const SCOPES = [
@@ -33,7 +33,7 @@ export type Scope = (typeof SCOPES)[number];
 /**
  * The scopes by the heading the console lists them under. Each scope is in exactly one group, in the order the
  * console shows them. The `sensitive` group is the three scopes the console flags: `secret:use` hands host secrets to
- * a box (admin only), and `trash:skip` and `volume:delete` remove data for good (in no preset).
+ * a box (admin only), and `trash:skip` and `volume:delete` remove data (trash:skip is in no preset; volume:delete is admin only).
  */
 export const SCOPE_GROUPS = [
   { id: "box", scopes: ["box:read", "box:write", "box:delete"] },
@@ -87,6 +87,8 @@ export const NO_QUOTA: Quotas = {
 };
 
 export interface TokenGrants {
+  /** Derived only from the stored, unmodified admin policy when authenticating. Never accepted from requests. */
+  readonly storageAdmin?: boolean;
   readonly scopes: readonly Scope[];
   readonly boxes: BoxScope;
   readonly volumes: VolumeScope;
@@ -154,13 +156,13 @@ const READ_SCOPES: readonly Scope[] = ["box:read", "files:read"];
 /**
  * Every scope but `secret:use`. A box that receives a host secret, and a startup command that may hold one, is the owner's
  * decision, so only the admin preset has it. `trash:skip` is in no preset: a token deletes into the recycle bin unless a
- * credential names that scope itself. `volume:delete` (batch delete) is in no preset either, so it stays the owner's
- * unless a credential names it; pruning orphans is the owner's alone.
+ * credential names that scope itself. `volume:delete` is in the admin preset only. Explicit storage management also checks the authenticated admin
+ * capability, independently of individual scopes.
  */
 const OPERATOR_SCOPES: readonly Scope[] = SCOPES.filter(
   (scope) => scope !== "secret:use" && scope !== "trash:skip" && scope !== "volume:delete",
 );
-const ADMIN_SCOPES: readonly Scope[] = SCOPES.filter((scope) => scope !== "trash:skip" && scope !== "volume:delete");
+const ADMIN_SCOPES: readonly Scope[] = SCOPES.filter((scope) => scope !== "trash:skip");
 const SANDBOX_SCOPES: readonly Scope[] = OPERATOR_SCOPES.filter(
   (scope) => scope !== "volume:attach" && scope !== "tool:install" && scope !== "box:ssh",
 );
@@ -181,7 +183,7 @@ const LOCAL_HOSTS: HostScope = { type: "list", ids: [LOCAL_HOST_ID] };
 const NO_VOLUMES: VolumeScope = { type: "list", ids: [] };
 
 /** Agent tokens get this prefix. The owner's principal id is `owner`, and no other principal uses the prefix. */
-export const TOKEN_ID_PREFIX = "tok_";
+const TOKEN_ID_PREFIX = "tok_";
 
 export function isTokenId(id: string): boolean {
   return id.startsWith(TOKEN_ID_PREFIX);
@@ -400,7 +402,31 @@ export function mayGiveStartupCommand(principal: Subject): boolean {
   return mayUseSecrets(principal) && principal.grants?.scopes.includes("exec") === true;
 }
 
+/** Operations that require storage administrator identity in addition to their ordinary scope. */
+export const STORAGE_ADMIN_OPERATIONS: ReadonlySet<string> = new Set([
+  "volume.create",
+  "volume.delete",
+  "volume.delete.batch",
+  "volume.prune",
+  "pool.list",
+  "pool.replace",
+]);
+
+/** Storage administration is an identity capability, not something a custom scope can grant. */
+export function mayManageStorage(principal: Subject): boolean {
+  return principal.type === "owner" || (principal.type === "token" && principal.grants?.storageAdmin === true);
+}
+
+/** Old admin records retain this capability; narrowing boxes, hosts or scopes removes it. */
+export function storageAdminPolicy(policy: Pick<TokenDraft, "preset" | "audit" | "boxes" | "hosts">): boolean {
+  return (
+    policy.preset === "admin" && policy.audit === "all" && policy.boxes.type === "all" && policy.hosts.type === "all"
+  );
+}
+
 export function scopeAllowed(grants: TokenGrants, operationScope: string): boolean {
+  if (grants.storageAdmin && ["pool:read", "pool:admin", "volume:prune", "volume:delete"].includes(operationScope))
+    return true;
   const need = requiredScopes(operationScope);
   if (need === "owner") return false;
   return need.some((scope) => grants.scopes.includes(scope));
@@ -617,7 +643,7 @@ export function profileRank(profile: string | null): number {
 }
 
 /** Tokens create and rebuild only with `standard` or `strict`. Relaxed and legacy profiles belong to the owner. */
-export const TOKEN_MIN_PROFILE_RANK = PROFILE_RANK.standard ?? 2;
+const TOKEN_MIN_PROFILE_RANK = PROFILE_RANK.standard ?? 2;
 
 /** Other principals (the owner) may choose any profile, so this only constrains tokens. */
 export function profileForToken(profile: string): boolean {

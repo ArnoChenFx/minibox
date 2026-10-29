@@ -11,9 +11,9 @@ export const LOG_RING_BYTES = 2 * 1024 * 1024;
  * How far before the newest line a resumed follow starts. The engine stamps stdout and stderr lines a few microseconds
  * apart, and they can reach the log out of order, so a resume reads this far back and drops the lines it already sent.
  */
-export const RESUME_WINDOW_MS = 1000;
+const RESUME_WINDOW_MS = 1000;
 /** How long a box's follow runs after its last subscriber leaves, so a reader that comes back at once finds the feed. */
-export const LOG_LEASE_MS = 30_000;
+const LOG_LEASE_MS = 30_000;
 const RETRY_MIN_MS = 1000;
 const RETRY_MAX_MS = 30_000;
 

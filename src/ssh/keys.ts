@@ -16,7 +16,7 @@ export const SSH_KEY_TEXT_MAX = 16_384;
 const TOUCH_INTERVAL_MS = 60_000;
 
 /** The key types a login may use. DSA is broken and ssh2 cannot verify security-key types. */
-export const SSH_KEY_TYPES = [
+const SSH_KEY_TYPES = [
   "ssh-ed25519",
   "ecdsa-sha2-nistp256",
   "ecdsa-sha2-nistp384",
@@ -39,7 +39,7 @@ export interface SshKeyInfo {
 type SshKeyRecord = { -readonly [K in keyof SshKeyInfo]: SshKeyInfo[K] };
 
 /** The OpenSSH fingerprint of a public key blob: `SHA256:` and unpadded base64. */
-export function sshFingerprint(blob: Buffer): string {
+function sshFingerprint(blob: Buffer): string {
   return `SHA256:${createHash("sha256").update(blob).digest("base64").replace(/=+$/, "")}`;
 }
 

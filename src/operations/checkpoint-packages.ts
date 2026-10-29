@@ -44,7 +44,7 @@ const scheduleInput = z
     if (!ruleOf(input)) addFailure(ctx, { message: msg("schedule_rule_invalid") });
   });
 
-export const checkpointExport = defineOperation({
+const checkpointExport = defineOperation({
   name: "checkpoint.export",
   tag: "checkpoints",
   summary: "Export a checkpoint as a sealed package",
@@ -82,7 +82,7 @@ export const checkpointExport = defineOperation({
   }),
 });
 
-export const checkpointImport = defineOperation({
+const checkpointImport = defineOperation({
   name: "checkpoint.import",
   tag: "checkpoints",
   summary: "Import a sealed package as a checkpoint",
@@ -124,7 +124,7 @@ export const checkpointImport = defineOperation({
   }),
 });
 
-export const checkpointCopy = defineOperation({
+const checkpointCopy = defineOperation({
   name: "checkpoint.copy",
   tag: "checkpoints",
   summary: "Copy a checkpoint to another host",
@@ -181,7 +181,7 @@ export const checkpointCopy = defineOperation({
   }),
 });
 
-export const checkpointScheduleGet = defineOperation({
+const checkpointScheduleGet = defineOperation({
   name: "checkpoint.schedule.get",
   tag: "checkpoints",
   summary: "Read a box's checkpoint schedule",
@@ -202,7 +202,7 @@ export const checkpointScheduleGet = defineOperation({
   run: async ({ host }, _input, box) => ({ schedule: await scheduleOf(host, box.boxId) }),
 });
 
-export const checkpointScheduleSet = defineOperation({
+const checkpointScheduleSet = defineOperation({
   name: "checkpoint.schedule.set",
   tag: "checkpoints",
   summary: "Set a box's checkpoint schedule",
@@ -237,7 +237,7 @@ export const checkpointScheduleSet = defineOperation({
   },
 });
 
-export const checkpointScheduleClear = defineOperation({
+const checkpointScheduleClear = defineOperation({
   name: "checkpoint.schedule.clear",
   tag: "checkpoints",
   summary: "Remove a box's checkpoint schedule",

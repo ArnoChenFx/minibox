@@ -429,6 +429,23 @@ describe("a frozen mount does not hold back the other volumes", () => {
 });
 
 describe("crossing a limit raises one event, and the event carries the reason", () => {
+  test("forgetting a volume clears its threshold state, so rediscovery alerts once again", async () => {
+    const volume = await createVolume(host, { name: "rediscovered", role: null, createdBy: "owner" });
+    setVolumeLimits(host, volume.id, { softBytes: 2 * MB, hardBytes: 4 * MB, action: "warn" });
+    figures.tree.set(volume.engineName, 5 * MB);
+    await pass();
+    await pass();
+    expect(eventsOf("volume.usage_limit")).toHaveLength(1);
+    const record = host.volumes.read(volume.id)!;
+    host.volumes.remove(volume.id);
+    await pass();
+    host.volumes.write(record);
+    await pass();
+    await pass();
+    expect(eventsOf("volume.usage_high")).toHaveLength(2);
+    expect(eventsOf("volume.usage_limit")).toHaveLength(2);
+  });
+
   test("crossing the soft limit raises volume.usage_high once, and again only after the volume drops below it", async () => {
     const notes = await createVolume(host, { name: "notes", role: null, createdBy: "owner" });
     setVolumeLimits(host, notes.id, { softBytes: 2 * MB, hardBytes: 8 * MB, action: "warn" });

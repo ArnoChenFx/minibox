@@ -14,9 +14,9 @@ export interface HostKey {
   readonly fingerprint: string;
 }
 
-export const HOST_KEY_FILE = "ssh_host_ed25519_key";
+const HOST_KEY_FILE = "ssh_host_ed25519_key";
 
-export function hostKeyPath(dataDir: string): string {
+function hostKeyPath(dataDir: string): string {
   return join(dataDir, HOST_KEY_FILE);
 }
 
@@ -45,7 +45,7 @@ export function loadHostKey(dataDir: string): HostKey {
   return hostKeyFrom(pem);
 }
 
-export function hostKeyFrom(pem: string): HostKey {
+function hostKeyFrom(pem: string): HostKey {
   const parsed = utils.parseKey(pem);
   if (parsed instanceof Error) {
     throw new Error(

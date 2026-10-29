@@ -10,13 +10,13 @@ import { cString, MAX_RECORD, numeric, parsePax } from "../lib/tar";
 
 /** Largest build context, measured on the archive it arrives in and on what it unpacks to. */
 export const CONTEXT_MAX_BYTES = 256 * 1024 * 1024;
-export const CONTEXT_MAX_ENTRIES = 20_000;
+const CONTEXT_MAX_ENTRIES = 20_000;
 const FETCH_TIMEOUT_MS = 120_000;
 const BLOCK = 512;
 const COPY_CHUNK = 64 * 1024;
 const SKIP_CHUNK = 1024 * 1024;
 
-export const refused = (detail: string) => badRequest(msg("context_invalid", { detail }));
+const refused = (detail: string) => badRequest(msg("context_invalid", { detail }));
 
 /**
  * The parts of a path inside a build context or a repository. `.` and empty parts are dropped. An absolute path, a NUL

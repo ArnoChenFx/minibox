@@ -161,15 +161,3 @@ export function parseTar(bytes: Buffer): TarEntry[] {
   }
   return entries;
 }
-
-/** First file entry's bytes, or null when the archive has no regular file. */
-export function firstFileData(
-  bytes: Buffer,
-): { name: string; data: Buffer; type: TarEntry["type"]; linkname: string } | null {
-  for (const entry of parseTar(bytes)) {
-    if (entry.type === "file" || entry.type === "symlink" || entry.type === "dir") {
-      return { name: entry.name, data: entry.data, type: entry.type, linkname: entry.linkname };
-    }
-  }
-  return null;
-}

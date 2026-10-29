@@ -4,6 +4,10 @@ A volume is a place where files are kept. Volumes are separate from boxes. A box
 
 Click **Storage** in the sidebar to see your volumes and storage pools on the **Volumes** tab.
 
+## Permissions
+
+Only the owner and an unmodified admin token can select or manage storage pools, or explicitly create/delete volumes and prune orphans. A token creating a Box without a pool receives volumes according to the role rules. Files, mounts and Box lifecycle operations check their own scopes and resource grants. See [Storage administration](access-and-tokens.md#storage-administration) for the complete policy.
+
 ## Volume roles
 
 A new box gets four volumes by default:
@@ -45,7 +49,7 @@ The names are a **preview**, and can differ slightly from what the create makes:
 - With **Automatic** host placement the host is picked inside the create, so the shared tools volume has no name yet: the row reads `Shared tools volume (preview)`, and the note under the rows says it is created on the host the create picks.
 - A pool this host does not have is refused by the create with `pool_not_found`, and nothing is created. The dialog only offers the pools it read, so this happens when a pool is removed while the dialog is open.
 
-A role mount creates a new volume, so it needs the `volume:write` scope, and so does mounting an existing volume read-write. The tools row also needs `volume:attach` when the shared tools volume already exists.
+Default role provisioning and mounting an existing volume read-write need `volume:write`. An explicit pool selection also requires storage administrator identity. The tools row also needs `volume:attach` when the shared tools volume already exists.
 
 To add a volume to a box that already exists, attach it on the box's page.
 
@@ -115,9 +119,9 @@ The command line snapshots a volume too: `minibox volume snapshot <id|name> [--l
 
 Click **Delete** on the volume. MiniBox does not delete a volume that a box still mounts.
 
-Deleting a volume keeps a copy of its data in the [recycle bin](checkpoints.md#recycle-bin) for `TRASH_RETENTION_DAYS` days, 7 by default. Restore the entry from the **Recycle bin**, which you open from **Storage**, to get it back as a new volume. A cache or tools volume keeps nothing. To delete without keeping a copy, tick **Delete without keeping a copy**. Only the owner, or a token with the `trash:skip` scope, can do that.
+Deleting a volume keeps a copy of its data in the [recycle bin](checkpoints.md#recycle-bin) for `TRASH_RETENTION_DAYS` days, 7 by default. Restore the entry from the **Recycle bin**, which you open from **Storage**, to get it back as a new volume. A cache or tools volume keeps nothing. To delete without keeping a copy, tick **Delete without keeping a copy**. Skipping the recycle bin also requires `trash:skip`, or the owner; this scope does not grant storage administrator identity.
 
-When you delete a box, you can also delete the volumes that the box owns. See [Boxes](boxes.md#delete-a-box).
+When you delete a box, the owner or an unmodified admin token can also delete the volumes that the box owns. See [Boxes](boxes.md#delete-a-box).
 
 ## When the engine loses a volume
 
@@ -131,9 +135,9 @@ When you delete a box and keep its volumes, those volumes show **Owner box delet
 
 ## Delete several volumes, or clean up orphans
 
-On the **Volumes** tab, tick the volumes to delete. The header box selects every volume that the search shows. A volume that a box mounts, and the shared tools volume, cannot be selected. Click **Delete selected**. The dialog shows what happens to each volume before you confirm, and **Delete without keeping a copy** applies to the whole selection. A cache volume keeps no copy, so once deleted it cannot be restored. MiniBox checks each volume again as it deletes it: one that a box or container started using in the meantime, the shared tools volume and MiniBox's system volumes are never deleted.
+On the **Volumes** tab, tick the volumes to delete. The header box selects every volume that the search shows. A volume that a box mounts, and the shared tools volume, cannot be selected, and their own **Delete** button is disabled with the reason. Click **Delete selected**. The dialog shows what happens to each volume before you confirm, and **Delete without keeping a copy** applies to the whole selection. A cache volume keeps no copy, so once deleted it cannot be restored. MiniBox checks each volume again as it deletes it: one that a box or container started using in the meantime, the shared tools volume and MiniBox's system volumes are never deleted. A spare tools-role volume that boxes do not get, such as one made by hand next to the shared one, can be selected and deleted here like any other volume, or through the API (`DELETE /api/volumes/{id}` or `POST /api/volumes/delete`). Its status shows **Can clean up**, but **Clean up orphaned volumes** skips it, so delete it by hand; when a pool holds several tools volumes, boxes always get the one named `<label prefix>-tools-<host id>`.
 
-**Clean up orphaned volumes** lists the volumes that MiniBox made and that nothing uses: no box spec mounts or owns them, and no container mounts them. A volume left behind by a deleted box is an orphan. The dialog shows each orphan's size, when it was last used, and its former box. The shared tools volume, MiniBox's internal volumes, and any volume created or used in the last five minutes are never listed. On several hosts, an offline or failing host is skipped, and the dialog says so. Confirming removes only the volumes the dialog listed. Each is checked again first, and one that is no longer an orphan is kept and reported. Each orphan's data is kept in the recycle bin, except a cache volume's, which cannot be restored. Only the owner can clean up orphans.
+**Clean up orphaned volumes** lists the volumes that MiniBox made and that nothing uses: no box spec mounts or owns them, and no container mounts them. A volume left behind by a deleted box is an orphan. The dialog shows each orphan's size, when it was last used, and its former box. The shared tools volume, MiniBox's internal volumes, and any volume created or used in the last five minutes are never listed. On several hosts, an offline or failing host is skipped, and the dialog says so. Confirming removes only the volumes the dialog listed. Each is checked again first, and one that is no longer an orphan is kept and reported. Each orphan's data is kept in the recycle bin, except a cache volume's, which cannot be restored. The owner and unmodified admin tokens can clean up orphans.
 
 Each deletion is recorded in the activity feed. On the command line, use `minibox volume delete` and `minibox volume prune`. See the [CLI reference](../reference/cli.md#volumes).
 

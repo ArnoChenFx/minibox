@@ -23,7 +23,7 @@ function volumeLayer(volume: VolumeRecord): PlannedLayer {
  * naming one as the whole snapshot gets the same error a box's checkpoint gives. The check runs before a task starts, so
  * the caller is answered at once.
  */
-export function assertVolumeSnapshotable(volume: VolumeRecord): void {
+function assertVolumeSnapshotable(volume: VolumeRecord): void {
   if (!volume.checkpoint || volume.role === "tools") {
     throw badRequest(msg("checkpoint_volume_excluded", { volume: volume.name }), { field: "id" });
   }

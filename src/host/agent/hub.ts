@@ -31,7 +31,7 @@ import {
 import type { AgentRecord, AgentStore } from "./store";
 
 /** A connection that stays silent this long is dropped. Three heartbeats, so one late heartbeat does not drop it. */
-export const AGENT_SILENT_MS = 3 * AGENT_HEARTBEAT_MS;
+const AGENT_SILENT_MS = 3 * AGENT_HEARTBEAT_MS;
 
 const NOT_CONNECTED = "the agent is not connected";
 

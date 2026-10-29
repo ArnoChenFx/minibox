@@ -143,7 +143,7 @@ export async function wakeIfSleeping(host: HostCtx, ref: string, options: StartO
 }
 
 /** Stops the box for a caller that already holds its power lock (see `locked`). */
-export async function stopLocked(host: HostCtx, box: Box, reason?: StopReason): Promise<void> {
+async function stopLocked(host: HostCtx, box: Box, reason?: StopReason): Promise<void> {
   await host.runtime.stopContainer(box.id, { timeoutSec: host.stopTimeoutSec });
   await stopProxiesOf(host, box.boxId);
   host.selfTokens.revoke(box.boxId);

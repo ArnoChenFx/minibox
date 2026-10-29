@@ -384,3 +384,49 @@ describe("the connection state around a request", () => {
     expect(runtime.ops()).toContain("ping");
   });
 });
+
+test("a closed connection cannot open fresh event or log streams", async () => {
+  const runtime = new FakeRuntime();
+  const { sink, frames } = recorder();
+  const executor = new AgentExecutor(runtime, sink);
+  executor.close();
+  await executor.request("late", "events", { filter: {} });
+  expect(responseTo(frames, "late")).toMatchObject({ ok: false, error: { kind: "unavailable" } });
+  expect(runtime.ops()).toEqual([]);
+});
+
+for (const op of ["events", "followLogs"] as const) {
+  test(`closing while ${op} is starting aborts its source before it can produce items`, async () => {
+    const runtime = new FakeRuntime();
+    const { sink, frames } = recorder();
+    const executor = new AgentExecutor(runtime, sink);
+    let aborted = false;
+    let exited = false;
+    const source = async function* (signal: AbortSignal | undefined) {
+      try {
+        aborted = signal?.aborted === true;
+        if (!aborted) yield "unexpected";
+      } finally {
+        exited = true;
+      }
+    };
+    runtime.events = (_filter, signal) => {
+      executor.close();
+      return source(signal) as AsyncGenerator<never>;
+    };
+    runtime.followLogs = (_id, options) => {
+      executor.close();
+      return source(options.signal);
+    };
+    await executor.request(
+      "starting",
+      op,
+      op === "events" ? { filter: {} } : { id: "box", tail: 0, timestamps: false },
+    );
+    await until(() => exited);
+    expect(aborted).toBe(true);
+    expect(frames.filter((frame) => frame.type === "item" || frame.type === "end")).toEqual([]);
+    await executor.request("later", op, {});
+    expect(responseTo(frames, "later")).toMatchObject({ ok: false, error: { kind: "unavailable" } });
+  });
+}

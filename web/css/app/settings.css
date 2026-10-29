@@ -202,7 +202,8 @@ pre.staged-changes {
 }
 .perm-group.is-danger {
   column-span: all;
-  margin: 0;
+  /* A group that spans the columns drops the margin of the column above it, so it keeps the gap between groups itself. */
+  margin: 16px 0 0;
   padding: 10px 12px;
   border: 1px solid color-mix(in srgb, var(--warning) 45%, var(--border));
   border-radius: var(--radius-sm);
@@ -294,6 +295,10 @@ pre.staged-changes {
 @media (max-width: 640px) {
   .perm-grid {
     columns: 1;
+  }
+  /* In one column the group above keeps its own bottom margin, so the danger group adds none. */
+  .perm-group.is-danger {
+    margin-top: 0;
   }
   .preset-seg {
     grid-template-columns: minmax(0, 1fr);

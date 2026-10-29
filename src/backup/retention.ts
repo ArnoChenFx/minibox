@@ -28,8 +28,8 @@ function compareRecords(a: BackupRecord, b: BackupRecord): number {
  *
  * Only a backup whose archive is whole counts as one and can be removed. A record whose archive is gone or short, a
  * partial archive, and a file this tool did not write are left alone, so a folder that holds other things keeps them.
- * A backup that cannot be removed is logged and left for the next pass; the pass never throws, since the backup that
- * triggered it is already whole.
+ * A backup that cannot be removed is logged and left for the next pass. Enumeration errors propagate to BackupService,
+ * which isolates maintenance failures from startup and from the completed archive.
  */
 export function applyBackupRetention(
   store: BackupStore,

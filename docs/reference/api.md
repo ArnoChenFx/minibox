@@ -32,16 +32,19 @@ Each operation in `openapi.json` has an `x-scope` value, such as `box:session` o
 | `snapshot:write`, `snapshot:delete`, `checkpoint:create`, `checkpoint:write`, `checkpoint:delete` | `checkpoint:create` |
 | `checkpoint:restore` | `checkpoint:restore` |
 | `template:write`, `template:delete`, `tool:install` | `tool:install` |
+| `pool:read`, `pool:admin`, `volume:prune` | Owner or unmodified admin identity |
 | `volume:read` | `volume:read` |
-| `volume:write` | `volume:write` |
+| `volume:write` | `volume:write`; explicit volume creation/deletion also requires storage administrator identity |
 | `volume:attach` | `volume:attach` |
-| `volume:delete` | `volume:delete`. Only the batch delete uses it, and no preset includes it. A token acts only on the volumes it created |
+| `volume:delete` | `volume:delete` with storage administrator identity. The admin preset includes it |
 | `files:read` | `files:read` or `exec` |
 | `files:write` | `files:write` or `exec` |
 | `port:expose` | `port:expose` |
 | `secret:use` | `secret:use`. Setting, removing or running a box's startup command also needs `exec`. |
-| `backup:manage`, `checkpoint:usage`, `checkpoint:export`, `checkpoint:import`, `checkpoint:copy`, `checkpoint:schedule`, `host:manage`, `notify:manage`, `pool:read`, `pool:admin`, `secret:manage`, `target:manage`, `task:write`, `template:build`, `template:official`, `trash:read`, `trash:restore`, `trash:purge`, `token:manage`, `tool:custom` | None. Only the access key can call these. |
+| `backup:manage`, `checkpoint:usage`, `checkpoint:export`, `checkpoint:import`, `checkpoint:copy`, `checkpoint:schedule`, `host:manage`, `notify:manage`, `secret:manage`, `target:manage`, `task:write`, `template:build`, `template:official`, `trash:read`, `trash:restore`, `trash:purge`, `token:manage`, `tool:custom` | None. Only the access key can call these. |
 | `self` | None. Only the self token of the box can call these, and only for that box. |
+
+Storage pool operations and orphan pruning accept the owner or an unmodified admin token. Explicit volume creation/deletion and `mounts[].pool` also require this identity; individual scopes do not grant it. Default Box role provisioning uses the caller's Box and volume scopes. See the [storage permission matrix](../user-guide/access-and-tokens.md#storage-administration).
 
 The scope check comes first. The token's box, volume and host grants, its quotas and the operation's own rules then apply too. The `skipTrash` option of `DELETE /api/boxes/{id}`, `DELETE /api/volumes/{id}` and `POST /api/volumes/delete` also needs the `trash:skip` token scope, or the owner. `box:ssh` is a token scope with no operation of its own: it allows the SSH gateway. `secret:use` also allows a create or rebuild that refers to a secret, including the secret of a repository clone.
 
@@ -132,16 +135,16 @@ The tables below list every operation in [`openapi.json`](../openapi.json), grou
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/api/boxes` | List boxes |
-| `POST` | `/api/boxes` | Create and start a box. `mounts` entries are either `{ volume, path, mode }` for a volume that exists, or `{ role }` for one of the box's role volumes (`workspace`, `home`, `tools`, `cache`), which MiniBox creates for the box. A role the list omits is not created, and the `tools` role mounts the host's shared tools volume, creating it when the host has none. A role entry may also carry `pool`, the storage pool its new volume goes to instead of the one the role's rule picks; a pool this host does not have answers `pool_not_found`, and the shared tools volume is one per pool. Omitted, `mounts` creates all four roles. A `repo` object clones a Git repository into `/workspace` on the first create. A template built from a `devcontainer.json` may forward ports and run its `postCreateCommand`. The response's `setup.taskId` names the setup task, which runs those steps, and `clone.taskId` names the same task when `repo` is given. A box created with a `startupCommand` runs it only after that whole setup has ended. `selfToken: true` gives the box's agent its self token. `host` is a host id, `auto` or absent (the local host). `hostLabels`, with `host: "auto"`, keeps the placement to the online hosts that carry every given label; see [Host labels](#host-labels) |
+| `POST` | `/api/boxes` | Create and start a box. `mounts` entries are either `{ volume, path, mode }` for a volume that exists, or `{ role }` for one of the box's role volumes (`workspace`, `home`, `tools`, `cache`), which MiniBox creates for the box. A role the list omits is not created, and the `tools` role mounts the host's shared tools volume, creating it when the host has none. An owner or unmodified admin may also set a role entry's `pool`, the storage pool its new volume goes to instead of the one the role's rule picks; a pool this host does not have answers `pool_not_found`, and the shared tools volume is one per pool. Omitted, `mounts` creates all four roles. A `repo` object clones a Git repository into `/workspace` on the first create. A template built from a `devcontainer.json` may forward ports and run its `postCreateCommand`. The response's `setup.taskId` names the setup task, which runs those steps, and `clone.taskId` names the same task when `repo` is given. A box created with a `startupCommand` runs it only after that whole setup has ended. `selfToken: true` gives the box's agent its self token. `host` is a host id, `auto` or absent (the local host). `hostLabels`, with `host: "auto"`, keeps the placement to the online hosts that carry every given label; see [Host labels](#host-labels) |
 | `GET` | `/api/boxes/{id}` | Get one box |
 | `PATCH` | `/api/boxes/{id}` | Update a box in place |
-| `DELETE` | `/api/boxes/{id}` | Delete a box. Its data is kept in the recycle bin unless `skipTrash=true`, and `deleteVolume=true` also deletes the volumes it owns. The response's `trash` names the entry, or is `null` |
+| `DELETE` | `/api/boxes/{id}` | Delete a box. Its data is kept in the recycle bin unless `skipTrash=true`, and `deleteVolume=true` also deletes the volumes it owns, which needs the owner or an unmodified admin token (others get `403 storage_admin_required` and nothing is deleted). The response's `trash` names the entry, or is `null` |
 | `DELETE` | `/api/boxes/{id}/self-token` | Revoke the box's self token. The box keeps running, and the feature stays off for it |
 | `POST` | `/api/boxes/{id}/start` | Start a box |
 | `POST` | `/api/boxes/{id}/stop` | Stop a box |
 | `POST` | `/api/boxes/{id}/restart` | Restart a box |
 | `PATCH` | `/api/boxes/{id}/resources` | Change the CPU, memory or process limit of a box |
-| `POST` | `/api/boxes/{id}/rebuild` | Rebuild a box from its spec. Takes a safety checkpoint first, unless `safetyCheckpoint` is `false` |
+| `POST` | `/api/boxes/{id}/rebuild` | Rebuild a box from its spec. Takes a safety checkpoint first, unless `safetyCheckpoint` is `false`. A `mounts` entry naming a volume with no record yet (such as `{ "volume": "brand-new-vol", "path": "/data", "mode": "rw" }`) creates an independent volume, which needs the owner or an unmodified admin token; other tokens get `403 storage_admin_required` |
 | `POST` | `/api/boxes/{id}/move` | Move a box to another host. Needs `If-Match`. Without `confirm: true` it returns `409 confirmation_required` with a preview |
 | `GET` | `/api/boxes/{id}/logs` | Read the recent log output of a box |
 | `GET` | `/api/boxes/{id}/stats` | Read the current resource usage of a box |
@@ -193,19 +196,19 @@ The tables below list every operation in [`openapi.json`](../openapi.json), grou
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/api/volumes` | List volumes |
-| `POST` | `/api/volumes` | Create an independent volume |
-| `GET` | `/api/volumes/{id}` | Get a volume |
-| `DELETE` | `/api/volumes/{id}` | Delete a volume. Its data is kept in the recycle bin unless `skipTrash=true`. The response's `trash` names the entry, or is `null` |
-| `POST` | `/api/volumes/delete` | Delete up to 100 volumes by `ids`, on any host. Without `confirm: true` the answer is `409` with `details.preview`. Each volume has its own result in `volumes`, and one failure does not stop the others. Takes `skipTrash` |
-| `POST` | `/api/volumes/prune` | List the orphaned volumes: MiniBox volumes that no box or container uses. With `dryRun: false` the volumes named in `ids`, which must be the ids the dry run listed, are removed; nothing else is, and a named volume that is no longer an orphan, or is the tools volume, a system volume or in use, is refused with its reason. `dryRun` defaults to `true`. Owner only. `olderThan`, such as `30d`, keeps the volumes used more recently. Each host is reported in `hosts`. An offline or failing host is skipped |
+| `GET` | `/api/volumes` | List volumes. Each has `sharedTools`: `true` only for the shared tools volume that boxes mount, which cannot be deleted |
+| `POST` | `/api/volumes` | Create an independent volume. Only the owner may set `role: "tools"`; a token, even an unmodified admin token, gets `403 volume_tools_create_forbidden` |
+| `GET` | `/api/volumes/{id}` | Get a volume, with the same `sharedTools` field |
+| `DELETE` | `/api/volumes/{id}` | Delete a volume. Its data is kept in the recycle bin unless `skipTrash=true`. The shared tools volume answers `409 volume_shared_tools`; a spare tools-role volume that boxes do not get can be deleted. The response's `trash` names the entry, or is `null` |
+| `POST` | `/api/volumes/delete` | Delete up to 100 volumes by `ids`, on any host. Without `confirm: true` the answer is `409` with `details.preview`. Each volume has its own result in `volumes`, and one failure does not stop the others. A volume outside the credential's resource grants is refused with `volume_delete_forbidden`. Takes `skipTrash` |
+| `POST` | `/api/volumes/prune` | List the orphaned volumes: MiniBox volumes that no box or container uses. With `dryRun: false` the volumes named in `ids`, which must be the ids the dry run listed, are removed; nothing else is, and a named volume that is no longer an orphan, or is the tools volume, a system volume or in use, is refused with its reason. `dryRun` defaults to `true`. Owner or unmodified admin only. `olderThan`, such as `30d`, keeps the volumes used more recently. Each host is reported in `hosts`. An offline or failing host is skipped |
 | `POST` | `/api/volumes/{id}/attach` | Mount a volume on a box. Takes a safety checkpoint of the box first, unless `safetyCheckpoint` is `false` |
 | `POST` | `/api/volumes/{id}/detach` | Unmount a volume from a box. Takes a safety checkpoint of the box first, unless `safetyCheckpoint` is `false` |
 | `POST` | `/api/volumes/{id}/checkpoints` | Snapshot one volume on its own, as a checkpoint whose record names no box. Takes `label` and `pinned`. Returns `202`; the finished task holds the checkpoint. A cache or tools volume answers `400` |
 | `POST` | `/api/volumes/{id}/usage` | Measure a volume |
 | `PUT` | `/api/volumes/{id}/limits` | Set a volume's soft and hard limits in bytes, and the action at the hard limit (`warn` or `stop`). A field left out keeps its value, and `null` clears a limit. Owner only. An NFS volume answers `400` |
-| `GET` | `/api/pools` | List storage pools |
-| `PUT` | `/api/pools` | Replace storage pool configuration |
+| `GET` | `/api/pools` | List storage pools. Owner or unmodified admin only |
+| `PUT` | `/api/pools` | Replace storage pool configuration. Owner or unmodified admin only |
 
 ### tools
 

@@ -8,6 +8,7 @@ import { log } from "../lib/logger";
 import { msg } from "../lib/messages";
 import type { TokenPrincipal } from "../operations/types";
 import {
+  storageAdminPolicy,
   type BoxScope,
   type HostScope,
   isPreset,
@@ -22,7 +23,7 @@ import {
 } from "./model";
 
 /** Live tokens kept at once. Revoked tokens are kept separately, up to the same number, newest first. */
-export const MAX_TOKENS = 100;
+const MAX_TOKENS = 100;
 const SWEEP_MS = 10_000;
 const SAVE_INTERVAL_MS = 60_000;
 const FILE_VERSION = 1;
@@ -356,6 +357,7 @@ export class TokenStore {
 
 function toPrincipal(record: TokenRecord): TokenPrincipal {
   const grants: TokenGrants = {
+    ...(storageAdminPolicy(record) ? { storageAdmin: true } : {}),
     scopes: record.scopes,
     boxes: record.boxes,
     volumes: record.volumes,

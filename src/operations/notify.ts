@@ -266,7 +266,7 @@ function requireChannel(ctx: OperationContext, id: string): StoredChannel {
 }
 
 /** A webhook URL as answers show it: the origin, and an ellipsis where a path or query was. */
-export function maskedUrl(url: string | null): string | null {
+function maskedUrl(url: string | null): string | null {
   if (url === null) return null;
   try {
     const parsed = new URL(url);
@@ -381,7 +381,7 @@ function deliveryOf(event: StoredEvent): DeliveryView {
   };
 }
 
-export const notifyChannelList = defineOperation({
+const notifyChannelList = defineOperation({
   name: "notify.channel.list",
   tag: "notify",
   summary: "List notification channels",
@@ -403,7 +403,7 @@ export const notifyChannelList = defineOperation({
   },
 });
 
-export const notifyChannelSet = defineOperation({
+const notifyChannelSet = defineOperation({
   name: "notify.channel.set",
   tag: "notify",
   summary: "Create or change a notification channel",
@@ -438,7 +438,7 @@ export const notifyChannelSet = defineOperation({
   run: async (ctx, input, existing) => saveChannel(notifierOf(ctx), input, existing),
 });
 
-export const notifyChannelDelete = defineOperation({
+const notifyChannelDelete = defineOperation({
   name: "notify.channel.delete",
   tag: "notify",
   summary: "Delete a notification channel",
@@ -466,7 +466,7 @@ export const notifyChannelDelete = defineOperation({
   },
 });
 
-export const notifyChannelTest = defineOperation({
+const notifyChannelTest = defineOperation({
   name: "notify.channel.test",
   tag: "notify",
   summary: "Send a test notification",
@@ -491,7 +491,7 @@ export const notifyChannelTest = defineOperation({
   run: async (ctx, input) => notifierOf(ctx).test(input.id, ctx.record),
 });
 
-export const notifyDeliveryList = defineOperation({
+const notifyDeliveryList = defineOperation({
   name: "notify.delivery.list",
   tag: "notify",
   summary: "List recent notification deliveries",

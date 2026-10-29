@@ -20,7 +20,7 @@ const OPTION_TOKEN = /^[A-Za-z0-9._=-]{1,64}$/;
 const MARKER_NAME = /^[A-Za-z0-9._-]{1,64}$/;
 const ABSOLUTE_PATH = /^\/[^\s\0]{0,240}$/;
 
-export function capabilitiesFor(backend: PoolBackend): PoolCapabilities {
+function capabilitiesFor(backend: PoolBackend): PoolCapabilities {
   return {
     shareable: true,
     snapshots: false,
@@ -30,7 +30,7 @@ export function capabilitiesFor(backend: PoolBackend): PoolCapabilities {
   };
 }
 
-export function localPool(isDefault: boolean): StoragePool {
+function localPool(isDefault: boolean): StoragePool {
   return {
     name: LOCAL_POOL,
     backend: "local",

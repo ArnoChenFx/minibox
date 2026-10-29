@@ -13,7 +13,7 @@ export const StatsSchema = z.object({
   memPercent: z.number(),
 });
 
-export const BoxMountSchema = z.object({
+const BoxMountSchema = z.object({
   volume: z.string(),
   path: z.string(),
   mode: z.enum(["rw", "ro"]),
@@ -23,7 +23,7 @@ export const BoxMountSchema = z.object({
   pool: z.string().nullable(),
 });
 
-export const StorageStatusSchema = z.object({
+const StorageStatusSchema = z.object({
   status: z.enum(["ok", "unreachable", "unknown"]),
   pools: z.array(
     z.object({
@@ -46,13 +46,13 @@ export const BoxEgressSchema = z.object({
   allow: z.array(z.string()),
 });
 
-export const BoxDriftSchema = z.object({
+const BoxDriftSchema = z.object({
   field: z.string(),
   expected: z.string(),
   actual: z.string(),
 });
 
-export const BoxRecoverySchema = z.object({
+const BoxRecoverySchema = z.object({
   source: z.enum(["claim", "degraded"]),
   at: z.string(),
   needsReset: z.array(z.string()),
@@ -219,7 +219,7 @@ export const BackupSchema = z.object({
 });
 
 /** The outcome of one scheduled run. `reason` says why a run was skipped, such as `sleeping` or `capacity`. */
-export const ScheduleLastRunSchema = z.object({
+const ScheduleLastRunSchema = z.object({
   at: z.string(),
   status: z.enum(["ok", "skipped", "failed"]),
   reason: z.string().nullable(),
@@ -247,7 +247,7 @@ export const CheckpointScheduleSchema = z.object({
 });
 
 /** A volume a rollback replaced or restored, and the path the box mounts it at. */
-export const RollbackVolumeSchema = z.object({
+const RollbackVolumeSchema = z.object({
   id: z.string(),
   name: z.string(),
   path: z.string(),
@@ -353,9 +353,9 @@ export const BuildResultSchema = z.object({
   ref: z.string(),
 });
 
-export const TaskStatusSchema = z.enum(["queued", "running", "succeeded", "failed", "cancelled", "interrupted"]);
+const TaskStatusSchema = z.enum(["queued", "running", "succeeded", "failed", "cancelled", "interrupted"]);
 
-export const TaskErrorSchema = z.object({
+const TaskErrorSchema = z.object({
   code: z.string(),
   message: z.string(),
   status: z.number().int(),
@@ -363,7 +363,7 @@ export const TaskErrorSchema = z.object({
   params: z.record(z.string(), z.union([z.string(), z.number()])).optional(),
 });
 
-export const TaskTargetSchema = z.object({
+const TaskTargetSchema = z.object({
   kind: z.string(),
   id: z.string().optional(),
   name: z.string(),
@@ -425,7 +425,7 @@ export const SelfInfoSchema = z.object({
 });
 
 /** One recorded event. `seq` is the cursor: pass it back as `cursor` to read the page before it. */
-export const EventSchema = z.object({
+const EventSchema = z.object({
   seq: z.number().int(),
   id: z.string(),
   ts: z.number().int(),

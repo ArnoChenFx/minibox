@@ -111,17 +111,17 @@ The tables below list each tool and the operation it calls, taken from the `x-mc
 | Tool | Operation it calls |
 |---|---|
 | `list_volumes` | `GET /api/volumes` |
-| `create_volume` | `POST /api/volumes` |
+| `create_volume` | `POST /api/volumes`. Owner or unmodified admin only |
 | `get_volume` | `GET /api/volumes/{id}` |
-| `delete_volume` | `DELETE /api/volumes/{id}` |
-| `delete_volumes` | `POST /api/volumes/delete`. Several volumes at once, each with its own result. Needs `confirm`. A token needs `volume:delete` |
-| `prune_volumes` | `POST /api/volumes/prune`. Lists the orphaned volumes, and removes them only when `dryRun` is `false` and `ids` names the volumes the dry run listed. Owner only |
+| `delete_volume` | `DELETE /api/volumes/{id}`. Owner or unmodified admin only |
+| `delete_volumes` | `POST /api/volumes/delete`. Several volumes at once, each with its own result. Needs `confirm`. A token needs `volume:delete`. Owner or unmodified admin only |
+| `prune_volumes` | `POST /api/volumes/prune`. Lists the orphaned volumes, and removes them only when `dryRun` is `false` and `ids` names the volumes the dry run listed. Owner or unmodified admin only |
 | `attach_volume` | `POST /api/volumes/{id}/attach` |
 | `detach_volume` | `POST /api/volumes/{id}/detach` |
 | `measure_volume` | `POST /api/volumes/{id}/usage` |
 | `set_volume_limits` | `PUT /api/volumes/{id}/limits`. Owner only. Soft limits are best effort, not a quota |
-| `list_pools` | `GET /api/pools` |
-| `replace_pools` | `PUT /api/pools` |
+| `list_pools` | `GET /api/pools`. Owner or unmodified admin only |
+| `replace_pools` | `PUT /api/pools`. Owner or unmodified admin only |
 | `export_checkpoint` | `POST /api/checkpoints/{id}/export`. Owner only. The task result holds the package |
 | `import_checkpoint` | `POST /api/packages/{id}/import`. Owner only |
 | `copy_checkpoint` | `POST /api/checkpoints/{id}/copy`. Owner only. The task result holds the copy |

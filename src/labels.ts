@@ -144,8 +144,8 @@ export const labelChange = (key: string, value: string): string => `LABEL ${key}
 export const envChange = (name: string, value: string): string => `ENV ${name}=${quoteLabelValue(value)}`;
 
 /** Fixed, unprefixed: the base template Dockerfile writes these, whatever the configured prefix. */
-export const TEMPLATE_UID_LABEL = "minibox.template.uid";
-export const TEMPLATE_GID_LABEL = "minibox.template.gid";
+const TEMPLATE_UID_LABEL = "minibox.template.uid";
+const TEMPLATE_GID_LABEL = "minibox.template.gid";
 
 /**
  * The owner a template gives `/workspace`, from its uid and gid labels. Both must be decimal ids in range. Otherwise the

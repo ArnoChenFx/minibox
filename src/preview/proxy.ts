@@ -71,7 +71,7 @@ export async function resolveTarget(
 }
 
 /** The WebSocket address of the box for a preview request, with the same path and query as the request. */
-export function upstreamSocketUrl(resolved: PreviewResolve): string {
+function upstreamSocketUrl(resolved: PreviewResolve): string {
   const { forwardPath } = resolved.target;
   const path = forwardPath.startsWith("/") ? forwardPath : `/${forwardPath}`;
   return `ws://${resolved.bridge.dialHost}:${resolved.target.port}${path}`;

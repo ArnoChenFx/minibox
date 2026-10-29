@@ -110,7 +110,7 @@ export async function readBodyText(req: Request, limit: number): Promise<string>
   return Buffer.concat(chunks).toString("utf8");
 }
 
-export function payloadTooLarge(limit: number): AppError {
+function payloadTooLarge(limit: number): AppError {
   return new AppError(413, "payload_too_large", msg("payload_too_large", { limit: Math.round(limit / (1024 * 1024)) }));
 }
 

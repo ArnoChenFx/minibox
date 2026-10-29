@@ -38,9 +38,9 @@ export interface LinkFrame {
   at: string;
 }
 
-export type LiveHostMetrics = Omit<HostMetrics, "history">;
+type LiveHostMetrics = Omit<HostMetrics, "history">;
 
-export interface HostFrame {
+interface HostFrame {
   hostId: string;
   metrics: LiveHostMetrics;
   sample: HostSample | null;
@@ -54,7 +54,7 @@ export type LiveTopics = {
   host: HostFrame;
 };
 
-export type LiveTopic = keyof LiveTopics;
+type LiveTopic = keyof LiveTopics;
 
 /** Where a host's sampler and monitor publish. The application's bus is one. */
 export interface LiveSink {

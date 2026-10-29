@@ -7,7 +7,7 @@ export type VolumeRole = (typeof VOLUME_ROLES)[number];
 
 export type VolumeOwnership = "owned" | "independent";
 export type PoolBackend = "local" | "nfs" | "path";
-export type PoolReachability = "reachable" | "unreachable" | "unknown";
+type PoolReachability = "reachable" | "unreachable" | "unknown";
 
 /** What the backend can actually do. The console hides actions a pool cannot perform. */
 export interface PoolCapabilities {
@@ -50,7 +50,7 @@ export interface PoolsFile {
 }
 
 /** The last box that mounted a volume and stopped doing so: a delete, a detach, a rebuild away from it, or a move. */
-export interface VolumeLastMount {
+interface VolumeLastMount {
   at: string;
   boxId: string;
   boxName: string;

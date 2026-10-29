@@ -127,7 +127,7 @@ const UPLOAD_DESCRIPTION =
 const COPY_DESCRIPTION =
   "Copy a file or directory within a volume (cp -a) via a helper. Both paths are jailed inside the volume.";
 
-export const filesRead = defineOperation({
+const filesRead = defineOperation({
   name: "files.read",
   tag: "files",
   summary: "Read a file from a volume",
@@ -165,7 +165,7 @@ export const filesRead = defineOperation({
   run: async ({ host }, input) => readFile(host, input.id, { path: input.path, encoding: input.encoding }),
 });
 
-export const filesWrite = defineOperation({
+const filesWrite = defineOperation({
   name: "files.write",
   tag: "files",
   summary: "Write a file on a volume",
@@ -208,7 +208,7 @@ export const filesWrite = defineOperation({
     writeFile(host, input.id, { path: input.path, content: input.content, encoding: input.encoding }),
 });
 
-export const filesList = defineOperation({
+const filesList = defineOperation({
   name: "files.list",
   tag: "files",
   summary: "List files on a volume",
@@ -254,7 +254,7 @@ export const filesList = defineOperation({
     listFiles(host, input.id, { path: input.path, maxDepth: input.maxDepth, limit: input.limit }),
 });
 
-export const filesCopy = defineOperation({
+const filesCopy = defineOperation({
   name: "files.copy",
   tag: "files",
   summary: "Copy files within a volume",
@@ -290,7 +290,7 @@ export const filesCopy = defineOperation({
   run: async ({ host }, input) => copyFiles(host, input.id, { from: input.from, to: input.to }),
 });
 
-export const filesDownload = defineOperation({
+const filesDownload = defineOperation({
   name: "files.download",
   tag: "files",
   summary: "Download a volume path as tar",
@@ -323,7 +323,7 @@ export const filesDownload = defineOperation({
   run: async ({ host }, input) => downloadArchive(host, input.id, { path: input.path ?? "/" }),
 });
 
-export const filesUpload = defineOperation({
+const filesUpload = defineOperation({
   name: "files.upload",
   tag: "files",
   summary: "Upload a tar onto a volume path",
@@ -370,7 +370,7 @@ export const filesUpload = defineOperation({
     uploadArchive(host, input.id, { path: input.path ?? "/", content: input.content, encoding: "base64" }),
 });
 
-export const filesStreamUpload = defineOperation({
+const filesStreamUpload = defineOperation({
   name: "files.stream.upload",
   tag: "files",
   summary: "Upload one file as a raw stream",
@@ -415,7 +415,7 @@ export const filesStreamUpload = defineOperation({
   },
 });
 
-export const filesStreamDownload = defineOperation({
+const filesStreamDownload = defineOperation({
   name: "files.stream.download",
   tag: "files",
   summary: "Download a file, or a folder as a gzip tar",
@@ -441,7 +441,7 @@ export const filesStreamDownload = defineOperation({
   run: async ({ host }, input) => streamDownload(host, input.id, { path: input.path ?? "/" }),
 });
 
-export const filesMkdir = defineOperation({
+const filesMkdir = defineOperation({
   name: "files.mkdir",
   tag: "files",
   summary: "Create a folder on a volume",
@@ -469,7 +469,7 @@ export const filesMkdir = defineOperation({
   run: async ({ host }, input) => makeDirectory(host, input.id, { path: input.path }),
 });
 
-export const filesMove = defineOperation({
+const filesMove = defineOperation({
   name: "files.move",
   tag: "files",
   summary: "Move or rename a path on a volume",
@@ -504,7 +504,7 @@ export const filesMove = defineOperation({
   run: async ({ host }, input) => movePath(host, input.id, { from: input.from, to: input.to }),
 });
 
-export const filesDelete = defineOperation({
+const filesDelete = defineOperation({
   name: "files.delete",
   tag: "files",
   summary: "Delete a file or folder on a volume",

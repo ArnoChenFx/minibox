@@ -6,7 +6,7 @@ import { DEV_GID, DEV_UID } from "./files-tar";
 import { beginChange } from "./moving";
 
 /** The directory the token file lives in, inside the box. */
-export const SELF_TOKEN_DIR = "/run/minibox";
+const SELF_TOKEN_DIR = "/run/minibox";
 const SELF_TOKEN_NAME = "self-token";
 export const SELF_TOKEN_PATH = `${SELF_TOKEN_DIR}/${SELF_TOKEN_NAME}`;
 

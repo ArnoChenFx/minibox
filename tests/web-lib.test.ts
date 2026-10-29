@@ -153,8 +153,6 @@ describe("format helpers", () => {
           bytes512: format.bytes(512),
           bytes1536: format.bytes(1536),
           bytes200g: format.bytes(200 * 1024 ** 3),
-          gb2: format.gb(2 * 1024 ** 3),
-          gb20: format.gb(20 * 1024 ** 3),
           pct: format.pct(12.345),
           pctRounded: format.pct(12.345, 0),
           pctNaN: format.pct(NaN),
@@ -173,8 +171,6 @@ describe("format helpers", () => {
       bytes512: "512 B",
       bytes1536: "1.5 KB",
       bytes200g: "200 GB",
-      gb2: "2.0 GB",
-      gb20: "20 GB",
       pct: "12.3%",
       pctRounded: "12%",
       pctNaN: "—",
@@ -258,12 +254,6 @@ describe("format helpers", () => {
         })`,
       ),
     ).toEqual({ prefixed: "0123456789ab", short: "abc", none: "—" });
-  });
-
-  test("level maps a percentage to the warning and critical thresholds", () => {
-    expect(
-      inBrowser({ languages: ["en-US"] }, `({ crit: format.level(95), warn: format.level(80), ok: format.level(10) })`),
-    ).toEqual({ crit: "crit", warn: "warn", ok: "" });
   });
 });
 
@@ -1093,22 +1083,6 @@ describe("mount lists", () => {
       new Set(),
     );
     expect(sharedToolsOnHost(owned, "lab")).toBeNull();
-  });
-
-  test("the create dialog repaints the predictions when the box name or the host changes", () => {
-    const source = readFileSync(join(ROOT, "web", "js", "components", "create-box.js"), "utf8");
-    // Both inputs decide a predicted name: the box names its own role volumes, the host owns the shared tools volume.
-    for (const binding of ['q("#cbName").addEventListener("input"', 'q("#cbHost")?.addEventListener("change"']) {
-      const at = source.indexOf(binding);
-      expect(at).toBeGreaterThan(-1);
-      const listener = source.slice(at, source.indexOf("\n  });", at));
-      expect(listener).toContain('if (state.volumesMode === "custom") refreshMounts();');
-    }
-    // The repaint goes through the preview, which reads the name and the host back from the dialog.
-    expect(source).toContain("roleVolumeNames({");
-    expect(source).toContain("namesOnHost(");
-    expect(source).toContain("sharedToolsOnHost(");
-    expect(source).toContain("updateMountRowChoices(");
   });
 
   test("volume and mount errors are the ones the Volumes section shows", () => {

@@ -6,7 +6,7 @@ export interface Ipv4Network {
 
 const DOTTED = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
 
-export function ipv4ToInt(address: string): number | null {
+function ipv4ToInt(address: string): number | null {
   const match = DOTTED.exec(address);
   if (!match) return null;
   const octets = match.slice(1).map(Number);
@@ -16,7 +16,7 @@ export function ipv4ToInt(address: string): number | null {
   );
 }
 
-export function intToIpv4(value: number): string {
+function intToIpv4(value: number): string {
   return [24, 16, 8, 0].map((shift) => (value >>> shift) & 0xff).join(".");
 }
 

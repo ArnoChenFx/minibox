@@ -299,9 +299,9 @@ describe("POST /api/volumes/delete", () => {
     );
   });
 
-  test("a token deletes only the volumes it created, and refuses the others as forbidden", async () => {
+  test("an admin deletes only volumes within its resource grants, and refuses the others", async () => {
     const { host, base } = start();
-    const token = await tokenWith(base, "maker", { scopes: ["volume:write", "volume:delete"] });
+    const token = await tokenWith(base, "maker", { preset: "admin" });
     await send(base, "POST", "/api/volumes", { name: "mine", confirm: true }, token);
     await createVolume(host, { name: "theirs", role: null, createdBy: "owner" });
 
@@ -326,7 +326,7 @@ describe("POST /api/volumes/delete", () => {
 
   test("skipTrash needs the trash:skip scope as well, for a token", async () => {
     const { host, base } = start();
-    const token = await tokenWith(base, "maker", { scopes: ["volume:write", "volume:delete"] });
+    const token = await tokenWith(base, "maker", { preset: "admin" });
     await send(base, "POST", "/api/volumes", { name: "mine", confirm: true }, token);
     ageVolumes(host);
 

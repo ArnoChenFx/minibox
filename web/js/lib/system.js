@@ -15,6 +15,7 @@ export function readSystemVersion() {
   reading ??= api("/api/system")
     .then((system) => {
       version = typeof system?.version === "string" && system.version.trim() ? system.version.trim() : null;
+      if (version === null) reading = null;
       return version;
     })
     .catch(() => {

@@ -40,7 +40,7 @@ export interface Host {
 }
 
 /** Box hardening settings that apply to one engine. Each box records the profile it was created with. */
-export interface HostSecurity {
+interface HostSecurity {
   defaultProfile: BoxProfile;
   pidsLimit: number;
   runtime: string | null;
@@ -55,12 +55,12 @@ export interface HostCapacity {
   readonly memoryBytes: number | null;
 }
 
-export interface CapacityPolicy {
+interface CapacityPolicy {
   /** The ratio of booked CPU and memory to capacity that is allowed. 1 is no overcommit. */
   readonly overcommit: number;
 }
 
-export interface DiskPolicy {
+interface DiskPolicy {
   /** Free space, as a percentage of the disk, below which new volumes and checkpoints are refused. 0 turns the check off. */
   readonly minFreePercent: number;
 }
