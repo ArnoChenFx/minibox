@@ -38710,7 +38710,7 @@
                                 "number"
                               ]
                             },
-                            "description": "Values the console words the condition with. `used` and `limit` are bytes for a volume, `action` is `warn` or `stop`, `fields` lists the drifted settings, `checkpoint` names the rolled-back checkpoint, `free` and `min` are percentages of a host's disk, `booked` and `limit` are CPU cores for a host's overcommitted CPU and bytes for its overcommitted memory, `detail` is the message the engine or the pool reported, and for a host whose forwarding is blocked `bridge` is the uplink interface, `boxes` names the `proxy-only` boxes that lost the internet, `count` is how many there are and `detail` is what the host's iptables backends said."
+                            "description": "Values the console words the condition with. `used` and `limit` are bytes for a volume, `action` is `warn` or `stop`, `fields` lists the drifted settings, `checkpoint` names the rolled-back checkpoint, `free` and `min` are percentages of a host's disk, `booked` and `limit` are CPU cores for a host's overcommitted CPU and bytes for its overcommitted memory, `detail` is the message the engine or the pool reported, and for a host whose forwarding is blocked `bridge` is the uplink interface, `boxes` names the `proxy-only` boxes that lost the internet, `count` is how many there are, `detail` is what the host's iptables backends said, and `cause` is `policy` when a chain fell off its end (the case MiniBox offers to repair), `rule` when a DROP of the host's own decides it, or `unclear` when the reading left a rule unread."
                           }
                         },
                         "required": [
@@ -42217,6 +42217,21 @@
                           "type": "boolean",
                           "description": "Whether a new connection arriving on that bridge would be forwarded to the internet."
                         },
+                        "cause": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "policy",
+                                "rule"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "What drops the uplink when it is dropped. policy is a chain falling off its end, the case MiniBox may repair. rule is a DROP or REJECT the host's own rules make on purpose. Null when the reading is not certain, which is the case with nothing to offer."
+                        },
                         "detail": {
                           "type": "string",
                           "description": "One line per iptables backend that answered, naming why it accepts or drops."
@@ -42242,16 +42257,22 @@
                             "string",
                             "null"
                           ]
+                        },
+                        "installed": {
+                          "type": "boolean",
+                          "description": "Whether MiniBox's forward chain is on the host because a repair ran and nothing removed it since. It is removed when the host has no proxy-only box left, and when the host is removed."
                         }
                       },
                       "required": [
                         "bridge",
                         "forwarding",
+                        "cause",
                         "detail",
                         "boxes",
                         "at",
                         "repaired",
-                        "skipped"
+                        "skipped",
+                        "installed"
                       ],
                       "additionalProperties": false
                     }

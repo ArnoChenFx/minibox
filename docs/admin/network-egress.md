@@ -95,7 +95,7 @@ When the rules drop the uplink, **Needs attention** on the overview shows **Prox
 
 ### What the check proves, and what it does not
 
-The check reads what the host's `FORWARD` chain would do with a **new TCP connection** that arrives on the uplink bridge and leaves for another interface. It follows Docker's own chains to the rule that decides, and it reads both the `iptables` table (the nft one on a modern host) and `iptables-legacy` if both exist, because a stale legacy table is exactly one of the ways this breaks. So:
+The check reads what the host's `FORWARD` chain would do with a **new TCP connection** that arrives on the uplink bridge and leaves through the host's default route. It follows Docker's own chains to the rule that decides, and it reads both the `iptables` table (the nft one on a modern host) and `iptables-legacy` when that table already exists — reading it does not create it — because a stale legacy table is exactly one of the ways this breaks. So:
 
 - It proves that a `proxy-only` box on that host cannot reach the outside **because of the host's forwarding rules**. That is the failure the warning is about, and it is one MiniBox can fix.
 - It does **not** prove that the internet is reachable. A host whose rules are right but whose uplink cannot resolve or route is not reported: the proxy's `egress.failed … upstream` events are the place to look for that, and it is not something a `FORWARD` rule would fix.
@@ -104,7 +104,11 @@ The check reads what the host's `FORWARD` chain would do with a **new TCP connec
 
 ### Fix it
 
-The overview's item has an **Add the rule** button. It opens a confirmation that names the host and the bridge, and **nothing is written until you confirm**. After you confirm, MiniBox runs one short-lived helper on the host and adds its own chain, `MINIBOX-FWD-<hash>`, jumped to from the top of `FORWARD`. It accepts new connections that arrive on the uplink bridge and leave for another interface, and the replies that come back into it. Nothing else on the host's firewall changes: the `FORWARD` policy stays as it is, and other installs' chains are left alone. That is one click, and the same thing over the API is one call:
+The overview's item has an **Add the rule** button, but **only when the drop is a chain falling off its end and taking its policy** (`cause: "policy"`). A drop made by a `DROP` or `REJECT` rule of the host's own, or a reading that left a rule MiniBox cannot evaluate, is reported without a button: the host is doing what it was told, and MiniBox's rule would undo that decision.
+
+The button opens a confirmation that names the host and the bridge, and **nothing is written until you confirm**. After you confirm, MiniBox runs one short-lived helper on the host and adds its own chain, `MINIBOX-FWD-<hash>`, with the jump **appended at the end of `FORWARD`**. Appending rather than inserting at the top is deliberate: Docker's own isolation chains and anything you put in `DOCKER-USER` have already decided before the packet reaches MiniBox's rule, so they still win. The chain accepts new connections that arrive on the uplink bridge and leave through the host's default route, and the replies that come back into it; other bridges, LAN ranges and private networks are untouched. Nothing else on the host's firewall changes: the `FORWARD` policy stays as it is, and other installs' chains are left alone. When this install no longer needs the rule — the last `proxy-only` box is deleted, or the host is removed — MiniBox removes it. A host with no IPv4 default route refuses the repair, since there is no interface to allow.
+
+That is one click, and the same thing over the API is one call:
 
 ```bash
 curl -sS -X POST -H "Authorization: Bearer $MINIBOX_KEY" https://minibox.example.com/api/hosts/local/forward
@@ -125,11 +129,21 @@ Then, for each backend that has a `FORWARD` chain (run both blocks if both print
 
 ```bash
 BR=br-1a2b3c4d5e6f   # the bridge from above
-sudo iptables -I FORWARD 1 -i "$BR" ! -o "$BR" -j ACCEPT
+OUT=eth0             # the host's default-route interface: ip -4 route show default
+sudo iptables -A FORWARD -i "$BR" -o "$OUT" -j ACCEPT
 sudo iptables -I FORWARD 1 -o "$BR" -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
 ```
 
 Use `iptables-legacy` in place of `iptables` for the legacy table. These rules are not persisted by MiniBox: a reboot or a firewall reload removes them, and the next check reports the condition again. If you would rather undo a stale legacy table than add rules to it, remove the `DROP` policy or the rules that cause it, which is the other hand-written path, and MiniBox's check then finds the rules right by itself.
+
+### What the check does not cover
+
+These are the reading's blind spots. None of them produces a false alarm, but each can hide a real break:
+
+- **IPv6.** Only IPv4 rules are read, and a `proxy-only` box's proxy reaches the internet over IPv4 today, so this is not the failure the warning is about. A host that allows IPv4 and blocks IPv6 is not reported.
+- **A native nftables ruleset.** The check runs `iptables -S`, which on a host whose packets never touch the `iptables` tables — a firewalld with its `nftables` backend, or an engine configured to write nftables rules directly — shows nothing that decides the packet. It reads such a host as having no `FORWARD` rule for the bridge, which is the `policy` case, so treat a host like that as covered by its own firewall rather than by this check.
+- **Traffic that is already established.** A conntrack entry outlives the rule that allowed it, so a box can keep working for a while after the rules change.
+- **Anything other than the rules.** A host whose rules are right but whose uplink cannot resolve or route is not reported here.
 
 ## If an allowed host times out
 

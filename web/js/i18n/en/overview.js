@@ -54,13 +54,17 @@ export default {
   "ov.forwardRepairHint": "Ask first, then let MiniBox allow the egress uplink through the host's FORWARD chain",
   "ov.forwardRepairTitle": "Allow the egress uplink on {host}?",
   "ov.forwardRepairMessage":
-    "MiniBox will add one rule on {host}: a chain of its own, jumped to from the top of FORWARD, that accepts new connections arriving on {bridge} and their replies. Nothing else on the host's firewall changes. Proxy-only boxes there get the internet back; open boxes were never affected.",
+    "MiniBox will add one rule on {host}: its own chain, jumped to at the end of FORWARD so every rule above it still decides first, that accepts new connections arriving on {bridge} and leaving through the host's default route, plus their replies. Nothing else on the host's firewall changes. Proxy-only boxes there get the internet back; open boxes were never affected.",
   "ov.forwardRepairWhat":
     "If you would rather do it by hand, the commands are in the network egress guide: https://github.com/ArnoChenFx/minibox/blob/main/docs/admin/network-egress.md#when-a-proxy-only-box-has-no-internet. The warning stays until a check finds the rules right.",
   "ov.forwardRepaired": "Added the FORWARD rule",
   "ov.forwardRepairFailed": "Couldn't add the FORWARD rule",
   "ov.text.forward_blocked":
     "The host's FORWARD rules drop the egress uplink ({bridge}), so its {count} proxy-only box(es) ({boxes}) cannot reach the internet. Open boxes are unaffected. Confirm to let MiniBox add the rule, or add it by hand.",
+  "ov.text.forward_blocked_rule":
+    "The host's own rules drop the egress uplink ({bridge}) on purpose, so its {count} proxy-only box(es) ({boxes}) cannot reach the internet. MiniBox has no rule to add here: change the DROP by hand if these boxes should get out. Open boxes are unaffected.",
+  "ov.text.forward_blocked_unclear":
+    "The egress uplink ({bridge}) looks dropped on this host, but one of its rules is one MiniBox cannot read, so it cannot say why. Its {count} proxy-only box(es) ({boxes}) may have no internet. Read the rules by hand; MiniBox offers no rule here.",
   "actv.subtitle": "Every operation MiniBox has recorded: who acted, on what, and how it ended.",
   "actv.filters": "Filter the activity log",
   "actv.box": "Box",

@@ -94,7 +94,7 @@ const AttentionSchema = z.object({
   box: BoxRef.nullable().meta({ description: "The box the condition is about, when it is still there." }),
   params: z.record(z.string(), z.union([z.string(), z.number()])).meta({
     description:
-      "Values the console words the condition with. `used` and `limit` are bytes for a volume, `action` is `warn` or `stop`, `fields` lists the drifted settings, `checkpoint` names the rolled-back checkpoint, `free` and `min` are percentages of a host's disk, `booked` and `limit` are CPU cores for a host's overcommitted CPU and bytes for its overcommitted memory, `detail` is the message the engine or the pool reported, and for a host whose forwarding is blocked `bridge` is the uplink interface, `boxes` names the `proxy-only` boxes that lost the internet, `count` is how many there are and `detail` is what the host's iptables backends said.",
+      "Values the console words the condition with. `used` and `limit` are bytes for a volume, `action` is `warn` or `stop`, `fields` lists the drifted settings, `checkpoint` names the rolled-back checkpoint, `free` and `min` are percentages of a host's disk, `booked` and `limit` are CPU cores for a host's overcommitted CPU and bytes for its overcommitted memory, `detail` is the message the engine or the pool reported, and for a host whose forwarding is blocked `bridge` is the uplink interface, `boxes` names the `proxy-only` boxes that lost the internet, `count` is how many there are, `detail` is what the host's iptables backends said, and `cause` is `policy` when a chain fell off its end (the case MiniBox offers to repair), `rule` when a DROP of the host's own decides it, or `unclear` when the reading left a rule unread.",
   }),
 });
 
@@ -396,6 +396,8 @@ function forwardAttention(hosts: readonly HostCtx[]): Attention[] {
           boxes: state.boxes.join(", "),
           count: state.boxes.length,
           detail: state.detail,
+          // Only a drop nobody asked for gets a button; anything else is reported as it is.
+          cause: state.cause ?? "unclear",
         },
       },
     ];

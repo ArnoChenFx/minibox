@@ -12,7 +12,7 @@
 - 模板支持编辑构建来源、描述、启动命令和端口。所有者可编辑任意模板，令牌只能编辑自己创建的模板；官方模板的来源固定。
 - 存储管理员可为 Box 的角色卷指定存储池，共享工具卷按池选择。
 - 文件浏览器支持复制 Box 内绝对路径。
-- 概览页的**需要关注**新增**仅代理的 Box 无法上网**：当宿主机的 `FORWARD` 链丢弃出站上行网络的流量时（策略为 `DROP`、残留的 `iptables-legacy` 表或防火墙重新加载），该宿主机上所有 `proxy-only` 的 Box 会静默失去互联网，而 Box 仍能启动、exec 与 SSH。检查每 `EGRESS_FORWARD_CHECK_INTERVAL_SEC`（默认 600 秒）读一次宿主机的 `FORWARD` 规则，启动后 30 秒先读一次，另外在 `proxy-only` 的 Box 启动时与宿主机重新上线时各读一次；没有 `proxy-only` Box 的宿主机完全不会被读取，规则正常的宿主机在这些时机到来之前也不会再被读取。条目上提供**添加规则**按钮，先确认再由 MiniBox 添加自己的 `MINIBOX-FWD-<hash>` 链（`POST /api/hosts/{id}/forward`，仅所有者），MiniBox 自己从不改动宿主机防火墙。Agent 宿主机不执行该检查（不运行辅助容器），条目会说明这一原因。
+- 概览页的**需要关注**新增**仅代理的 Box 无法上网**：宿主机的 `FORWARD` 链丢弃出站上行网络的流量时（策略为 `DROP`、残留的 `iptables-legacy` 表或防火墙重新加载），其上所有 `proxy-only` 的 Box 会静默失去互联网，而 Box 仍能启动、exec 与 SSH。检查每 `EGRESS_FORWARD_CHECK_INTERVAL_SEC`（默认 600 秒）读一次规则，启动后 30 秒先读一次，`proxy-only` 的 Box 启动与宿主机重新上线时立刻补读；没有 `proxy-only` Box 的宿主机完全不读。**只有链走到末尾、按策略丢弃**（`cause: "policy"`）时条目才给**添加规则**按钮，先确认再由 MiniBox 添加自己的 `MINIBOX-FWD-<hash>` 链（`POST /api/hosts/{id}/forward`，仅所有者）；宿主机自己的 `DROP` 规则或读不懂的规则只报告、不给按钮，因为那种情况下宿主机是在按写好的规则办事。跳转**追加在 `FORWARD` 末尾**，只放行从默认路由出去的新连接及其回程，Docker 的隔离链与 `DOCKER-USER` 仍然优先；最后一个 `proxy-only` Box 删除或宿主机移除时这条链会被删掉。Agent 宿主机不执行该检查，条目说明原因。
 - 卷页面可以勾选和删除 Box 不会挂载的多余工具卷，状态显示“可清理”并说明清理孤立卷会跳过它；共享工具卷和被挂载的卷仍不能勾选，行内删除按钮也禁用并提示原因。卷列表与详情（REST、MCP）新增 `sharedTools` 字段，只有共享工具卷为 `true`。
 
 ### 修复与权限

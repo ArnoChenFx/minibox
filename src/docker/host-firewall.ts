@@ -116,7 +116,7 @@ export function hostFirewallMethods(
           "the host's FORWARD rules could not be read",
         );
       }
-      return { forwarding: !verdict.dropped, detail: verdict.detail };
+      return { forwarding: !verdict.dropped, cause: verdict.cause, detail: verdict.detail };
     },
 
     async allowHostForward(owner, bridge) {
@@ -134,6 +134,15 @@ export function hostFirewallMethods(
       });
       if (result.exitCode !== 0) {
         const tail = result.logs.trim().slice(-LOG_TAIL_CHARS);
+        // Exit 3 is the script's own answer for a host with no IPv4 default route: there is no interface to allow, so
+        // the repair cannot say what it would do and refuses instead of widening the chain.
+        if (result.exitCode === 3) {
+          throw new RuntimeError(
+            "invalid",
+            `the host has no IPv4 default route: ${tail}`,
+            "the host has no IPv4 default route, so there is no interface to allow",
+          );
+        }
         throw new RuntimeError(
           "engine",
           `host forward helper exited with ${result.exitCode}: ${tail}`,

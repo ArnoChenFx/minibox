@@ -36,6 +36,7 @@ const SERVER_PARAMS: Record<string, Record<string, string | number>> = {
     boxes: "agent",
     count: 1,
     detail: "iptables FORWARD policy is DROP",
+    cause: "policy",
   },
 };
 
@@ -163,6 +164,24 @@ describe("attentionText", () => {
     expect(zh["ov.text.forward_blocked"]).toContain("开放出站的 Box 不受影响");
   });
 
+  test("a drop the host's own rules make, and an unclear one, read differently and promise no fix", () => {
+    // Only the policy case is an accident. Saying "confirm to let MiniBox add the rule" for a deliberate DROP would be
+    // asking the owner to undo their own decision.
+    const params = SERVER_PARAMS["host.forward_blocked"];
+    expect(attentionText(itemOf("host.forward_blocked", { ...params, cause: "rule" }))?.key).toBe(
+      "ov.text.forward_blocked_rule",
+    );
+    expect(attentionText(itemOf("host.forward_blocked", { ...params, cause: "unclear" }))?.key).toBe(
+      "ov.text.forward_blocked_unclear",
+    );
+    for (const key of ["ov.text.forward_blocked_rule", "ov.text.forward_blocked_unclear"]) {
+      expect(en[key]).not.toContain("Confirm to let MiniBox");
+      expect(zh[key]).not.toContain("确认后由 MiniBox");
+      // i18n.test.ts checks that both languages exist; this checks the words differ from each other.
+      expect(en[key]).not.toBe(zh[key]);
+    }
+  });
+
   test("a kind the console does not know has no sentence", () => {
     expect(attentionText(itemOf("container.restarted"))).toBeNull();
   });
@@ -192,6 +211,16 @@ describe("where an attention item leads", () => {
     for (const kind of serverKinds()) {
       expect([kind, canRepair(itemOf(kind, SERVER_PARAMS[kind]))]).toEqual([kind, kind === "host.forward_blocked"]);
     }
+  });
+
+  test("the button is offered only for a drop the policy made, never for one the host's rules asked for", () => {
+    const params = SERVER_PARAMS["host.forward_blocked"];
+    expect(canRepair(itemOf("host.forward_blocked", { ...params, cause: "policy" }))).toBe(true);
+    expect(canRepair(itemOf("host.forward_blocked", { ...params, cause: "rule" }))).toBe(false);
+    expect(canRepair(itemOf("host.forward_blocked", { ...params, cause: "unclear" }))).toBe(false);
+    // A view that carries no cause at all must not offer a button either: without one nothing is certain.
+    const { cause: _cause, ...withoutCause } = params as Record<string, string | number>;
+    expect(canRepair(itemOf("host.forward_blocked", withoutCause))).toBe(false);
   });
 
   test("a box condition whose box is gone opens the Boxes list", () => {

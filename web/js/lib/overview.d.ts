@@ -37,7 +37,10 @@ export declare const ATTENTION_LABEL: Readonly<Record<string, string>>;
 
 export declare function attentionHref(item: AttentionItem): string;
 
-/** Whether an attention item has a fix MiniBox applies itself once the owner confirms it. */
+/**
+ * Whether an attention item has a fix MiniBox applies itself once the owner confirms it. A blocked uplink counts only
+ * when `params.cause` is `policy`: a drop a rule of the host's own makes is a decision, not an accident.
+ */
 export declare function canRepair(item: AttentionItem): boolean;
 
 export declare function attentionText(

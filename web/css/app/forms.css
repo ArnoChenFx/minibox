@@ -485,6 +485,11 @@ input[type="range"] {
 .callout .icon {
   margin-top: 2px;
 }
+/* A callout often holds a documentation URL, and a long one must wrap rather than be cut off at a narrow width. */
+.callout > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
 .callout.warn {
   background: var(--warning-soft);
   color: var(--warning);

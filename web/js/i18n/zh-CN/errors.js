@@ -244,6 +244,12 @@ export default {
   "err.egress_needs_network": "出站策略 {mode} 与网络 {network} 不能同时设置。出站策略会决定 Box 的网络。",
   "err.egress_forward_unsupported": "这台宿主机无法运行转发检查：{reason}",
   "err.egress_forward_no_boxes": "这台宿主机上没有仅代理的 Box，不需要它的 FORWARD 链。没有改动任何东西。",
+  "err.egress_forward_not_blocked":
+    "上次检查发现这台宿主机的转发规则正常，没有需要添加的规则。检查会按自己的间隔再次运行。",
+  "err.egress_forward_not_repairable_rule":
+    "MiniBox 不会改动这台宿主机的转发规则：宿主机自己的一条 DROP 或 REJECT 规则匹配了来自上行网桥的流量，说明它是在按写好的规则办事，MiniBox 的规则会把那个决定推翻。如果这不是你想要的效果，请手动改掉那条 DROP。",
+  "err.egress_forward_not_repairable_unclear":
+    "MiniBox 不会改动这台宿主机的转发规则：其中有一条规则 MiniBox 读不懂，说不清是什么在丢上行网络的流量。请手动查看规则；如果你确知应当放行，再手动添加。",
   "err.egress_forward_unchecked":
     "尚未读取这台宿主机的 FORWARD 规则，MiniBox 无法说该添加哪条规则。请等下一次检查，或手动添加。",
   "err.cpu_over_host": "CPU 核数超出宿主机上限（{cores} 核）。",

@@ -297,6 +297,12 @@ export default {
   "err.egress_forward_unsupported": "The forwarding check cannot run on this host: {reason}",
   "err.egress_forward_no_boxes":
     "This host has no proxy-only box, so nothing needs its FORWARD chain. Nothing was changed.",
+  "err.egress_forward_not_blocked":
+    "The last check found this host's forwarding right, so there is nothing to add. It runs again on its own interval.",
+  "err.egress_forward_not_repairable_rule":
+    "MiniBox will not change this host's forwarding: a DROP or REJECT rule of the host's own matches traffic from the uplink bridge, so the host is doing what it was told and MiniBox's rule would undo that. Change the DROP by hand if it is not what you want.",
+  "err.egress_forward_not_repairable_unclear":
+    "MiniBox will not change this host's forwarding: one of the host's rules is one MiniBox cannot evaluate, so it cannot say what is dropping the uplink. Read the rules by hand, or add the allowance if you know it is right.",
   "err.egress_forward_unchecked":
     "This host's FORWARD rules have not been read yet, so MiniBox cannot say which rule to add. Wait for the next check, or add the rule by hand.",
   "err.cpu_over_host": "CPU cores exceed the host limit ({cores} cores).",

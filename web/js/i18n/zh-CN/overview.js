@@ -51,13 +51,17 @@ export default {
   "ov.forwardRepairHint": "先询问，确认后由 MiniBox 放行出站上行网络穿过宿主机的 FORWARD 链",
   "ov.forwardRepairTitle": "在 {host} 上放行出站上行网络？",
   "ov.forwardRepairMessage":
-    "MiniBox 会在 {host} 上添加一条规则：它自己的链，从 FORWARD 顶部跳转过去，接受来自 {bridge} 的新连接及其回程。宿主机防火墙的其它部分都不动。其上的仅代理 Box 恢复上网；开放出站的 Box 本来就不受影响。",
+    "MiniBox 会在 {host} 上添加一条规则：它自己的链，跳转挂在 FORWARD 末尾，上面的规则仍先行决定，只接受来自 {bridge} 且从宿主机默认路由出去的新连接及其回程。宿主机防火墙的其它部分都不动。其上的仅代理 Box 恢复上网；开放出站的 Box 本来就不受影响。",
   "ov.forwardRepairWhat":
     "如果更愿意手动处理，命令见网络出站指南：https://github.com/ArnoChenFx/minibox/blob/main/docs/zh-CN/admin/network-egress.md#仅代理的-box-无法上网时。检查确认规则正确之前，这条警告会一直保留。",
   "ov.forwardRepaired": "已添加 FORWARD 规则",
   "ov.forwardRepairFailed": "无法添加 FORWARD 规则",
   "ov.text.forward_blocked":
     "这台宿主机的 FORWARD 规则丢弃了出站上行网络（{bridge}）的流量，其上 {count} 个仅代理的 Box（{boxes}）无法访问互联网。开放出站的 Box 不受影响。确认后由 MiniBox 添加规则，也可以手动添加。",
+  "ov.text.forward_blocked_rule":
+    "这台宿主机自己的规则有意丢弃了出站上行网络（{bridge}）的流量，其上 {count} 个仅代理的 Box（{boxes}）无法访问互联网。这里没有 MiniBox 可以添加的规则：如果这些 Box 应当出网，请手动改掉那条 DROP。开放出站的 Box 不受影响。",
+  "ov.text.forward_blocked_unclear":
+    "这台宿主机的出站上行网络（{bridge}）看起来被丢弃，但其中有一条 MiniBox 读不懂的规则，说不清原因。其上 {count} 个仅代理的 Box（{boxes}）可能没有网络。请手动查看规则；MiniBox 在这里不提供任何规则。",
   "actv.subtitle": "MiniBox 记录的每一次操作：谁做的、对哪个对象、结果如何。",
   "actv.filters": "筛选活动日志",
   "actv.box": "Box",

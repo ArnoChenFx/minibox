@@ -6,8 +6,8 @@ import { silenceLogs } from "./support/app";
 import type { FakeRuntime } from "./support/fake-runtime";
 import { call, mint, startHarness, type Harness } from "./support/tokens";
 
-const DROPPED: HostForwardCheck = { forwarding: false, detail: "iptables FORWARD policy is DROP" };
-const FORWARDING: HostForwardCheck = { forwarding: true, detail: "iptables accepts the uplink" };
+const DROPPED: HostForwardCheck = { forwarding: false, cause: "policy", detail: "iptables FORWARD policy is DROP" };
+const FORWARDING: HostForwardCheck = { forwarding: true, cause: null, detail: "iptables accepts the uplink" };
 
 interface StateJson {
   bridge: string;

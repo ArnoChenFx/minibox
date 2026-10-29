@@ -95,6 +95,9 @@
 .watch-who > * {
   min-width: 0;
 }
+.watch-who > strong {
+  min-width: 0;
+}
 .watch-who > strong + .watch-actor {
   grid-column: span 2;
 }
@@ -237,6 +240,13 @@
     display: flex;
     gap: 8px;
     overflow: hidden;
+  }
+  /* On a phone an attention row shares one line with the time, so its label and subject are cut rather than pushing
+     the time off the row. The full text is the row's own title. */
+  .watch-who > strong {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .watch-state:empty {
     display: none;

@@ -19,6 +19,11 @@ export interface ForwardState {
   readonly bridge: string;
   /** True when a new connection from the uplink would be forwarded. */
   readonly forwarding: boolean;
+  /**
+   * What dropped the packet, when the reading is certain about it. `policy` is a chain falling off its end, which is
+   * what MiniBox may offer to repair; `rule` is a drop somebody asked for; null is the case with no button.
+   */
+  readonly cause: "policy" | "rule" | null;
   /** One line per backend that answered. */
   readonly detail: string;
   /** The `proxy-only` boxes that lose the internet while `forwarding` is false. */
@@ -32,6 +37,11 @@ export interface ForwardState {
   readonly repaired: boolean;
   /** Why the check could not run on this host, when it could not. Null when it ran. */
   readonly skipped: string | null;
+  /**
+   * True when MiniBox's chain is on the host because a repair ran and nothing has removed it since. A host with no
+   * `proxy-only` box left does not keep a rule it no longer needs, and the chain goes with the host.
+   */
+  readonly installed: boolean;
 }
 
 export interface ForwardOptions {
@@ -54,8 +64,8 @@ function skipReason(host: HostCtx): string | null {
  *
  * A pass reads the rules and records the verdict. It logs once when the condition appears and stays quiet on every pass
  * after that, and it changes nothing: the owner repairs the rules from the overview, or by hand. A host with no
- * `proxy-only` box, a host whose condition is already known, and a host that never had the rules read all make no
- * engine call, except that the condition is checked again when a `proxy-only` box starts or a host comes back online.
+ * `proxy-only` box makes no engine call at all; a host that has one is read on **every** pass, because the rule that
+ * carries its boxes can vanish while nobody is looking.
  */
 export class EgressForwardWatcher {
   private timer: ReturnType<typeof setInterval> | undefined;
@@ -64,8 +74,6 @@ export class EgressForwardWatcher {
   private readonly state = new Map<string, ForwardState>();
   /** The pass each host is running, so two passes never read the same host at once and the repair can wait for one. */
   private readonly running = new Map<string, Promise<ForwardState | null>>();
-  /** Hosts asked to read again at their next opportunity, by a box starting or a host coming back online. */
-  private readonly pending = new Set<string>();
 
   constructor(private readonly options: ForwardOptions) {
     this.everyMs = options.everyMs ?? 600_000;
@@ -93,27 +101,52 @@ export class EgressForwardWatcher {
     return this.state.get(hostId) ?? null;
   }
 
-  /** A `proxy-only` box started: read the rules again at the next pass, since the owner looks at that moment. */
+  /**
+   * A `proxy-only` box started on this host, which is the moment its owner looks at it, so the rules are read now
+   * rather than at the next pass. A pass already reading the host is shared instead of repeated.
+   */
   boxStarted(hostId: string): void {
-    this.pending.add(hostId);
+    void this.readNow(hostId);
   }
 
-  /** A host came back online: read the rules again at the next pass, whatever was known before. */
+  /** A host came back online, so its firewall may have reloaded while it was away: read it now. See `boxStarted`. */
   hostOnline(hostId: string): void {
-    this.pending.add(hostId);
+    void this.readNow(hostId);
   }
 
-  /** Forgets a host that went away, so a host id that comes back does not inherit its verdict. */
-  forget(hostId: string): void {
-    this.state.delete(hostId);
-    this.pending.delete(hostId);
+  /** Reads one host out of turn, for a box that just started or a host that just came back. Never throws. */
+  private async readNow(hostId: string): Promise<void> {
+    // A watcher that was never started has no interval to keep, so a nudge before start() is dropped rather than
+    // leaving a pass that nothing scheduled.
+    if (!this.timer) return;
+    const found = this.options.hosts.list().find((host) => host.host.id === hostId);
+    if (!found || !this.wants(found)) return;
+    try {
+      await this.hostPass(found);
+    } catch (e) {
+      log.error("egress.forward_pass_failed", { host: hostId, error: String(e) });
+    }
   }
 
   /**
-   * One pass over every host. A host with no `proxy-only` box is skipped without an engine call; a host whose condition
-   * is already known is read again only when something asked for it. A failure is logged, never thrown.
+   * Forgets a host that went away, so a host id that comes back does not inherit its verdict. A chain the install put on
+   * that host is removed first: the engine is still reachable at this point, and leaving MiniBox's rule on a host it no
+   * longer manages is a leftover nobody would look for.
+   */
+  forget(hostId: string): void {
+    const host = this.options.hosts.list().find((candidate) => candidate.host.id === hostId);
+    const installed = this.state.get(hostId)?.installed === true;
+    this.state.delete(hostId);
+    if (host && installed) void this.dropRule(host);
+  }
+
+  /**
+   * One pass over every host. A host with no `proxy-only` box is skipped without an engine call; every other host is
+   * read, whatever the last pass found, so a rule that disappears between passes is noticed. A failure is logged, never
+   * thrown, and one host failing does not stop the others.
    */
   async tick(): Promise<void> {
+    await this.dropIdleRules();
     const hosts = this.options.hosts.list().filter((host) => this.wants(host));
     await Promise.all(
       hosts.map((host) =>
@@ -124,7 +157,12 @@ export class EgressForwardWatcher {
     );
   }
 
-  /** Whether a pass would do anything for this host, which is what keeps an idle host free of engine calls. */
+  /**
+   * Whether a pass would do anything for this host. A host with no `proxy-only` box costs nothing and is skipped
+   * outright; a host that has one is read on every pass, because the rule that carries its boxes can disappear when
+   * nobody is looking (a firewall reload at three in the morning) and a reading taken only once would leave the
+   * overview saying a host that has been broken for hours is fine.
+   */
   private wants(host: HostCtx): boolean {
     // A host the check cannot run on is still read once, so the overview can say why it is not covered.
     if (skipReason(host) !== null) return this.state.get(host.host.id) === undefined;
@@ -133,9 +171,33 @@ export class EgressForwardWatcher {
       this.state.delete(host.host.id);
       return false;
     }
-    const known = this.state.get(host.host.id);
-    if (known && !this.pending.has(host.host.id) && known.forwarding) return false;
     return true;
+  }
+
+  /**
+   * Removes MiniBox's chain from a host that no longer needs it. A chain left behind after the last `proxy-only` box
+   * was deleted keeps accepting traffic to the uplink bridge, which is no longer what this install wants, and it is the
+   * kind of leftover a person finds later and cannot explain. One host failing does not stop the others.
+   */
+  private async dropIdleRules(): Promise<void> {
+    const hosts = this.options.hosts.list();
+    for (const host of hosts) {
+      if (this.state.get(host.host.id)?.installed !== true) continue;
+      if (proxyOnlyBoxes(host).length > 0) continue;
+      await this.dropRule(host);
+    }
+  }
+
+  /** Removes the chain from one host and forgets that it was installed there. Never throws. */
+  private async dropRule(host: HostCtx): Promise<void> {
+    try {
+      await host.runtime.allowHostForward(host.prefix, "");
+      const state = this.state.get(host.host.id);
+      if (state) this.state.set(host.host.id, { ...state, installed: false });
+      log.info("egress.forward_rule_removed", { host: host.host.id });
+    } catch (e) {
+      log.warn("egress.forward_rule_remove_failed", { host: host.host.id, error: String(e) });
+    }
   }
 
   /** Reads one host and records what it found, or returns null when the pass could not run. */
@@ -150,11 +212,13 @@ export class EgressForwardWatcher {
       const skipped: ForwardState = {
         bridge: "",
         forwarding: false,
+        cause: null,
         detail: "",
         boxes: proxyOnlyBoxes(host).map((spec) => spec.name),
         at: new Date().toISOString(),
         repaired: false,
         skipped: skip,
+        installed: this.state.get(host.host.id)?.installed === true,
       };
       this.state.set(host.host.id, skipped);
       return skipped;
@@ -171,7 +235,6 @@ export class EgressForwardWatcher {
 
   /** The engine calls of one pass: the uplink's bridge, then the host's rules. */
   private async read(host: HostCtx, boxes: readonly BoxSpec[]): Promise<ForwardState | null> {
-    this.pending.delete(host.host.id);
     const uplink = egressUplinkName(host.prefix);
     const network = (await host.runtime.listNetworks()).find((candidate) => candidate.name === uplink);
     const bridge = network?.bridge ?? null;
@@ -189,7 +252,7 @@ export class EgressForwardWatcher {
     host: HostCtx,
     bridge: string,
     boxes: readonly BoxSpec[],
-    verdict: { forwarding: boolean; detail: string },
+    verdict: { forwarding: boolean; cause: "policy" | "rule" | null; detail: string },
   ): ForwardState {
     const hostId = host.host.id;
     const names = boxes.map((spec) => spec.name);
@@ -197,11 +260,13 @@ export class EgressForwardWatcher {
     const state: ForwardState = {
       bridge,
       forwarding: verdict.forwarding,
+      cause: verdict.cause,
       detail: verdict.detail,
       boxes: names,
       at: new Date().toISOString(),
       repaired: previous?.repaired === true && !verdict.forwarding,
       skipped: null,
+      installed: previous?.installed === true,
     };
     this.state.set(hostId, state);
     if (verdict.forwarding) {
@@ -238,6 +303,16 @@ export class EgressForwardWatcher {
     if (state?.bridge === undefined || state.bridge === "") {
       throw conflict(msg("egress_forward_unchecked"));
     }
+    // Nothing to do when the last reading found the rules right: the button is only drawn for a warning, but the API
+    // is open to anyone who asks.
+    if (state.forwarding) throw conflict(msg("egress_forward_not_blocked"));
+    // Only a drop nobody asked for may be widened. A `DROP` written on purpose, and a reading that left a rule unread,
+    // are the host doing what it was told: adding MiniBox's rule there would undo that decision.
+    if (state.cause !== "policy") {
+      throw conflict(
+        msg(state.cause === "rule" ? "egress_forward_not_repairable_rule" : "egress_forward_not_repairable_unclear"),
+      );
+    }
     await host.runtime.allowHostForward(host.prefix, state.bridge);
     // A pass that was already reading the host when the rule went in could answer with the rules before it, so it is
     // waited out and a fresh one reads what the repair left behind.
@@ -245,7 +320,7 @@ export class EgressForwardWatcher {
     const next = await this.hostPass(host);
     if (next === null) throw new AppError(502, "docker_error", msg("egress_forward_unchecked"));
     // The repair is a fact about the reading it answered with, not a verdict of its own: the next pass decides again.
-    const repaired: ForwardState = { ...next, repaired: true };
+    const repaired: ForwardState = { ...next, repaired: true, installed: true };
     this.state.set(host.host.id, repaired);
     return repaired;
   }

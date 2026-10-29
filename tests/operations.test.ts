@@ -633,13 +633,19 @@ async function preparedInput(
     await pairAgentHost(app, "edge");
   }
   if (operation.name === "host.forward.repair") {
-    // The repair is only offered for a host with a proxy-only box, and it applies what the check last found.
+    // The repair is only offered for a host with a proxy-only box whose rules drop the uplink by policy, so the check
+    // has to find exactly that before the operation will do anything.
     await app.operations.run("box.create", ctx, {
       name: "gated",
       cpus: 1,
       memoryMb: 256,
       egress: { mode: "proxy-only", domains: ["example.com"] },
     });
+    (ctx.host.runtime as FakeRuntime).forwardVerdict = {
+      forwarding: false,
+      cause: "policy",
+      detail: "fake engine: FORWARD policy is DROP",
+    };
     await app.egressForward.tick();
   }
   const sample = SAMPLES[operation.name];

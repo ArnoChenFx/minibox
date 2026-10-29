@@ -10,11 +10,15 @@ import {
 } from "../src/egress/forward";
 
 const BRIDGE = "br-1a2b3c4d5e6f";
-const PROBE = { bridge: BRIDGE, source: "240.0.0.2" };
+const ETH = "eth0";
+const PROBE = { bridge: BRIDGE, source: "240.0.0.2", egress: [ETH] };
 
-/** A report in the shape `FORWARD_PROBE_SCRIPT` prints: the interfaces, then one `iptables -S` dump per backend. */
-function report(bridges: string[], backends: Record<string, string[] | null>): string {
-  const lines = [FORWARD_REPORT_MARKER, `@@bridges ${bridges.join(" ")}`];
+/**
+ * A report in the shape `FORWARD_PROBE_SCRIPT` prints: the interfaces, the default route's interface, then one
+ * `iptables -S` dump per backend.
+ */
+function report(bridges: string[], backends: Record<string, string[] | null>, egress: string[] = [ETH]): string {
+  const lines = [FORWARD_REPORT_MARKER, `@@bridges ${bridges.join(" ")}`, `@@egress ${egress.join(" ")}`];
   for (const [name, rules] of Object.entries(backends)) {
     lines.push(`@@backend ${name}`);
     if (rules === null) lines.push("@@failed");
@@ -46,8 +50,8 @@ describe("reading the helper's report", () => {
   });
 
   test("output with no report marker is no report at all, not an empty host", () => {
-    expect(parseForwardReport("")).toEqual({ bridges: [], backends: [] });
-    expect(parseForwardReport("apk: not found\n")).toEqual({ bridges: [], backends: [] });
+    expect(parseForwardReport("")).toEqual({ bridges: [], egress: [], backends: [] });
+    expect(parseForwardReport("apk: not found\n")).toEqual({ bridges: [], egress: [], backends: [] });
   });
 
   test("a backend that failed is kept, so the caller can say it was not read", () => {
@@ -247,6 +251,122 @@ describe("deciding what FORWARD does with the uplink", () => {
   });
 });
 
+describe("telling a host that was asked to drop from one that lost the rule by accident", () => {
+  test("a policy with nothing to accept the packet is the accident a repair is for", () => {
+    const verdict = judgeForwardReport(report([BRIDGE], { iptables: ["-P FORWARD DROP"] }), PROBE);
+    expect(verdict).toMatchObject({ dropped: true, cause: "policy" });
+    expect(verdict.backends[0]).toMatchObject({ verdict: "drop", cause: "policy", unsure: false });
+  });
+
+  test("a DROP written on purpose is a decision, and MiniBox must not offer to undo it", () => {
+    const verdict = judgeForwardReport(
+      report([BRIDGE], { iptables: ["-P FORWARD ACCEPT", `-A FORWARD -i ${BRIDGE} -o ${ETH} -j DROP`] }),
+      PROBE,
+    );
+    expect(verdict).toMatchObject({ dropped: true, cause: "rule" });
+    expect(verdict.backends[0]?.reason).toContain("rule of its own");
+  });
+
+  test("a host whose rules already carry the uplink is not a drop at all", () => {
+    // A DROP policy with an accept for the bridge is a host somebody locked down correctly. Reading it as a drop is
+    // what made the old check offer a repair that would have widened the host.
+    const verdict = judgeForwardReport(
+      report([BRIDGE], { iptables: ["-P FORWARD DROP", `-A FORWARD -i ${BRIDGE} -o ${ETH} -j ACCEPT`] }),
+      PROBE,
+    );
+    expect(verdict).toMatchObject({ dropped: false, cause: null });
+  });
+
+  test("a host whose DOCKER-USER drops the bridge on purpose is not repairable either", () => {
+    const verdict = judgeForwardReport(
+      report([BRIDGE], {
+        iptables: [
+          "-P FORWARD DROP",
+          "-A FORWARD -j DOCKER-USER",
+          `-A FORWARD -i ${BRIDGE} -o ${ETH} -j ACCEPT`,
+          `-A DOCKER-USER -i ${BRIDGE} -j DROP`,
+        ],
+      }),
+      PROBE,
+    );
+    expect(verdict).toMatchObject({ dropped: true, cause: "rule" });
+  });
+
+  test("a rule the check cannot read leaves the cause open, so there is a warning but no button", () => {
+    const verdict = judgeForwardReport(
+      report([BRIDGE], {
+        iptables: ["-P FORWARD DROP", `-A FORWARD -i ${BRIDGE} -m iprange --src-range 240.0.0.1-240.0.0.9 -j ACCEPT`],
+      }),
+      PROBE,
+    );
+    expect(verdict).toMatchObject({ dropped: true, cause: null });
+    expect(verdict.backends[0]).toMatchObject({ cause: null, unsure: true });
+    expect(verdict.backends[0]?.reason).toContain("may accept");
+  });
+
+  test("two backends that disagree drop for different reasons, which is no certain cause", () => {
+    const verdict = judgeForwardReport(
+      report([BRIDGE], {
+        iptables: ["-P FORWARD DROP"],
+        "iptables-legacy": ["-P FORWARD ACCEPT", `-A FORWARD -i ${BRIDGE} -j DROP`],
+      }),
+      PROBE,
+    );
+    expect(verdict.dropped).toBe(true);
+    expect(verdict.cause).toBeNull();
+  });
+
+  test("an output interface the packet cannot leave through does not decide it", () => {
+    // The packet leaves through the default route, so a rule naming another uplink certainly does not match.
+    const other = judgeForwardReport(
+      report([BRIDGE], { iptables: ["-P FORWARD DROP", `-A FORWARD -i ${BRIDGE} -o wg0 -j DROP`] }),
+      PROBE,
+    );
+    expect(other).toMatchObject({ dropped: true, cause: "policy" });
+
+    // ... and one naming the interface it does leave through is the match that decides.
+    const leaving = judgeForwardReport(
+      report([BRIDGE], { iptables: ["-P FORWARD DROP", `-A FORWARD -i ${BRIDGE} -o ${ETH} -j ACCEPT`] }),
+      PROBE,
+    );
+    expect(leaving.dropped).toBe(false);
+  });
+
+  test("a host with no default route leaves the output interface open rather than guessing", () => {
+    const verdict = judgeForwardReport(report([BRIDGE], { iptables: ["-P FORWARD DROP"] }, []), {
+      bridge: BRIDGE,
+      source: "240.0.0.2",
+    });
+    expect(verdict.backends[0]?.cause).toBe("policy");
+    // ... and a rule that names an output interface cannot be judged at all.
+    const named = judgeForwardReport(
+      report([BRIDGE], { iptables: ["-P FORWARD ACCEPT", `-A FORWARD -i ${BRIDGE} -o ${ETH} -j DROP`] }, []),
+      { bridge: BRIDGE, source: "240.0.0.2" },
+    );
+    expect(named.backends[0]).toMatchObject({ cause: null, unsure: true });
+  });
+
+  test("the default route's interfaces are read from the report, not assumed", () => {
+    const parsed = parseForwardReport(report([BRIDGE], { iptables: ["-P FORWARD ACCEPT"] }, ["eth0", "eth1"]));
+    expect(parsed.egress).toEqual(["eth0", "eth1"]);
+    // Two default routes mean the packet may leave through either, so no rule naming one is certain.
+    const verdict = judgeForwardReport(
+      report([BRIDGE], { iptables: ["-P FORWARD DROP", `-A FORWARD -i ${BRIDGE} -o ${ETH} -j ACCEPT`] }, [
+        "eth0",
+        "eth1",
+      ]),
+      { bridge: BRIDGE, source: "240.0.0.2" },
+    );
+    expect(verdict.backends[0]).toMatchObject({ cause: null, unsure: true });
+    expect(
+      judgeForwardReport(report([BRIDGE], { iptables: ["-P FORWARD DROP"] }, ["eth0", "eth1"]), {
+        bridge: BRIDGE,
+        source: "240.0.0.2",
+      }).cause,
+    ).toBe("policy");
+  });
+});
+
 describe("the helper scripts", () => {
   test("the probe only reads: no -I, -A, -D or -X against the host's chains", () => {
     for (const line of FORWARD_PROBE_SCRIPT.split("\n")) {
@@ -255,14 +375,39 @@ describe("the helper scripts", () => {
     expect(FORWARD_PROBE_SCRIPT).toContain(FORWARD_REPORT_MARKER);
   });
 
-  test("the repair adds MiniBox's own chain and jumps to it, and names the bridge from its environment", () => {
+  test("the repair appends its jump instead of inserting it, so every rule above it still decides first", () => {
     expect(FORWARD_REPAIR_SCRIPT).toContain('chain="$MINIBOX_FORWARD_CHAIN"');
     expect(FORWARD_REPAIR_SCRIPT).toContain('bridge="$MINIBOX_UPLINK_BRIDGE"');
-    expect(FORWARD_REPAIR_SCRIPT).toContain('"$bin" -C FORWARD -j "$chain"');
-    expect(FORWARD_REPAIR_SCRIPT).toContain('"$bin" -I FORWARD 1 -j "$chain"');
-    expect(FORWARD_REPAIR_SCRIPT).toContain('"$bin" -A "$chain" -i "$bridge" ! -o "$bridge" -j ACCEPT');
+    // Appended, never inserted: Docker's isolation chains and DOCKER-USER are walked before MiniBox's rule.
+    expect(FORWARD_REPAIR_SCRIPT).toContain('"$bin" -A FORWARD -j "$chain"');
+    expect(FORWARD_REPAIR_SCRIPT).not.toContain("-I FORWARD");
+    // An older MiniBox inserted it; the repair moves it rather than leaving it above the isolation chains.
+    expect(FORWARD_REPAIR_SCRIPT).toContain('while "$bin" -D FORWARD -j "$chain" 2>/dev/null; do :; done');
     // It never rewrites the chain's policy, which is the host's decision and not MiniBox's.
     expect(FORWARD_REPAIR_SCRIPT).not.toContain("-P FORWARD");
+  });
+
+  test("the repair names the default route's interface, never every interface that is not the bridge", () => {
+    // A rule of the shape `! -o $bridge` lets a box reach another bridge on the same host, past Docker's isolation.
+    expect(FORWARD_REPAIR_SCRIPT).not.toContain('! -o "$bridge"');
+    expect(FORWARD_REPAIR_SCRIPT).toContain('egress="$(');
+    expect(FORWARD_REPAIR_SCRIPT).toContain("for name in $egress; do");
+    expect(FORWARD_REPAIR_SCRIPT).toContain('"$bin" -A "$chain" -i "$bridge" -o "$name" -j ACCEPT');
+    expect(FORWARD_REPAIR_SCRIPT).toContain(
+      '"$bin" -A "$chain" -i "$name" -o "$bridge" -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT',
+    );
+    // A host with no default route has no interface to allow, so the repair refuses instead of widening the chain.
+    expect(FORWARD_REPAIR_SCRIPT).toContain('if [ -z "$egress" ]; then');
+    expect(FORWARD_REPAIR_SCRIPT).toContain("exit 3");
+  });
+
+  test("the legacy table is only read when it already exists, so the probe does not create one", () => {
+    expect(FORWARD_PROBE_SCRIPT).toContain('if [ "$bin" = iptables-legacy ]; then');
+    expect(FORWARD_PROBE_SCRIPT).toContain("grep -qx filter /proc/net/ip_tables_names");
+    expect(FORWARD_REPAIR_SCRIPT).toContain("grep -qx filter /proc/net/ip_tables_names");
+    // Reading it with the legacy binary is what loads the modules and leaves a table behind.
+    expect(FORWARD_PROBE_SCRIPT).not.toMatch(/-S$/m);
+    expect(FORWARD_PROBE_SCRIPT).toContain('"@@egress "');
   });
 
   test("an empty bridge removes the jump and the chain, which is how a host stops carrying the rule", () => {
@@ -271,8 +416,14 @@ describe("the helper scripts", () => {
     expect(FORWARD_REPAIR_SCRIPT).toContain('"$bin" -X "$chain" 2>/dev/null || true');
   });
 
-  test("both scripts install iptables, since the helper image carries neither binary", () => {
-    expect(FORWARD_PROBE_SCRIPT).toContain("apk add -q --no-cache iptables iptables-legacy");
-    expect(FORWARD_REPAIR_SCRIPT).toContain("apk add -q --no-cache iptables iptables-legacy");
+  test("both scripts install iptables only when it is missing, and survive a host with no mirror", () => {
+    // A host with no internet must still get a reading: the check is the thing that would tell its owner why.
+    for (const script of [FORWARD_PROBE_SCRIPT, FORWARD_REPAIR_SCRIPT]) {
+      expect(script).toContain("command -v iptables >/dev/null 2>&1 || apk add -q --no-cache iptables iptables-legacy");
+      expect(script).toMatch(/apk add -q --no-cache iptables iptables-legacy >\/dev\/null 2>&1 \|\| true/);
+    }
+    // The probe reads what it can; a repair that changed nothing must not report success.
+    expect(FORWARD_PROBE_SCRIPT).not.toContain("exit 4");
+    expect(FORWARD_REPAIR_SCRIPT).toContain("exit 4");
   });
 });

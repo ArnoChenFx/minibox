@@ -11,9 +11,10 @@ import { EgressForwardWatcher } from "../src/services/egress-forward";
 import { createTestApp, rejectionOf, silenceLogs } from "./support/app";
 import type { FakeRuntime } from "./support/fake-runtime";
 
-const FORWARDING: HostForwardCheck = { forwarding: true, detail: "iptables accepts br-000000000000" };
+const FORWARDING: HostForwardCheck = { forwarding: true, cause: null, detail: "iptables accepts br-000000000000" };
 const DROPPED: HostForwardCheck = {
   forwarding: false,
+  cause: "policy",
   detail: "iptables FORWARD policy is DROP and no rule accepts br-000000000000",
 };
 
@@ -78,28 +79,49 @@ describe("the pass reads the host only when it has something to read", () => {
     expect(watcher.stateOf(host.host.id)).toMatchObject({ forwarding: true, boxes: ["gated"], skipped: null });
   });
 
-  test("a second pass over rules that are fine makes no engine call", async () => {
+  test("every pass reads a host that has a proxy-only box, so a rule that vanishes is noticed", async () => {
+    // The reading is the only thing that can see a firewall reload: a host that is read once and then left alone keeps
+    // its old verdict, which is how a broken host stayed reported as fine until the next box started.
     await gated();
     await watcher.tick();
     await watcher.tick();
-    expect(forwardCalls()).toBe(1);
+    expect(forwardCalls()).toBe(2);
   });
 
-  test("a box starting asks for a fresh reading, which is the moment the owner looks", async () => {
+  test("a rule dropped between two passes is found by the next pass, with nothing else asking for it", async () => {
     await gated();
     await watcher.tick();
+    expect(watcher.stateOf(host.host.id)?.forwarding).toBe(true);
+    runtime.forwardVerdict = DROPPED;
     await watcher.tick();
+    expect(watcher.stateOf(host.host.id)).toMatchObject({ forwarding: false, cause: "policy" });
+  });
+
+  test("a box starting reads the host at once, which is the moment the owner looks", async () => {
+    await gated();
+    await watcher.tick();
+    watcher.start();
     watcher.boxStarted(host.host.id);
-    await watcher.tick();
+    await Bun.sleep(10);
+    watcher.stop();
     expect(forwardCalls()).toBe(2);
   });
 
-  test("a host coming back online asks for a fresh reading too", async () => {
+  test("a host coming back online is read at once rather than at the next pass", async () => {
     await gated();
     await watcher.tick();
+    watcher.start();
     watcher.hostOnline(host.host.id);
-    await watcher.tick();
+    await Bun.sleep(10);
+    watcher.stop();
     expect(forwardCalls()).toBe(2);
+  });
+
+  test("a nudge before the watcher runs reads nothing, so no pass runs outside a start", async () => {
+    await gated();
+    watcher.boxStarted(host.host.id);
+    await Bun.sleep(10);
+    expect(forwardCalls()).toBe(0);
   });
 
   test("an agent host is skipped with a reason, and the reason is what the overview reads", async () => {
@@ -109,6 +131,7 @@ describe("the pass reads the host only when it has something to read", () => {
     expect(forwardCalls()).toBe(0);
     expect(watcher.stateOf(host.host.id)).toMatchObject({
       forwarding: false,
+      cause: null,
       skipped: expect.stringContaining("agent"),
     });
     // The reason reaches the log once, so an operator is not left guessing why the host never reports.
@@ -124,10 +147,12 @@ describe("when the passes happen", () => {
     const fresh = new EgressForwardWatcher({ hosts: app.hosts, everyMs: 40 });
     fresh.start();
     await Bun.sleep(80);
-    expect(forwardCalls()).toBe(1);
+    const first = forwardCalls();
+    expect(first).toBeGreaterThanOrEqual(1);
     fresh.stop();
+    const stopped = forwardCalls();
     await Bun.sleep(80);
-    expect(forwardCalls()).toBe(1);
+    expect(forwardCalls()).toBe(stopped);
   });
 
   test("a proxy-only box starting asks for a pass, and an open box starting does not", async () => {
@@ -241,6 +266,66 @@ describe("the owner's repair, and nothing before it", () => {
     await watcher.tick();
     const state = await watcher.repair(host);
     expect(state.forwarding).toBe(false);
+  });
+
+  test("a DROP the host's own rules make is refused: the repair will not undo a decision", async () => {
+    // A host whose rules deliberately drop the uplink is doing what it was told. Adding MiniBox's rule there would
+    // widen the host, which is the opposite of what the warning is for.
+    runtime.forwardVerdict = { forwarding: false, cause: "rule", detail: "iptables drops traffic from br- by a rule" };
+    await gated();
+    await watcher.tick();
+    await expect(watcher.repair(host)).rejects.toMatchObject({
+      status: 409,
+      key: "egress_forward_not_repairable_rule",
+    });
+    expect(runtime.callsTo("allowHostForward")).toEqual([]);
+  });
+
+  test("the chain a repair added is removed once the host has no proxy-only box left", async () => {
+    // A leftover chain keeps accepting traffic the install no longer needs, and nobody would look for it there.
+    runtime.forwardVerdict = DROPPED;
+    const box = await gated();
+    await watcher.tick();
+    runtime.forwardVerdict = FORWARDING;
+    await watcher.repair(host);
+    expect(watcher.stateOf(host.host.id)?.installed).toBe(true);
+    await boxes.deleteBox(host, box.boxId, true);
+    await watcher.tick();
+    expect(runtime.callsTo("allowHostForward").at(-1)?.args).toEqual(["mbtest", ""]);
+    expect(watcher.stateOf(host.host.id)).toBeNull();
+  });
+
+  test("a host with no chain installed is never asked to remove one", async () => {
+    const box = await gated();
+    await watcher.tick();
+    await boxes.deleteBox(host, box.boxId, true);
+    await watcher.tick();
+    expect(runtime.callsTo("allowHostForward")).toEqual([]);
+  });
+
+  test("a chain that cannot be removed is logged once and does not stop the pass", async () => {
+    runtime.forwardVerdict = DROPPED;
+    const box = await gated();
+    await watcher.tick();
+    runtime.forwardVerdict = FORWARDING;
+    await watcher.repair(host);
+    runtime.allowHostForward = async () => {
+      throw new Error("engine gone");
+    };
+    await boxes.deleteBox(host, box.boxId, true);
+    await watcher.tick();
+    expect(lines.filter((line) => line.includes("egress.forward_rule_remove_failed"))).toHaveLength(1);
+  });
+
+  test("a reading that left a rule unread is refused too, since it is not a verdict", async () => {
+    runtime.forwardVerdict = { forwarding: false, cause: null, detail: "iptables: a rule MiniBox does not read" };
+    await gated();
+    await watcher.tick();
+    await expect(watcher.repair(host)).rejects.toMatchObject({
+      status: 409,
+      key: "egress_forward_not_repairable_unclear",
+    });
+    expect(runtime.callsTo("allowHostForward")).toEqual([]);
   });
 
   test("a host with no proxy-only box refuses the repair instead of touching the firewall", async () => {

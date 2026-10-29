@@ -256,6 +256,10 @@ const ForwardStateSchema = z.object({
   forwarding: z.boolean().meta({
     description: "Whether a new connection arriving on that bridge would be forwarded to the internet.",
   }),
+  cause: z.enum(["policy", "rule"]).nullable().meta({
+    description:
+      "What drops the uplink when it is dropped. policy is a chain falling off its end, the case MiniBox may repair. rule is a DROP or REJECT the host's own rules make on purpose. Null when the reading is not certain, which is the case with nothing to offer.",
+  }),
   detail: z
     .string()
     .meta({ description: "One line per iptables backend that answered, naming why it accepts or drops." }),
@@ -266,6 +270,10 @@ const ForwardStateSchema = z.object({
     .meta({ description: "Whether the owner confirmed a repair after this reading. The next pass decides again." }),
   skipped: z.string().nullable().meta({
     description: "Why the check cannot run on this host, such as an agent host, or null when it ran.",
+  }),
+  installed: z.boolean().meta({
+    description:
+      "Whether MiniBox's forward chain is on the host because a repair ran and nothing removed it since. It is removed when the host has no proxy-only box left, and when the host is removed.",
   }),
 });
 
@@ -289,7 +297,7 @@ const hostForwardRepair = defineOperation({
     toolset: "meta",
     name: "repair_host_forward",
     description:
-      "Add MiniBox's own FORWARD chain for a host's egress uplink, so proxy-only boxes there can reach the internet again. MiniBox never does this on its own: it runs only when the owner confirms the Needs attention item on the overview, or calls this. The chain accepts traffic that arrives on the uplink bridge and leaves for another interface, and the replies that come back into it; nothing else is touched, and the FORWARD policy stays as it is. Returns the reading taken right after, so a repair that did not work still reports forwarding false. Owner only.",
+      "Add MiniBox's own FORWARD chain for a host's egress uplink, so proxy-only boxes there can reach the internet again. MiniBox never does this on its own: it runs only when the owner confirms the Needs attention item on the overview, or calls this, and it refuses unless the last reading says the drop is the chain's policy rather than a rule somebody wrote. The chain is jumped to at the end of FORWARD, so Docker's own isolation chains and anything an operator put in DOCKER-USER still decide first, and it accepts only connections that arrive on the uplink bridge and leave through the host's default route, plus the replies. Nothing else is touched and the FORWARD policy stays as it is. Returns the reading taken right after, so a repair that did not work still reports forwarding false. Refused when the host has no IPv4 default route, since there is no interface to allow. Owner only.",
   },
   activity: { action: () => "host.forward.repair", target: (input) => input.id },
   audit: {

@@ -1610,7 +1610,11 @@ export class FakeRuntime implements Runtime {
    * The verdict `checkHostForward` answers. The default pretends the host forwards, which is what a working Docker
    * install does, so a test that is not about the check never sees a warning.
    */
-  forwardVerdict: HostForwardCheck = { forwarding: true, detail: "fake engine: FORWARD policy ACCEPT" };
+  forwardVerdict: HostForwardCheck = {
+    forwarding: true,
+    cause: null,
+    detail: "fake engine: FORWARD policy ACCEPT",
+  };
   /** Each `allowHostForward` call, in order. */
   readonly hostForwardAllowed: { owner: string; bridge: string }[] = [];
 

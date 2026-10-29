@@ -25,11 +25,12 @@ export const ATTENTION_LABEL = Object.freeze({
   "host.forward_blocked": "ov.attn.forward_blocked",
 });
 
-/** The kinds whose fix MiniBox can apply itself, once the owner confirms it. */
-const REPAIRABLE = Object.freeze(new Set(["host.forward_blocked"]));
-
-/** Whether an item has a fix the owner can confirm here, which the row then offers as a button. */
-export const canRepair = (item) => REPAIRABLE.has(item.kind);
+/**
+ * Whether an item has a fix MiniBox can apply itself, once the owner confirms it. A blocked uplink is only repairable
+ * when a chain fell off its end: a `DROP` the host's own rules make is a decision, and a reading that left a rule
+ * unread is not a verdict, so neither gets a button.
+ */
+export const canRepair = (item) => item.kind === "host.forward_blocked" && item.params.cause === "policy";
 
 /** The page of the storage or host an item names. Box conditions open the box's tab that shows them instead. */
 const PAGE_OF = Object.freeze({
@@ -92,8 +93,16 @@ export function attentionText(item, { bytes = String, cpus = String } = {}) {
       return { key: "ov.text.cpu_overcommit", params: { booked: cpus(p.booked), limit: cpus(p.limit) } };
     case "host.memory_overcommit":
       return { key: "ov.text.memory_overcommit", params: { booked: bytes(p.booked), limit: bytes(p.limit) } };
-    case "host.forward_blocked":
-      return { key: "ov.text.forward_blocked", params: { count: p.count, boxes: p.boxes, bridge: p.bridge } };
+    case "host.forward_blocked": {
+      // The row says which kind of drop it is, because only one of the three comes with a button.
+      const key =
+        p.cause === "rule"
+          ? "ov.text.forward_blocked_rule"
+          : p.cause === "policy"
+            ? "ov.text.forward_blocked"
+            : "ov.text.forward_blocked_unclear";
+      return { key, params: { count: p.count, boxes: p.boxes, bridge: p.bridge } };
+    }
     default:
       return null;
   }

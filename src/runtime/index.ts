@@ -167,9 +167,17 @@ export interface NetworkSummary {
 }
 
 /** What the host's `FORWARD` chain does with a new connection arriving on one bridge. */
+/** Why the host's rules dropped the uplink. `policy` is a chain falling off its end, `rule` a `DROP` written on purpose. */
+export type HostForwardCause = "policy" | "rule";
+
 export interface HostForwardCheck {
   /** True when the connection would be forwarded, so an egress proxy on that bridge can reach the internet. */
   readonly forwarding: boolean;
+  /**
+   * What dropped the packet, when every backend that drops agrees and no rule was left unread. Null otherwise, which
+   * is the case MiniBox reports without offering to change anything.
+   */
+  readonly cause: HostForwardCause | null;
   /** One line per iptables backend that was read, naming why it accepts or drops. */
   readonly detail: string;
 }
@@ -590,10 +598,12 @@ export interface Runtime {
   checkHostForward(owner: string, bridge: string, source: string): Promise<HostForwardCheck>;
 
   /**
-   * Adds MiniBox's own `FORWARD` chain for `owner` and jumps to it, so a connection arriving on `bridge` is accepted
-   * and its replies are accepted back. Nothing else is touched: the chain's policy and other installs' rules stay as
-   * they are. An empty `bridge` removes the jump and the chain, which is how a host stops carrying a rule it no longer
-   * needs. Runs a short-lived privileged helper on the host network, so a remote agent host runs it on its own engine.
+   * Adds MiniBox's own `FORWARD` chain for `owner` and appends a jump to it at the **end** of `FORWARD`, so the packet
+   * only reaches it when nothing above decided and Docker's own isolation chains were walked first. The chain accepts a
+   * new connection arriving on `bridge` that leaves through the host's default route, and the replies that come back.
+   * Nothing else is touched: the policy and other installs' rules stay as they are. An empty `bridge` removes the jump
+   * and the chain, which is how a host stops carrying a rule it no longer needs, and a host with no IPv4 default route
+   * is refused rather than guessed at. Runs a short-lived privileged helper on the host network.
    */
   allowHostForward(owner: string, bridge: string): Promise<void>;
 
