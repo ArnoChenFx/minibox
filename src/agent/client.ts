@@ -30,6 +30,11 @@ export function handshakeStatus(message: string): number | null {
 const OPEN = 1;
 const DEFAULT_MIN_BACKOFF_MS = 1_000;
 const DEFAULT_MAX_BACKOFF_MS = 30_000;
+/**
+ * How long dialing may take before the socket opens: DNS, TCP, TLS and the upgrade. It is separate from the hello
+ * timeout, which starts only once the socket is open, so a slow link or a tunnel does not spend the hello's 5 seconds.
+ */
+export const AGENT_CONNECT_TIMEOUT_MS = 30_000;
 
 export type AgentConnectionState = "idle" | "connecting" | "connected" | "waiting" | "dormant" | "stopped";
 
@@ -41,6 +46,10 @@ export interface AgentClientOptions {
   readonly runtime: Runtime;
   readonly version: string;
   readonly heartbeatMs?: number;
+  /** How long dialing may take before the socket opens. Defaults to `AGENT_CONNECT_TIMEOUT_MS`. */
+  readonly connectTimeoutMs?: number;
+  /** How long an open socket may wait for its welcome. Defaults to `AGENT_HELLO_TIMEOUT_MS`. */
+  readonly helloTimeoutMs?: number;
   readonly minBackoffMs?: number;
   readonly maxBackoffMs?: number;
   /** Opens the socket. Tests pass a stand-in; the agent uses Bun's WebSocket. */
@@ -132,7 +141,8 @@ export class AgentClient {
       let connected = false;
       let executor: AgentExecutor | null = null;
       let heartbeat: ReturnType<typeof setInterval> | undefined;
-      const helloTimer = setTimeout(() => ws.close(), AGENT_HELLO_TIMEOUT_MS);
+      // Dialing has its own budget; the hello's starts only once the socket is open.
+      let helloTimer = setTimeout(() => ws.close(), this.options.connectTimeoutMs ?? AGENT_CONNECT_TIMEOUT_MS);
       let settled = false;
 
       const send = (frame: AgentFrame) => {
@@ -160,6 +170,11 @@ export class AgentClient {
         resolve(end);
       };
 
+      ws.addEventListener("open", () => {
+        if (settled || connected) return;
+        clearTimeout(helloTimer);
+        helloTimer = setTimeout(() => ws.close(), this.options.helloTimeoutMs ?? AGENT_HELLO_TIMEOUT_MS);
+      });
       ws.addEventListener("message", (event) => {
         const frame = parseFrame(ServerFrameSchema, String(event.data));
         if (!frame) return;
@@ -208,11 +223,18 @@ export class AgentClient {
       });
       ws.addEventListener("close", (event) => {
         // The code says what happened, so a log a person reads does not have to guess between a network drop and a
-        // control plane that refused the socket. A refusal before the upgrade is the error listener's to report.
-        if (event.code === AGENT_CLOSE.tooManyPending) {
-          log.warn("agent.saturated", { code: event.code, reason: event.reason, connected });
-        } else if (event.code !== 1000 && event.code !== 1001) {
-          log.warn("agent.disconnected", { code: event.code, reason: event.reason, connected });
+        // control plane that refused the socket. A session already ended was reported by whoever ended it: a refusal
+        // before the upgrade is the error listener's, which Bun follows with a 1006 close that is not a second event.
+        if (!settled) {
+          if (event.code === AGENT_CLOSE.tooManyPending) {
+            log.warn("agent.saturated", { code: event.code, reason: event.reason, connected });
+          } else if (event.code === 1000 || event.code === 1001) {
+            // A normal close, such as the control plane restarting: not a fault, but a person reading why the agent
+            // reconnected should see it.
+            log.info("agent.closed", { code: event.code, reason: event.reason, connected });
+          } else {
+            log.warn("agent.disconnected", { code: event.code, reason: event.reason, connected });
+          }
         }
         finish({ dormant: false, connected });
       });

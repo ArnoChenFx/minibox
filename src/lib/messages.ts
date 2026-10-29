@@ -429,6 +429,8 @@ export const MESSAGES = {
   agent_refused_protocol: "This MiniBox speaks agent protocol {protocol}. Update the agent image.",
   agent_pending_limit:
     "Too many agent sockets are waiting to authenticate (at most {max} from one address). A real agent retries on its own; anything else should stop.",
+  agent_pending_total_limit:
+    "Too many agent sockets are waiting to authenticate across all addresses (at most {max} in total). A real agent retries on its own; anything else should stop.",
   agent_pending_limit_hint:
     "A socket that never sends a hello holds a place until it times out. If a real agent is refused, check for a proxy or tunnel in front of MiniBox: with TRUST_PROXY off, every client shares one address and one limit.",
   runtime_unsupported: "This host cannot run that operation: {detail}",

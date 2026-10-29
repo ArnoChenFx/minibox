@@ -52,13 +52,14 @@ const SSH_PATH = /^\/api\/ssh\/(?!host-key$)([^/]+)$/;
 const MB = 1024 * 1024;
 const PACKAGE_BODY_SLACK_BYTES = MB;
 /**
- * The largest WebSocket frame MiniBox accepts, on every socket kind, instead of Bun's 16 MiB default. The largest real
- * frame is an agent's one-shot `containerLogs` answer, which carries at most 5,000 lines, or a preview's forwarded frame
- * from whatever app is behind it; a terminal frame is a resize. It matches the bytes a socket may leave unread
- * (`BACKPRESSURE_LIMIT_BYTES`), so a frame and a queue are bounded by the same number. A socket that sends more is
- * closed with `1009`. A socket that has not proved who it is is held far lower, by `AGENT_HELLO_MAX_BYTES`.
+ * The largest WebSocket frame Bun accepts on any socket, set to Bun's own 16 MiB default so the number is written down.
+ * Bun applies one limit to every socket kind, so it has to fit the largest authenticated frame: an agent's one-shot
+ * `containerLogs` answer, which the engine adapter keeps to `MAX_LOG_READ_BYTES` of text (JSON escaping may grow it), a
+ * preview's forwarded frame from whatever app is behind it, or a large terminal paste. A socket that sends more is
+ * closed with `1009`. A socket that has not proved who it is is held far lower, to `AGENT_HELLO_MAX_BYTES`, by the
+ * agent hub before it parses anything.
  */
-export const MAX_SOCKET_FRAME_BYTES = BACKPRESSURE_LIMIT_BYTES;
+export const MAX_SOCKET_FRAME_BYTES = 16 * MB;
 const PROXY_HINT =
   "Proxy headers arrived while TRUST_PROXY is off, so they are ignored. Behind a reverse proxy you control that overwrites them, set TRUST_PROXY=true (and ALLOWED_ORIGINS to its public address if it rewrites Host). A same-host tunnel such as OpenTunnel adds none of these headers, so leave TRUST_PROXY off and ignore this warning.";
 
@@ -68,8 +69,9 @@ function addressOf(app: App, req: Request, server: Pick<Server<unknown>, "reques
 }
 
 /** The 429 an agent socket past a pending limit is answered with, before it is upgraded. */
-function pendingLimitError(refusal: PendingRefusal): AppError {
-  return new AppError(429, "too_many_requests", msg("agent_pending_limit", { max: refusal.max }), refusal, {
+export function pendingLimitError(refusal: PendingRefusal): AppError {
+  const key = refusal.scope === "total" ? "agent_pending_total_limit" : "agent_pending_limit";
+  return new AppError(429, "too_many_requests", msg(key, { max: refusal.max }), refusal, {
     hint: msg("agent_pending_limit_hint"),
   });
 }
@@ -319,8 +321,8 @@ export function startServer(app: App): Server<SocketData> {
       return withSecurityHeaders(res, isSecureRequest(req, app.cfg.trustProxy));
     },
     websocket: {
-      // Bun's default is 16 MiB of decompressed frame for every socket. This bounds what one socket may hold instead, and
-      // what a socket that never authenticates may spend on a parse is bounded far lower, in `AgentHub.receive`.
+      // One limit for every socket kind (Bun has no per-socket limit). What a socket that never authenticates may spend
+      // on a parse is bounded far lower, in `AgentHub.receive`.
       maxPayloadLength: MAX_SOCKET_FRAME_BYTES,
       open: async (ws) => {
         if (ws.data && "kind" in ws.data && ws.data.kind === "preview") {

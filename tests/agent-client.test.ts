@@ -12,13 +12,25 @@ const NONCE = "n".repeat(32);
 
 /** A WebSocket stand-in: the test feeds it frames and watches what the client sends. */
 class FakeSocket {
-  readyState = 1;
+  readyState = 0;
   readonly sent: Array<Record<string, unknown>> = [];
   readonly closes: Array<{ code: number | undefined; reason: string | undefined }> = [];
   private readonly listeners = new Map<
     string,
     Array<(event: { data?: unknown; code?: number; reason?: string; message?: string }) => void>
   >();
+
+  /** Opens on its own once the client has listened, as a socket that dials at once does, unless told to wait. */
+  constructor(autoOpen = true) {
+    if (autoOpen) queueMicrotask(() => this.open());
+  }
+
+  /** The dial finishing: DNS, TCP, TLS and the upgrade are done. */
+  open(): void {
+    if (this.readyState !== 0) return;
+    this.readyState = 1;
+    this.dispatch("open", {});
+  }
 
   addEventListener(
     type: string,
@@ -40,6 +52,7 @@ class FakeSocket {
 
   /** A frame from the control plane. */
   receive(frame: Record<string, unknown>): void {
+    this.open();
     this.dispatch("message", { data: JSON.stringify(frame) });
   }
 
@@ -61,7 +74,8 @@ class FakeSocket {
     this.dispatch("error", {
       message: `WebSocket connection to 'ws://minibox.example.com/api/agent/connect' failed: Expected 101 status code: ${status}`,
     });
-    this.dispatch("close", {});
+    // Bun follows a refused upgrade with an abnormal close, as a probe against a real server shows.
+    this.dispatch("close", { code: 1006, reason: "" });
   }
 
   framesOf(type: string): Array<Record<string, unknown>> {
@@ -79,7 +93,9 @@ beforeEach(() => {
 });
 afterEach(() => restoreLogs());
 
-function setup(overrides: { heartbeatMs?: number } = {}) {
+function setup(
+  overrides: { heartbeatMs?: number; connectTimeoutMs?: number; helloTimeoutMs?: number; autoOpen?: boolean } = {},
+) {
   const pair = generateKeyPairSync("ed25519");
   const sockets: FakeSocket[] = [];
   const runtime = new FakeRuntime();
@@ -92,8 +108,10 @@ function setup(overrides: { heartbeatMs?: number } = {}) {
     minBackoffMs: 5,
     maxBackoffMs: 10,
     heartbeatMs: overrides.heartbeatMs ?? 60_000,
+    ...(overrides.connectTimeoutMs === undefined ? {} : { connectTimeoutMs: overrides.connectTimeoutMs }),
+    ...(overrides.helloTimeoutMs === undefined ? {} : { helloTimeoutMs: overrides.helloTimeoutMs }),
     openSocket: () => {
-      const socket = new FakeSocket();
+      const socket = new FakeSocket(overrides.autoOpen ?? true);
       sockets.push(socket);
       return socket as unknown as WebSocket;
     },
@@ -268,6 +286,8 @@ describe("a saturated control plane", () => {
       expect(saturated).toHaveLength(1);
       expect(JSON.parse(saturated[0] ?? "{}")).toMatchObject({ status: 429, connected: false });
       expect(logs.lines.filter((line) => line.includes("agent.socket_error"))).toHaveLength(0);
+      // The 1006 close Bun sends after the refusal belongs to the same event, so it is not logged as a second one.
+      expect(logs.lines.filter((line) => line.includes("agent.disconnected"))).toHaveLength(0);
     } finally {
       client.stop();
       await done;
@@ -293,6 +313,26 @@ describe("a saturated control plane", () => {
     }
   });
 
+  test("a normal close, such as the control plane restarting, is logged at info with its code, and the agent dials again", async () => {
+    const { client, sockets } = setup();
+    const lines: Array<{ level: string; line: string }> = [];
+    const restore = setLogSink((level, line) => lines.push({ level, line }));
+    const done = client.run();
+    try {
+      sockets[0]?.closeWith(1001, "server stopping");
+      await waitFor(() => sockets.length === 2, "a second connection");
+      const closed = lines.filter((entry) => entry.line.includes("agent.closed"));
+      expect(closed).toHaveLength(1);
+      expect(closed[0]?.level).toBe("info");
+      expect(JSON.parse(closed[0]?.line ?? "{}")).toMatchObject({ code: 1001, reason: "server stopping" });
+      expect(lines.filter((entry) => entry.line.includes("agent.disconnected"))).toHaveLength(0);
+    } finally {
+      client.stop();
+      await done;
+      restore();
+    }
+  });
+
   test("the handshake status is read from the error text, and unknown text is no status at all", () => {
     // Bun's client, as it actually reports a refused upgrade.
     expect(
@@ -303,5 +343,53 @@ describe("a saturated control plane", () => {
     expect(handshakeStatus("failed: HTTP 401")).toBe(401);
     expect(handshakeStatus("socket hang up")).toBeNull();
     expect(handshakeStatus("")).toBeNull();
+  });
+});
+
+describe("the agent's timers", () => {
+  test("the hello timeout starts when the socket opens, so a slow dial does not spend it", async () => {
+    const { client, sockets } = setup({ autoOpen: false, helloTimeoutMs: 30, connectTimeoutMs: 10_000 });
+    const done = client.run();
+    try {
+      await waitFor(() => sockets.length === 1, "the first dial");
+      // Longer than the hello timeout, still dialing: nothing closes the socket.
+      await Bun.sleep(90);
+      expect(sockets[0]?.closes).toHaveLength(0);
+      sockets[0]?.open();
+      // Open and silent: now the hello timeout runs, and the agent closes the socket and dials again.
+      await waitFor(() => (sockets[0]?.closes.length ?? 0) === 1, "the hello timeout to close the socket");
+      await waitFor(() => sockets.length === 2, "a second dial");
+    } finally {
+      client.stop();
+      await done;
+    }
+  });
+
+  test("a dial that never opens is given up after the connect timeout, and the agent dials again", async () => {
+    const { client, sockets } = setup({ autoOpen: false, connectTimeoutMs: 30, helloTimeoutMs: 10_000 });
+    const done = client.run();
+    try {
+      await waitFor(() => (sockets[0]?.closes.length ?? 0) === 1, "the connect timeout to close the socket");
+      await waitFor(() => sockets.length === 2, "a second dial");
+    } finally {
+      client.stop();
+      await done;
+    }
+  });
+
+  test("the welcome stops the hello timeout, so a connected agent is not closed by it", async () => {
+    const { client, sockets } = setup({ helloTimeoutMs: 30 });
+    const done = client.run();
+    try {
+      await waitFor(() => sockets.length === 1, "the first dial");
+      sockets[0]?.receive({ type: "welcome", hostId: "edge", protocol: AGENT_PROTOCOL });
+      await waitFor(() => client.connectionState === "connected", "the welcome");
+      await Bun.sleep(90);
+      expect(sockets[0]?.closes).toHaveLength(0);
+      expect(sockets).toHaveLength(1);
+    } finally {
+      client.stop();
+      await done;
+    }
   });
 });

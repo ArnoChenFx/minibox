@@ -22,7 +22,7 @@ import {
 import { PairingBook } from "../src/host/agent/pairing";
 import { AgentStore } from "../src/host/agent/store";
 import { setLogSink } from "../src/lib/logger";
-import { startServer } from "../src/server";
+import { pendingLimitError, startServer } from "../src/server";
 import { createTestApp, silenceLogs } from "./support/app";
 
 const AGENT_VERSION = "0.4.0";
@@ -430,3 +430,20 @@ async function waitFor(condition: () => boolean, what: string): Promise<void> {
     await Bun.sleep(2);
   }
 }
+
+describe("the 429 says which limit was reached", () => {
+  test("one address over its limit is told about its address; the total over its limit is told about every address", () => {
+    const address = pendingLimitError({ scope: "address", pending: 8, max: 8 });
+    expect(address.status).toBe(429);
+    expect(address.key).toBe("agent_pending_limit");
+    expect(address.message).toContain("from one address");
+
+    const total = pendingLimitError({ scope: "total", pending: 256, max: 256 });
+    expect(total.status).toBe(429);
+    expect(total.key).toBe("agent_pending_total_limit");
+    expect(total.message).toContain("across all addresses");
+    expect(total.message).toContain("256");
+    expect(total.message).not.toContain("from one address");
+    expect(total.details).toEqual({ scope: "total", pending: 256, max: 256 });
+  });
+});

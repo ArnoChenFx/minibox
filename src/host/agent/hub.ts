@@ -57,7 +57,8 @@ export const AGENT_PENDING_MAX = 64;
 /**
  * The most bytes a socket may send before its hello verifies. A hello is a few hundred bytes, so a socket that has not
  * proved who it is has no use for a large frame; the limit is checked before the frame is parsed. Authenticated frames
- * are not bounded here: a `containerLogs` answer is one frame and may hold several MiB of lines.
+ * are not bounded here, only by the server's frame limit (`MAX_SOCKET_FRAME_BYTES`, 16 MiB): a `containerLogs` answer is
+ * one frame, which the engine adapter keeps to `MAX_LOG_READ_BYTES` of text.
  */
 export const AGENT_HELLO_MAX_BYTES = 4 * 1024;
 

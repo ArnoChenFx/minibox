@@ -40,6 +40,38 @@ export function demuxLogs(buf: Buffer): string {
 }
 
 /**
+ * The most bytes of text one log read returns. A read is capped at `LIMITS.maxLogTail` lines, but lines have no length
+ * limit, so 5,000 long lines could make a reply of tens of MiB: on an agent host that is one WebSocket frame, and a frame
+ * past `MAX_SOCKET_FRAME_BYTES` closes the whole agent connection. 2 MiB leaves room for JSON escaping in that frame.
+ */
+export const MAX_LOG_READ_BYTES = 2 * 1024 * 1024;
+
+/** The line a log read starts with when older output was cut to fit `MAX_LOG_READ_BYTES`. */
+export const logsOmittedMarker = (bytes: number): string =>
+  `[minibox: ${bytes} bytes of older output omitted; ask for fewer lines or follow the stream to see them]\n`;
+
+/**
+ * Keeps the newest `max` bytes of a log read, starting at a whole line, and says how much older output it dropped. A
+ * read that fits is returned as it is.
+ */
+export function boundLogBytes(text: string, max = MAX_LOG_READ_BYTES): string {
+  const bytes = Buffer.from(text, "utf8");
+  if (bytes.length <= max) return text;
+  let start = bytes.length - max;
+  const newline = bytes.indexOf(NEWLINE, start - 1);
+  // Start after a newline, so the first kept line is whole; one line longer than the budget is cut at a character.
+  start = newline !== -1 && newline + 1 < bytes.length ? newline + 1 : charBoundaryForward(bytes, start);
+  return logsOmittedMarker(start) + bytes.subarray(start).toString("utf8");
+}
+
+/** The first cut at or after `at` that does not split a UTF-8 character. */
+function charBoundaryForward(bytes: Buffer, at: number): number {
+  let cut = at;
+  while (cut < bytes.length && ((bytes[cut] ?? 0) & 0xc0) === 0x80) cut += 1;
+  return cut;
+}
+
+/**
  * The first cut at or before `at` that does not split a UTF-8 character. A run of continuation bytes that is not a
  * character returns `at` itself, so the cut always moves forward.
  */

@@ -316,6 +316,8 @@ export default {
   "err.agent_refused_protocol": "当前 MiniBox 使用 Agent 协议 {protocol}。请更新 Agent 镜像。",
   "err.agent_pending_limit":
     "等待认证的 Agent 连接太多（同一地址最多 {max} 个）。真实的 Agent 会自己重试，其他程序请停止连接。",
+  "err.agent_pending_total_limit":
+    "所有地址上等待认证的 Agent 连接太多（总共最多 {max} 个）。真实的 Agent 会自己重试，其他程序请停止连接。",
   "err.agent_pending_limit_hint":
     "从不发送 hello 的连接会一直占着名额，直到超时。如果真实 Agent 被拒绝，请检查 MiniBox 前面的代理或隧道：TRUST_PROXY 关闭时，所有客户端共用一个地址和同一个上限。",
   "err.runtime_unsupported": "该宿主机无法执行此操作：{detail}",

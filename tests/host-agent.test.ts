@@ -44,6 +44,9 @@ async function waitFor(condition: () => boolean, what: string): Promise<void> {
   }
 }
 
+/** One 1,200-byte log line, numbered so the first and last kept can be told apart. */
+const logLine = (i: number) => `${String(i).padStart(6, "0")} ${"x".repeat(1_192)}\n`;
+
 describe("pairing codes", () => {
   test("a typed code is read the way it was meant: case, spaces, dashes and look-alike letters do not matter", () => {
     expect(normalizeCode("ab12c-d3fO")).toBe("AB12CD3F0");
@@ -312,6 +315,32 @@ describe("the control plane's agent API, over HTTP and a real socket", () => {
       status: "online",
       agent: { connected: true, version: AGENT_VERSION },
     });
+  });
+
+  test("a log read past 4 MiB comes back over the agent's socket in one frame, and the agent stays connected", async () => {
+    const { code } = (await (await post("/api/hosts/pairing", { id: "edge", name: "Edge" })).json()) as {
+      code: string;
+    };
+    const stored = await enrollAgent(code, tempDir());
+    runAgent(stored, edgeEngine);
+    await waitFor(() => app.agents.status(stored.identity.agentId)?.connected === true, "the agent to connect");
+    await waitFor(() => app.hosts.get("edge").host.status === "online", "the host to go online");
+    const made = await post("/api/boxes", { name: "chatty", cpus: 1, memoryMb: 256, host: "edge" });
+    expect(made.status).toBe(201);
+    const box = ((await made.json()) as { box: { id: string } }).box;
+
+    // 5,000 lines of 1,200 bytes: about 6 MiB, past the 4 MiB a frame was once held to, in one `containerLogs` answer.
+    edgeEngine.appendLogs(box.id, Array.from({ length: 5_000 }, (_, i) => logLine(i)).join(""));
+    const read = await api(`/api/boxes/chatty/logs?tail=5000`);
+    expect(read.status).toBe(200);
+    const { logs } = (await read.json()) as { logs: string };
+    expect(Buffer.byteLength(logs)).toBeGreaterThan(4 * 1024 * 1024);
+    expect(logs.startsWith(logLine(0))).toBe(true);
+    expect(logs.endsWith(logLine(4_999))).toBe(true);
+
+    // The same socket answers the next call: the large frame did not close it.
+    expect(app.agents.status(stored.identity.agentId)?.connected).toBe(true);
+    expect((await api(`/api/boxes/chatty/logs?tail=1`)).status).toBe(200);
   });
 
   test("a revoked agent is dropped at once, cannot dial in again, and its host is offline", async () => {

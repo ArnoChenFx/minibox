@@ -56,18 +56,18 @@ Keep the volume to keep the agent's identity. If the key file is lost, the agent
 
 Event and log readers buffer at most 1,024 items or 4 MiB per stream. If a consumer falls behind that budget, MiniBox cancels that stream and reports an `unavailable` buffer-limit error instead of silently dropping frames. Other streams and the host connection continue working. Retry the reader after resolving the slow consumer. Aborting a reader discards its pending items; an ordinary stream end still delivers buffered items before its final error, if any.
 
-The agent opens a WebSocket to `/api/agent/connect` on the MiniBox address, using `wss://` for `https://` and `ws://` for `http://`. It proves its identity by signing a challenge that the server sends on each connection with its private key. The server must receive that hello within 5 seconds, or it closes the connection.
+The agent opens a WebSocket to `/api/agent/connect` on the MiniBox address, using `wss://` for `https://` and `ws://` for `http://`. It proves its identity by signing a challenge that the server sends on each connection with its private key. The server must receive that hello within 5 seconds of the connection opening, or it closes the connection. The agent gives dialing (DNS, TCP, TLS and the upgrade) its own 30 seconds, so a slow link does not spend the hello's time.
 
 A connection that is not yet authenticated holds one of a limited number of places, so a flood of sockets that never say hello is refused rather than kept open; an authenticated agent holds no such place. There are two limits, both constants rather than settings:
 
 - **Per address, 8 sockets.** One caller cannot take every place there is. A socket past the limit is answered `429` **before** the upgrade, with the error key `agent_pending_limit`, so nothing is opened at all.
-- **In total, 64 sockets.** This is the backstop, so a crowd spread over many addresses cannot take the door either. A socket past it is answered `429` the same way.
+- **In total, 64 sockets.** This is the backstop, so a crowd spread over many addresses cannot take the door either. A socket past it is answered `429` the same way, with the error key `agent_pending_total_limit`.
 
 A socket that gets through the upgrade but is past a limit as it opens is closed with `4411` instead. Either way the agent retries with backoff: it is a real agent, and the places are held only until the sockets holding them time out.
 
 The address is the connection's TCP peer, or the client address in `X-Forwarded-For` when `TRUST_PROXY` is on. **With `TRUST_PROXY` off, a reverse proxy or tunnel in front of MiniBox makes every client share one address, and therefore one 8-socket limit.** If real agents are refused with `agent_pending_limit` behind such a proxy, turn `TRUST_PROXY` on (only behind a proxy you control that overwrites the header), or connect the agents directly.
 
-A socket that has not sent its hello yet may not send a frame larger than 4 KiB; one that does is closed with `1009`. A hello is a few hundred bytes, so no real handshake is affected.
+A socket that has not sent its hello yet may not send a frame larger than 4 KiB; one that does is closed with `1009`. A hello is a few hundred bytes, so no real handshake is affected. After the hello, a frame may be up to 16 MiB, the limit every MiniBox socket shares. A one-shot log read returns at most 2 MiB of text: the newest whole lines, after a line that says how many bytes of older output were left out. Follow the log stream to see everything.
 
 While connected, the agent sends a heartbeat every 10 seconds. The server closes a connection that stays silent for 30 seconds. After a disconnect, the agent reconnects with exponential backoff, starting at 1 second, doubling to at most 30 seconds, with about 20 percent of jitter either way.
 
@@ -84,7 +84,7 @@ The server closes a connection with one of these codes:
 | `4411` | Too many connections were already waiting for a hello (8 from one address, or 64 in total), so this one was closed without being challenged. The agent retries. |
 | `4426` | The agent speaks another protocol version. Update the image. |
 
-A refusal before the upgrade is an HTTP status, not a close code: `429` with `agent_pending_limit` means a pending limit was reached, and the agent logs it as `agent.saturated` and retries. The agent logs every close with its code, so a log line tells a saturation (`4411`) apart from a network drop (`1006`) or a revocation (`4403`).
+A refusal before the upgrade is an HTTP status, not a close code: `429` with `agent_pending_limit` or `agent_pending_total_limit` means a pending limit was reached, and the agent logs it as `agent.saturated` and retries. The agent logs every close with its code (`agent.closed` at info for a normal `1000`/`1001`, such as a server restart), so a log line tells a saturation (`4411`) apart from a network drop (`1006`) or a revocation (`4403`).
 
 ## Protocol version
 
