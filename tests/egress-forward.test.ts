@@ -189,6 +189,62 @@ describe("deciding what FORWARD does with the uplink", () => {
     expect(verdict.detail).toContain("iptables");
     expect(verdict.detail).toContain("iptables-legacy");
   });
+
+  test("a RETURN inside a jumped-to chain hands the packet back, so FORWARD's next rule still decides", () => {
+    // Docker leaves DOCKER-USER as RETURN-then-nothing; a user who put a DROP after the RETURN there must not be read as
+    // dropping the uplink, since iptables never reaches that DROP once RETURN matched.
+    const verdict = judgeForwardReport(
+      report([BRIDGE], {
+        iptables: [
+          "-P FORWARD DROP",
+          "-A FORWARD -j DOCKER-USER",
+          `-A FORWARD -i ${BRIDGE} -j ACCEPT`,
+          "-A DOCKER-USER -j RETURN",
+          "-A DOCKER-USER -j DROP",
+        ],
+      }),
+      PROBE,
+    );
+    expect(verdict.dropped).toBe(false);
+    expect(verdict.backends[0]?.reason).toContain("accepts");
+  });
+
+  test("a RETURN in FORWARD itself ends the traversal, so the policy decides and an accept below it never runs", () => {
+    const verdict = judgeForwardReport(
+      report([BRIDGE], { iptables: ["-P FORWARD DROP", "-A FORWARD -j RETURN", `-A FORWARD -i ${BRIDGE} -j ACCEPT`] }),
+      PROBE,
+    );
+    expect(verdict.dropped).toBe(true);
+    expect(verdict.backends[0]?.reason).toContain("policy is DROP");
+  });
+
+  test("a jump that returns leaves the caller's own accept rule to decide, and one that drops is the answer", () => {
+    const afterReturn = judgeForwardReport(
+      report([BRIDGE], {
+        iptables: [
+          "-P FORWARD DROP",
+          `-A FORWARD -i ${BRIDGE} -j MINIBOX-CHECK`,
+          `-A FORWARD -i ${BRIDGE} -j ACCEPT`,
+          "-A MINIBOX-CHECK -j RETURN",
+        ],
+      }),
+      PROBE,
+    );
+    expect(afterReturn.dropped).toBe(false);
+
+    const dropped = judgeForwardReport(
+      report([BRIDGE], {
+        iptables: [
+          "-P FORWARD ACCEPT",
+          `-A FORWARD -i ${BRIDGE} -j MINIBOX-CHECK`,
+          `-A FORWARD -i ${BRIDGE} -j ACCEPT`,
+          "-A MINIBOX-CHECK -j DROP",
+        ],
+      }),
+      PROBE,
+    );
+    expect(dropped.dropped).toBe(true);
+  });
 });
 
 describe("the helper scripts", () => {

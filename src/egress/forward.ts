@@ -198,14 +198,23 @@ function ruleMatches(rule: ParsedRule, probe: ForwardProbe, source: number): boo
   return matched;
 }
 
-/** Walks one chain, following jumps, and stops at the first verdict. `none` means the chain fell through. */
-function decide(
-  chains: Map<string, Chain>,
-  name: string,
-  probe: ForwardProbe,
-  source: number,
-  depth = 0,
-): "accept" | "drop" | "none" {
+/** The chains iptables itself owns. A `RETURN` means something different in one of these. */
+const BUILT_IN_CHAINS = new Set(["INPUT", "FORWARD", "OUTPUT"]);
+
+/**
+ * What one chain decided. `return` is the packet leaving this chain without a verdict: back to the chain that jumped here,
+ * or, from a built-in chain, to its policy. `none` is the chain falling off its end, which also returns to the caller.
+ */
+type Decision = "accept" | "drop" | "return" | "none";
+
+/**
+ * Walks one chain, following jumps, and stops at the first verdict. iptables' `RETURN` is two different things, and both
+ * directions were wrong before: in a chain of MiniBox's own it ends that chain only, so the chain that jumped here goes on
+ * with its next rule, while in `FORWARD` itself it ends the traversal, so the policy decides. Reading it as "skip to the
+ * next rule of the same chain" both reported a drop on a host that forwards (Docker's `DOCKER-USER` returns first) and
+ * missed a real drop when `FORWARD` returned before its accept rules.
+ */
+function decide(chains: Map<string, Chain>, name: string, probe: ForwardProbe, source: number, depth = 0): Decision {
   if (depth > MAX_DEPTH) return "none";
   const chain = chains.get(name);
   if (!chain) return "none";
@@ -217,10 +226,14 @@ function decide(
       case "drop":
         return "drop";
       case "return":
-        break;
+        // `RETURN` in a built-in chain ends the traversal, which leaves the packet to the chain's policy.
+        if (BUILT_IN_CHAINS.has(name)) return "return";
+        // In a chain of its own it ends only that chain, and the caller carries on with its next rule.
+        return "none";
       case "chain": {
         const inner = decide(chains, rule.target.name, probe, source, depth + 1);
-        if (inner !== "none") return inner;
+        // A jump that returns decides nothing, so the caller keeps walking; one that accepted or dropped is the answer.
+        if (inner === "accept" || inner === "drop") return inner;
         break;
       }
       default:
