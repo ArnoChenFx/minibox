@@ -113,7 +113,7 @@ The snapshot is a manual checkpoint, so [retention](checkpoints.md#checkpoint-li
 
 A cache volume and the shared tools volume are never part of a checkpoint, so their **Snapshot** button is off. A volume the engine has lost cannot be snapshotted either, since a copy would only create it again empty.
 
-The command line snapshots a volume too: `minibox volume snapshot <id|name> [--label TEXT] [--pin]`, which prints the checkpoint's id.
+The command line snapshots a volume too: `minibox volume snapshot <id|name> [--label TEXT] [--pin] [--no-wait]`, which prints the checkpoint's id, or with `--no-wait` the id of the task that takes it.
 
 ## Delete a volume
 
