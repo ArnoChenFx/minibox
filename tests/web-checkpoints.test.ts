@@ -691,7 +691,7 @@ describe("copy to host", () => {
   test("the copy form offers every host but the one the checkpoint is kept on, and says what a copy makes", () => {
     const html = markup.copyForm ?? "";
     expect(html).not.toContain('<option value="local"');
-    expect(html).toContain('<option value="host_b">Host B</option>');
+    expect(html).toContain('<option value="host_b" selected>Host B</option>');
     expect(html).toContain(escaped(en["ck.copyHostHelp"] ?? ""));
     expect(html).toContain(escaped(en["ck.copyHow"] ?? ""));
   });
@@ -1031,5 +1031,52 @@ describe("checkpoint translations", () => {
     const used = new Set([...built, ...quotedKeys(COMPONENT), ...quotedKeys(STATE), ...quotedKeys(STORAGE)]);
     const unused = Object.keys(en).filter((key) => key.startsWith("ck.") && !used.has(key));
     expect(unused).toEqual([]);
+  });
+});
+
+describe("an agent host as the target of an import or a copy", () => {
+  const hosts = [
+    { id: "local", name: "Local", transport: "local" },
+    { id: "edge", name: "Edge lab", transport: "agent" },
+    { id: "host_b", name: "Host B", transport: "unix" },
+  ];
+  const agentOnly = [
+    { id: "local", name: "Local", transport: "local" },
+    { id: "edge", name: "Edge lab", transport: "agent" },
+  ];
+  const onLocal = checkpoint({ id: "ck_local", hostId: "local", label: "kept here" });
+  const forms = runConsole<Markup>(
+    "en",
+    { hosts, agentOnly, onLocal },
+    `return {
+      importOnAgent: component.importFormHtml({ hosts: fixtures.hosts, host: "edge" }),
+      importOnB: component.importFormHtml({ hosts: fixtures.hosts, host: "host_b" }),
+      copy: component.copyFormHtml({ hosts: fixtures.hosts, from: "local" }),
+      rowSeveral: component.checkpointRowHtml(fixtures.onLocal, { hosts: fixtures.hosts, boxHostId: "local" }),
+      rowAgentOnly: component.checkpointRowHtml(fixtures.onLocal, { hosts: fixtures.agentOnly, boxHostId: "local" }),
+    };`,
+  );
+  const agentOption = escaped((en["ck.agentHostOption"] ?? "").replace("{name}", "Edge lab"));
+
+  test("an import lists the agent host but cannot pick it, and starts on a host that can hold the checkpoint", () => {
+    const html = forms.importOnAgent ?? "";
+    expect(html).toContain(`<option value="edge" disabled>${agentOption}</option>`);
+    // The page's host filter named the agent host; the form starts on the first host that can take the import instead.
+    expect(html).toContain('<option value="local" selected>Local</option>');
+    expect(html).not.toMatch(/value="edge" selected/);
+    expect(forms.importOnB ?? "").toContain('<option value="host_b" selected>Host B</option>');
+  });
+
+  test("a copy lists the agent host but cannot pick it", () => {
+    const html = forms.copy ?? "";
+    expect(html).toContain(`<option value="edge" disabled>${agentOption}</option>`);
+    expect(html).toContain('<option value="host_b" selected>Host B</option>');
+  });
+
+  test("the copy button is off, with the reason, when every other host is an agent host", () => {
+    expect(isDisabled(buttonFor(forms.rowSeveral ?? "", "ck-copy", "ck_local"))).toBe(false);
+    const off = buttonFor(forms.rowAgentOnly ?? "", "ck-copy", "ck_local");
+    expect(isDisabled(off)).toBe(true);
+    expect(titleOf(off)).toBe(escaped(en["ck.reasonCopyAgentOnly"] ?? ""));
   });
 });

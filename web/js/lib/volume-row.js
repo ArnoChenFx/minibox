@@ -1,5 +1,7 @@
 /** What the storage page's volume rows need beyond the volume: its latest checkpoint, and how to snapshot it. */
 
+import { hostOnAgentTransport } from "./host-list.js";
+
 /** The newest checkpoint that holds each volume, by volume id. */
 export function latestByVolume(checkpoints) {
   const latest = new Map();
@@ -28,6 +30,14 @@ export function snapshotPlan(volume) {
   }
   return { block: "", own: true, boxId: null, boxName: null, include: [volume.id] };
 }
+
+/**
+ * Why a volume on an agent host cannot be browsed, measured or snapshotted, as the i18n key of the reason, or "" when it
+ * can. An agent runs boxes only: the file browser and the usage reading both need a helper container, and a checkpoint
+ * commits a system image and copies the volume through one, so all three are refused there. A host the list does not
+ * name yet is not called an agent, so a page that opens before the host list loads keeps every button.
+ */
+export const agentVolumeBlock = (volume, hosts) => (hostOnAgentTransport(volume.hostId, hosts) ? "vol.agentHost" : "");
 
 /**
  * The boxes that will mount each volume once their staged changes apply, by volume id. A box that already mounts the

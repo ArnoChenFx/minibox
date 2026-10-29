@@ -37,6 +37,57 @@ describe.skipIf(!executablePath)("dialog form spacing (real browser)", () => {
     ["zh-CN", 1280],
     ["en", 390],
   ] as const) {
+    test(`the add-host dialog keeps the method selector apart from either form it reveals (${locale}, ${width}px)`, async () => {
+      const context = await browser.newContext({ locale, viewport: { width, height: 900 } });
+      expect((await context.request.post(`${url}/api/auth/login`, { data: { key: TEST_KEY } })).status()).toBe(200);
+      const page = await context.newPage();
+      await page.goto(`${url}/#/settings/hosts`);
+      await page.waitForSelector("#stHostAdd");
+      await page.click("#stHostAdd");
+      await page.waitForSelector('[data-method-panel="agent"]:not([hidden])');
+      // The dialog opens with a small scale animation, so the gaps are read with a little slack. Both panels are measured,
+      // because the endpoint panel is the second sibling of the selector, not the one it is adjacent to.
+      const gaps = (await page.evaluate(`(async () => {
+        const box = (selector) => document.querySelector(selector).getBoundingClientRect();
+        const panelGap = (method) => {
+          document.querySelector("[data-method='" + method + "']").click();
+          return box(".dialog-body > [data-method-panel='" + method + "']").top - box(".dialog-body > .segmented").bottom;
+        };
+        const firstField = (method) => {
+          const panel = box(".dialog-body > [data-method-panel='" + method + "']");
+          const field = box(".dialog-body > [data-method-panel='" + method + "'] .field");
+          return field.top - panel.top;
+        };
+        const agentToField = firstField("agent");
+        const agentToPanel = panelGap("agent");
+        await new Promise((resolve) => setTimeout(resolve, 60));
+        const endpointToPanel = panelGap("endpoint");
+        const endpointToField = firstField("endpoint");
+        // The reference is the gap between two blocks of the same dialog that were already apart: the form's own fields.
+        await new Promise((resolve) => setTimeout(resolve, 60));
+        const form = document.querySelector("[data-method-panel='endpoint'] #stHostForm");
+        const blocks = form.querySelectorAll(":scope > .grid, :scope > .field:not([hidden])");
+        return {
+          agentToPanel,
+          endpointToPanel,
+          agentToField,
+          endpointToField,
+          stackGap: blocks[1].getBoundingClientRect().top - blocks[0].getBoundingClientRect().bottom,
+        };
+      })()`)) as Record<"agentToPanel" | "endpointToPanel" | "agentToField" | "endpointToField" | "stackGap", number>;
+      // The method selector and each form it reveals are two blocks, one dialog gap apart: the 16px the form's own fields
+      // keep, not the 4px hint gap under a row of choices. The endpoint panel is the second sibling, so a `+` selector
+      // would leave it at 0px.
+      for (const gap of [gaps.agentToPanel, gaps.endpointToPanel]) {
+        expect(gap).toBeGreaterThan(0);
+        expect(Math.abs(gap - gaps.stackGap)).toBeLessThanOrEqual(2);
+      }
+      // Neither panel adds spacing of its own, so each form starts where its panel does.
+      expect(gaps.agentToField).toBe(0);
+      expect(gaps.endpointToField).toBe(0);
+      await context.close();
+    }, 30_000);
+
     test(`the create-checkpoint form keeps its hint, checkbox and footer apart (${locale}, ${width}px)`, async () => {
       const context = await browser.newContext({ locale, viewport: { width, height: 900 } });
       expect((await context.request.post(`${url}/api/auth/login`, { data: { key: TEST_KEY } })).status()).toBe(200);

@@ -435,7 +435,7 @@ export const MESSAGES = {
     "A socket that never sends a hello holds a place until it times out. If a real agent is refused, check for a proxy or tunnel in front of MiniBox: with TRUST_PROXY off, every client shares one address and one limit.",
   runtime_unsupported: "This host cannot run that operation: {detail}",
   move_agent_unsupported:
-    "A box cannot move to or from an agent host yet, because an agent does not copy images or volumes. Create the box on the agent host instead.",
+    "A box cannot move to or from an agent host yet, because an agent copies neither images nor volumes. Create the box on the host you want it on instead.",
   preview_agent_unsupported: "Port preview is not supported on agent hosts yet.",
   box_moving: "This box is moving to another host. Try again when the move finishes.",
   box_changing: "This box is being rebuilt or updated. Try the move again when that finishes.",

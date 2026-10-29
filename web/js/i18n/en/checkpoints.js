@@ -144,6 +144,10 @@ export default {
     "Adds a checkpoint from a package exported by MiniBox. The package opens only with the passphrase it was sealed with.",
   "ck.importFile": "Package file",
   "ck.importFileHelp": "A .mbckpt file, as exported from a MiniBox instance.",
+  "ck.reasonCopyAgentOnly": "Every other host is an agent host, which cannot hold checkpoints.",
+  "ck.agentHostOption": "{name} (agent host: cannot hold checkpoints)",
+  "ck.agentNote":
+    "A box on an agent host cannot take a checkpoint, because an agent runs boxes only, so its camera button is off. Its checkpoints kept on other hosts work as usual.",
   "ck.importHostHelp":
     "The checkpoint is imported onto this host. Forking it there needs the template it was taken from.",
   "ck.importChoose": "Choose file",

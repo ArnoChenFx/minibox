@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { checkpointGroupId, groupCheckpoints } from "../web/js/lib/checkpoint-groups.js";
-import { latestByVolume, snapshotPlan, stagedMountsByVolume } from "../web/js/lib/volume-row.js";
+import { agentVolumeBlock, latestByVolume, snapshotPlan, stagedMountsByVolume } from "../web/js/lib/volume-row.js";
 
 const ck = (id: string, boxId: string | null, createdAt: string, volumes: string[] = [], extra = {}) => ({
   id,
@@ -187,6 +187,21 @@ describe("storage volume rows", () => {
     );
     expect(staged.has("v1")).toBe(false);
     expect(staged.get("v2")).toEqual(["one", "two"]);
+  });
+
+  test("a volume on an agent host is blocked for browse, measure and snapshot; every other host is not", () => {
+    const hosts = [
+      { id: "local", transport: "local" },
+      { id: "lab", transport: "ssh" },
+      { id: "edge", transport: "agent" },
+    ];
+    expect(agentVolumeBlock({ hostId: "edge" }, hosts)).toBe("vol.agentHost");
+    expect(agentVolumeBlock({ hostId: "lab" }, hosts)).toBe("");
+    expect(agentVolumeBlock({ hostId: "local" }, hosts)).toBe("");
+    // A host the list does not name yet, and one it never names, are not called an agent: the buttons stay usable until
+    // the host list says otherwise, so a page that opens before it loads is not needlessly locked.
+    expect(agentVolumeBlock({ hostId: "edge" }, [])).toBe("");
+    expect(agentVolumeBlock({ hostId: "gone" }, hosts)).toBe("");
   });
 
   test("a staged mount of an adopted volume, named by its engine name, counts for that volume", () => {

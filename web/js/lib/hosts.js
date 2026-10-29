@@ -47,6 +47,8 @@ export async function refreshHosts() {
   } catch {
     return;
   }
+  // A body without a host list is not one this console can use, so the list it already holds stands.
+  if (!Array.isArray(next)) return;
   hosts = next;
   if (filter && !hosts.some((host) => host.id === filter)) {
     filter = "";

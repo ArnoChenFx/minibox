@@ -16,7 +16,7 @@ import {
 } from "../lib/checkpoint-state.js";
 import { esc } from "../lib/dom.js";
 import { bytes, dateTime, relTime } from "../lib/format.js";
-import { hostOfBox } from "../lib/host-list.js";
+import { boxOnAgentHost, hostOfBox } from "../lib/host-list.js";
 import { hostFilter, hostName, hostsNow, multiHost } from "../lib/hosts.js";
 import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
@@ -169,11 +169,26 @@ export async function forkCheckpoint(checkpoint, box) {
 }
 
 /** The host a copy goes to: each host but the one the checkpoint is kept on. */
+/**
+ * A host to put a checkpoint on. An agent host is listed but cannot be picked, with the reason in its label: it runs
+ * boxes only, so an import or a copy onto it would answer 501.
+ */
+function checkpointHostOption(host, selected) {
+  const agent = host.transport === "agent";
+  const label = agent ? t("ck.agentHostOption", { name: host.name }) : host.name;
+  return `<option value="${esc(host.id)}"${selected ? " selected" : ""}${agent ? " disabled" : ""}>${esc(label)}</option>`;
+}
+
+/** The host a checkpoint form starts on: `wanted` if it can hold checkpoints, else the first host that can. */
+const checkpointHostChoice = (hosts, wanted) =>
+  hosts.find((host) => host.id === wanted && host.transport !== "agent")?.id ??
+  hosts.find((host) => host.transport !== "agent")?.id ??
+  "";
+
 export function copyFormHtml({ hosts, from }) {
-  const options = hosts
-    .filter((host) => host.id !== from)
-    .map((host) => `<option value="${esc(host.id)}">${esc(host.name)}</option>`)
-    .join("");
+  const targets = hosts.filter((host) => host.id !== from);
+  const chosen = checkpointHostChoice(targets, "");
+  const options = targets.map((host) => checkpointHostOption(host, host.id === chosen)).join("");
   return `<div class="field"><label class="label" for="ckCopyHost">${esc(t("cb.host"))}</label>
       <select class="select" id="ckCopyHost">${options}</select>
       <div class="help">${esc(t("ck.copyHostHelp"))}</div></div>
@@ -192,8 +207,10 @@ function askCopy(checkpoint, hosts) {
       onClose: () => resolve(result),
     });
     root.querySelector("#ckCopyOk").addEventListener("click", () => {
-      const host = root.querySelector("#ckCopyHost").value;
-      if (!host) return;
+      const picked = root.querySelector("#ckCopyHost").selectedOptions[0];
+      // An agent host is listed but disabled; with nothing else to pick, there is nothing to copy to.
+      if (!picked || picked.disabled) return;
+      const host = picked.value;
       result = { host };
       close();
     });
@@ -286,7 +303,7 @@ export function importFormHtml({ hosts, host }) {
     hosts.length > 1
       ? `<div class="field"><label class="label" for="ckImportHost">${esc(t("cb.host"))}</label>
           <select class="select" id="ckImportHost">${hosts
-            .map((h) => `<option value="${esc(h.id)}"${h.id === host ? " selected" : ""}>${esc(h.name)}</option>`)
+            .map((h) => checkpointHostOption(h, h.id === checkpointHostChoice(hosts, host)))
             .join("")}</select>
           <div class="help">${esc(t("ck.importHostHelp"))}</div></div>`
       : "";
@@ -337,6 +354,11 @@ export function importCheckpoint() {
       err.textContent = "";
       if (!uploaded && !file.files?.[0]) {
         err.textContent = t("ck.importNoFile");
+        return;
+      }
+      if (hostInput?.selectedOptions[0]?.disabled) {
+        // The option's label already says why the host cannot be picked.
+        err.textContent = hostInput.selectedOptions[0].textContent;
         return;
       }
       if (!passphraseOk(pass.value)) {
@@ -724,6 +746,13 @@ export function contentsText(checkpoint) {
 }
 
 /** An icon button for one checkpoint, as on the storage page's timeline. A disabled one gives its reason as the title. */
+/** The copy rule, refused when every other host is an agent host: none of them can hold the copy. */
+function copyRule(rule, checkpoint, hosts) {
+  if (!rule.allowed) return rule;
+  const target = hosts.some((host) => host.id !== checkpoint.hostId && host.transport !== "agent");
+  return target ? rule : { allowed: false, reason: "ck.reasonCopyAgentOnly" };
+}
+
 function rowButton(action, checkpoint, iconName, label, rule, { danger = false } = {}) {
   const state = rule.allowed ? `title="${esc(label)}"` : `title="${esc(t(rule.reason))}" disabled`;
   return `<button type="button" class="icon-btn${danger ? " danger" : ""}" data-action="${action}" data-id="${esc(checkpoint.id)}" aria-label="${esc(label)}" ${state}>${icon(iconName)}</button>`;
@@ -759,7 +788,7 @@ export function checkpointRowHtml(checkpoint, state) {
     <td class="ck-actions"><div class="actions ck-row-actions">
       ${rowButton("ck-fork", checkpoint, "copy", t("ck.fork"), rules.fork)}
       ${rowButton("ck-export", checkpoint, "download", t("ck.export"), rules.export)}
-      ${state.hosts?.length > 1 ? rowButton("ck-copy", checkpoint, "server", t("ck.copy"), rules.copy) : ""}
+      ${state.hosts?.length > 1 ? rowButton("ck-copy", checkpoint, "server", t("ck.copy"), copyRule(rules.copy, checkpoint, state.hosts)) : ""}
       ${rowButton("ck-rollback", checkpoint, "history", t("ck.rollback"), rules.rollback)}
       ${rowButton("ck-pin", checkpoint, "layers", checkpoint.pinned ? t("ck.unpin") : t("ck.pin"), rules.pin)}
       ${rowButton("ck-delete", checkpoint, "trash", t("ck.delete"), rules.delete, { danger: true })}
@@ -771,7 +800,17 @@ export function checkpointRowHtml(checkpoint, state) {
  * the hosts when there are several, and `boxHostId` is the host the box runs on. `toggle` is the show-all button drawn
  * under a long list, and `total` how many checkpoints the box has when `rows` is only the first of them.
  */
-export function checkpointCardHtml({ rows, pending, usage, schedule, hosts = [], boxHostId, toggle = "", total }) {
+export function checkpointCardHtml({
+  rows,
+  pending,
+  usage,
+  schedule,
+  hosts = [],
+  boxHostId,
+  toggle = "",
+  total,
+  onAgent = false,
+}) {
   const count = total ?? rows.length;
   const body = rows.length
     ? `<div class="table-wrap"><table class="table ck-table">
@@ -793,9 +832,10 @@ export function checkpointCardHtml({ rows, pending, usage, schedule, hosts = [],
   const counted = count ? `<span class="badge">${count}</span>` : "";
   return `<div class="card ck-card">
     <div class="card-head"><h3>${esc(t("ck.title"))}${counted}</h3>
-      <div class="actions"><button class="btn btn-sm" data-action="ck-import">${icon("upload")}${esc(t("ck.import"))}</button><button class="btn btn-sm btn-primary" data-action="ck-take">${icon("camera")}${esc(t("act.checkpoint"))}</button></div></div>
+      <div class="actions"><button class="btn btn-sm" data-action="ck-import">${icon("upload")}${esc(t("ck.import"))}</button>${onAgent ? `<button class="btn btn-sm btn-primary" data-action="ck-take" disabled title="${esc(t("bd.agentCheckpoints"))}">${icon("camera")}${esc(t("act.checkpoint"))}</button>` : `<button class="btn btn-sm btn-primary" data-action="ck-take">${icon("camera")}${esc(t("act.checkpoint"))}</button>`}</div></div>
     <div class="card-body stack">
       <p class="help">${esc(t("ck.help"))}</p>
+      ${onAgent ? callout("warn", t("bd.agentCheckpoints")) : ""}
       ${usage ? usageHtml(usage) : ""}
       ${pending ? pendingHtml(pending) : ""}
       ${schedule === undefined ? "" : scheduleHtml(schedule)}
@@ -832,6 +872,7 @@ export function mountCheckpoints(root, { box, refreshBox }) {
       schedule,
       hosts: multiHost() ? hostsNow() : [],
       boxHostId: hostOfBox(current),
+      onAgent: boxOnAgentHost(current, hostsNow()),
     });
   };
 

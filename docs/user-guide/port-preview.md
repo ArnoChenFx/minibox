@@ -4,6 +4,8 @@ Port preview lets you open a web app that runs in a box. The app appears through
 
 You must be signed in to MiniBox to open a preview.
 
+**An agent host does not support port preview yet.** A preview relays the port through MiniBox, and an agent host opens no address MiniBox can relay to, so the preview is refused even when the port is listed. The **Ports** tab says so instead of offering **Open**. Reach the service on the machine itself, or use the [terminal](terminal-and-sessions.md) or [SSH](ssh-and-cli.md). A box cannot move off an agent host yet, so create the box on a host MiniBox reaches directly to use the preview.
+
 ## Open a preview
 
 1. Start a web server in the box. For example, run this in the **Terminal** tab:

@@ -18,7 +18,24 @@ export const isUnreachable = (box) => box.state === "unreachable";
 /** Badge class for the status of a host, as /api/hosts reports it. */
 export const HOST_BADGE = { online: "badge-success", offline: "badge-danger", unknown: "" };
 
-/** What an agent host's connection says, as one word: revoked, upgrade, online or offline. Null for any other host. */
+/**
+ * The listed host with this id, or null while the list does not name it yet: the console reads the hosts once at boot
+ * and again every 15 seconds, so a page that opens first sees an empty list.
+ */
+export const listedHost = (hostId, hosts) => hosts.find((host) => host.id === hostId) ?? null;
+
+/** The host a box runs on, as /api/hosts lists it, or null while that host is not in the list yet. It is the listed host,
+ * agent or not: the two questions below read its transport. */
+export const listedHostOfBox = (box, hosts) => listedHost(hostOfBox(box), hosts);
+
+/**
+ * Whether the box runs on an agent host. An agent runs boxes only: it holds no image and no helper, so the file browser,
+ * checkpoints and port preview are all refused there. A host the list does not name yet is not called an agent.
+ */
+export const boxOnAgentHost = (box, hosts) => listedHostOfBox(box, hosts)?.transport === "agent";
+
+/** Whether the host with this id is an agent host. Anything else, including a host the list does not name yet, is not. */
+export const hostOnAgentTransport = (hostId, hosts) => listedHost(hostId, hosts)?.transport === "agent";
 export function agentState(agent) {
   if (!agent) return null;
   if (agent.revoked) return "revoked";

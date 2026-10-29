@@ -134,3 +134,15 @@
   font-size: 12.5px;
   margin-top: 2px;
 }
+
+/* One line under a box's title bar on an agent host: why its checkpoint, template and move buttons are off. A disabled
+   button answers no tap and on a phone shows only its icon, so the reason its title holds is said here as well. */
+.detail-head .detail-agent-note {
+  flex: 1 0 100%;
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--warning-soft);
+  color: var(--warning);
+  font-size: 13px;
+}
