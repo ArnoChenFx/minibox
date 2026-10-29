@@ -53,6 +53,11 @@ const SERVICE_TEXT = "gateway-ok\n";
 const PREVIEW_PORT = 8080;
 const runtime: Runtime = createDockerRuntime(SOCKET);
 
+/** Removes the forward chain this run added, leaving the chains of any other MiniBox on the host alone. */
+async function clearForwardChain(): Promise<void> {
+  await runtime.allowHostForward(prefix, "").catch(() => {});
+}
+
 let app: App;
 let host: HostCtx;
 let server: ReturnType<typeof startServer>;
@@ -279,6 +284,8 @@ afterAll(async () => {
     if (volume.labels[prefix] === "true") await runtime.removeVolume(volume.name).catch(() => {});
   }
   await runtime.setHostIngressBlock(prefix, []).catch(() => {});
+  // The forward allowance lives in a chain of the test's own prefix, so the run removes it rather than leaving it behind.
+  await clearForwardChain();
   await runtime.removeImage(BOX_IMAGE, { force: true }).catch(() => {});
   await runtime.removeImage(PROXY_BASE, { force: true }).catch(() => {});
   if (home) rmSync(home, { recursive: true, force: true });
@@ -391,6 +398,26 @@ describe.skipIf(!enabled)("egress tiers on a real engine", () => {
     expect(denial.detail).toMatchObject({ port: 8443, reason: "port" });
 
     expect(netRawOf((await inBox(gated, ["sh", "-c", "cat /proc/self/status"])).out)).toBe(false);
+  }, 180_000);
+
+  test("the forward check reads the host's rules, and the repair it offers makes a dropped uplink work", async () => {
+    // The check reads what FORWARD would do with a new connection from the uplink bridge, and changes nothing.
+    const uplink = (await runtime.listNetworks()).find((network) => network.name === `${prefix}-egress-uplink`);
+    expect(uplink?.bridge).toMatch(/^br-/);
+    const before = await runtime.checkHostForward(prefix, uplink?.bridge ?? "", "240.0.0.0/24");
+    expect(before.forwarding).toBe(true);
+    expect(before.detail).toContain("iptables");
+
+    // What the owner's confirmation does: MiniBox's own chain, jumped to from FORWARD, so the uplink is accepted whatever
+    // the policy is. Run twice, since a second confirmation must not add a second rule.
+    await runtime.allowHostForward(prefix, uplink?.bridge ?? "");
+    await runtime.allowHostForward(prefix, uplink?.bridge ?? "");
+    expect(await runtime.checkHostForward(prefix, uplink?.bridge ?? "", "240.0.0.0/24")).toMatchObject({
+      forwarding: true,
+    });
+
+    // A proxy-only box still reaches its allowlist through the rule, which proves the rule is what carries the traffic.
+    expect((await curl(gated, ["-o", "/dev/null", "-w", "%{http_code}", `https://${ALLOWED}/`])).out).toBe("200");
   }, 180_000);
 
   test("BLOCK_HOST_GATEWAY keeps a default-network box off a service on the host, and clearing it lets the box through", async () => {

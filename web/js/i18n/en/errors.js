@@ -294,6 +294,11 @@ export default {
   "err.egress_host_gateway_failed": "The host firewall could not be updated: {detail}",
   "err.egress_needs_network":
     "Egress {mode} and network {network} cannot be set together. Egress sets the box network.",
+  "err.egress_forward_unsupported": "The forwarding check cannot run on this host: {reason}",
+  "err.egress_forward_no_boxes":
+    "This host has no proxy-only box, so nothing needs its FORWARD chain. Nothing was changed.",
+  "err.egress_forward_unchecked":
+    "This host's FORWARD rules have not been read yet, so MiniBox cannot say which rule to add. Wait for the next check, or add the rule by hand.",
   "err.cpu_over_host": "CPU cores exceed the host limit ({cores} cores).",
   "err.memory_over_host": "Memory exceeds the host limit ({gb} GB).",
   "err.cpu_booked_over_host": "Running boxes on this host would take {booked} CPUs, more than its limit of {limit}.",

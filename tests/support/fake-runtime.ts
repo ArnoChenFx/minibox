@@ -19,6 +19,7 @@ import {
   type ExecSession,
   type ExecSpec,
   type ExecStatus,
+  type HostForwardCheck,
   type ImageDetails,
   type HelperResult,
   type HelperSpec,
@@ -139,6 +140,8 @@ export interface FakeNetwork {
   internal: boolean;
   /** IPv4 subnets the network was created with. Empty for networks the engine sized itself. */
   subnets: string[];
+  /** The host interface the bridge driver made, as the engine names it. */
+  bridge: string;
 }
 
 export interface FakeExec extends ExecSession {
@@ -177,6 +180,8 @@ const matchesLabels = (labels: Record<string, string>, wanted: Record<string, st
   Object.entries(wanted).every(([key, value]) => labels[key] === value);
 /** The engine's default bridge network, which needs no ensure step. */
 const DEFAULT_NETWORK = "bridge";
+/** The network option a bridge takes its host interface name from. */
+const BRIDGE_NAME_OPTION = "com.docker.network.bridge.name";
 /** The option name Docker stores for inter-container communication. */
 const ICC_OPTION = "com.docker.network.bridge.enable_icc";
 const networkMissing = (network: string) =>
@@ -528,13 +533,15 @@ export class FakeRuntime implements Runtime {
 
   /** A network that is created again gets a new ID, which containers that ran on the old one still point at. */
   seedNetwork(name: string, options: Record<string, string> = {}, driver = "bridge"): void {
+    const id = newNetworkId();
     this.networks.set(name, {
-      id: newNetworkId(),
+      id,
       name,
       driver,
       options: { ...options },
       internal: false,
       subnets: [],
+      bridge: options[BRIDGE_NAME_OPTION] ?? `br-${id.slice(0, 12)}`,
     });
   }
 
@@ -1592,7 +1599,31 @@ export class FakeRuntime implements Runtime {
 
   async listNetworks(): Promise<NetworkSummary[]> {
     this.enter("listNetworks", []);
-    return [...this.networks.values()].map((network) => ({ name: network.name, subnets: [...network.subnets] }));
+    return [...this.networks.values()].map((network) => ({
+      name: network.name,
+      subnets: [...network.subnets],
+      bridge: network.driver === "bridge" ? network.bridge : null,
+    }));
+  }
+
+  /**
+   * The verdict `checkHostForward` answers. The default pretends the host forwards, which is what a working Docker
+   * install does, so a test that is not about the check never sees a warning.
+   */
+  forwardVerdict: HostForwardCheck = { forwarding: true, detail: "fake engine: FORWARD policy ACCEPT" };
+  /** Each `allowHostForward` call, in order. */
+  readonly hostForwardAllowed: { owner: string; bridge: string }[] = [];
+
+  async checkHostForward(owner: string, bridge: string, source: string): Promise<HostForwardCheck> {
+    this.enter("checkHostForward", [owner, bridge, source]);
+    await this.gate("checkHostForward", [owner, bridge, source]);
+    return this.forwardVerdict;
+  }
+
+  async allowHostForward(owner: string, bridge: string): Promise<void> {
+    this.enter("allowHostForward", [owner, bridge]);
+    await this.gate("allowHostForward", [owner, bridge]);
+    this.hostForwardAllowed.push({ owner, bridge });
   }
 
   async setHostIngressBlock(owner: string, sources: string[]): Promise<void> {

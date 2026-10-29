@@ -37,6 +37,9 @@ export declare const ATTENTION_LABEL: Readonly<Record<string, string>>;
 
 export declare function attentionHref(item: AttentionItem): string;
 
+/** Whether an attention item has a fix MiniBox applies itself once the owner confirms it. */
+export declare function canRepair(item: AttentionItem): boolean;
+
 export declare function attentionText(
   item: AttentionItem,
   options?: {

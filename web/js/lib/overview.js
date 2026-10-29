@@ -22,7 +22,14 @@ export const ATTENTION_LABEL = Object.freeze({
   "host.disk_low": "ov.attn.disk_low",
   "host.cpu_overcommit": "ov.attn.cpu_overcommit",
   "host.memory_overcommit": "ov.attn.memory_overcommit",
+  "host.forward_blocked": "ov.attn.forward_blocked",
 });
+
+/** The kinds whose fix MiniBox can apply itself, once the owner confirms it. */
+const REPAIRABLE = Object.freeze(new Set(["host.forward_blocked"]));
+
+/** Whether an item has a fix the owner can confirm here, which the row then offers as a button. */
+export const canRepair = (item) => REPAIRABLE.has(item.kind);
 
 /** The page of the storage or host an item names. Box conditions open the box's tab that shows them instead. */
 const PAGE_OF = Object.freeze({
@@ -32,6 +39,7 @@ const PAGE_OF = Object.freeze({
   "host.disk_low": "#/settings/hosts",
   "host.cpu_overcommit": "#/settings/hosts",
   "host.memory_overcommit": "#/settings/hosts",
+  "host.forward_blocked": "#/settings/hosts",
 });
 
 /** The box tab, and the settings section on the settings tab, that shows each box condition. */
@@ -84,6 +92,8 @@ export function attentionText(item, { bytes = String, cpus = String } = {}) {
       return { key: "ov.text.cpu_overcommit", params: { booked: cpus(p.booked), limit: cpus(p.limit) } };
     case "host.memory_overcommit":
       return { key: "ov.text.memory_overcommit", params: { booked: bytes(p.booked), limit: bytes(p.limit) } };
+    case "host.forward_blocked":
+      return { key: "ov.text.forward_blocked", params: { count: p.count, boxes: p.boxes, bridge: p.bridge } };
     default:
       return null;
   }

@@ -33,6 +33,7 @@ export default {
   "ov.attn.disk_low": "Host disk low",
   "ov.attn.cpu_overcommit": "Host CPU overcommitted",
   "ov.attn.memory_overcommit": "Host memory overcommitted",
+  "ov.attn.forward_blocked": "Proxy-only boxes have no internet",
   "ov.text.oom": "The box ran out of memory and the kernel ended a process in it.",
   "ov.text.checkpoint_failed": "The checkpoint did not complete.",
   "ov.text.checkpoint_failed_detail": "The checkpoint did not complete: {detail}",
@@ -49,6 +50,17 @@ export default {
     "Its boxes reserve {booked}, past the {limit} the overcommit ratio allows. A new box may be refused.",
   "ov.text.memory_overcommit":
     "Its boxes reserve {booked}, past the {limit} the overcommit ratio allows. A new box may be refused.",
+  "ov.forwardRepair": "Add the rule",
+  "ov.forwardRepairHint": "Ask first, then let MiniBox allow the egress uplink through the host's FORWARD chain",
+  "ov.forwardRepairTitle": "Allow the egress uplink on {host}?",
+  "ov.forwardRepairMessage":
+    "MiniBox will add one rule on {host}: a chain of its own, jumped to from the top of FORWARD, that accepts new connections arriving on {bridge} and their replies. Nothing else on the host's firewall changes. Proxy-only boxes there get the internet back; open boxes were never affected.",
+  "ov.forwardRepairWhat":
+    "If you would rather do it by hand, the commands are in docs/admin/network-egress.md. The warning stays until a check finds the rules right.",
+  "ov.forwardRepaired": "Added the FORWARD rule",
+  "ov.forwardRepairFailed": "Couldn't add the FORWARD rule",
+  "ov.text.forward_blocked":
+    "The host's FORWARD rules drop the egress uplink ({bridge}), so its {count} proxy-only box(es) ({boxes}) cannot reach the internet. Open boxes are unaffected. Confirm to let MiniBox add the rule, or add it by hand.",
   "actv.subtitle": "Every operation MiniBox has recorded: who acted, on what, and how it ended.",
   "actv.filters": "Filter the activity log",
   "actv.box": "Box",

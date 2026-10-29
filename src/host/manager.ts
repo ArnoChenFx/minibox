@@ -155,6 +155,11 @@ export interface HostManagerOptions {
   readonly liftToolsVolume?: (host: HostCtx) => Promise<void>;
   /** Called when a remote host's engine becomes reachable, so its boxes are reconciled. */
   readonly onLive?: (host: HostCtx) => void;
+  /**
+   * Called when a host's engine answered after being offline, or after a connection that dropped came back. The
+   * firewall may have been reloaded while it was away, so the egress forward check is asked to read the rules again.
+   */
+  readonly onReachable?: (host: HostCtx) => void;
   /** The agents that dial in. An agent host's engine is reached through its connection here. */
   readonly agents: AgentHub;
   /**
@@ -592,7 +597,9 @@ export class HostManager {
   onLink(frame: LinkFrame): void {
     if (!this.options.registry.has(frame.hostId)) return;
     const ctx = this.options.registry.get(frame.hostId);
+    const wasOnline = ctx.host.status === "online";
     ctx.host.status = frame.state === "live" ? "online" : "offline";
+    if (frame.state === "live" && !wasOnline) this.options.onReachable?.(ctx);
     if (frame.state === "live" && ctx.host.transport !== "local") this.options.onLive?.(ctx);
   }
 
@@ -783,6 +790,7 @@ export class HostManager {
       await within(ctx.runtime.ping(), ENGINE_READ_TIMEOUT_MS);
       const latencyMs = Math.round(performance.now() - started);
       const info = await within(ctx.runtime.info(), ENGINE_READ_TIMEOUT_MS);
+      const cameBack = ctx.host.status !== "online";
       ctx.host.status = "online";
       this.backoff.delete(id);
       this.probes.set(id, {
@@ -792,6 +800,8 @@ export class HostManager {
         containers: { running: info.containers.running, total: info.containers.total },
         error: null,
       });
+      // A host that just answered may have been rebooted or had its firewall reloaded, so its forwarding is read again.
+      if (cameBack) this.options.onReachable?.(ctx);
     } catch (e) {
       ctx.host.status = "offline";
       const failures = (this.backoff.get(id)?.failures ?? 0) + 1;

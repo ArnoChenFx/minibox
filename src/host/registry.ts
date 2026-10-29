@@ -12,6 +12,7 @@ import { type Runtime, RuntimeError } from "../runtime";
 import { SecretStore } from "../secrets/store";
 import { ActivityPulse } from "../services/activity-pulse";
 import { EgressFirewall, FirewallStore } from "../services/egress-firewall";
+import type { ForwardState } from "../services/egress-forward";
 import { EgressLog } from "../services/egress-log";
 import { BoxPower } from "../services/power";
 import { StartupLaunches } from "../services/startup";
@@ -65,6 +66,32 @@ interface DiskPolicy {
   readonly minFreePercent: number;
 }
 
+/**
+ * The egress forward check, as a host reaches it: a box starting and a host coming back online ask for a fresh reading,
+ * the overview reads the last one, and the owner's confirmation repairs the rules. The app owns the one instance.
+ */
+export interface ForwardWatch {
+  /** A box started on this host, which is a moment the owner looks at. */
+  boxStarted(hostId: string): void;
+  /** The host's engine answered again, so its firewall may have changed. */
+  hostOnline(hostId: string): void;
+  /** A host went away: its verdict goes with it. */
+  forget(hostId: string): void;
+  /** The host's last reading, or null when no pass has run for it. */
+  stateOf(hostId: string): ForwardState | null;
+  /** Adds the forward allowance for this host's uplink, after the owner confirmed it. */
+  repair(host: HostCtx): Promise<ForwardState>;
+}
+
+/** The watcher a host built without the app has: it reads nothing, so a test that does not care sees no warning. */
+const NO_FORWARD: ForwardWatch = {
+  boxStarted: () => undefined,
+  hostOnline: () => undefined,
+  forget: () => undefined,
+  stateOf: () => null,
+  repair: () => Promise.reject(new Error("the egress forward check is not running")),
+};
+
 /** Everything business code needs to act on one host. `host.id` is the hostId the internal APIs are scoped by. */
 export interface HostCtx {
   host: Host;
@@ -113,6 +140,8 @@ export interface HostCtx {
   egress: EgressLog;
   /** The source lists this host's firewall was last set to, for the egress block. Each host keeps its own. */
   firewall: EgressFirewall;
+  /** Reads whether a `proxy-only` box's traffic is still forwarded by this host, and repairs the rule when confirmed. */
+  forward: ForwardWatch;
   /** The recent-activity feed the console shows. Services write to it for changes the operation registry does not record. */
   activity: ActivityLog;
   /** CPU and memory a single box may take on this host. The local host reads the machine, others read the engine. */
@@ -137,6 +166,8 @@ export interface SharedStores {
   readonly egress?: EgressLog;
   /** Defaults to a store that is kept in memory. The app keeps it under `DATA_DIR`. */
   readonly firewall?: FirewallStore;
+  /** Defaults to a check that reads nothing. The app passes the one that runs on an interval. */
+  readonly forward?: ForwardWatch;
   /** Defaults to a feed of its own. The app passes the one the console reads. */
   readonly activity?: ActivityLog;
 }
@@ -173,6 +204,7 @@ export interface LocalHostOptions {
   readonly multiHost?: () => boolean;
   readonly egress?: EgressLog;
   readonly firewall?: FirewallStore;
+  readonly forward?: ForwardWatch;
   readonly activity?: ActivityLog;
 }
 
@@ -229,6 +261,7 @@ export function createHost(cfg: Config, runtime: Runtime, shared: SharedStores, 
     diskPolicy: { minFreePercent: cfg.hostDiskMinFreePercent },
     egress: shared.egress ?? new EgressLog(() => undefined),
     firewall: new EgressFirewall(identity.id, shared.firewall ?? new FirewallStore(null)),
+    forward: shared.forward ?? NO_FORWARD,
     activity: shared.activity ?? new ActivityLog(),
     capacity: async () => {
       if (identity.transport !== "local") return engineCapacity(runtime);
@@ -275,6 +308,7 @@ export function createLocalHost(
       multiHost: options.multiHost ?? (() => false),
       egress: options.egress,
       firewall: options.firewall,
+      forward: options.forward,
       activity: options.activity,
     },
     {

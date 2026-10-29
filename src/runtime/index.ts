@@ -159,6 +159,19 @@ export interface NetworkSummary {
   name: string;
   /** IPv4 subnets the engine assigned or was given. Empty when the network has none. */
   subnets: string[];
+  /**
+   * The host interface the bridge driver made for it, such as `br-1a2b3c4d5e6f`, or null when the engine does not say.
+   * The host's firewall rules match traffic by this interface, so the egress forward check needs it.
+   */
+  bridge: string | null;
+}
+
+/** What the host's `FORWARD` chain does with a new connection arriving on one bridge. */
+export interface HostForwardCheck {
+  /** True when the connection would be forwarded, so an egress proxy on that bridge can reach the internet. */
+  readonly forwarding: boolean;
+  /** One line per iptables backend that was read, naming why it accepts or drops. */
+  readonly detail: string;
 }
 
 /** Where a helper finds its `HelperSpec.secrets`, read-only. */
@@ -564,8 +577,25 @@ export interface Runtime {
    */
   connectNetwork(containerId: string, name: string, opts?: { alias?: string }): Promise<void>;
 
-  /** The networks the engine holds, with their IPv4 subnets. */
+  /** The networks the engine holds, with their IPv4 subnets and bridge interfaces. */
   listNetworks(): Promise<NetworkSummary[]>;
+
+  /**
+   * Reads the host's `FORWARD` chain and answers whether a new connection arriving on `bridge` from `source` would be
+   * forwarded. MiniBox writes none of those rules: Docker does, and a host whose policy is `DROP`, a leftover legacy
+   * table or a firewall reload can drop them. Runs a short-lived privileged helper on the host network and changes
+   * nothing, so a remote agent host runs it on its own engine. The probe is a new TCP connection, not a real one: it
+   * proves what the rules decide, not that the internet is reachable.
+   */
+  checkHostForward(owner: string, bridge: string, source: string): Promise<HostForwardCheck>;
+
+  /**
+   * Adds MiniBox's own `FORWARD` chain for `owner` and jumps to it, so a connection arriving on `bridge` is accepted
+   * and its replies are accepted back. Nothing else is touched: the chain's policy and other installs' rules stay as
+   * they are. An empty `bridge` removes the jump and the chain, which is how a host stops carrying a rule it no longer
+   * needs. Runs a short-lived privileged helper on the host network, so a remote agent host runs it on its own engine.
+   */
+  allowHostForward(owner: string, bridge: string): Promise<void>;
 
   /**
    * Replaces one install's host firewall rules: new connections that the host itself receives from any of `sources`

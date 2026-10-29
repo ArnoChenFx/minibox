@@ -43,6 +43,7 @@ const ATTENTION_KINDS = [
   "host.disk_low",
   "host.cpu_overcommit",
   "host.memory_overcommit",
+  "host.forward_blocked",
 ] as const;
 
 const BoxRef = z.object({
@@ -93,7 +94,7 @@ const AttentionSchema = z.object({
   box: BoxRef.nullable().meta({ description: "The box the condition is about, when it is still there." }),
   params: z.record(z.string(), z.union([z.string(), z.number()])).meta({
     description:
-      "Values the console words the condition with. `used` and `limit` are bytes for a volume, `action` is `warn` or `stop`, `fields` lists the drifted settings, `checkpoint` names the rolled-back checkpoint, `free` and `min` are percentages of a host's disk, `booked` and `limit` are CPU cores for a host's overcommitted CPU and bytes for its overcommitted memory, and `detail` is the message the engine or the pool reported.",
+      "Values the console words the condition with. `used` and `limit` are bytes for a volume, `action` is `warn` or `stop`, `fields` lists the drifted settings, `checkpoint` names the rolled-back checkpoint, `free` and `min` are percentages of a host's disk, `booked` and `limit` are CPU cores for a host's overcommitted CPU and bytes for its overcommitted memory, `detail` is the message the engine or the pool reported, and for a host whose forwarding is blocked `bridge` is the uplink interface, `boxes` names the `proxy-only` boxes that lost the internet, `count` is how many there are and `detail` is what the host's iptables backends said.",
   }),
 });
 
@@ -370,6 +371,34 @@ async function overcommitAttention(host: HostCtx): Promise<Attention[]> {
   return items;
 }
 
+/**
+ * The hosts whose `FORWARD` rules drop a `proxy-only` box's traffic. The check records one reading per host, and the
+ * warning stays until a pass finds the rules right: MiniBox changes nothing on its own, so a repair the owner confirms
+ * is a separate operation, and a repair that did not work leaves this here.
+ */
+function forwardAttention(hosts: readonly HostCtx[]): Attention[] {
+  return hosts.flatMap((host): Attention[] => {
+    const state = host.forward.stateOf(host.host.id);
+    if (!state || state.forwarding || state.skipped !== null || state.bridge === "") return [];
+    return [
+      {
+        kind: "host.forward_blocked",
+        severity: "error",
+        hostId: host.host.id,
+        at: state.at,
+        subject: host.host.name,
+        box: null,
+        params: {
+          bridge: state.bridge,
+          boxes: state.boxes.join(", "),
+          count: state.boxes.length,
+          detail: state.detail,
+        },
+      },
+    ];
+  });
+}
+
 async function stateAttention(ctx: OperationContext, boxes: readonly Box[], hosts: readonly HostCtx[]) {
   const items: Attention[] = [];
   const fallback = ctx.host.host.id;
@@ -466,6 +495,7 @@ async function stateAttention(ctx: OperationContext, boxes: readonly Box[], host
 
     items.push(...(overcommitted[position] ?? []));
   }
+  items.push(...forwardAttention(hosts));
   return items;
 }
 

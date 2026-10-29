@@ -44,6 +44,7 @@ import { CheckpointSweep } from "./services/checkpoint-retention";
 import { CheckpointScheduler } from "./services/checkpoint-schedule";
 import { ContainerWatch } from "./services/container-watch";
 import { FirewallStore } from "./services/egress-firewall";
+import { EgressForwardWatcher } from "./services/egress-forward";
 import { EgressLog } from "./services/egress-log";
 import { ExecManager } from "./services/exec";
 import { LifecycleWatcher } from "./services/lifecycle";
@@ -133,6 +134,11 @@ export interface App {
   lifecycle: LifecycleWatcher;
   /** Samples each volume's usage and raises the limit and host disk events. See `VOLUME_USAGE_INTERVAL_SEC`. */
   volumeUsage: VolumeUsageWatcher;
+  /**
+   * Checks that a `proxy-only` box's traffic is still forwarded by its host, and lists the condition on the overview.
+   * See `EGRESS_FORWARD_CHECK_INTERVAL_SEC`.
+   */
+  egressForward: EgressForwardWatcher;
   ssh: SshGateway;
   /** The owner's SSH public keys, which log in to every box over direct SSH. */
   sshKeys: SshKeyStore;
@@ -244,6 +250,8 @@ function openTaskStore(path: string): TaskStore {
 
 export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App {
   const hosts = new HostRegistry();
+  // Built before the local host, so that host is given the check its boxes' starts and the overview ask for.
+  const egressForward = new EgressForwardWatcher({ hosts, everyMs: cfg.egressForwardCheckIntervalSec * 1000 });
   const specs = new SpecStore(cfg.dataDir);
   const volumes = new VolumeStore(cfg.dataDir);
   const bus = new Bus<AppTopics>();
@@ -271,6 +279,7 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
       secrets,
       egress,
       firewall,
+      forward: egressForward,
       selfTokens,
       questions,
       activity,
@@ -369,6 +378,7 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
       multiHost,
       egress,
       firewall,
+      forward: egressForward,
       selfTokens,
       questions,
       activity,
@@ -383,6 +393,7 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
       containers.unwatch(host.host.id);
       startups.unwatch(host.host.id);
       host.sampler.stop();
+      egressForward.forget(host.host.id);
     },
     liftToolsVolume: async (host) => {
       // A host that is going away cannot keep its shared tools volumes: they are the one kind of volume no other
@@ -393,6 +404,7 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
       }
     },
     onLive: reconcileOnLive,
+    onReachable: (host) => egressForward.hostOnline(host.host.id),
     agents,
     localLabels: cfg.localHostLabels,
   });
@@ -482,6 +494,7 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
     pulse,
     lifecycle,
     volumeUsage,
+    egressForward,
     ssh,
     sshKeys,
     sshDirect,

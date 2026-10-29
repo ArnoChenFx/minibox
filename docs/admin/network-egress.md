@@ -68,6 +68,8 @@ The block is a rule in a `MINIBOX-EGRESS-<hash>` chain, which the host's `INPUT`
 
 Boxes on a [remote host](../user-guide/hosts.md) use the same tiers. The proxy, the private networks and the firewall rules are made on the engine of the host that runs the box. That host needs the base template image too, for its proxy. A box that is not `open` cannot be moved to another host, because its network and proxy belong to the host it runs on.
 
+A host reached through an [agent](../reference/agent.md) does not run the forwarding check: an agent runs no helper containers, so there is no way to read its engine's `FORWARD` rules from here, and the check is skipped with that reason. Its `proxy-only` boxes have the same dependency on Docker's forwarding, so a `proxy-only` box that loses the internet there is still found the same way, in the proxy's `egress.failed … upstream` events, and fixed with the manual commands below on that machine. Every other host — local, socket, TCP and SSH — runs the check.
+
 ## Limits
 
 These tiers are not a full sandbox against code that is written to get around them. They stop ordinary connections, and they record the ones that pass. The limits below still apply.
@@ -83,9 +85,55 @@ These tiers are not a full sandbox against code that is written to get around th
 - **Private networks use `240.0.0.0/12`.** The private networks of `none` and `proxy-only` boxes are taken from this reserved range, so they stay clear of the usual private ranges.
 - **Docker Engine 26.0 or later.** Older engines forward DNS queries from internal networks to the host's resolvers (CVE-2024-29018), which lets a `none` box send data out through DNS. 25.0.5 and 23.0.11 carry the fix too.
 
+## When a `proxy-only` box has no internet
+
+A `proxy-only` box has no route out of its own network. Its only peer is the egress proxy, which sits on the `<prefix>-egress-uplink` bridge and reaches the internet through the host's `FORWARD` chain. MiniBox never writes that rule: it relies on Docker's own. So when a host's `FORWARD` policy is `DROP`, or a leftover `iptables-legacy` table drops the traffic, or something reloads the firewall while MiniBox runs, every `proxy-only` box on that host silently loses the internet. The box still starts, `exec` and SSH still work, and the proxy log only says `egress.failed … upstream`, which reads like the destination being down.
+
+MiniBox checks for this every ten minutes (`EGRESS_FORWARD_CHECK_INTERVAL_SEC`), soon after it starts, when a `proxy-only` box starts and when a host comes back online. The check runs a short-lived helper container with `NET_ADMIN` on the host network and reads `iptables -S` there, so it costs a container start and nothing on the host changes. A host with no `proxy-only` box is not read at all, and a host whose rules were found right is not read again until one of those moments. The helper image is pulled once, the same `alpine:3.20` the host firewall uses.
+
+When the rules drop the uplink, **Needs attention** on the overview shows **Proxy-only boxes have no internet**, naming the host, the number of `proxy-only` boxes it affects and the bridge. One `error` line goes to MiniBox's log at the same moment (`egress.forward_blocked`), and no line repeats while the condition stays, so a headless operator sees it once. A pass that finds the rules right again logs `egress.forward_restored` and clears the item.
+
+### What the check proves, and what it does not
+
+The check reads what the host's `FORWARD` chain would do with a **new TCP connection** that arrives on the uplink bridge and leaves for another interface. It follows Docker's own chains to the rule that decides, and it reads both the `iptables` table (the nft one on a modern host) and `iptables-legacy` if both exist, because a stale legacy table is exactly one of the ways this breaks. So:
+
+- It proves that a `proxy-only` box on that host cannot reach the outside **because of the host's forwarding rules**. That is the failure the warning is about, and it is one MiniBox can fix.
+- It does **not** prove that the internet is reachable. A host whose rules are right but whose uplink cannot resolve or route is not reported: the proxy's `egress.failed … upstream` events are the place to look for that, and it is not something a `FORWARD` rule would fix.
+- It says nothing about `open` boxes, which use the default network and Docker's usual rules. They are unaffected by the condition and by the fix.
+- It reads the rules, not the traffic. A connection that was already established when the rule changed keeps its conntrack entry until it closes, so a box can appear to work for a moment after the warning appears.
+
+### Fix it
+
+The overview's item has an **Add the rule** button. It opens a confirmation that names the host and the bridge, and **nothing is written until you confirm**. After you confirm, MiniBox runs one short-lived helper on the host and adds its own chain, `MINIBOX-FWD-<hash>`, jumped to from the top of `FORWARD`. It accepts new connections that arrive on the uplink bridge and leave for another interface, and the replies that come back into it. Nothing else on the host's firewall changes: the `FORWARD` policy stays as it is, and other installs' chains are left alone. That is one click, and the same thing over the API is one call:
+
+```bash
+curl -sS -X POST -H "Authorization: Bearer $MINIBOX_KEY" https://minibox.example.com/api/hosts/local/forward
+```
+
+The item stays until the next check finds the rules right, so a repair that did not work is still visible. This is the path to prefer.
+
+Doing it by hand is fiddly, and the docs say so rather than pretending otherwise: you have to find the bridge name, decide which iptables backend the host actually uses, and get the two rules right. It is worth it only if you would rather not let MiniBox touch the host's firewall at all. The bridge is `br-` and the first 12 characters of the `<prefix>-egress-uplink` network's id, or the name the network was created with:
+
+```bash
+docker network inspect minibox-egress-uplink --format '{{.Id}}'
+# br-<first 12 characters of that id>
+sudo iptables -S FORWARD        # the nft table on a modern host
+sudo iptables-legacy -S FORWARD # a leftover legacy table, if this prints rules
+```
+
+Then, for each backend that has a `FORWARD` chain (run both blocks if both print rules), allow the uplink only:
+
+```bash
+BR=br-1a2b3c4d5e6f   # the bridge from above
+sudo iptables -I FORWARD 1 -i "$BR" ! -o "$BR" -j ACCEPT
+sudo iptables -I FORWARD 1 -o "$BR" -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+```
+
+Use `iptables-legacy` in place of `iptables` for the legacy table. These rules are not persisted by MiniBox: a reboot or a firewall reload removes them, and the next check reports the condition again. If you would rather undo a stale legacy table than add rules to it, remove the `DROP` policy or the rules that cause it, which is the other hand-written path, and MiniBox's check then finds the rules right by itself.
+
 ## If an allowed host times out
 
-If an allowed host times out, and the proxy logs `upstream`, check the host's `FORWARD` policy. A leftover `iptables-legacy` table with `-P FORWARD DROP` silently drops the traffic that Docker's own rules allow. Look with `sudo iptables-legacy -S FORWARD`. Allow the proxies' uplink only, with `sudo iptables-legacy -I FORWARD -i br-<id> -j ACCEPT` and a matching `-o br-<id> -m conntrack --ctstate RELATED,ESTABLISHED` rule, where `br-<id>` is the bridge of the `<prefix>-egress-uplink` network. Or remove the stale legacy rules.
+If an allowed host times out and the overview shows no forwarding warning, the host's rules are fine and the destination or the network in between is the problem. The proxy's `egress.failed` events name the host and the port it could not reach.
 
 ## Try it
 

@@ -14,6 +14,7 @@ import {
   type ExecSession,
   type ExecSpec,
   type HelperResult,
+  type HostForwardCheck,
   type ImageDetails,
   type ImageSummary,
   type NetworkSummary,
@@ -419,6 +420,14 @@ export class AgentRuntime implements Runtime {
 
   listNetworks(): Promise<NetworkSummary[]> {
     return this.call("listNetworks", {}) as Promise<NetworkSummary[]>;
+  }
+
+  async checkHostForward(): Promise<HostForwardCheck> {
+    throw refused("checkHostForward");
+  }
+
+  async allowHostForward(): Promise<void> {
+    throw refused("allowHostForward");
   }
 
   reattachNetwork(containerId: string, name: string): Promise<void> {

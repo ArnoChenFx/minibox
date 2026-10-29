@@ -33,6 +33,7 @@ export default {
   "ov.attn.disk_low": "宿主机磁盘不足",
   "ov.attn.cpu_overcommit": "宿主机 CPU 超配",
   "ov.attn.memory_overcommit": "宿主机内存超配",
+  "ov.attn.forward_blocked": "仅代理的 Box 无法上网",
   "ov.text.oom": "Box 内存耗尽，系统终止了其中的一个进程。",
   "ov.text.checkpoint_failed": "检查点未能完成。",
   "ov.text.checkpoint_failed_detail": "检查点未能完成：{detail}",
@@ -46,6 +47,17 @@ export default {
   "ov.text.disk_low": "剩余 {free}%，低于 {min}% 的下限。",
   "ov.text.cpu_overcommit": "这台宿主机上预定的 CPU 已达 {booked}，超过超配比例允许的 {limit}，新建 Box 可能被拒绝。",
   "ov.text.memory_overcommit": "这台宿主机上预定的内存已达 {booked}，超过超配比例允许的 {limit}，新建 Box 可能被拒绝。",
+  "ov.forwardRepair": "添加规则",
+  "ov.forwardRepairHint": "先询问，确认后由 MiniBox 放行出站上行网络穿过宿主机的 FORWARD 链",
+  "ov.forwardRepairTitle": "在 {host} 上放行出站上行网络？",
+  "ov.forwardRepairMessage":
+    "MiniBox 会在 {host} 上添加一条规则：它自己的链，从 FORWARD 顶部跳转过去，接受来自 {bridge} 的新连接及其回程。宿主机防火墙的其它部分都不动。其上的仅代理 Box 恢复上网；开放出站的 Box 本来就不受影响。",
+  "ov.forwardRepairWhat":
+    "如果更愿意手动处理，命令见 docs/zh-CN/admin/network-egress.md。检查确认规则正确之前，这条警告会一直保留。",
+  "ov.forwardRepaired": "已添加 FORWARD 规则",
+  "ov.forwardRepairFailed": "无法添加 FORWARD 规则",
+  "ov.text.forward_blocked":
+    "这台宿主机的 FORWARD 规则丢弃了出站上行网络（{bridge}）的流量，其上 {count} 个仅代理的 Box（{boxes}）无法访问互联网。开放出站的 Box 不受影响。确认后由 MiniBox 添加规则，也可以手动添加。",
   "actv.subtitle": "MiniBox 记录的每一次操作：谁做的、对哪个对象、结果如何。",
   "actv.filters": "筛选活动日志",
   "actv.box": "Box",

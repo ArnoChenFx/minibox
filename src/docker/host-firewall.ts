@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 
-import { formatIpv4Cidr, parseIpv4Cidr } from "../lib/cidr";
+import { FORWARD_PROBE_SCRIPT, FORWARD_REPAIR_SCRIPT, judgeForwardReport } from "../egress/forward";
+import { formatIpv4Cidr, ipv4At, parseIpv4Cidr } from "../lib/cidr";
 import { RuntimeError, type Runtime } from "../runtime";
 import type { Engine } from "./engine";
 import { runHelper } from "./helpers";
@@ -21,6 +22,11 @@ const HOST_FIREWALL_CHAIN_PREFIX = "MINIBOX-EGRESS-";
 /** An install's chain: the prefix and 8 hex digits, well inside iptables' 28-character limit. */
 export function hostFirewallChain(owner: string): string {
   return `${HOST_FIREWALL_CHAIN_PREFIX}${createHash("sha256").update(owner).digest("hex").slice(0, 8)}`;
+}
+
+/** The chain that carries the forward allowance, named after the same install hash as the ingress block. */
+export function hostForwardChain(owner: string): string {
+  return `MINIBOX-FWD-${createHash("sha256").update(owner).digest("hex").slice(0, 8)}`;
 }
 
 /**
@@ -46,7 +52,9 @@ const FIREWALL_SCRIPT = [
 
 const LOG_TAIL_CHARS = 512;
 
-export function hostFirewallMethods(engine: Engine): Pick<Runtime, "setHostIngressBlock"> {
+export function hostFirewallMethods(
+  engine: Engine,
+): Pick<Runtime, "setHostIngressBlock" | "checkHostForward" | "allowHostForward"> {
   const images = imageMethods(engine);
   return {
     async setHostIngressBlock(owner, sources) {
@@ -71,6 +79,65 @@ export function hostFirewallMethods(engine: Engine): Pick<Runtime, "setHostIngre
           "engine",
           `host firewall helper exited with ${result.exitCode}: ${tail}`,
           `the host firewall could not be updated (exit ${result.exitCode})`,
+        );
+      }
+    },
+
+    async checkHostForward(owner, bridge, source) {
+      if (!/^[A-Za-z0-9][A-Za-z0-9_.-]{0,14}$/.test(bridge))
+        throw new RuntimeError("invalid", `${bridge} is not an interface name`);
+      const network = parseIpv4Cidr(source);
+      if (!network) throw new RuntimeError("invalid", `${source} is not an IPv4 CIDR`);
+      await images.pullImage(HOST_FIREWALL_IMAGE);
+      const result = await runHelper(engine.docker, {
+        image: HOST_FIREWALL_IMAGE,
+        cmd: ["sh", "-c", FORWARD_PROBE_SCRIPT],
+        env: [`MINIBOX_FORWARD_CHAIN=${hostForwardChain(owner)}`],
+        capAdd: ["NET_ADMIN"],
+        hostNetwork: true,
+        readonlyRoot: false,
+        timeoutSec: 120,
+      });
+      if (result.exitCode !== 0) {
+        const tail = result.logs.trim().slice(-LOG_TAIL_CHARS);
+        throw new RuntimeError(
+          "engine",
+          `host forward probe exited with ${result.exitCode}: ${tail}`,
+          `the host's FORWARD rules could not be read (exit ${result.exitCode})`,
+        );
+      }
+      // The probe packet's address is inside the uplink's subnet, which is where a proxy there would sit.
+      const address = ipv4At(network, 1);
+      const verdict = judgeForwardReport(result.logs, { bridge, source: address });
+      if (verdict.backends.length === 0) {
+        throw new RuntimeError(
+          "engine",
+          `the host forward probe read no iptables backend: ${result.logs.trim().slice(-LOG_TAIL_CHARS)}`,
+          "the host's FORWARD rules could not be read",
+        );
+      }
+      return { forwarding: !verdict.dropped, detail: verdict.detail };
+    },
+
+    async allowHostForward(owner, bridge) {
+      if (!/^[A-Za-z0-9][A-Za-z0-9_.-]{0,14}$/.test(bridge))
+        throw new RuntimeError("invalid", `${bridge} is not an interface name`);
+      await images.pullImage(HOST_FIREWALL_IMAGE);
+      const result = await runHelper(engine.docker, {
+        image: HOST_FIREWALL_IMAGE,
+        cmd: ["sh", "-c", FORWARD_REPAIR_SCRIPT],
+        env: [`MINIBOX_FORWARD_CHAIN=${hostForwardChain(owner)}`, `MINIBOX_UPLINK_BRIDGE=${bridge}`],
+        capAdd: ["NET_ADMIN"],
+        hostNetwork: true,
+        readonlyRoot: false,
+        timeoutSec: 120,
+      });
+      if (result.exitCode !== 0) {
+        const tail = result.logs.trim().slice(-LOG_TAIL_CHARS);
+        throw new RuntimeError(
+          "engine",
+          `host forward helper exited with ${result.exitCode}: ${tail}`,
+          `the host's FORWARD rules could not be changed (exit ${result.exitCode})`,
         );
       }
     },

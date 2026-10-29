@@ -242,6 +242,10 @@ export default {
   "err.egress_network_conflict": "出站私有网络 {network} 已存在且设置不同。请删除该网络后重试。",
   "err.egress_host_gateway_failed": "无法更新宿主机防火墙：{detail}",
   "err.egress_needs_network": "出站策略 {mode} 与网络 {network} 不能同时设置。出站策略会决定 Box 的网络。",
+  "err.egress_forward_unsupported": "这台宿主机无法运行转发检查：{reason}",
+  "err.egress_forward_no_boxes": "这台宿主机上没有仅代理的 Box，不需要它的 FORWARD 链。没有改动任何东西。",
+  "err.egress_forward_unchecked":
+    "尚未读取这台宿主机的 FORWARD 规则，MiniBox 无法说该添加哪条规则。请等下一次检查，或手动添加。",
   "err.cpu_over_host": "CPU 核数超出宿主机上限（{cores} 核）。",
   "err.memory_over_host": "内存超出宿主机上限（{gb} GB）。",
   "err.cpu_booked_over_host": "运行中的 Box 将占用该宿主机 {booked} 核，超过其上限 {limit} 核。",

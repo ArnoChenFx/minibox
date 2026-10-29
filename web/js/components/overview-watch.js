@@ -1,12 +1,13 @@
 import { stripAnsi } from "../lib/ansi.js";
-import { enc } from "../lib/api.js";
+import { api, enc } from "../lib/api.js";
 import { esc } from "../lib/dom.js";
 import { bytes, cpus, relTime } from "../lib/format.js";
 import { hostFilter, hostName, multiHost } from "../lib/hosts.js";
 import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
-import { ATTENTION_LABEL, attentionHref, attentionText, scopeToHost } from "../lib/overview.js";
+import { ATTENTION_LABEL, attentionHref, attentionText, canRepair, scopeToHost } from "../lib/overview.js";
 import { terminalHash } from "../lib/routes.js";
+import { confirmDialog, toast, toastError } from "../lib/ui.js";
 import { bindToggles, limitList } from "./list-toggle.js";
 
 /** The rows each list shows before its toggle expands it. */
@@ -76,19 +77,42 @@ function progressRow(row, open) {
   </li>`;
 }
 
+/**
+ * Asks the owner before anything is written, naming the host and the rule, then sends the repair. The warning row is
+ * not removed here: it goes away when the server's next check finds the rules right.
+ */
+async function repairAttention(item) {
+  const ok = await confirmDialog({
+    title: t("ov.forwardRepairTitle", { host: hostName(item.hostId) }),
+    message: esc(t("ov.forwardRepairMessage", { host: hostName(item.hostId), bridge: item.params.bridge })),
+    body: `<div class="callout"><span>${esc(t("ov.forwardRepairWhat"))}</span></div>`,
+    confirmText: t("ov.forwardRepair"),
+  });
+  if (!ok) return false;
+  try {
+    await api(`/api/hosts/${enc(item.hostId)}/forward`, { method: "POST", body: {} });
+  } catch (e) {
+    toastError(t("ov.forwardRepairFailed"), e);
+    return false;
+  }
+  toast(t("ov.forwardRepaired"), { message: hostName(item.hostId) });
+  return true;
+}
+
 function attentionRow(item) {
   const error = item.severity === "error";
   const label = ATTENTION_LABEL[item.kind] ? t(ATTENTION_LABEL[item.kind]) : item.kind;
   const text = attentionText(item, { bytes, cpus });
   const said = text ? t(text.key, text.params) : "";
-  return `<li class="watch-row${error ? " is-error" : ""}">
+  const repair = canRepair(item)
+    ? `<button type="button" class="btn btn-sm" data-repair="${esc(item.kind)}" title="${esc(t("ov.forwardRepairHint"))}">${icon("shield")}${esc(t("ov.forwardRepair"))}</button>`
+    : "";
+  return `<li class="watch-row${error ? " is-error" : ""}" data-attn="${esc(item.kind)}" data-host="${esc(item.hostId)}">
     <span class="watch-ico${error ? " fail" : ""}">${icon(error ? "alertCircle" : "alert")}</span>
     <div class="watch-who"><strong>${esc(label)}</strong><span class="subtle watch-actor">${esc(item.subject)}${hostSuffix(item.hostId)}</span></div>
     <div class="watch-cmd"><span class="watch-text subtle" title="${esc(said)}">${esc(said)}</span></div>
     <span class="time">${item.at ? esc(relTime(item.at)) : ""}</span>
-    <div class="watch-actions">
-      <a class="btn btn-sm" href="${attentionHref(item)}">${icon("chevronRight")}${esc(t("ov.view"))}</a>
-    </div>
+    <div class="watch-actions">${repair}<a class="btn btn-sm" href="${attentionHref(item)}">${icon("chevronRight")}${esc(t("ov.view"))}</a></div>
   </li>`;
 }
 
@@ -129,11 +153,31 @@ function bindOutputs(root, section) {
   }
 }
 
+/** Connects each attention row's repair button. A repair the owner confirms redraws the list from a fresh read. */
+function bindRepairs(root, section, items, refresh) {
+  for (const button of section.querySelectorAll("[data-repair]")) {
+    button.addEventListener("click", async () => {
+      const row = button.closest("[data-attn]");
+      const item = items.find(
+        (candidate) => candidate.kind === row?.dataset.attn && candidate.hostId === row?.dataset.host,
+      );
+      if (!item) return;
+      button.disabled = true;
+      try {
+        if (await repairAttention(item)) await refresh();
+      } finally {
+        button.disabled = false;
+      }
+    });
+  }
+}
+
 /**
  * Draws the two watch lists of the overview into `root`: what agents are doing now, and what needs attention. The
- * lists follow the host filter. A list longer than its limit shows the first rows and a toggle for the rest.
+ * lists follow the host filter. A list longer than its limit shows the first rows and a toggle for the rest. `refresh`
+ * reads the overview again, which the repair button does after it changes the host.
  */
-export function drawWatch(root, overview) {
+export function drawWatch(root, overview, refresh) {
   const host = hostFilter();
   const progress = scopeToHost(overview.inProgress, host, (row) => row.box.hostId);
   const attention = scopeToHost(overview.attention, host, (item) => item.hostId);
@@ -147,7 +191,8 @@ export function drawWatch(root, overview) {
     redraw,
   });
   bindOutputs(root, root.querySelector("#ovProgress"));
-  fill(root, root.querySelector("#ovAttention"), {
+  const attentionSection = root.querySelector("#ovAttention");
+  fill(root, attentionSection, {
     key: "attention",
     items: attention,
     limit: ATTENTION_LIMIT,
@@ -155,4 +200,5 @@ export function drawWatch(root, overview) {
     empty: emptyLine("check", t("ov.attentionNone"), t("ov.attentionNoneText")),
     redraw,
   });
+  bindRepairs(root, attentionSection, attention, refresh ?? redraw);
 }

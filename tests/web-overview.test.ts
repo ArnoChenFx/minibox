@@ -10,6 +10,7 @@ import {
   type AttentionItem,
   attentionHref,
   attentionText,
+  canRepair,
   type OverviewRow,
   pollDelay,
   scopeToHost,
@@ -30,6 +31,12 @@ const SERVER_PARAMS: Record<string, Record<string, string | number>> = {
   "host.disk_low": { free: 5, min: 10 },
   "host.cpu_overcommit": { booked: 3, limit: 2 },
   "host.memory_overcommit": { booked: 6 * MB, limit: 4 * MB },
+  "host.forward_blocked": {
+    bridge: "br-1a2b3c4d5e6f",
+    boxes: "agent",
+    count: 1,
+    detail: "iptables FORWARD policy is DROP",
+  },
 };
 
 function itemOf(
@@ -146,6 +153,16 @@ describe("attentionText", () => {
     ).toEqual({ key: "ov.text.memory_overcommit", params: { booked: "6 MB", limit: "4 MB" } });
   });
 
+  test("the forwarding warning names the host's boxes and says open boxes are unaffected", () => {
+    const text = attentionText(itemOf("host.forward_blocked", SERVER_PARAMS["host.forward_blocked"]));
+    expect(text).toEqual({
+      key: "ov.text.forward_blocked",
+      params: { count: 1, boxes: "agent", bridge: "br-1a2b3c4d5e6f" },
+    });
+    expect(en["ov.text.forward_blocked"]).toContain("Open boxes are unaffected");
+    expect(zh["ov.text.forward_blocked"]).toContain("开放出站的 Box 不受影响");
+  });
+
   test("a kind the console does not know has no sentence", () => {
     expect(attentionText(itemOf("container.restarted"))).toBeNull();
   });
@@ -166,6 +183,15 @@ describe("where an attention item leads", () => {
     expect(attentionHref(itemOf("box.checkpoint_failed"))).toBe("#/boxes/bx_1/settings/checkpoints");
     expect(attentionHref(itemOf("box.rollback_pending"))).toBe("#/boxes/bx_1/settings/checkpoints");
     expect(attentionHref(itemOf("box.drift"))).toBe("#/boxes/bx_1/settings/resources");
+  });
+
+  test("a host whose forwarding is blocked opens its settings, and is the one kind with a button of its own", () => {
+    expect(attentionHref(itemOf("host.forward_blocked", SERVER_PARAMS["host.forward_blocked"], { box: null }))).toBe(
+      "#/settings/hosts",
+    );
+    for (const kind of serverKinds()) {
+      expect([kind, canRepair(itemOf(kind, SERVER_PARAMS[kind]))]).toEqual([kind, kind === "host.forward_blocked"]);
+    }
   });
 
   test("a box condition whose box is gone opens the Boxes list", () => {
