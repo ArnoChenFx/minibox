@@ -261,12 +261,12 @@ describe("token store", () => {
     }
   });
 
-  test("an owner's own token keeps volume:delete: no preset, or a preset the owner adjusted by hand", () => {
+  test("custom volume scopes survive a reload without granting storage administrator identity", () => {
     const dir = mkdtempSync(join(tmpdir(), "minibox-tokens-"));
     const file = join(dir, "tokens.json");
     const store = new TokenStore({ file });
     try {
-      // Named by hand, with no preset: the one way an owner grants a scope no preset holds.
+      // Explicit scopes are saved independently of preset identity.
       const own = store.create(compileToken({ name: "own", scopes: ["volume:read", "volume:delete"] }), "owner");
       // A preset the owner then adjusted: not exactly the preset, so it is the owner's own list.
       const edited = store.create(
@@ -280,9 +280,10 @@ describe("token store", () => {
         const scopes = (name: string) => restored.list().find((item) => item.name === name)?.scopes ?? [];
         expect(scopes("own")).toEqual(["volume:read", "volume:delete"]);
         expect(scopes("edited")).toEqual(["volume:write", "volume:delete"]);
-        // It still works: the scope reaches the batch delete for both tokens.
+        // The scope check and administrator identity are independent checks.
         const principal = restored.authenticate(own.secret, "127.0.0.1");
         expect(principal?.grants?.scopes).toContain("volume:delete");
+        expect(principal?.grants?.storageAdmin).not.toBe(true);
         expect(scopeAllowed(principal?.grants as TokenGrants, "volume:delete")).toBe(true);
         expect(
           scopeAllowed(restored.authenticate(edited.secret, "127.0.0.1")?.grants as TokenGrants, "volume:delete"),

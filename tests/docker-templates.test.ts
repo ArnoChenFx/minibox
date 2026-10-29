@@ -214,8 +214,8 @@ describe.skipIf(!enabled)("Saving a box as a template on a real engine", () => {
             await call(base, path, {
               method: "PATCH",
               body: {
-                source: { kind: "dockerfile", text: `FROM ${IMAGE}\nENV REVIEW_LITERAL=literal\n` },
-                init: { postCreate: ["printf", "%s", "$REVIEW_LITERAL"], forwardPorts: [3000] },
+                source: { kind: "dockerfile", text: `FROM ${IMAGE}\nENV LITERAL_ARGUMENT=literal\n` },
+                init: { postCreate: ["printf", "%s", "$LITERAL_ARGUMENT"], forwardPorts: [3000] },
               },
             })
           ).status,
@@ -227,7 +227,7 @@ describe.skipIf(!enabled)("Saving a box as a template on a real engine", () => {
         expect((await runtime.inspectImage(ref)).id).not.toBe(before);
         const recipe = await call(base, `${path}/recipe`);
         expect(recipe.status).toBe(200);
-        expect(recipe.json.recipe?.postCreate).toEqual(["printf", "%s", "$REVIEW_LITERAL"]);
+        expect(recipe.json.recipe?.postCreate).toEqual(["printf", "%s", "$LITERAL_ARGUMENT"]);
         const listed = await call(base, "/api/templates");
         expect(listed.json.templates?.filter((template) => template.name === "review-edit")).toHaveLength(1);
         const started = await call(base, `${path}/rebuild`, { body: {} });

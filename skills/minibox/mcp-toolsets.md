@@ -73,13 +73,13 @@ Listing and closing sessions are REST and CLI only (`GET`/`DELETE /api/boxes/{id
 |---|---|---|
 | `list_volumes`, `get_volume`, `measure_volume` | `volume:read` | Volumes and their cached size |
 | `snapshot_volume` | `checkpoint:create` | `id`, `label`, `pinned`. Snapshots one volume on its own, as a checkpoint whose record names no box. Returns a task |
-| `create_volume` | `volume:write` | `name`, `pool`, `role`, `confirm` |
-| `delete_volume` | `volume:write` | `id`, `confirm`, `skipTrash` |
-| `delete_volumes` | `volume:delete` | `ids`, `confirm`. One result per volume |
+| `create_volume` | `volume:write` | `name`, `pool`, `role`, `confirm`. Owner or unmodified admin only |
+| `delete_volume` | `volume:write` | `id`, `confirm`, `skipTrash`. Owner or unmodified admin only |
+| `delete_volumes` | `volume:delete` | `ids`, `confirm`. One result per volume. Owner or unmodified admin only |
 | `attach_volume`, `detach_volume` | `volume:attach` (+ `volume:write` for `mode: "rw"`) | `id`, `box`, `path`, `mode`, `confirm`, `safetyCheckpoint`, `expectedRevision`. Rebuilds the box |
-| `list_pools`, `replace_pools` | owner | Storage pools |
+| `list_pools`, `replace_pools` | `pool:read` / `pool:admin` | Storage pools. Owner or unmodified admin only |
 | `set_volume_limits` | owner | Soft and hard limits, and the action at the hard limit |
-| `prune_volumes` | owner | Orphaned volumes. `dryRun` defaults to `true`; removal needs `dryRun: false` and the `ids` the dry run listed |
+| `prune_volumes` | `volume:prune` | Orphaned volumes. `dryRun` defaults to `true`; removal needs `dryRun: false` and the `ids` the dry run listed. Owner or unmodified admin only |
 | `list_trash`, `restore_trash`, `purge_trash`, `empty_trash` | owner | The recycle bin. `empty_trash` needs `confirm: true` |
 | `export_checkpoint`, `import_checkpoint`, `copy_checkpoint` | owner | Checkpoint packages and host copies. Each returns a task |
 | `get_checkpoint_schedule`, `set_checkpoint_schedule`, `clear_checkpoint_schedule` | owner | A box's checkpoint schedule |

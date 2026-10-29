@@ -213,12 +213,12 @@ describe("creating a token with the dialog's body", () => {
   });
 
   test("only the owner creates tokens, so the sensitive scopes are the owner's own grants", async () => {
-    // volume:delete stays in the console's flagged group for the owner's own tokens, and no preset carries it.
+    // The owner can save a sensitive scope on a custom token without granting admin identity.
     const owner = await call(harness.base, "/api/tokens", { body: { name: "by-owner", scopes: ["volume:delete"] } });
     expect(owner.status).toBe(201);
     expect((owner.json.record as unknown as { scopes: string[] }).scopes).toEqual(["volume:delete"]);
 
-    // A token cannot create one, not even the admin preset that holds every other scope.
+    // Token management is owner-only, including for an admin token.
     for (const input of [
       { name: "admin", preset: "admin" as const },
       { name: "operator", preset: "operator" as const },

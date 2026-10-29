@@ -53,9 +53,9 @@ The command line can create one too: `minibox token create <name>` prints the se
 | Preset | What it allows |
 |---|---|
 | `readonly` | Read boxes and files on this host. By default it sees only the boxes it created, and it cannot create boxes. Give it specific boxes, or every box, to make it useful. |
-| `operator` | Everything except secret use, on this host. Only the boxes the token created. |
+| `operator` | Create and manage its own boxes on this host, including terminals, files, checkpoints, tools and SSH. No secret use or storage administration. |
 | `sandboxed-agent` | Like `operator`, but without mounting existing volumes, installing tools, or SSH. Quotas apply: 5 boxes, 8 CPU cores and 16 GB in total, a 4-hour TTL, 60 requests a minute, and 20 manual checkpoints. |
-| `admin` | Every scope, on every box and every host. Use it only for a trusted tool. |
+| `admin` | Every box and host, secret use and storage administration. Deletes keep recycle-bin copies by default. Use it only for a trusted tool. |
 
 ### Scopes
 
@@ -73,9 +73,9 @@ Each preset is a set of these scopes:
 | `checkpoint:create` | Take checkpoints and snapshots, and change or delete the ones the token created |
 | `checkpoint:restore` | Roll a box back to a checkpoint |
 | `volume:read` | See volumes |
-| `volume:write` | Create volumes |
+| `volume:write` | Provision default Box role volumes and mount accessible volumes read-write. Explicit independent volume creation or deletion also requires storage administrator identity |
 | `volume:attach` | Mount existing volumes into boxes |
-| `volume:delete` | Delete several volumes at once. A token acts only on the volumes it created. No preset includes it. Pruning orphaned volumes is for the owner only. |
+| `volume:delete` | Delete several volumes at once, with storage administrator identity. The admin preset includes this scope; adding it alone does not grant administrator identity. |
 | `tool:install` | Install, upgrade and remove tools. Save a box as a template, and delete templates. |
 | `secret:use` | Give a box a host secret, or the secret for a repository clone |
 | `trash:skip` | Delete a box or a volume without keeping a copy in the recycle bin. No preset includes it. |
@@ -83,6 +83,19 @@ Each preset is a set of these scopes:
 Only the owner can create, change or revoke tokens. A token cannot create other tokens. Building or rebuilding a template, and pulling an image, are for the owner only. No scope allows them.
 
 A box or volume delete keeps a copy of its data in the [recycle bin](checkpoints.md#recycle-bin) unless the request sets `skipTrash`, which needs `trash:skip`. The recycle bin itself, its list, restore and purge, is for the owner only.
+
+### Storage administration
+
+Only the owner and an **unmodified admin token** can select, list or configure storage pools, or explicitly create/delete volumes, including batch deletion and orphan pruning. The admin preset's scopes and box/host ranges must be unrestricted. Custom scopes, a token name or a volume scope alone do not grant administrator identity. These rules apply to every saved token.
+
+| Caller | Storage pools and independent volumes | Box functions |
+| --- | --- | --- |
+| Owner | Allowed | Allowed |
+| Unmodified admin | Resource grants, confirmation and audit apply | Required scopes apply |
+| Operator, sandboxed-agent, custom or narrowed admin | Refused | Box/resource grants and scopes apply |
+| Box self-token | Refused | Only that box's self operations |
+
+When no pool is specified, the server provisions default role volumes for an authorized Box create. Deleting a Box can clean up the volumes it owns under the Box deletion rules. Files, terminals, ports, checkpoints and activity use their own scopes on authorized boxes; SSH requires `box:ssh`. Token management and other owner-only operations require the owner.
 
 ### Revoke a token
 
@@ -97,18 +110,3 @@ A revoked or expired token stays in the list, with its name, until you delete it
 A live token cannot be deleted. Revoke it first. Deleting a record changes nothing for scripts, because the token has already stopped working. The activity log keeps the `token.delete` event with the token's name and id, and the earlier events about it keep their names. It never records the secret.
 
 From the command line, `minibox token delete <id>` deletes one record, and `minibox token prune` deletes all of them. Over REST, they are `DELETE /api/tokens/{id}/record` and `POST /api/tokens/prune`. Only the owner can call them.
-
-## Storage administration after issue #286
-
-Only the owner and an **unmodified admin token** may select a storage pool or explicitly create/delete volumes (including batch deletion and orphan pruning), or list/change storage pools. This rule applies immediately to saved tokens after an upgrade. `volume:write`, `volume:delete`, a token named “admin”, and a custom token with every scope do not grant administrator identity.
-
-The server derives this capability from its stored admin preset, full audit policy and unrestricted box/host grants. Editing scopes or narrowing boxes/hosts removes it. Existing unmodified admin records remain compatible; no new credential field is trusted from the client. Other owner-only operations, including token management, remain owner-only.
-
-| Caller | Storage management / explicit pool | Box functions |
-| --- | --- | --- |
-| Owner | Allowed | Allowed |
-| Unmodified admin | Allowed within host/resource grants, with confirmation/audit | Existing scopes apply |
-| Operator / sandboxed / custom / narrowed admin | Refused, even with volume scopes | Existing box/resource scopes apply |
-| Box self-token | Refused | Existing self operations only |
-
-A permitted Box create without a pool still receives its default role volumes as a server lifecycle operation. Scoped tokens retain file writes, terminal/exec, ports, checkpoints and activity on their granted boxes; SSH still requires `box:ssh`. Rebuild cannot manufacture an arbitrary named volume. `volume:write` remains useful for writing accessible volumes and does not grant independent volume creation.
