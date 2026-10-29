@@ -38,7 +38,7 @@ import { assertFresh, containerSpec, movedTag } from "./rebuild";
 import { provisionSelfToken } from "./self-token";
 import { startupNow } from "./startup";
 import { copyRecipe } from "./template-builds";
-import { heldImage } from "./template-sync";
+import { findTemplateSource } from "./template-sync";
 
 /** The volumes a checkpoint move may carry, and what happens to each of the box's mounts on the target. */
 interface CheckpointVolume extends MoveVolume {
@@ -207,22 +207,15 @@ async function templateOnTarget(
   image: string,
   details: ImageDetails,
 ): Promise<boolean> {
-  if (await heldImage(to, image)) return needsImage(to, image, details);
-  const sender = await firstHolder(holders, image);
-  if (!sender) {
-    throw conflict(msg("move_checkpoint_template_missing", { host: to.host.id, image }));
-  }
-  return needsImage(to, image, details);
+  // A tag the target holds for another image is refused here, by needsImage, before anything is taken.
+  if (!(await needsImage(to, image, details))) return false;
+  if (await firstHolder(holders, image)) return true;
+  throw conflict(msg("move_checkpoint_template_missing", { host: to.host.id, image }));
 }
 
-/** The first host that holds the image as a template, so a copy can be sent from it. */
-async function firstHolder(holders: readonly HostCtx[], image: string): Promise<HostCtx | null> {
-  for (const host of holders) {
-    if (host.host.status === "offline" || host.host.transport === "agent") continue;
-    const held = await heldImage(host, image);
-    if (held?.labels[host.keys.template] === "true") return host;
-  }
-  return null;
+/** Whether a host among `holders` holds the image as a template, so a copy can be sent from it. */
+async function firstHolder(holders: readonly HostCtx[], image: string): Promise<boolean> {
+  return (await findTemplateSource(holders, image)) !== null;
 }
 
 function volumePlanOf(from: HostCtx, to: HostCtx, spec: BoxSpec, layers: readonly PlannedLayer[]): CheckpointVolume[] {
