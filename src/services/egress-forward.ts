@@ -93,11 +93,6 @@ export class EgressForwardWatcher {
     return this.state.get(hostId) ?? null;
   }
 
-  /** Every host's last reading, for the overview. */
-  states(): readonly ForwardState[] {
-    return [...this.state.values()];
-  }
-
   /** A `proxy-only` box started: read the rules again at the next pass, since the owner looks at that moment. */
   boxStarted(hostId: string): void {
     this.pending.add(hostId);
