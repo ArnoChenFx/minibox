@@ -72,15 +72,6 @@ table.table {
   padding-left: 10px;
   padding-right: 10px;
 }
-/* An agent host has two labelled buttons, revoke and remove. They stack once the hosts table runs out of room, so the
-   card never scrolls sideways to reach the second one. */
-.table .actions.host-actions {
-  flex-wrap: wrap;
-  gap: 6px;
-}
-.table .actions.host-actions > .btn + .btn {
-  margin-left: 0;
-}
 /* A socket path or URL has no space to break at, so it breaks anywhere rather than widen the table. */
 .table td.host-endpoint {
   overflow-wrap: anywhere;

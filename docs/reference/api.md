@@ -389,7 +389,7 @@ An entry is kept for `TRASH_RETENTION_DAYS` days, see [Configuration](configurat
 | `PATCH` | `/api/hosts/{id}` | Replace a host's labels, as `{ "labels": { "gpu": "true" } }`. The local host takes them too. An empty object clears them. Returns `200` with the host |
 | `POST` | `/api/hosts/pairing` | Create a one-time pairing code for a new agent host `{ "id", "name"? }`. Returns `201` with the code and when it expires |
 | `POST` | `/api/hosts/{id}/revoke` | Revoke an agent host. Its agent is disconnected and cannot reconnect |
-| `DELETE` | `/api/hosts/{id}` | Remove a host |
+| `DELETE` | `/api/hosts/{id}` | Remove a host. An agent host's agent is revoked first: it is disconnected and cannot reconnect. Refused with `409` while the host still has boxes, volumes or checkpoints |
 
 Each host in `GET /api/hosts` carries `labels`: the labels it can be selected by, empty when it carries none.
 

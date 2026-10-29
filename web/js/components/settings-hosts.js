@@ -83,10 +83,9 @@ function drawHosts(view, card, { hosts, readDisk }) {
     <div class="list-more">${toggle}</div>`;
   card.querySelector("#stHostAdd").addEventListener("click", () => addHost(view));
   card.querySelectorAll("[data-remove-host]").forEach((btn) => {
-    btn.addEventListener("click", () => removeHost(view, btn.dataset.removeHost, btn.dataset.hostName));
-  });
-  card.querySelectorAll("[data-revoke-host]").forEach((btn) => {
-    btn.addEventListener("click", () => revokeAgent(view, btn.dataset.revokeHost, btn.dataset.hostName));
+    btn.addEventListener("click", () =>
+      removeHost(view, btn.dataset.removeHost, btn.dataset.hostName, btn.dataset.hostAgent === "true"),
+    );
   });
   bindToggles(view, card, () => drawHosts(view, card, { hosts, readDisk }));
   const lines = shown.map((host) => card.querySelector(`[data-disk-host="${host.id}"]`));
@@ -111,7 +110,7 @@ function hostRow(host, hosts) {
     <td class="${host.agent ? "" : "nowrap"}"><span class="badge ${HOST_BADGE[host.status] ?? ""}"><span class="dot"></span>${esc(t(`st.hostStatus.${host.status}`))}</span>${latency}${error}${agent}</td>
     <td class="hide-sm nowrap">${capacity}</td>
     <td class="hide-sm">${host.boxes}</td>
-    <td class="nowrap"><div class="actions host-actions">${hostActions(host, hosts)}</div></td>
+    <td class="nowrap"><div class="actions">${hostActions(host, hosts)}</div></td>
   </tr>
   <tr class="host-disk-row">
     <td colspan="6" data-disk-host="${esc(host.id)}">${diskLines(null)}</td>
@@ -150,18 +149,14 @@ function hostLabelsLine(labels) {
 }
 
 /**
- * A host's revoke and remove buttons. Each carries the host's label for its confirm dialog and toast, so a name two hosts
- * share is asked about with its id, and the operator can tell which of them goes.
+ * A host's remove button, for an agent host too: removing one revokes its agent first. It carries the host's label for
+ * its confirm dialog and toast, so a name two hosts share is asked about with its id, and the operator can tell which of
+ * them goes.
  */
 function hostActions(host, hosts) {
   if (host.transport === "local") return `<span class="subtle">${t("st.hostLocal")}</span>`;
   const label = hostLabel(host, hosts);
-  const revoke =
-    host.agent && !host.agent.revoked
-      ? `<button class="btn btn-sm" data-revoke-host="${esc(host.id)}" data-host-name="${esc(label)}">${icon("alert")}${t("st.agentRevoke")}</button>`
-      : "";
-  const remove = `<button class="btn btn-sm btn-danger" data-remove-host="${esc(host.id)}" data-host-name="${esc(label)}">${icon("x")}${t("st.hostRemove")}</button>`;
-  return `${revoke}${remove}`;
+  return `<button class="btn btn-sm btn-danger" data-remove-host="${esc(host.id)}" data-host-name="${esc(label)}" data-host-agent="${host.agent ? "true" : "false"}">${icon("x")}${t("st.hostRemove")}</button>`;
 }
 
 /** An agent's connection under its status: the version it runs, when it was last seen, and what to do when it is out of date. */
@@ -348,10 +343,11 @@ async function saveHost(view, form, close, confirmedFingerprint) {
   loadHosts(view);
 }
 
-async function removeHost(view, id, name) {
+/** Removes a host after a confirm. An agent host's dialog also says its agent is cut off and what is left on the machine. */
+async function removeHost(view, id, name, agent) {
   const ok = await confirmDialog({
     title: t("st.hostRemoveTitle"),
-    message: esc(t("st.hostRemoveMessage", { name })),
+    message: esc(t(agent ? "st.agentRemoveMessage" : "st.hostRemoveMessage", { name })),
     confirmText: t("st.hostRemove"),
     danger: true,
   });
@@ -363,25 +359,6 @@ async function removeHost(view, id, name) {
     return;
   }
   toast(t("st.hostRemoved"), { message: name });
-  await refreshHosts();
-  loadHosts(view);
-}
-
-async function revokeAgent(view, id, name) {
-  const ok = await confirmDialog({
-    title: t("st.agentRevokeTitle"),
-    message: esc(t("st.agentRevokeMessage", { name })),
-    confirmText: t("st.agentRevoke"),
-    danger: true,
-  });
-  if (!ok) return;
-  try {
-    await api(`/api/hosts/${enc(id)}/revoke`, { method: "POST" });
-  } catch (e) {
-    toastError(t("st.agentRevokeFailed"), e);
-    return;
-  }
-  toast(t("st.agentRevokedToast"), { message: name });
   await refreshHosts();
   loadHosts(view);
 }

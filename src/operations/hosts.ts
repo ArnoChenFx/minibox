@@ -350,7 +350,7 @@ const hostRemove = defineOperation({
     toolset: "meta",
     name: "remove_host",
     description:
-      "Remove a host and delete its stored credentials. Refused while the host still has boxes, volumes or checkpoints. Owner only.",
+      "Remove a host and delete its stored credentials. Removing an agent host also revokes its agent: it is disconnected at once and cannot reconnect, and the machine must be paired again with a new code. Refused while the host still has boxes, volumes or checkpoints. Owner only.",
   },
   activity: { action: () => "host.remove", target: (input) => input.id },
   audit: {

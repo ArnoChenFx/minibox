@@ -357,11 +357,8 @@ export default {
   "st.agentUpgrade": "Agent 需要升级",
   "st.agentUpgradeHelp":
     "它使用的 Agent 协议与当前 MiniBox 不同。请拉取最新的 minibox-agent 镜像，并用同一个数据卷重新创建容器。",
-  "st.agentRevoke": "吊销",
-  "st.agentRevokeTitle": "吊销此 Agent？",
-  "st.agentRevokeMessage": "{name} 会立即断开，且无法再次连接。它的 Box 和卷仍保留在该机器上。",
-  "st.agentRevokeFailed": "无法吊销 Agent",
-  "st.agentRevokedToast": "已吊销 Agent",
+  "st.agentRemoveMessage":
+    "{name} 将从 MiniBox 中移除，其 Agent 会立即断开，且无法再次连接；要再用这台机器，需用新的配对码重新配对。仍有 Box、卷或检查点的宿主机无法移除。移除不会删除机器上的任何容器或卷，Agent 的容器会在机器上空转，请在那台机器上用 docker rm -f 停止并删除该容器。",
   "st.tokenExpiry": "有效期（天）",
   "st.tokenExpiryHelp": "留空表示不过期。",
   "st.tokenQuotas": "配额",
