@@ -403,6 +403,7 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
         await deleteVolume(host, tools.id, { skipTrash: true, teardown: true });
       }
     },
+    release: (host) => egressForward.release(host),
     onLive: reconcileOnLive,
     onReachable: (host) => egressForward.hostOnline(host.host.id),
     agents,

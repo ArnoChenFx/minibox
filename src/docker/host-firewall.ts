@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { FORWARD_PROBE_SCRIPT, FORWARD_REPAIR_SCRIPT, judgeForwardReport } from "../egress/forward";
+import { checkOfReport, FORWARD_PROBE_SCRIPT, FORWARD_REPAIR_SCRIPT } from "../egress/forward";
 import { labelKeys } from "../labels";
 import { formatIpv4Cidr, ipv4At, parseIpv4Cidr } from "../lib/cidr";
 import { type ImageDetails, isRuntimeError, RuntimeError, type Runtime } from "../runtime";
@@ -225,17 +225,11 @@ export function hostFirewallMethods(
       }
       // The probe packet's address is inside the uplink's subnet, which is where a proxy there would sit.
       const address = ipv4At(network, 1);
-      const verdict = judgeForwardReport(result.logs, { bridge, source: address });
-      if (verdict.backends.length === 0) {
-        throw new RuntimeError(
-          "engine",
-          `the host forward probe read no iptables backend: ${result.logs.trim().slice(-LOG_TAIL_CHARS)}${
-            buildError === "" ? "" : ` (the helper image could not be built: ${buildError})`
-          }`,
-          "the host's FORWARD rules could not be read",
-        );
-      }
-      return { forwarding: !verdict.dropped, cause: verdict.cause, detail: verdict.detail };
+      return checkOfReport(
+        result.logs,
+        { bridge, source: address },
+        buildError === "" ? "" : ` (the helper image could not be built: ${buildError})`,
+      );
     },
 
     async allowHostForward(owner, bridge) {

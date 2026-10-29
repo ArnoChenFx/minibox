@@ -77,6 +77,26 @@ describe("the owner's repair over HTTP", () => {
     expect((await attention()).map((item) => item.kind)).toEqual(["host.forward_blocked"]);
   });
 
+  test("a chain that could not be removed leaves no warning behind once the box it was about is gone", async () => {
+    expect((await proxyOnlyBox("agent")).status).toBe(201);
+    runtime.forwardVerdict = DROPPED;
+    await app.egressForward.tick();
+    runtime.forwardVerdict = FORWARDING;
+    expect((await repair()).status).toBe(200);
+    // The firewall drops the uplink again, then the box is deleted and the chain cannot be removed.
+    runtime.forwardVerdict = DROPPED;
+    await app.egressForward.tick();
+    expect((await attention()).map((item) => item.kind)).toEqual(["host.forward_blocked"]);
+    runtime.allowHostForward = async () => {
+      throw new Error("engine gone");
+    };
+    expect((await call(base, "/api/boxes/agent", { method: "DELETE" })).status).toBe(200);
+    await app.egressForward.tick();
+
+    expect(await attention()).toEqual([]);
+    expect((await repair()).status).toBe(409);
+  });
+
   test("nothing is written before the call: a pass alone never touches the host's firewall", async () => {
     await blocked();
     expect(runtime.callsTo("allowHostForward")).toEqual([]);

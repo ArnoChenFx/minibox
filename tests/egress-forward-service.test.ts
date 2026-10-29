@@ -399,6 +399,89 @@ describe("the owner's repair, and nothing before it", () => {
     expect(runtime.callsTo("allowHostForward")).toEqual([]);
   });
 
+  test("a chain that could not be removed is tried again on the next pass, until it is gone", async () => {
+    runtime.forwardVerdict = DROPPED;
+    const box = await gated();
+    await watcher.tick();
+    runtime.forwardVerdict = FORWARDING;
+    await watcher.repair(host);
+    // The firewall is reloaded and drops the uplink again, which the next pass reads while the chain is still marked.
+    runtime.forwardVerdict = DROPPED;
+    await watcher.tick();
+    expect(watcher.stateOf(host.host.id)).toMatchObject({ forwarding: false, installed: true });
+    const working = runtime.allowHostForward.bind(runtime);
+    runtime.allowHostForward = async () => {
+      throw new Error("engine gone");
+    };
+    await boxes.deleteBox(host, box.boxId, true);
+    await watcher.tick();
+    // The removal failed, and the host is still known to carry the chain. What it keeps of the old reading is nothing
+    // that warns: the boxes it was about are gone, and a repair has nothing to repair.
+    expect(watcher.stateOf(host.host.id)).toMatchObject({ installed: true, forwarding: true, cause: null, boxes: [] });
+    await expect(watcher.repair(host)).rejects.toMatchObject({ key: "egress_forward_no_boxes" });
+
+    runtime.allowHostForward = working;
+    await watcher.tick();
+    expect(runtime.callsTo("allowHostForward").at(-1)?.args).toEqual(["mbtest", ""]);
+    expect(watcher.stateOf(host.host.id)).toBeNull();
+    await watcher.tick();
+    expect(runtime.callsTo("allowHostForward").filter((call) => call.args[1] === "")).toHaveLength(1);
+  });
+
+  test("forgetting a host changes nothing on it, since MiniBox shutting down forgets every remote host", async () => {
+    runtime.forwardVerdict = DROPPED;
+    await gated();
+    await watcher.tick();
+    runtime.forwardVerdict = FORWARDING;
+    await watcher.repair(host);
+    const calls = runtime.callsTo("allowHostForward").length;
+    watcher.forget(host.host.id);
+    expect(runtime.callsTo("allowHostForward")).toHaveLength(calls);
+    expect(watcher.stateOf(host.host.id)).toBeNull();
+  });
+
+  test("releasing a host takes the chain MiniBox added, and a host that has none is left alone", async () => {
+    await watcher.release(host);
+    expect(runtime.callsTo("allowHostForward")).toEqual([]);
+
+    runtime.forwardVerdict = DROPPED;
+    await gated();
+    await watcher.tick();
+    runtime.forwardVerdict = FORWARDING;
+    await watcher.repair(host);
+    await watcher.release(host);
+    expect(runtime.callsTo("allowHostForward").at(-1)?.args).toEqual(["mbtest", ""]);
+    expect(watcher.stateOf(host.host.id)?.installed).toBe(false);
+  });
+
+  test("a release that fails is logged and does not stop the removal of the host", async () => {
+    runtime.forwardVerdict = DROPPED;
+    await gated();
+    await watcher.tick();
+    runtime.forwardVerdict = FORWARDING;
+    await watcher.repair(host);
+    runtime.allowHostForward = async () => {
+      throw new Error("engine gone");
+    };
+    await watcher.release(host);
+    expect(lines.filter((line) => line.includes("egress.forward_rule_remove_failed"))).toHaveLength(1);
+  });
+
+  test("the log says what can be done for the cause: a button for a policy drop, nothing offered for the rest", async () => {
+    runtime.forwardVerdict = DROPPED;
+    await gated();
+    await watcher.tick();
+    expect(errors().find((line) => line.includes("egress.forward_blocked"))).toContain("confirm the repair");
+
+    lines.length = 0;
+    watcher.forget(host.host.id);
+    runtime.forwardVerdict = { forwarding: false, cause: "rule", detail: "iptables drops traffic by a rule" };
+    await watcher.tick();
+    const line = errors().find((entry) => entry.includes("egress.forward_blocked")) ?? "";
+    expect(line).toContain("offers no rule for this cause");
+    expect(line).not.toContain("confirm the repair");
+  });
+
   test("a chain that cannot be removed is logged once and does not stop the pass", async () => {
     runtime.forwardVerdict = DROPPED;
     const box = await gated();

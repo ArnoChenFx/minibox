@@ -153,6 +153,11 @@ export interface HostManagerOptions {
   readonly detach: (host: HostCtx) => void;
   /** Lifts the shared tools volume a host is going away with, through the same guards as any delete. */
   readonly liftToolsVolume?: (host: HostCtx) => Promise<void>;
+  /**
+   * Takes back what the control plane put on a host that is going away for good, while its engine can still be reached.
+   * It runs when a host is removed and never at shutdown, which detaches the same hosts and must leave them as they are.
+   */
+  readonly release?: (host: HostCtx) => Promise<void>;
   /** Called when a remote host's engine becomes reachable, so its boxes are reconciled. */
   readonly onLive?: (host: HostCtx) => void;
   /**
@@ -467,6 +472,7 @@ export class HostManager {
         throw new AppError(409, "conflict", msg("host_in_use", { host: id, count: usage.total }), usage);
       }
       if (this.options.liftToolsVolume) await this.options.liftToolsVolume(ctx);
+      if (this.options.release) await this.options.release(ctx);
       const view = this.view(ctx);
       const stored = this.stored.get(id);
       const agentId = stored ? agentIdOf(stored) : null;

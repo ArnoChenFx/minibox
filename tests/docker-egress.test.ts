@@ -23,6 +23,7 @@ import { join } from "node:path";
 import type { Readable } from "node:stream";
 
 import { type App, createApp } from "../src/app";
+import { hostForwardChain } from "../src/docker/host-firewall";
 import { createDockerRuntime } from "../src/docker/runtime";
 import { type EgressRequest, normalizeEgress } from "../src/egress/policy";
 import { PROXY_ALIAS } from "../src/egress/proxy";
@@ -52,6 +53,12 @@ const DENIED = "example.org";
 const SERVICE_TEXT = "gateway-ok\n";
 const PREVIEW_PORT = 8080;
 const runtime: Runtime = createDockerRuntime(SOCKET);
+
+/** The interfaces this machine's IPv4 default route leaves through, from its own `ip`. */
+function defaultRouteDevices(): string[] {
+  const out = Bun.spawnSync(["ip", "-4", "route", "show", "default"]).stdout.toString();
+  return [...new Set([...out.matchAll(/\bdev (\S+)/g)].map((found) => found[1] ?? ""))].toSorted();
+}
 
 /** Removes the forward chain this run added, leaving the chains of any other MiniBox on the host alone. */
 async function clearForwardChain(): Promise<void> {
@@ -454,6 +461,21 @@ describe.skipIf(!enabled)("egress tiers on a real engine", () => {
     expect(await runtime.checkHostForward(prefix, uplink?.bridge ?? "", "240.0.0.0/24")).toMatchObject({
       forwarding: true,
     });
+
+    // The chain accepts the uplink towards the interfaces of the host's default route and no other. The helper finds them
+    // with BusyBox's `ip`, and one that did not filter by `default` would list every route's interface, which would let
+    // a box past Docker's isolation between bridges.
+    const added = await runtime.runHelper({
+      image: helperTag,
+      cmd: ["sh", "-c", `iptables -S ${hostForwardChain(prefix)}`],
+      capAdd: ["NET_ADMIN"],
+      hostNetwork: true,
+      readonlyRoot: false,
+      timeoutSec: 60,
+    });
+    expect(added.exitCode).toBe(0);
+    const allowed = [...added.logs.matchAll(/^-A \S+ -i br-\S+ -o (\S+) -j ACCEPT$/gm)].map((found) => found[1] ?? "");
+    expect(allowed.toSorted()).toEqual(defaultRouteDevices());
 
     // A proxy-only box still reaches its allowlist through the rule, which proves the rule is what carries the traffic.
     expect((await curl(gated, ["-o", "/dev/null", "-w", "%{http_code}", `https://${ALLOWED}/`])).out).toBe("200");

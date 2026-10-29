@@ -1,4 +1,5 @@
 import { parseIpv4Cidr } from "../lib/cidr";
+import { type HostForwardCheck, RuntimeError } from "../runtime";
 
 /**
  * The host's `FORWARD` chain is what lets a `proxy-only` box reach the internet. The box itself has no route out: its
@@ -50,7 +51,7 @@ export interface BackendVerdict {
   readonly verdict: "ok" | "drop" | "unknown";
   /** Which kind of decision dropped the packet. Null unless `verdict` is `drop`. */
   readonly cause: DropCause | null;
-  /** True when a rule the check cannot read might have accepted the packet, so a `drop` is only a guess. */
+  /** True when a rule the check cannot read might have decided the packet otherwise, so a `drop` is only a guess. */
   readonly unsure: boolean;
   readonly reason: string;
 }
@@ -257,17 +258,55 @@ function ruleMatches(rule: ParsedRule, probe: ForwardProbe, source: number): Mat
 const BUILT_IN_CHAINS = new Set(["INPUT", "FORWARD", "OUTPUT"]);
 
 /**
+ * What the rules a walk could not read might have done to the packet. A rule that might have accepted it (`accept`)
+ * leaves a drop further on a guess, but not an acceptance: the packet is accepted either way. A rule that might have
+ * dropped it, handed it back or sent it into a chain the check cannot follow (`stop`) leaves everything further on a
+ * guess. Telling the two apart is what lets a host with an exotic ACCEPT above Docker's own (Tailscale's `-m mark`, an
+ * IPsec policy) read as fine instead of raising a warning on a host that forwards.
+ */
+interface Doubt {
+  readonly accept: boolean;
+  readonly stop: boolean;
+}
+
+const NO_DOUBT: Doubt = { accept: false, stop: false };
+const MAY_ACCEPT: Doubt = { accept: true, stop: false };
+const MAY_STOP: Doubt = { accept: false, stop: true };
+const ANY_DOUBT: Doubt = { accept: true, stop: true };
+
+const joined = (first: Doubt, second: Doubt): Doubt => ({
+  accept: first.accept || second.accept,
+  stop: first.stop || second.stop,
+});
+const isDoubtful = (doubt: Doubt) => doubt.accept || doubt.stop;
+
+/**
  * What one chain decided. `accept` and `drop` are verdicts, with the cause of a drop. `none` is the chain falling off
  * its end, which returns to the caller. `return` is a `RETURN` in a built-in chain, which hands the packet to the
- * policy. `unsure` marks a walk where a rule it could not read might have decided otherwise, so nothing certain can be
- * said about a packet that reaches the end of it. `goto` marks a `none` that left through a `-g`, and a `return` is the
+ * policy. `doubt` is what a rule it could not read might have done on the way, so nothing certain can be said about a
+ * packet that reaches the end of a doubtful walk. `goto` marks a `none` that left through a `-g`, and a `return` is the
  * same thing from `RETURN`: in `FORWARD` itself, the walk then never reaches the end of the chain.
  */
 type Decision =
   | { readonly kind: "accept" }
   | { readonly kind: "drop"; readonly cause: DropCause }
-  | { readonly kind: "return"; readonly unsure: boolean }
-  | { readonly kind: "none"; readonly unsure: boolean; readonly goto?: boolean };
+  | { readonly kind: "return"; readonly doubt: Doubt }
+  | { readonly kind: "none"; readonly doubt: Doubt; readonly goto?: boolean };
+
+/**
+ * What a rule the check could not read might have done, were it to apply. Its target says: an ACCEPT can only accept,
+ * a DROP, a RETURN or a jump the check cannot follow may take the packet somewhere else, and a jump into a chain it
+ * can follow might do whatever that chain does. A `-g` may also skip the rules after it, so it is a stop either way.
+ */
+function doubtOf(chains: Map<string, Chain>, rule: ParsedRule, probe: ForwardProbe, source: number, depth: number) {
+  const target = rule.target;
+  if (target.kind === "accept") return MAY_ACCEPT;
+  if (target.kind !== "chain" || target.goto === true || !chains.has(target.name)) return MAY_STOP;
+  const inner = decide(chains, target.name, probe, source, depth + 1);
+  if (inner.kind === "accept") return MAY_ACCEPT;
+  if (inner.kind === "none") return inner.doubt;
+  return MAY_STOP;
+}
 
 /**
  * Walks one chain, following jumps, and stops at the first verdict. iptables' `RETURN` is two different things, and
@@ -275,40 +314,43 @@ type Decision =
  * goes on with its next rule, while in `FORWARD` itself it ends the traversal, so the policy decides.
  */
 function decide(chains: Map<string, Chain>, name: string, probe: ForwardProbe, source: number, depth = 0): Decision {
-  if (depth > MAX_DEPTH) return { kind: "none", unsure: true };
+  if (depth > MAX_DEPTH) return { kind: "none", doubt: ANY_DOUBT };
   const chain = chains.get(name);
-  if (!chain) return { kind: "none", unsure: false };
-  let unsure = false;
+  if (!chain) return { kind: "none", doubt: NO_DOUBT };
+  let doubt = NO_DOUBT;
+  // An acceptance is certain unless a rule above it might have taken the packet elsewhere; a drop, unless one might
+  // have done anything at all. What is left falls to the policy, with the doubt it gathered.
+  const accepted = (): Decision => (doubt.stop ? { kind: "none", doubt: ANY_DOUBT } : { kind: "accept" });
+  const dropped = (cause: DropCause): Decision =>
+    isDoubtful(doubt) ? { kind: "none", doubt: joined(doubt, MAY_STOP) } : { kind: "drop", cause };
   for (const rule of chain.rules) {
     const matched = ruleMatches(rule, probe, source);
     if (matched === "no") continue;
     // A rule the check cannot fully read is skipped, but it leaves the rest of this walk open: it may have accepted or
     // dropped the packet, and MiniBox must not claim either.
     if (matched === "unknown") {
-      unsure = true;
+      doubt = joined(doubt, doubtOf(chains, rule, probe, source, depth));
       continue;
     }
     switch (rule.target.kind) {
       case "accept":
-        return unsure ? { kind: "none", unsure: true } : { kind: "accept" };
+        return accepted();
       case "drop":
-        return unsure ? { kind: "none", unsure: true } : { kind: "drop", cause: "rule" };
+        return dropped("rule");
       case "return":
         // `RETURN` in a built-in chain ends the traversal, which leaves the packet to the chain's policy.
-        if (BUILT_IN_CHAINS.has(name)) return { kind: "return", unsure };
+        if (BUILT_IN_CHAINS.has(name)) return { kind: "return", doubt };
         // In a chain of its own it ends only that chain, and the caller carries on with its next rule.
-        return { kind: "none", unsure };
+        return { kind: "none", doubt };
       case "chain": {
         const inner = decide(chains, rule.target.name, probe, source, depth + 1);
         // A jump that returns decides nothing, so the caller keeps walking; one that accepted or dropped is the answer.
-        if (inner.kind === "accept" || inner.kind === "drop") {
-          return unsure ? { kind: "none", unsure: true } : inner;
-        }
-        if (inner.kind === "none" && inner.unsure) unsure = true;
-        if (inner.kind === "return") unsure = true;
+        if (inner.kind === "accept") return accepted();
+        if (inner.kind === "drop") return dropped(inner.cause);
+        doubt = joined(doubt, inner.kind === "none" ? inner.doubt : MAY_STOP);
         // `-g` never comes back: when the chain it went to ends, the packet carries on from where this chain was called,
         // so this chain's later rules are not walked. In `FORWARD` that leaves the packet to the policy.
-        if (rule.target.goto === true) return { kind: "none", unsure, goto: true };
+        if (rule.target.goto === true) return { kind: "none", doubt, goto: true };
         break;
       }
       default:
@@ -316,16 +358,17 @@ function decide(chains: Map<string, Chain>, name: string, probe: ForwardProbe, s
         break;
     }
   }
-  return { kind: "none", unsure };
+  return { kind: "none", doubt };
 }
 
 function verdictOf(backend: Backend, probe: ForwardProbe, source: number): BackendVerdict {
+  // A backend that was not read may have decided the packet, so a drop found in another one is only a guess at its cause.
   if (backend.failed) {
     return {
       backend: backend.name,
       verdict: "unknown",
       cause: null,
-      unsure: false,
+      unsure: true,
       reason: `${backend.name} could not be read`,
     };
   }
@@ -335,7 +378,7 @@ function verdictOf(backend: Backend, probe: ForwardProbe, source: number): Backe
       backend: backend.name,
       verdict: "unknown",
       cause: null,
-      unsure: false,
+      unsure: true,
       reason: `${backend.name} has no FORWARD chain`,
     };
   }
@@ -364,7 +407,7 @@ function verdictOf(backend: Backend, probe: ForwardProbe, source: number): Backe
   // Nothing in FORWARD accepted the packet, so the chain's own policy decides it. A walk that ended on a `RETURN` or a
   // `-g` in FORWARD itself never got to the end of the chain, which is where a rule MiniBox appends would sit.
   const early = decided.kind === "return" || decided.goto === true;
-  return policyVerdict(backend.name, forward, decided.unsure, early, probe);
+  return policyVerdict(backend.name, forward, decided.doubt, early, probe);
 }
 
 /**
@@ -377,10 +420,11 @@ function verdictOf(backend: Backend, probe: ForwardProbe, source: number): Backe
 function policyVerdict(
   name: string,
   forward: Chain,
-  unsure: boolean,
+  doubt: Doubt,
   early: boolean,
   probe: ForwardProbe,
 ): BackendVerdict {
+  const unsure = isDoubtful(doubt);
   if (forward.policy === "ACCEPT") {
     return { backend: name, verdict: "ok", cause: null, unsure, reason: `${name} FORWARD policy is ACCEPT` };
   }
@@ -390,7 +434,7 @@ function policyVerdict(
       verdict: "drop",
       cause: policyCause(unsure, early),
       unsure,
-      reason: policyReason(name, forward.policy, unsure, early, probe.bridge),
+      reason: policyReason(name, forward.policy, doubt, early, probe.bridge),
     };
   }
   return {
@@ -407,9 +451,11 @@ function policyCause(unsure: boolean, early: boolean): DropCause | null {
   return early ? "unreachable" : "policy";
 }
 
-function policyReason(name: string, policy: string, unsure: boolean, early: boolean, bridge: string): string {
+function policyReason(name: string, policy: string, doubt: Doubt, early: boolean, bridge: string): string {
   const head = `${name} FORWARD policy is ${policy}`;
-  if (unsure) return `${head}, and a rule MiniBox does not read may accept ${bridge}`;
+  if (doubt.accept) return `${head}, and a rule MiniBox does not read may accept ${bridge}`;
+  // Only a rule that may drop or divert it: the policy drops it anyway, and the cause is what is not known.
+  if (doubt.stop) return `${head}, and a rule MiniBox does not read may be what drops ${bridge}`;
   if (early) return `${head}, and a RETURN or -g in FORWARD leaves ${bridge} to it before the end of the chain`;
   return `${head} and no rule accepts ${bridge}`;
 }
@@ -493,6 +539,39 @@ export function judgeForwardReport(
   const detail =
     backends.length === 0 ? "no iptables backend answered" : backends.map((entry) => entry.reason).join("; ");
   return { bridges: report.bridges, egress: report.egress, backends, dropped, cause, detail };
+}
+
+/**
+ * What a report says about the uplink, in the shape the service wants: whether it is forwarded, why not, and one line for
+ * the log. A report that cannot back a claim throws instead of making one, so the pass fails and the overview keeps what
+ * it last knew. That is the case when no backend could be read, and also when every backend that was read lets the uplink
+ * through but one could not be: the table that decides may be the one nobody looked at, and saying `forwarding` would
+ * clear a warning, or call a repair a success, on no evidence. A drop found on a backend still counts when another could
+ * not be read, but it has no cause then, since the unread one may be what drops.
+ */
+export function checkOfReport(
+  logs: string,
+  probe: Omit<ForwardProbe, "egress"> & { egress?: readonly string[] },
+  note = "",
+): HostForwardCheck {
+  const verdict = judgeForwardReport(logs, probe);
+  const unread = verdict.backends.filter((entry) => entry.verdict === "unknown");
+  if (verdict.backends.length === 0 || unread.length === verdict.backends.length) {
+    throw new RuntimeError(
+      "engine",
+      `the host forward probe read no iptables backend: ${logs.trim().slice(-512)}${note}`,
+      "the host's FORWARD rules could not be read",
+    );
+  }
+  if (!verdict.dropped && unread.length > 0) {
+    const names = unread.map((entry) => entry.backend).join(", ");
+    throw new RuntimeError(
+      "engine",
+      `the host forward probe could not read ${names}: ${unread.map((entry) => entry.reason).join("; ")}${note}`,
+      `the host's FORWARD rules could not be fully read (${names}), so the uplink was not checked on every backend`,
+    );
+  }
+  return { forwarding: !verdict.dropped, cause: verdict.cause, detail: verdict.detail };
 }
 
 /**

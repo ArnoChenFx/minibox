@@ -158,16 +158,22 @@ export class EgressForwardWatcher {
   }
 
   /**
-   * Forgets a host that went away, so a host id that comes back does not inherit its verdict. A chain the install put on
-   * that host is removed first: the engine is still reachable at this point, and leaving MiniBox's rule on a host it no
-   * longer manages is a leftover nobody would look for.
+   * Forgets a host, so a host id that comes back does not inherit its verdict. It changes nothing on the host: it also runs
+   * when MiniBox shuts down, and the chain a repair added must still be there when it starts again. A host that is being
+   * removed for good is `release`d first.
    */
   forget(hostId: string): void {
-    const host = this.options.hosts.list().find((candidate) => candidate.host.id === hostId);
-    const installed = this.state.get(hostId)?.installed === true;
     this.state.delete(hostId);
     this.failing.delete(hostId);
-    if (host && installed) void this.dropRule(host);
+  }
+
+  /**
+   * A host is being removed, while its engine can still be reached: the chain this install put there goes with it, since
+   * a rule left on a host MiniBox no longer manages is a leftover nobody would look for. A failure is logged and does not
+   * stop the removal.
+   */
+  async release(host: HostCtx): Promise<void> {
+    if (this.state.get(host.host.id)?.installed === true) await this.dropRule(host);
   }
 
   /**
@@ -198,7 +204,12 @@ export class EgressForwardWatcher {
     if (skipReason(host) !== null) return this.state.get(host.host.id) === undefined;
     const boxes = proxyOnlyBoxes(host);
     if (boxes.length === 0) {
-      this.state.delete(host.host.id);
+      const kept = this.state.get(host.host.id);
+      if (kept?.installed === true) {
+        // The chain is still on the host after a removal that failed, and `installed` is how the next pass knows to try
+        // again. Only that is kept: a reading about boxes that are gone must not outlive them as a warning, or a repair.
+        this.state.set(host.host.id, { ...kept, forwarding: true, cause: null, detail: "", boxes: [] });
+      } else this.state.delete(host.host.id);
       return false;
     }
     return true;
@@ -340,7 +351,10 @@ export class EgressForwardWatcher {
       bridge,
       boxes: names,
       detail: verdict.detail,
-      action: "confirm the repair on the overview, or add the FORWARD rule by hand (see docs/admin/network-egress.md)",
+      action:
+        verdict.cause === "policy"
+          ? "confirm the repair on the overview, or add the FORWARD rule by hand (see docs/admin/network-egress.md)"
+          : "MiniBox offers no rule for this cause: the overview says what it is, and docs/admin/network-egress.md says what to change",
     });
     return state;
   }

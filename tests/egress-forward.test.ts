@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  checkOfReport,
   FORWARD_BACKENDS,
   FORWARD_PROBE_SCRIPT,
   FORWARD_REPAIR_SCRIPT,
@@ -509,37 +510,131 @@ describe("the helper scripts", () => {
   });
 });
 
-test("an unread port exception keeps a later drop or accept uncertain", () => {
-  for (const target of ["DROP", "ACCEPT"]) {
-    const verdict = judgeForwardReport(
-      report([BRIDGE], {
-        iptables: [
-          "-P FORWARD DROP",
-          `-A FORWARD -i ${BRIDGE} -p tcp -m tcp --dport 443 -j ACCEPT`,
-          `-A FORWARD -i ${BRIDGE} -j ${target}`,
-        ],
-      }),
-      PROBE,
-    );
-    expect(verdict.cause).toBeNull();
+describe("a rule the check cannot read, above one it can", () => {
+  /** An exception for one port. The check does not know the probe's port, so it cannot say whether this applies. */
+  const PORT_EXCEPTION = `-A FORWARD -i ${BRIDGE} -p tcp -m tcp --dport 443 -j ACCEPT`;
+
+  test("an unread accept keeps a later drop uncertain, directly or through a jump", () => {
+    for (const rules of [
+      [`-A FORWARD -i ${BRIDGE} -j DROP`],
+      ["-A FORWARD -j CUSTOM", `-A CUSTOM -i ${BRIDGE} -j DROP`],
+    ]) {
+      const verdict = judge(["-P FORWARD DROP", PORT_EXCEPTION, ...rules]);
+      expect(verdict.cause).toBeNull();
+      expect(verdict.backends[0]?.unsure).toBe(true);
+    }
+  });
+
+  test("an unread accept leaves a later accept certain: the packet is accepted either way", () => {
+    for (const rules of [
+      [`-A FORWARD -i ${BRIDGE} -j ACCEPT`],
+      ["-A FORWARD -j CUSTOM", `-A CUSTOM -i ${BRIDGE} -j ACCEPT`],
+    ]) {
+      const verdict = judge(["-P FORWARD DROP", PORT_EXCEPTION, ...rules]);
+      expect(verdict).toMatchObject({ dropped: false, cause: null });
+      expect(verdict.backends[0]).toMatchObject({ verdict: "ok", unsure: false });
+    }
+  });
+
+  test("Tailscale's chain above Docker's rules does not make a host that forwards look blocked", () => {
+    // `-m mark` is a match the check does not read, and the rule it sits in accepts: whatever it decides, the bridge's
+    // traffic is accepted by Docker's rule right below, and DROP is only the policy.
+    const verdict = judge([
+      "-P FORWARD DROP",
+      "-A FORWARD -j ts-forward",
+      `-A FORWARD -i ${BRIDGE} ! -o ${BRIDGE} -j ACCEPT`,
+      "-A ts-forward -i tailscale0 -j MARK --set-mark 0x40000/0xff0000",
+      "-A ts-forward -m mark --mark 0x40000/0xff0000 -j ACCEPT",
+      "-A ts-forward -s 100.64.0.0/10 -o tailscale0 -j DROP",
+      "-A ts-forward -o tailscale0 -j ACCEPT",
+    ]);
+    expect(verdict.dropped).toBe(false);
+  });
+
+  test("an unread accept with nothing to accept after it leaves the drop uncertain, and says why", () => {
+    const verdict = judge(["-P FORWARD DROP", PORT_EXCEPTION]);
+    expect(verdict).toMatchObject({ dropped: true, cause: null });
+    expect(verdict.backends[0]?.reason).toContain("may accept");
+  });
+
+  test("an unread drop keeps a later accept uncertain", () => {
+    const verdict = judge([
+      "-P FORWARD DROP",
+      "-A FORWARD -m set --match-set blocked src -j DROP",
+      `-A FORWARD -i ${BRIDGE} -j ACCEPT`,
+    ]);
+    expect(verdict).toMatchObject({ dropped: true, cause: null });
     expect(verdict.backends[0]?.unsure).toBe(true);
-  }
+  });
+
+  test("an unread drop with nothing after it is said to be what may drop it, not what may accept it", () => {
+    const verdict = judge(["-P FORWARD DROP", "-A FORWARD -m set --match-set blocked src -j DROP"]);
+    expect(verdict).toMatchObject({ dropped: true, cause: null });
+    expect(verdict.backends[0]?.reason).toContain("may be what drops");
+    expect(verdict.backends[0]?.reason).not.toContain("may accept");
+  });
+
+  test("an unread jump into a chain that decides nothing leaves the reading certain", () => {
+    const verdict = judge([
+      "-P FORWARD DROP",
+      "-A FORWARD -m set --match-set blocked src -j CUSTOM",
+      "-A CUSTOM -i eth9 -j DROP",
+    ]);
+    expect(verdict).toMatchObject({ dropped: true, cause: "policy" });
+    expect(verdict.backends[0]?.unsure).toBe(false);
+  });
+
+  test("an unread goto may skip the rules after it, so an accept below it is no more certain than a drop", () => {
+    const verdict = judge([
+      "-P FORWARD DROP",
+      "-A FORWARD -m set --match-set blocked src -g ZONE",
+      `-A FORWARD -i ${BRIDGE} -j ACCEPT`,
+    ]);
+    expect(verdict).toMatchObject({ dropped: true, cause: null });
+    expect(verdict.backends[0]?.unsure).toBe(true);
+  });
 });
 
-test("an unread port exception also keeps a jump into a chain that accepts or drops uncertain", () => {
-  for (const target of ["DROP", "ACCEPT"]) {
-    const verdict = judgeForwardReport(
-      report([BRIDGE], {
-        iptables: [
-          "-P FORWARD DROP",
-          `-A FORWARD -i ${BRIDGE} -p tcp -m tcp --dport 443 -j ACCEPT`,
-          "-A FORWARD -j CUSTOM",
-          `-A CUSTOM -i ${BRIDGE} -j ${target}`,
-        ],
-      }),
-      PROBE,
-    );
-    expect(verdict.cause).toBeNull();
-    expect(verdict.backends[0]?.unsure).toBe(true);
-  }
+const check = (backends: Record<string, string[] | null>) => checkOfReport(report([BRIDGE], backends), PROBE);
+
+describe("what a report can back", () => {
+  test("every backend unreadable is an error, not a host that forwards", () => {
+    expect(() => check({ iptables: null })).toThrow("read no iptables backend");
+    expect(() => check({ iptables: null, "iptables-legacy": null })).toThrow("read no iptables backend");
+  });
+
+  test("a report with no backend at all is an error too", () => {
+    expect(() => checkOfReport("", PROBE)).toThrow("read no iptables backend");
+  });
+
+  test("one backend that lets the uplink through and one that could not be read is an error naming the unread one", () => {
+    // Saying `forwarding` would clear a warning, or call a repair a success, while the table that decides was never read.
+    expect(() => check({ iptables: WORKING, "iptables-legacy": null })).toThrow("could not read iptables-legacy");
+    expect(() => check({ iptables: null, "iptables-legacy": OPEN_POLICY })).toThrow("could not read iptables");
+  });
+
+  test("a drop on the readable backend still counts, but has no cause while another could not be read", () => {
+    expect(check({ iptables: ["-P FORWARD DROP"], "iptables-legacy": null })).toMatchObject({
+      forwarding: false,
+      cause: null,
+    });
+    // The same host with both read is the case a repair is offered for.
+    expect(check({ iptables: ["-P FORWARD DROP"], "iptables-legacy": OPEN_POLICY })).toMatchObject({
+      forwarding: false,
+      cause: "policy",
+    });
+  });
+
+  test("a drop by policy on one backend and an unsure reading on the other has no cause either", () => {
+    const verdict = check({
+      iptables: ["-P FORWARD DROP"],
+      "iptables-legacy": ["-P FORWARD ACCEPT", `-A FORWARD -i ${BRIDGE} -p tcp -m tcp --dport 443 -j DROP`],
+    });
+    expect(verdict).toMatchObject({ forwarding: false, cause: null });
+  });
+
+  test("a single readable backend is read as before", () => {
+    expect(check({ iptables: WORKING })).toMatchObject({ forwarding: true, cause: null });
+    expect(check({ iptables: ["-P FORWARD DROP"] })).toMatchObject({ forwarding: false, cause: "policy" });
+  });
 });
