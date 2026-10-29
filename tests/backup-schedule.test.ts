@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -126,13 +126,15 @@ describe("a due backup schedule over the scheduler", () => {
 
   test("a completed slot is not repeated when saving its result fails", async () => {
     setBackupSchedule(app.backupSchedule, rule({ everyHours: 1 }), "owner", clock);
-    const { scheduler } = schedulerOf(app, { clock: () => clock });
+    const { scheduler, notes } = schedulerOf(app, { clock: () => clock });
     clock = new Date(clock.getTime() + HOUR);
     app.backupSchedule.write = () => {
       throw new Error("schedule is read-only");
     };
     await expect(scheduler.run()).rejects.toThrow("read-only");
     expect(app.backups.list()).toHaveLength(1);
+    // The backup was made, so it is reported although the schedule could not say so.
+    expect(notes).toEqual([{ source: "scheduler", op: "backup.scheduled", status: "ok" }]);
     for (let pass = 0; pass < 3; pass++) {
       clock = new Date(clock.getTime() + 60_000);
       expect(await scheduler.run()).toBeNull();
@@ -165,7 +167,8 @@ describe("a due backup schedule over the scheduler", () => {
     expect(message).toContain("BACKUP_PASSPHRASE differs");
     expect(message).toContain("process environment");
     expect(message).toContain("does not help");
-    expect(message).not.toContain("escape dotenv expansion");
+    // The advice it replaced was a backslash before the dollar sign, which Bun reads and MiniBox's own parser does not.
+    expect(message).not.toContain("\\$");
   });
 
   test("the backup passphrase is masked in recorded events, like the access key", () => {
@@ -330,7 +333,7 @@ describe("a due backup schedule over the scheduler", () => {
     expect(notes).toEqual([{ source: "scheduler", op: "backup.scheduled", status: "ok" }]);
   });
 
-  test("BACKUP_KEEP applies to a scheduled backup, so a schedule cannot fill the disk on its own", async () => {
+  test("BACKUP_KEEP applies to a scheduled backup, so with it set a schedule cannot fill the disk on its own", async () => {
     setup({ backupKeep: 2 });
     setBackupSchedule(app.backupSchedule, rule({ everyHours: 1 }), "owner", clock);
     const { scheduler } = schedulerOf(app, { clock: () => clock });
@@ -395,21 +398,31 @@ describe("a due backup schedule over the scheduler", () => {
     expect(app.backups.list()).toHaveLength(1);
   });
 
-  test("a rule set while its run was in progress keeps its own next run, and the finished run is still recorded", async () => {
+  test("a rule set while its run was in progress keeps its own first run, even one the old run outlasted", async () => {
     setBackupSchedule(app.backupSchedule, rule({ everyHours: 1 }), "owner", clock);
     const { scheduler } = schedulerOf(app, { clock: () => clock });
     clock = new Date(clock.getTime() + HOUR);
 
-    // Replace the rule while the backup is writing. The scheduler reads the file again before it records the run.
+    // Replace the rule while the backup is writing, with a daily time half an hour away, and let the backup outlast it.
+    // The scheduler reads the file again before it records the run, and must not move the new rule's first run on.
     const pass = scheduler.run();
-    clock = new Date(clock.getTime() + 10 * 60 * 1000);
-    const replacement = setBackupSchedule(app.backupSchedule, rule({ at: "09:00" }), "owner", clock);
+    const replacement = setBackupSchedule(
+      app.backupSchedule,
+      rule({ at: "11:30", timezone: "UTC" }),
+      "owner",
+      new Date(clock.getTime() + 5 * 60 * 1000),
+    );
+    clock = new Date(clock.getTime() + 40 * 60 * 1000);
     await pass;
+    expect(Date.parse(replacement.nextRunAt)).toBeLessThan(clock.getTime());
 
     const current = readBackupSchedule(app.backupSchedule);
-    expect(current).toMatchObject({ mode: "daily", at: "09:00", nextRunAt: replacement.nextRunAt });
+    expect(current).toMatchObject({ mode: "daily", at: "11:30", nextRunAt: replacement.nextRunAt });
     expect(current?.lastRun).toMatchObject({ status: "ok" });
     expect(app.backups.list()).toHaveLength(1);
+    // That first run is overdue, so the next pass makes it.
+    expect(await scheduler.run()).not.toBeNull();
+    expect(app.backups.list()).toHaveLength(2);
   });
 
   test("a cleared schedule runs nothing, and the archive it already made is kept", async () => {
@@ -424,7 +437,28 @@ describe("a due backup schedule over the scheduler", () => {
     expect(app.backups.list()).toHaveLength(1);
   });
 
-  test("a backup that cannot be written is recorded as failed, and leaves no archive behind", async () => {
+  test("a backup that fails after its archive was written is recorded as failed, and the archive is not left behind", async () => {
+    setBackupSchedule(app.backupSchedule, rule({ everyHours: 1 }), "owner", clock);
+    const { scheduler, notes } = schedulerOf(app, { clock: () => clock });
+    clock = new Date(clock.getTime() + HOUR);
+    // The archive is whole and in place when the record that names it cannot be saved.
+    app.backups.store.write = () => {
+      throw new Error("the record cannot be saved");
+    };
+
+    expect(await scheduler.run()).toBeNull();
+    expect(readBackupSchedule(app.backupSchedule)?.lastRun).toMatchObject({
+      status: "failed",
+      backupId: null,
+      error: "the record cannot be saved",
+    });
+    expect(notes).toEqual([{ source: "scheduler", op: "backup.scheduled", status: "error" }]);
+    expect(readdirSync(app.cfg.backupDir)).toEqual([]);
+    // The folder is free again: a second try meets the same failure, not a backup that is still running.
+    await expect(app.backups.create(PASSPHRASE, null)).rejects.toThrow("the record cannot be saved");
+  });
+
+  test("a backup folder that cannot be used is recorded as failed, and nothing is made in it", async () => {
     const blocked = join(scratch, "blocked");
     // A file where the backup folder should be makes every write fail.
     (await import("node:fs")).writeFileSync(blocked, "not a folder");

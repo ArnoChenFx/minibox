@@ -101,8 +101,8 @@ function browserGlobals(language: string): string[] {
   ];
 }
 
-/** Runs `body` in a fresh process with the browser globals the console modules read at import. */
-function runConsole<T>(language: string, body: string): T {
+/** Runs `body` in a fresh process with the browser globals the console modules read at import, and `env` on top of ours. */
+function runConsole<T>(language: string, body: string, env: Record<string, string> = {}): T {
   const script = [
     ...browserGlobals(language),
     `const ui = await import(${JSON.stringify(SCHEDULE_UI)});`,
@@ -111,7 +111,7 @@ function runConsole<T>(language: string, body: string): T {
     `})();`,
     `console.log(JSON.stringify(result));`,
   ].join("\n");
-  const run = Bun.spawnSync(["bun", "-e", script], { stdout: "pipe", stderr: "pipe" });
+  const run = Bun.spawnSync(["bun", "-e", script], { stdout: "pipe", stderr: "pipe", env: { ...process.env, ...env } });
   if (run.exitCode !== 0) throw new Error(run.stderr.toString());
   return JSON.parse(run.stdout.toString().trim().split("\n").at(-1) ?? "null") as T;
 }
@@ -263,7 +263,14 @@ describe("the backup schedule card", () => {
   });
 
   test("the browser's zone is what the dialog names", () => {
-    expect(browserTimezone().length).toBeGreaterThan(0);
+    expect(browserTimezone()).toBe(Intl.DateTimeFormat().resolvedOptions().timeZone);
+    // A zone fixed in the markup would pass wherever the browser happens to be in it, so the console runs in another one.
+    const tokyo = runConsole<string>(
+      "en",
+      `return ui.scheduleFieldsHtml(null, { ids: ${JSON.stringify(IDS)}, help: "st.backupScheduleHelp" });`,
+      { TZ: "Asia/Tokyo" },
+    );
+    expect(tokyo).toContain("in your time zone, Asia/Tokyo, such as");
   });
 });
 
@@ -295,9 +302,17 @@ describe("the settings page", () => {
     expect(missing).toEqual([]);
   });
 
-  test("the backup card's own words differ from the checkpoint card's", () => {
-    for (const key of ["st.backupScheduleNote", "st.backupScheduleOffHelp", "st.backupScheduleHelp"]) {
-      expect(en[key]).not.toBe(zh[key]);
+  test("the backup card's own words are its own: they differ from the checkpoint card's and speak of backups", () => {
+    const pairs = [
+      ["st.backupScheduleNote", "ck.scheduleNote"],
+      ["st.backupScheduleOffHelp", "ck.scheduleOffHelp"],
+      ["st.backupScheduleHelp", "ck.scheduleHelp"],
+    ] as const;
+    for (const [own, shared] of pairs) {
+      expect(en[own]).not.toBe(en[shared]);
+      expect(zh[own]).not.toBe(zh[shared]);
+      expect(en[own]).toMatch(/backup/i);
+      expect(zh[own]).toMatch(/备份|BACKUP/);
     }
   });
 });

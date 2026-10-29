@@ -268,7 +268,7 @@ The `backup` commands use the access key, and they are for the owner only. `rest
 | `minibox backup schedule clear [--json]` | Removes the schedule. Backups it already made are kept |
 | `minibox restore <file> --data-dir DIR [--passphrase-stdin]` | Restores an archive into an empty `DIR`. Without `--data-dir`, it uses `DATA_DIR`. Stop MiniBox first. |
 
-The archives are kept in `DATA_DIR/backups/`, or in `BACKUP_DIR` when that is set, and `BACKUP_KEEP` keeps only the newest few. A schedule makes the same archives, so `BACKUP_KEEP` keeps it small too. See [Backups](../admin/backups.md#retention-and-schedules).
+The archives are kept in `DATA_DIR/backups/`, or in `BACKUP_DIR` when that is set, and `BACKUP_KEEP`, when set, keeps only the newest few; unset, every archive stays. A schedule makes the same archives, so without `BACKUP_KEEP` it adds one per run and removes none. See [Backups](../admin/backups.md#retention-and-schedules).
 
 The passphrase comes from `MINIBOX_BACKUP_PASSPHRASE`, or from the first line of standard input with `--passphrase-stdin`.
 

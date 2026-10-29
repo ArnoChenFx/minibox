@@ -436,7 +436,7 @@ export default {
   "st.backupSchedule": "Schedule",
   "st.backupScheduleOffHelp": "Backups are made only when you run minibox backup, or call the API.",
   "st.backupScheduleNote":
-    "A run that fell due while MiniBox was down happens once when it comes back, not once per missed slot. BACKUP_KEEP keeps only the newest few.",
+    "A run that fell due while MiniBox was down happens once when it comes back, not once per missed slot. If BACKUP_KEEP is set, only the newest few are kept.",
   "st.backupRunOk": "{time}, backup made",
   "st.backupRunFailed": "{time}, failed: {error}",
   "st.backupRunSkipped": "{time}, skipped: {reason}",

@@ -83,22 +83,31 @@ export class BackupScheduler {
 
   private async runOne(schedule: BackupSchedule): Promise<string | null> {
     const outcome = await this.attempt();
+    try {
+      this.remember(schedule, outcome);
+    } finally {
+      // The backup exists, or its failure happened, whether or not the schedule file could be written, so the audit
+      // event and the log line are made either way. A write that failed still reaches the pass, which logs it.
+      this.note(outcome);
+    }
+    return outcome.status === "ok" ? outcome.backupId : null;
+  }
+
+  /** Records a run on the schedule and moves its next run on. */
+  private remember(schedule: BackupSchedule, outcome: Omit<BackupScheduleRun, "at">): void {
     const finished = this.clock();
     const run: BackupScheduleRun = { at: finished.toISOString(), ...outcome };
     const current = this.store.read();
-    if (current !== null) {
-      // A rule set while this ran has its own first run, so the run is recorded and that run is left as it is.
-      const replaced = current.updatedAt !== schedule.updatedAt;
-      const nextRunAt = replaced ? current.nextRunAt : nextRunAfterRun(current, finished).toISOString();
-      this.consumed = { updatedAt: current.updatedAt, slot: current.nextRunAt, next: Date.parse(nextRunAt) };
-      this.store.write({
-        ...current,
-        nextRunAt,
-        lastRun: run,
-      });
-    }
-    this.note(outcome);
-    return outcome.status === "ok" ? outcome.backupId : null;
+    if (current === null) return;
+    // A rule set while this ran has its own first run, so the run is recorded and that run is left as it is.
+    const replaced = current.updatedAt !== schedule.updatedAt;
+    const nextRunAt = replaced ? current.nextRunAt : nextRunAfterRun(current, finished).toISOString();
+    this.consumed = { updatedAt: current.updatedAt, slot: current.nextRunAt, next: Date.parse(nextRunAt) };
+    this.store.write({
+      ...current,
+      nextRunAt,
+      lastRun: run,
+    });
   }
 
   private async attempt(): Promise<Omit<BackupScheduleRun, "at">> {

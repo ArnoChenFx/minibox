@@ -228,7 +228,7 @@ minibox backup schedule clear
 What a run does:
 
 - A due run makes one backup, through the same service that `minibox backup` uses. It lands in the server's backup folder, `DATA_DIR/backups/` or `BACKUP_DIR`, so a scheduled backup and a manual one are the same kind of archive.
-- `BACKUP_KEEP` applies afterwards, exactly as it does to a manual backup. A schedule therefore cannot fill the disk on its own: with `BACKUP_KEEP=7` it keeps the newest seven and removes the older ones. See [Keep only the newest backups](#keep-only-the-newest-backups).
+- `BACKUP_KEEP` applies afterwards, exactly as it does to a manual backup. It is off by default, and then every scheduled backup stays, one per run, so set it before you rely on a schedule: with `BACKUP_KEEP=7` the schedule keeps the newest seven and removes the older ones. See [Keep only the newest backups](#keep-only-the-newest-backups).
 - A failed run is recorded on the schedule and logged once, and nothing runs again until the next slot. It does not retry in a loop.
 - A run that is due while another backup holds the folder, such as a manual backup that is still running, makes no backup and is recorded as **skipped**, not failed: **Last run** says why, the log has one `backup.scheduled_skipped` line, and there is no audit event, because nothing went wrong. The schedule runs again at its next time.
 - A run that fell due while MiniBox was down happens once when it comes back, not once per missed slot. An every-hours schedule keeps to its original times, so a late run does not move the later ones; a daily schedule runs at its next time.

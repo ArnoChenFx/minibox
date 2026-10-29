@@ -410,7 +410,7 @@ export default {
   "st.backupSchedule": "计划",
   "st.backupScheduleOffHelp": "只有运行 minibox backup 或调用 API 时才会创建备份。",
   "st.backupScheduleNote":
-    "MiniBox 停机期间到点的运行会在启动后执行一次，不会把错过的每次都补上。BACKUP_KEEP 只保留最新的几份。",
+    "MiniBox 停机期间到点的运行会在启动后执行一次，不会把错过的每次都补上。设置了 BACKUP_KEEP 时，只保留最新的几份。",
   "st.backupRunOk": "{time}，已创建备份",
   "st.backupRunFailed": "{time}，失败：{error}",
   "st.backupRunSkipped": "{time}，已跳过：{reason}",
