@@ -154,11 +154,13 @@ export interface HelperResult {
   logs: string;
 }
 
-/** A network the engine holds, with the IPv4 subnets it has. */
+/** A network the engine holds, with the IPv4 subnets it has and the labels it was created with. */
 export interface NetworkSummary {
   name: string;
   /** IPv4 subnets the engine assigned or was given. Empty when the network has none. */
   subnets: string[];
+  /** The labels the network was created with. Empty for a network made without any, as older MiniBox versions did. */
+  labels: Record<string, string>;
 }
 
 /** Where a helper finds its `HelperSpec.secrets`, read-only. */
@@ -547,11 +549,12 @@ export interface Runtime {
    * inter-container communication matches `interContainerComm`, whose `internal` flag matches, and whose subnet is
    * `subnet` when one is given. Otherwise this fails with `conflict`.
    * An `internal` network has no route out of the host: its containers reach each other and the host, and nothing
-   * else. Traffic to the host is not stopped here; see `setHostIngressBlock`.
+   * else. Traffic to the host is not stopped here; see `setHostIngressBlock`. `labels` go on a network this call
+   * creates; an existing network keeps the labels it has, since an engine does not change them.
    */
   ensureBridgeNetwork(
     name: string,
-    opts: { interContainerComm: boolean; internal?: boolean; subnet?: string },
+    opts: { interContainerComm: boolean; internal?: boolean; subnet?: string; labels?: Record<string, string> },
   ): Promise<void>;
 
   /** Removes a network. One that does not exist is left alone. A network that still has containers attached fails with `conflict`. */

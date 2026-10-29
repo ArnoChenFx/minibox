@@ -4,8 +4,18 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { generateKeyPairPem, IDENTITY_FILE, KEY_FILE, loadIdentity, saveIdentity } from "../src/agent/identity";
-import { type Fetcher, PairingError, pairWith, parseArgs, runAgent, UsageError } from "../src/agent/main";
+import {
+  allowedRuntimesOf,
+  type Fetcher,
+  PairingError,
+  pairWith,
+  parseArgs,
+  runAgent,
+  UsageError,
+} from "../src/agent/main";
 import { AGENT_PAIR_PATH, AGENT_PROTOCOL, isEd25519PublicKey } from "../src/agent/protocol";
+import { freshScope, loadScope, OWNER_LABEL, SCOPE_FILE, saveScope } from "../src/agent/scope";
+import { FakeRuntime } from "./support/fake-runtime";
 
 const dirs: string[] = [];
 function tempDir(): string {
@@ -18,9 +28,15 @@ let restoreLogs: () => void;
 beforeEach(() => {
   const errors = spyOn(console, "error").mockImplementation(() => {});
   const logs = spyOn(console, "log").mockImplementation(() => {});
+  const signals = [process.listeners("SIGINT"), process.listeners("SIGTERM")];
   restoreLogs = () => {
     errors.mockRestore();
     logs.mockRestore();
+    // An agent that was stopped by one signal leaves the handler it set for the other.
+    for (const [index, name] of (["SIGINT", "SIGTERM"] as const).entries()) {
+      for (const listener of process.listeners(name))
+        if (!signals[index]?.includes(listener)) process.off(name, listener);
+    }
   };
 });
 afterEach(() => {
@@ -184,6 +200,250 @@ describe("pairing with the control plane", () => {
     await expect(pairWith("https://minibox.example.com", PAIR_REQUEST, fetcher)).rejects.toThrow(
       "pairing response this agent cannot read",
     );
+  });
+});
+
+const AGENT = "9c1f0e2d8b7a4f6e5d4c3b2a1f0e9d8c";
+
+/** Starts an agent, lets it get as far as waiting for a signal, then stops it with one, as a service manager would. */
+async function startedAndStopped(start: () => Promise<number>): Promise<number> {
+  const before = process.listenerCount("SIGTERM");
+  const run = start();
+  const deadline = Date.now() + 2_000;
+  while (process.listenerCount("SIGTERM") === before) {
+    if (Date.now() > deadline) throw new Error("the agent did not start");
+    await Bun.sleep(5);
+  }
+  process.emit("SIGTERM");
+  return run;
+}
+
+describe("the container runtimes a box may ask for", () => {
+  test("they come from a comma-separated setting, trimmed, and a name no engine could use is dropped", () => {
+    expect(allowedRuntimesOf(" runsc , kata-runtime,,bad name,x/y,.hidden")).toEqual(["runsc", "kata-runtime"]);
+    expect(allowedRuntimesOf("")).toEqual([]);
+    expect(allowedRuntimesOf(undefined)).toEqual([]);
+  });
+});
+
+/** What a stand-in control plane heard back for each request it sent, by request id. */
+type Answers = Map<string, { ok: boolean; error?: { kind?: string } }>;
+
+/**
+ * A stand-in for the control plane on a real socket. It challenges, welcomes the agent (naming `labelPrefix` when it has
+ * one), asks for each of `requests` as `r1`, `r2`, and so on, and keeps the answers. `answered` settles with the last.
+ */
+async function controlPlane(options: { labelPrefix?: string; requests: Array<[string, unknown]> }) {
+  const answers: Answers = new Map();
+  const everyAnswer = Promise.withResolvers<void>();
+  const server = Bun.serve({
+    port: 0,
+    fetch: (request, self) => (self.upgrade(request) ? undefined : new Response("no", { status: 404 })),
+    websocket: {
+      open: (ws) => {
+        ws.send(
+          JSON.stringify({
+            type: "challenge",
+            nonce: "n".repeat(32),
+            protocol: AGENT_PROTOCOL,
+            serverVersion: "0.4.0",
+          }),
+        );
+      },
+      message: (ws, raw) => {
+        const frame = JSON.parse(String(raw)) as {
+          type: string;
+          id?: string;
+          ok?: boolean;
+          error?: { kind?: string };
+        };
+        if (frame.type === "hello") {
+          const prefix = options.labelPrefix === undefined ? {} : { labelPrefix: options.labelPrefix };
+          ws.send(JSON.stringify({ type: "welcome", hostId: "edge", protocol: AGENT_PROTOCOL, ...prefix }));
+          options.requests.forEach(([op, args], index) => {
+            ws.send(JSON.stringify({ type: "request", id: `r${index + 1}`, op, args }));
+          });
+        }
+        if (frame.type === "response" && frame.id !== undefined) {
+          answers.set(frame.id, {
+            ok: frame.ok === true,
+            ...(frame.error === undefined ? {} : { error: frame.error }),
+          });
+          if (answers.size === options.requests.length) everyAnswer.resolve();
+        }
+      },
+    },
+  });
+  return {
+    answers,
+    answered: everyAnswer.promise,
+    url: `http://127.0.0.1:${server.port}/`,
+    stop: () => server.stop(true),
+  };
+}
+
+/** Runs a paired agent on `dir` over `engine` against `plane` until every request is answered, then stops it. */
+async function servedBy(
+  dir: string,
+  engine: FakeRuntime,
+  plane: Awaited<ReturnType<typeof controlPlane>>,
+  env: Record<string, string> = {},
+): Promise<void> {
+  saveIdentity(
+    dir,
+    { agentId: AGENT, hostId: "edge", server: plane.url, pairedAt: "2026-10-29T00:00:00.000Z" },
+    generateKeyPairPem().privateKeyPem,
+  );
+  // The agent is paired, so it waits for a signal once `runAgent` is under way.
+  const run = runAgent([], { DATA_DIR: dir, ...env }, { runtime: engine });
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const expired = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(
+      () => reject(new Error(`the agent answered ${[...plane.answers.keys()].join(", ") || "nothing"}`)),
+      5_000,
+    );
+  });
+  try {
+    await Promise.race([plane.answered, expired]);
+  } finally {
+    clearTimeout(timer);
+    process.emit("SIGTERM");
+    plane.stop();
+  }
+  expect(await run).toBe(0);
+}
+
+describe("what the agent may touch, from the first start", () => {
+  test("an agent that has just paired keeps a scope that adopts nothing, next to its identity and as private as it", async () => {
+    const dir = tempDir();
+    const fetcher = answering(() => jsonResponse({ agentId: AGENT, hostId: "edge", protocol: 1 }, 201));
+    const now = new Date("2026-10-29T10:00:00.000Z");
+    const run = () =>
+      runAgent(
+        ["--server", "http://127.0.0.1:1", "--pair", "ABCDE-FGHJK"],
+        { DATA_DIR: dir },
+        { fetch: fetcher, runtime: new FakeRuntime(), now: () => now },
+      );
+    expect(await startedAndStopped(run)).toBe(0);
+    expect(loadScope(dir, "edge")).toEqual(freshScope("edge", now));
+    expect(statSync(join(dir, SCOPE_FILE)).mode & 0o777).toBe(0o600);
+  });
+
+  test("an agent paired before scopes existed writes none when it starts: it adopts only when the control plane welcomes it", async () => {
+    const dir = tempDir();
+    saveIdentity(
+      dir,
+      { agentId: AGENT, hostId: "edge", server: "http://127.0.0.1:1/", pairedAt: "2026-10-01T00:00:00.000Z" },
+      generateKeyPairPem().privateKeyPem,
+    );
+    expect(await startedAndStopped(() => runAgent([], { DATA_DIR: dir }, { runtime: new FakeRuntime() }))).toBe(0);
+    expect(existsSync(join(dir, SCOPE_FILE))).toBe(false);
+  });
+
+  test("it serves the control plane through its scope: what is not MiniBox's is not found, and is left alone", async () => {
+    const dir = tempDir();
+    const engine = new FakeRuntime();
+    engine.seedImage("alpine:3.20");
+    const foreign = engine.seedContainer({ image: "alpine:3.20", name: "someone-elses", running: true, labels: {} });
+    const own = engine.seedContainer({
+      image: "alpine:3.20",
+      name: "mine",
+      running: true,
+      labels: { [OWNER_LABEL]: "edge" },
+    });
+    saveScope(dir, freshScope("edge", new Date()));
+    const plane = await controlPlane({
+      labelPrefix: "mbtest",
+      requests: [
+        ["removeContainer", { id: foreign, force: true }],
+        ["inspectContainer", { id: own }],
+      ],
+    });
+    await servedBy(dir, engine, plane);
+    expect(plane.answers.get("r1")).toMatchObject({ ok: false, error: { kind: "not_found" } });
+    expect(plane.answers.get("r2")).toMatchObject({ ok: true });
+    expect(engine.containers.has(foreign)).toBe(true);
+    expect(engine.callsTo("removeContainer")).toEqual([]);
+  });
+
+  test("an agent paired before scopes existed adopts what MiniBox made when the control plane welcomes it, and nothing else", async () => {
+    const dir = tempDir();
+    const engine = new FakeRuntime();
+    engine.seedImage("alpine:3.20");
+    // What an older MiniBox made: its labels, and none of the agent's. And somebody else's, which has neither.
+    const legacy = engine.seedContainer({
+      image: "alpine:3.20",
+      name: "old-box",
+      running: true,
+      labels: { mbtest: "true", "mbtest.box": "true" },
+    });
+    const stranger = engine.seedContainer({ image: "alpine:3.20", name: "stranger", running: true, labels: {} });
+    const plane = await controlPlane({
+      labelPrefix: "mbtest",
+      requests: [
+        ["inspectContainer", { id: legacy }],
+        ["inspectContainer", { id: stranger }],
+      ],
+    });
+    await servedBy(dir, engine, plane);
+    expect(plane.answers.get("r1")).toMatchObject({ ok: true });
+    expect(plane.answers.get("r2")).toMatchObject({ ok: false, error: { kind: "not_found" } });
+    expect(loadScope(dir, "edge")?.adopted.containers).toEqual([legacy]);
+  });
+
+  test("a control plane that names no label prefix gets no adoption: the old boxes are not found until it does", async () => {
+    const dir = tempDir();
+    const engine = new FakeRuntime();
+    engine.seedImage("alpine:3.20");
+    const legacy = engine.seedContainer({
+      image: "alpine:3.20",
+      name: "old-box",
+      running: true,
+      labels: { mbtest: "true", "mbtest.box": "true" },
+    });
+    const plane = await controlPlane({ requests: [["inspectContainer", { id: legacy }]] });
+    await servedBy(dir, engine, plane);
+    expect(plane.answers.get("r1")).toMatchObject({ ok: false, error: { kind: "not_found" } });
+    expect(existsSync(join(dir, SCOPE_FILE))).toBe(false);
+  });
+
+  test("a container runtime besides runc is allowed only when AGENT_ALLOWED_RUNTIMES says so", async () => {
+    const create = [
+      "createContainer",
+      { spec: { image: "alpine:3.20", name: "sandboxed", hardening: { runtime: "runsc" } } },
+    ];
+    for (const [env, outcome] of [
+      [{}, { ok: false, error: { kind: "invalid" } }],
+      [{ AGENT_ALLOWED_RUNTIMES: "kata-runtime, runsc" }, { ok: true }],
+    ] as const) {
+      const dir = tempDir();
+      const engine = new FakeRuntime();
+      engine.seedImage("alpine:3.20");
+      saveScope(dir, freshScope("edge", new Date()));
+      const plane = await controlPlane({ labelPrefix: "mbtest", requests: [create as [string, unknown]] });
+      await servedBy(dir, engine, plane, env);
+      expect(plane.answers.get("r1")).toMatchObject(outcome);
+    }
+  });
+
+  test("a scope that cannot be read stops the agent before it serves anything, and one for another host is not trusted", async () => {
+    const unreadable = tempDir();
+    saveIdentity(
+      unreadable,
+      { agentId: AGENT, hostId: "edge", server: "http://127.0.0.1:1/", pairedAt: "2026-10-01T00:00:00.000Z" },
+      generateKeyPairPem().privateKeyPem,
+    );
+    writeFileSync(join(unreadable, SCOPE_FILE), "not json", { mode: 0o600 });
+    expect(await runAgent([], { DATA_DIR: unreadable }, { runtime: new FakeRuntime() })).toBe(1);
+
+    const foreign = tempDir();
+    saveIdentity(
+      foreign,
+      { agentId: AGENT, hostId: "edge", server: "http://127.0.0.1:1/", pairedAt: "2026-10-01T00:00:00.000Z" },
+      generateKeyPairPem().privateKeyPem,
+    );
+    saveScope(foreign, freshScope("another-host", new Date()));
+    expect(await runAgent([], { DATA_DIR: foreign }, { runtime: new FakeRuntime() })).toBe(1);
   });
 });
 

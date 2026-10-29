@@ -64,6 +64,15 @@ describe("frames", () => {
     expect(parseFrame(ServerFrameSchema, JSON.stringify({ type: "welcome", hostId: "edge" }))).toBeNull();
   });
 
+  test("a welcome may name the label prefix, which is optional, and a prefix that is not text or is too long is no welcome", () => {
+    const base = { type: "welcome" as const, hostId: "edge", protocol: 1 };
+    expect(parseFrame(ServerFrameSchema, JSON.stringify(base))).toEqual(base);
+    const named = { ...base, labelPrefix: "minibox" };
+    expect(parseFrame(ServerFrameSchema, JSON.stringify(named))).toEqual(named);
+    expect(parseFrame(ServerFrameSchema, JSON.stringify({ ...base, labelPrefix: "x".repeat(65) }))).toBeNull();
+    expect(parseFrame(ServerFrameSchema, JSON.stringify({ ...base, labelPrefix: 7 }))).toBeNull();
+  });
+
   test("an agent frame keeps its fields", () => {
     const hello = { type: "hello" as const, agentId: AGENT, protocol: 1, version: "0.4.0", signature: "c2ln" };
     expect(parseFrame(AgentFrameSchema, JSON.stringify(hello))).toEqual(hello);

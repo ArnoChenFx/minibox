@@ -54,7 +54,7 @@ export function networkMethods(engine: Engine): NetworkMethods {
   const { docker, mutate } = engine;
 
   return {
-    async ensureBridgeNetwork(name, { interContainerComm, internal = false, subnet }) {
+    async ensureBridgeNetwork(name, { interContainerComm, internal = false, subnet, labels }) {
       const spec: BridgeSpec = { interContainerComm, internal, subnet };
       const existing = await inspectNetwork(docker, name);
       if (existing) {
@@ -69,6 +69,7 @@ export function networkMethods(engine: Engine): NetworkMethods {
             Driver: "bridge",
             Internal: internal,
             Options: interContainerComm ? {} : { [ICC_OPTION]: "false" },
+            ...(labels && Object.keys(labels).length > 0 ? { Labels: labels } : {}),
             ...(ipam ? { IPAM: ipam } : {}),
           }),
         );
@@ -112,7 +113,11 @@ export function networkMethods(engine: Engine): NetworkMethods {
 
     async listNetworks() {
       const networks = await call(() => docker.listNetworks());
-      return networks.map((network): NetworkSummary => ({ name: network.Name, subnets: subnetsOf(network) }));
+      return networks.map((network): NetworkSummary => ({
+        name: network.Name,
+        subnets: subnetsOf(network),
+        labels: network.Labels ?? {},
+      }));
     },
 
     async reattachNetwork(containerId, name) {

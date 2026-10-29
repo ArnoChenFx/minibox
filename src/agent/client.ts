@@ -1,7 +1,6 @@
 import type { KeyObject } from "node:crypto";
 
 import { log } from "../lib/logger";
-import type { Runtime } from "../runtime";
 import { AgentExecutor, type AgentSink } from "./executor";
 import {
   AGENT_CLOSE,
@@ -16,6 +15,8 @@ import {
   ServerFrameSchema,
   signHello,
 } from "./protocol";
+import type { AgentScope } from "./scope";
+import type { ServedRuntime } from "./scoped-runtime";
 
 /**
  * A refusal the control plane answers before it upgrades, so the agent's own WebSocket sees it as a failed handshake
@@ -43,7 +44,10 @@ export interface AgentClientOptions {
   readonly server: string;
   readonly agentId: string;
   readonly privateKey: KeyObject;
-  readonly runtime: Runtime;
+  /** What the agent serves. In production this is the engine behind a `scopedRuntime`. */
+  readonly runtime: ServedRuntime;
+  /** Told what the control plane welcomes it with, so an agent paired before labels existed can adopt once. */
+  readonly scope?: AgentScope;
   readonly version: string;
   readonly heartbeatMs?: number;
   /** How long dialing may take before the socket opens. Defaults to `AGENT_CONNECT_TIMEOUT_MS`. */
@@ -195,6 +199,7 @@ export class AgentClient {
             connected = true;
             clearTimeout(helloTimer);
             this.state = "connected";
+            this.options.scope?.begin(frame.labelPrefix);
             executor = new AgentExecutor(runtime, sink);
             heartbeat = setInterval(
               () => send({ type: "heartbeat", at: new Date().toISOString() }),

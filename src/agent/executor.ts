@@ -1,8 +1,9 @@
 import { z } from "zod";
 
 import { type Ipv4Network, ipv4Overlaps, parseIpv4Cidr } from "../lib/cidr";
-import { type ExecSession, type ExecSpec, MAX_OWNER_ID, type Runtime, RuntimeError } from "../runtime";
+import { type ExecSession, type ExecSpec, MAX_OWNER_ID, RuntimeError } from "../runtime";
 import { type AgentErrorInfo, type ExecExit, REFUSED_OPERATIONS } from "./protocol";
+import type { ServedRuntime } from "./scoped-runtime";
 import { StreamRegistry } from "./streams";
 
 /** Where the executor sends what it produces. The connection implements it; a test records it. */
@@ -42,7 +43,7 @@ const EGRESS_POOL: Ipv4Network = { base: 240 * 2 ** 24, prefix: 12 };
  * Refuses a source that is neither inside the egress pool nor exactly the subnet of a network on this engine. The rule
  * drops new inbound connections, so a source such as 0.0.0.0/0 would cut the host off, SSH included.
  */
-async function assertBlockable(r: Runtime, sources: readonly string[]): Promise<void> {
+async function assertBlockable(r: ServedRuntime, sources: readonly string[]): Promise<void> {
   if (sources.length === 0) return;
   let subnets: Set<string> | null = null;
   for (const source of sources) {
@@ -281,7 +282,7 @@ export class AgentExecutor {
   private readonly streams = new StreamRegistry();
 
   constructor(
-    private readonly runtime: Runtime,
+    private readonly runtime: ServedRuntime,
     private readonly sink: AgentSink,
   ) {}
 

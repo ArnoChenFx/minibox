@@ -353,6 +353,7 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
     store: new AgentStore(cfg.dataDir),
     pairing: new PairingBook(),
     serverVersion: version,
+    labelPrefix: cfg.labelPrefix,
   });
   const hostAdmin = new HostManager({
     cfg,

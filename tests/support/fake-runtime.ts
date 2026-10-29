@@ -139,6 +139,8 @@ export interface FakeNetwork {
   internal: boolean;
   /** IPv4 subnets the network was created with. Empty for networks the engine sized itself. */
   subnets: string[];
+  /** The labels the network was created with. */
+  labels: Record<string, string>;
 }
 
 export interface FakeExec extends ExecSession {
@@ -527,7 +529,12 @@ export class FakeRuntime implements Runtime {
   }
 
   /** A network that is created again gets a new ID, which containers that ran on the old one still point at. */
-  seedNetwork(name: string, options: Record<string, string> = {}, driver = "bridge"): void {
+  seedNetwork(
+    name: string,
+    options: Record<string, string> = {},
+    driver = "bridge",
+    labels: Record<string, string> = {},
+  ): void {
     this.networks.set(name, {
       id: newNetworkId(),
       name,
@@ -535,6 +542,7 @@ export class FakeRuntime implements Runtime {
       options: { ...options },
       internal: false,
       subnets: [],
+      labels: { ...labels },
     });
   }
 
@@ -652,7 +660,11 @@ export class FakeRuntime implements Runtime {
   }
 
   private findContainer(idOrName: string): FakeContainer | undefined {
-    return this.containers.get(idOrName) ?? [...this.containers.values()].find((c) => c.name === idOrName);
+    const exact = this.containers.get(idOrName) ?? [...this.containers.values()].find((c) => c.name === idOrName);
+    if (exact || !/^[0-9a-f]{12,63}$/.test(idOrName)) return exact;
+    // A short id, which an engine resolves to the one container whose id starts with it.
+    const matches = [...this.containers.values()].filter((c) => c.id.startsWith(idOrName));
+    return matches.length === 1 ? matches[0] : undefined;
   }
 
   /**
@@ -1534,7 +1546,7 @@ export class FakeRuntime implements Runtime {
 
   async ensureBridgeNetwork(
     name: string,
-    opts: { interContainerComm: boolean; internal?: boolean; subnet?: string },
+    opts: { interContainerComm: boolean; internal?: boolean; subnet?: string; labels?: Record<string, string> },
   ): Promise<void> {
     this.enter("ensureBridgeNetwork", [name, opts]);
     const internal = opts.internal ?? false;
@@ -1543,7 +1555,7 @@ export class FakeRuntime implements Runtime {
       if (opts.subnet !== undefined && this.overlapsAnotherPool(opts.subnet)) {
         throw new RuntimeError("conflict", "Pool overlaps with other one on this address space");
       }
-      this.seedNetwork(name, opts.interContainerComm ? {} : { [ICC_OPTION]: "false" });
+      this.seedNetwork(name, opts.interContainerComm ? {} : { [ICC_OPTION]: "false" }, "bridge", opts.labels);
       const created = this.networks.get(name);
       if (created) {
         created.internal = internal;
@@ -1592,7 +1604,11 @@ export class FakeRuntime implements Runtime {
 
   async listNetworks(): Promise<NetworkSummary[]> {
     this.enter("listNetworks", []);
-    return [...this.networks.values()].map((network) => ({ name: network.name, subnets: [...network.subnets] }));
+    return [...this.networks.values()].map((network) => ({
+      name: network.name,
+      subnets: [...network.subnets],
+      labels: { ...network.labels },
+    }));
   }
 
   async setHostIngressBlock(owner: string, sources: string[]): Promise<void> {

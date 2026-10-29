@@ -3,6 +3,7 @@ import { generateKeyPairSync } from "node:crypto";
 
 import { AgentClient, backoffMs, connectUrlOf, handshakeStatus } from "../src/agent/client";
 import { AGENT_CLOSE, AGENT_PROTOCOL, verifyHello } from "../src/agent/protocol";
+import type { AgentScope } from "../src/agent/scope";
 import { setLogSink } from "../src/lib/logger";
 import { silenceLogs } from "./support/app";
 import { FakeRuntime } from "./support/fake-runtime";
@@ -94,7 +95,13 @@ beforeEach(() => {
 afterEach(() => restoreLogs());
 
 function setup(
-  overrides: { heartbeatMs?: number; connectTimeoutMs?: number; helloTimeoutMs?: number; autoOpen?: boolean } = {},
+  overrides: {
+    heartbeatMs?: number;
+    connectTimeoutMs?: number;
+    helloTimeoutMs?: number;
+    autoOpen?: boolean;
+    scope?: AgentScope;
+  } = {},
 ) {
   const pair = generateKeyPairSync("ed25519");
   const sockets: FakeSocket[] = [];
@@ -110,6 +117,7 @@ function setup(
     heartbeatMs: overrides.heartbeatMs ?? 60_000,
     ...(overrides.connectTimeoutMs === undefined ? {} : { connectTimeoutMs: overrides.connectTimeoutMs }),
     ...(overrides.helloTimeoutMs === undefined ? {} : { helloTimeoutMs: overrides.helloTimeoutMs }),
+    ...(overrides.scope === undefined ? {} : { scope: overrides.scope }),
     openSocket: () => {
       const socket = new FakeSocket(overrides.autoOpen ?? true);
       sockets.push(socket);
@@ -162,6 +170,26 @@ describe("the connection", () => {
     sockets[0]?.receive({ type: "welcome", hostId: "edge", protocol: AGENT_PROTOCOL });
     expect(client.connectionState).toBe("connected");
     await waitFor(() => (sockets[0]?.framesOf("heartbeat").length ?? 0) >= 3, "three heartbeats");
+    client.stop();
+    await done;
+  });
+
+  test("a welcome tells the agent's scope which label prefix the control plane names, and a welcome that names none says so", async () => {
+    const begun: Array<string | undefined> = [];
+    const scope = { begin: (prefix: string | undefined) => begun.push(prefix) } as unknown as AgentScope;
+    const { client, sockets } = setup({ scope });
+    const done = client.run();
+    sockets[0]?.receive({ type: "challenge", nonce: NONCE, protocol: AGENT_PROTOCOL, serverVersion: "0.4.0" });
+    // Nothing is told before the control plane has accepted the agent.
+    expect(begun).toEqual([]);
+    sockets[0]?.receive({ type: "welcome", hostId: "edge", protocol: AGENT_PROTOCOL, labelPrefix: "minibox" });
+    expect(begun).toEqual(["minibox"]);
+
+    sockets[0]?.drop();
+    await waitFor(() => sockets.length === 2, "the reconnect");
+    sockets[1]?.receive({ type: "challenge", nonce: NONCE, protocol: AGENT_PROTOCOL, serverVersion: "0.4.0" });
+    sockets[1]?.receive({ type: "welcome", hostId: "edge", protocol: AGENT_PROTOCOL });
+    expect(begun).toEqual(["minibox", undefined]);
     client.stop();
     await done;
   });

@@ -124,7 +124,16 @@ export const ServerFrameSchema = z.discriminatedUnion("type", [
     protocol: z.number().int(),
     serverVersion: TEXT,
   }),
-  z.object({ type: z.literal("welcome"), hostId: ID, protocol: z.number().int() }),
+  z.object({
+    type: z.literal("welcome"),
+    hostId: ID,
+    protocol: z.number().int(),
+    /**
+     * The control plane's `LABEL_PREFIX`. An agent paired before it labelled what it creates uses it once, to adopt the
+     * containers, volumes and networks MiniBox made until then. Absent from a control plane that predates the field.
+     */
+    labelPrefix: z.string().max(64).optional(),
+  }),
   z.object({
     type: z.literal("refused"),
     code: z.enum(["auth_failed", "protocol_mismatch", "revoked"]),
