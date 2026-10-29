@@ -2171,7 +2171,7 @@
             "required": false,
             "schema": {
               "type": "boolean",
-              "description": "Also delete the box's workspace volume. Accepts true, false, 1 or 0. Defaults to false."
+              "description": "Also delete the volumes the box owns. Needs the owner or an unmodified admin token. Accepts true, false, 1 or 0. Defaults to false."
             }
           },
           {

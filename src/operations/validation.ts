@@ -411,7 +411,10 @@ export const tail = () =>
 export const deleteVolumeFlag = () =>
   field(checkDeleteVolume, {
     type: "boolean",
-    description: withDefault("Also delete the box's workspace volume. Accepts true, false, 1 or 0.", false),
+    description: withDefault(
+      "Also delete the volumes the box owns. Needs the owner or an unmodified admin token. Accepts true, false, 1 or 0.",
+      false,
+    ),
   }).default(false);
 
 export const skipTrashFlag = () =>

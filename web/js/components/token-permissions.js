@@ -55,6 +55,9 @@ export function permissionsHtml(catalog) {
   });
 }
 
+/** The scopes other than `volume:delete`, which the form judges apart. */
+const withoutDeletion = (scopes) => scopes.filter((scope) => scope !== "volume:delete");
+
 /**
  * Connects the preset list and the permission checkboxes under `root`. Choosing a preset ticks its scopes and calls
  * `onPreset(preset)`; ticking a scope by hand makes the token custom. Returns what the form submits.
@@ -71,16 +74,23 @@ export function bindPermissions(root, catalog, { onPreset = () => {} } = {}) {
 
   function paint() {
     const preset = presetOf(current);
-    const scopes = chosen();
-    const custom = !sameScopes(scopes, preset.scopes);
     const deletion = boxes.find((box) => box.value === "volume:delete");
     if (deletion) {
+      // volume:delete counts only on an unmodified admin token, so it is judged on the other scopes, and a box that
+      // cannot count is cleared rather than left ticked. When it becomes usable again it takes the preset's value back.
       const form = root.querySelector("#stTokenForm");
       const admin =
-        current === "admin" && !custom && form?.elements.boxes.value === "*" && form?.elements.hosts.value === "*";
+        current === "admin" &&
+        sameScopes(withoutDeletion(chosen()), withoutDeletion(preset.scopes)) &&
+        form?.elements.boxes.value === "*" &&
+        form?.elements.hosts.value === "*";
+      if (!admin) deletion.checked = false;
+      else if (deletion.disabled) deletion.checked = preset.scopes.includes("volume:delete");
       deletion.disabled = !admin;
       deletion.closest("label").title = admin ? "" : t("st.storageAdminPolicy");
     }
+    const scopes = chosen();
+    const custom = !sameScopes(scopes, preset.scopes);
     for (const button of buttons) {
       const on = button.dataset.preset === current;
       button.setAttribute("aria-pressed", String(on));

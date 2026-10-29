@@ -95,7 +95,7 @@ Only the owner and an **unmodified admin token** can select, list or configure s
 | Operator, sandboxed-agent, custom or narrowed admin | Refused | Box/resource grants and scopes apply |
 | Box self-token | Refused | Only that box's self operations |
 
-When no pool is specified, the server provisions default role volumes for an authorized Box create. Deleting a Box can clean up the volumes it owns under the Box deletion rules. Files, terminals, ports, checkpoints and activity use their own scopes on authorized boxes; SSH requires `box:ssh`. Token management and other owner-only operations require the owner.
+When no pool is specified, the server provisions default role volumes for an authorized Box create. Deleting a Box together with its volumes (`deleteVolume=true`) is explicit volume deletion: a token without storage administrator identity gets `403 storage_admin_required` and the Box is not deleted either. Deleting a Box without that flag keeps its volumes. Files, terminals, ports, checkpoints and activity use their own scopes on authorized boxes; SSH requires `box:ssh`. Token management and other owner-only operations require the owner.
 
 ### Revoke a token
 

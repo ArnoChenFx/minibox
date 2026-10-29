@@ -57,6 +57,14 @@ export async function assertCanSkipTrash(ctx: OperationContext): Promise<void> {
 }
 
 /**
+ * Deleting a box together with its volumes is explicit volume deletion, so it needs the identity that may delete volumes:
+ * the owner or an unmodified admin token. A box-scoped token may still delete the box and keep its volumes.
+ */
+export function assertCanDeleteBoxVolumes(ctx: OperationContext): void {
+  if (!mayManageStorage(ctx.principal)) throw refusal("storage_admin_required");
+}
+
+/**
  * Whether the caller may delete one volume. A batch or a prune asks per volume, so a refusal for one volume leaves the
  * others to be judged on their own.
  */

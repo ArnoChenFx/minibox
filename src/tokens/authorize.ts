@@ -464,7 +464,10 @@ const volumeRule: Rule = async ({ principal, host, resolved }) => {
   }
 };
 
-/** Deleting a volume is its creator's alone. A grant lets a token mount a volume, not remove it. */
+/**
+ * Deleting a volume is volume administration: `volume.delete` is a storage administrator operation, so only the owner
+ * or an unmodified admin token reaches this rule, and it may delete any volume it can see.
+ */
 const volumeDeleteRule: Rule = async ({ principal, host, resolved }) => {
   const view = resolved as { id: string; name: string } | undefined;
   const record = view ? host.volumes.resolve(view.id, host.host.id) : null;

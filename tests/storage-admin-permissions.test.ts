@@ -34,6 +34,16 @@ test("storage administration is checked for existing and custom tokens before an
       hosts: { type: "all" },
     }),
     mint(h.app, { name: "narrowed-admin", preset: "admin", boxes: { type: "created-by-me" } }),
+    // Tokens limited to named boxes or to tags are box-scoped too, whatever scopes they hold.
+    mint(h.app, { name: "operator-ids", preset: "operator", boxes: { type: "ids", ids: ["box_any"] } }),
+    mint(h.app, { name: "operator-tags", preset: "operator", boxes: { type: "tags", tags: ["team=blue"] } }),
+    mint(h.app, {
+      name: "custom-tags",
+      scopes: ["box:write", "box:delete", "volume:write", "volume:delete", "trash:skip"],
+      boxes: { type: "tags", tags: ["team"] },
+      hosts: { type: "all" },
+    }),
+    mint(h.app, { name: "narrowed-admin-ids", preset: "admin", boxes: { type: "ids", ids: ["box_any"] } }),
   ];
   const before = h.runtime.calls.length;
   for (const token of tokens) {

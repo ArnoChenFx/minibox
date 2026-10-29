@@ -19,7 +19,7 @@ Conventions in the tables below:
 | `POST` | `/api/boxes` | `box:write` | `name`, `template`, `cpus`, `memoryMb`, `profile`, `egress`, `mounts`, `env`, `idleTimeoutSec`, `ttlSec`, `host`, `tools`, `startupCommand`, `selfToken`, `repo`. A `mounts` entry is `{ volume, path, mode }` for a volume that exists, or `{ role }` (`workspace`, `home`, `tools`, `cache`) for one MiniBox creates for the box; a role the list omits is not created, and `tools` mounts the shared tools volume. `201`; `setup.taskId`, `clone.taskId` |
 | `GET` | `/api/boxes/{id}` | `box:read` | The `ETag` is the revision |
 | `PATCH` | `/api/boxes/{id}` | `box:write` | If-Match. In place: `name`, `cpus`, `memoryMb`, `pids`, `labels`, `idleTimeoutSec`, `ttlSec` |
-| `DELETE` | `/api/boxes/{id}` | `box:delete` | `?deleteVolume=true`, `?skipTrash=true` |
+| `DELETE` | `/api/boxes/{id}` | `box:delete` | `?deleteVolume=true` (owner or unmodified admin token), `?skipTrash=true` |
 | `POST` | `/api/boxes/{id}/start` | `box:write` | |
 | `POST` | `/api/boxes/{id}/stop` | `box:write` | Keeps the volumes |
 | `POST` | `/api/boxes/{id}/restart` | `box:write` | |

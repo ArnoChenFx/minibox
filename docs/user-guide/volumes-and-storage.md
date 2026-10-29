@@ -119,7 +119,7 @@ Click **Delete** on the volume. MiniBox does not delete a volume that a box stil
 
 Deleting a volume keeps a copy of its data in the [recycle bin](checkpoints.md#recycle-bin) for `TRASH_RETENTION_DAYS` days, 7 by default. Restore the entry from the **Recycle bin**, which you open from **Storage**, to get it back as a new volume. A cache or tools volume keeps nothing. To delete without keeping a copy, tick **Delete without keeping a copy**. Skipping the recycle bin also requires `trash:skip`, or the owner; this scope does not grant storage administrator identity.
 
-When you delete a box, you can also delete the volumes that the box owns. See [Boxes](boxes.md#delete-a-box).
+When you delete a box, the owner or an unmodified admin token can also delete the volumes that the box owns. See [Boxes](boxes.md#delete-a-box).
 
 ## When the engine loses a volume
 
