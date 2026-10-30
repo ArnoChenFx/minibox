@@ -43,8 +43,44 @@ The presets are:
 
 1. MiniBox sets `HTTP_PROXY` and `HTTPS_PROXY` in the box to `http://minibox-proxy:3128`. The box's only route is to that proxy.
 2. The proxy checks the host against the allowlist. Only port 80 (plain HTTP) and port 443 (HTTPS, through `CONNECT`) are allowed.
-3. The proxy resolves the host over IPv4. It refuses a host whose addresses are all private, loopback, link-local, shared or reserved.
+3. The proxy resolves the host over IPv4. It refuses a host whose addresses are all private, loopback, link-local, shared or reserved, unless the address falls in a range named in [`EGRESS_ALLOW_RANGES`](#fake-ip-dns-proxies).
 4. The proxy connects to the address it resolved and relays the bytes. It does not read the content.
+
+### Fake-IP DNS proxies
+
+A DNS proxy in fake-IP mode, such as Clash, Surge or sing-box, answers every name with an address from a range it keeps for itself, and takes the real connection when a client connects to that address. Clash answers from `198.18.0.1/16` by default, and `198.18.0.0/15` is common. When the host runs one of these for its own traffic, the egress proxy resolves an allowlisted name to an address in that range, refuses it as a private address, and the box's denial says `private_address` even though the host is allowed.
+
+`EGRESS_ALLOW_RANGES` names the range to let through. It is one setting for the whole MiniBox instance, in `.env`, and it applies to every host, including the proxies of boxes on remote hosts:
+
+```dotenv
+EGRESS_ALLOW_RANGES=198.18.0.0/15
+```
+
+Entries are IPv4 addresses or networks, separated by commas. An address with no `/n` is one host, `/32`. Host bits are cleared, so Clash's `198.18.0.1/16` is accepted and becomes `198.18.0.0/16`. The prefix must be from 8 to 32; a shorter one would open more than 16 million addresses with a single entry. Repeats are dropped and the list is sorted by address. Leave it empty, the default, and the proxy refuses private addresses exactly as it did before.
+
+These ranges never pass, whatever this setting says, and an entry that overlaps one of them stops startup:
+
+| Range | Why it stays refused |
+|---|---|
+| `0.0.0.0/8` | This host. |
+| `127.0.0.0/8` | Loopback. |
+| `169.254.0.0/16` | Link-local, which holds the cloud metadata address. |
+| `224.0.0.0/3` | Multicast and reserved. |
+
+A value that reads as anything else, such as an IPv6 network or a typo, also stops startup. The error names the variable and the entry, so a mistake cannot quietly open a range the operator did not mean. For example:
+
+```
+EGRESS_ALLOW_RANGES: “198.18.0.1/7” is wider than /8; name the fake-IP range with a prefix from 8 to 32
+EGRESS_ALLOW_RANGES: “169.254.169.254” overlaps 169.254.0.0/16, which stays refused (this host, loopback, link-local and multicast or reserved addresses are never reached)
+```
+
+`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16` and `100.64.0.0/10` are accepted, because an operator can mean them. **Be careful:** a host on the allowlist that resolves into one of those ranges is then reached from the proxy, which runs on the host's network. Naming `10.0.0.0/8` or `192.168.0.0/16` lets a `proxy-only` box reach the devices on your LAN, and `100.64.0.0/10` does the same for a Tailnet, as far as the allowlist and ports 80 and 443 reach. Name the fake-IP range only, and nothing wider.
+
+The proxy reaches the fake addresses itself, so the fake-IP proxy must also be the one that takes the proxy container's traffic (a TUN device or a redirect on the host). If it is not, the connection fails and the event is `egress.failed … upstream`, not `private_address`.
+
+### When a change takes effect
+
+The ranges reach a proxy when it is created: when a `proxy-only` box is created, started, restarted or rebuilt. A proxy that is already running keeps the settings it was created with, so a change never interrupts a connection in progress. Restarting MiniBox does not replace the proxies of boxes that are already running: reconciliation starts the boxes that should run, follows the logs of the proxies that do, and leaves them as they are. To apply a change to such a box, start it again with `POST /api/boxes/{id}/start`: a start of a running box leaves its container alone and replaces the proxy. A restart or rebuild picks the setting up too, and restarts the box.
 
 ### Events
 

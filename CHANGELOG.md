@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### 新增
+
+- **`proxy-only` 的出站代理可以放行运营者自己填的私有 IP 段**（[#192](https://github.com/ArnoChenFx/minibox/issues/192)）：宿主机的 Clash、Surge、sing-box 等开着 fake-IP DNS 时，每个域名都被解析到它自己保留的假地址段（Clash 默认 `198.18.0.1/16`，也常见 `198.18.0.0/15`），而代理会把落在私有/保留段的解析结果一律以 `private_address` 拒绝，白名单里的域名反而上不了网。新增实例级环境变量 `EGRESS_ALLOW_RANGES`：逗号分隔的 IPv4 地址或网段，默认空（行为与之前逐字相同），写在 `.env`，对所有宿主机（包括远程宿主机上的代理）生效。不带 `/n` 按 `/32`，主机位归一（Clash 的 `198.18.0.1/16` 归一成 `198.18.0.0/16`），前缀只收 8 到 32，重复条目去掉并按地址排序；`0.0.0.0/8`、`127.0.0.0/8`、`169.254.0.0/16`、`224.0.0.0/3` 以及与它们有任何重叠的条目在启动时被拒绝，错误信息点名变量和那一条。10/8、172.16/12、192.168/16、100.64/10 允许填，文档写明这等于让代理能碰到局域网或 Tailnet。代理容器新增第三个环境变量 `MINIBOX_EGRESS_RANGES`，**为空时不加**，因此没设置的现有安装里的代理不会被无谓替换；复用判断改为比较 `MINIBOX_EGRESS_ALLOW`、`MINIBOX_EGRESS_PORT`、`MINIBOX_EGRESS_RANGES` 三个键，运营者删掉设置后旧代理会被替换，不会继续带着放行。运行中的代理不会被打断，新设置在下次 `ensureEgressProxy`（创建、启动、重启或重建 Box）时生效；重启 MiniBox 不会替换已在运行的 Box 的代理，对运行中的 Box 再发一次 `POST /api/boxes/{id}/start` 即可换上。拒绝原因不变（仍是 `private_address`），没有新增界面、API、MCP 或 CLI。说明见[网络出站](docs/admin/network-egress.md#fake-ip-dns-proxies)。
+
 ### 工程化
 
 - 每次 `bun test` 运行使用自己的临时目录 `mbrun-<pid>-…`（`bunfig.toml` 预加载 `tests/support/preload.ts`），由独立会话里的看护进程在运行结束后删除，正常结束、失败、被信号终止或被 SIGKILL 杀掉都一样。此前 Bun 结束测试时不触发 `exit`，夹具里的 `exit` 清理从不执行，每次运行都会在系统临时目录留下 `minibox-test-data-*`，被超时杀掉的运行还会留下其余目录。看护进程也被杀时，下次运行启动时清扫遗留目录：拥有进程已不在、两小时内没有写入、没有进程占用。说明见 `docs/development.md`。
