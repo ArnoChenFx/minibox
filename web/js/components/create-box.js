@@ -651,6 +651,8 @@ export async function openCreateBox({ snapshot, template, onCreated } = {}) {
       hostKnown,
       sharedTools: shared.tools,
       taken: hostKnown ? namesOnHost(list, hostId) : [],
+      // A box that has no name yet still shows the naming rule, with the placeholder in place of the name.
+      boxNamePlaceholder: t("cb.previewBoxNamePlaceholder"),
     });
   };
 
