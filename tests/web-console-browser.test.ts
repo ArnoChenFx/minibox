@@ -321,7 +321,7 @@ describe.skipIf(!executablePath)("the console's top navigation (real browser)", 
         const box = await page.locator("#boxPick").inputValue();
         await webExpect(page).toHaveURL(at(`#/library/tools/${box}`));
         await webExpect(tab(page, "Tool catalog")).toHaveAttribute("aria-selected", "true");
-        await webExpect(page.locator("#bdToolRows .spinner")).toHaveCount(0);
+        await webExpect(page.locator("#bdToolRows .skeleton")).toHaveCount(0);
         await webExpect(page.locator("#bdToolRows").getByText("Claude Code", { exact: true }).first()).toBeVisible();
       },
       TIMEOUT_MS,

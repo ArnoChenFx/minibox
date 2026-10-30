@@ -5,12 +5,21 @@ import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
 import { subscribe } from "../lib/live.js";
 import { toolAction, filterTools, groupTools } from "../lib/tool-list.js";
-import { emptyState, toast, toastError } from "../lib/ui.js";
+import { emptyState, skeletonRows, toast, toastError } from "../lib/ui.js";
 import { openCustomToolDialog, deleteCustomTool } from "./custom-tool-dialog.js";
 import { searchBoxHtml, bindSearchBox } from "./search-box.js";
 import { openTasks } from "./tasks.js";
 
 const TOOL_COLUMNS = 5;
+/** How many placeholder rows the table holds while the catalog loads, so it is table-shaped rather than one line. */
+const LOADING_ROWS = 8;
+
+/** The placeholder rows: shimmering lines in the table's own columns, with the words a screen reader needs in the first. */
+const loadingRows = () =>
+  skeletonRows(LOADING_ROWS, TOOL_COLUMNS).replace(
+    '<td><div class="skeleton sk-line"></div></td>',
+    `<td><span class="sr-only">${esc(t("bd.toolsLoading"))}</span><div class="skeleton sk-line"></div></td>`,
+  );
 
 const categoryLabel = (id) => t(`tool.cat.${id}`);
 
@@ -103,7 +112,7 @@ export function mountTools(root, { box, refreshBox }) {
       <div class="card-body"><p class="help">${t("bd.toolsHelp")}</p></div>
       <div class="table-wrap"><table class="table"><thead><tr>
         <th>${t("bd.toolsColName")}</th><th>${t("bd.toolsColId")}</th><th>${t("bd.toolsColDesired")}</th><th>${t("bd.toolsColInstalled")}</th><th></th>
-      </tr></thead><tbody id="bdToolRows"><tr><td colspan="${TOOL_COLUMNS}"><span class="spinner"></span> ${esc(t("bd.toolsLoading"))}</td></tr></tbody></table></div></div>`;
+      </tr></thead><tbody id="bdToolRows" aria-busy="true">${loadingRows()}</tbody></table></div></div>`;
   const body = root.querySelector("#bdToolRows");
   const addButton = root.querySelector("#bdToolCustomAdd");
 
@@ -134,6 +143,7 @@ export function mountTools(root, { box, refreshBox }) {
       api("/api/tools/custom"),
       api("/api/tasks?limit=30"),
     ]);
+    body.removeAttribute("aria-busy");
     if (recent.status === "fulfilled") notePending(recent.value.tasks ?? []);
     custom = new Map(entries.status === "fulfilled" ? entries.value.tools.map((entry) => [entry.id, entry]) : []);
     addButton.hidden = entries.status !== "fulfilled";
