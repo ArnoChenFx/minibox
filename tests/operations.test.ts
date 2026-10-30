@@ -314,6 +314,12 @@ const SAMPLES: Record<string, (boxId: string, app: App) => unknown> = {
   "template.save": (id) => ({ id, name: "silver" }),
   "template.get": () => ({ ref: "mbtest-template:sample" }),
   "template.create": () => ({ name: "sample", source: { kind: "dockerfile", text: "FROM alpine:3.20\n" } }),
+  "template.draft.create": () => ({
+    name: "sample-draft",
+    description: "Saved for later",
+    source: { kind: "dockerfile", text: "FROM alpine:3.20\n" },
+  }),
+  "template.draft.list": () => ({}),
   "template.fork": () => ({ ref: TEMPLATE_REF, name: "gold-copy" }),
   "template.edit": () => ({ ref: "mbtest-template:sample", description: "Our own toolchain" }),
   "template.rebuild": () => ({ ref: "mbtest-template:sample" }),
@@ -1335,6 +1341,7 @@ describe("projections", () => {
     ).toEqual([
       "build_official_template",
       "create_template",
+      "create_template_draft",
       "delete_custom_tool",
       "edit_template",
       "fork_template",
@@ -1342,6 +1349,7 @@ describe("projections", () => {
       "install_tool",
       "list_custom_tools",
       "list_official_templates",
+      "list_template_drafts",
       "list_templates",
       "list_tools",
       "pull_image",

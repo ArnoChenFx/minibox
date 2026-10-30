@@ -48,7 +48,9 @@ describe("saving a template without building it", () => {
   }
 
   async function build(name: string, text = FROM_ALPINE): Promise<void> {
-    const started = await call(harness.base, "/api/templates", { body: { name, source: { kind: "dockerfile", text } } });
+    const started = await call(harness.base, "/api/templates", {
+      body: { name, source: { kind: "dockerfile", text } },
+    });
     expect(started.status).toBe(202);
     expect((await finishedTask(harness.base, started.json.taskId ?? "")).status).toBe("succeeded");
   }
@@ -77,7 +79,9 @@ describe("saving a template without building it", () => {
 
     const drafts = await call(harness.base, DRAFTS);
     expect(drafts.status).toBe(200);
-    expect(drafts.json.templates).toEqual([
+    // The draft list carries the source kind and the host that saved it, which the template list cannot: no image.
+    const rows = drafts.json.templates as unknown as Record<string, unknown>[];
+    expect(rows).toEqual([
       {
         name: "tool",
         ref: "mbtest-template:tool",
@@ -88,7 +92,7 @@ describe("saving a template without building it", () => {
     ]);
     // A draft is not a template yet: the template list, which lists images, does not show it.
     const listed = await call(harness.base, "/api/templates");
-    expect(listed.json.templates.map((template) => template.ref)).not.toContain("mbtest-template:tool");
+    expect((listed.json.templates ?? []).map((template) => template.ref)).not.toContain("mbtest-template:tool");
     expect(harness.runtime.callsTo("buildImage")).toHaveLength(0);
   });
 
@@ -199,7 +203,7 @@ describe("saving a template without building it", () => {
     expect(draftTemplate(host, "tool")?.recipe.source).toEqual({ kind: "dockerfile", text: FROM_ALPINE });
     expect((await call(harness.base, DRAFTS)).json.templates).toHaveLength(1);
     expect(listTemplateDrafts(host)).toHaveLength(1);
-    expect((await call(harness.base, "/api/templates")).json.templates.map((t) => t.ref)).not.toContain(
+    expect(((await call(harness.base, "/api/templates")).json.templates ?? []).map((t) => t.ref)).not.toContain(
       "mbtest-template:tool",
     );
   });

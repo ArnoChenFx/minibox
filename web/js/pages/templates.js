@@ -146,7 +146,8 @@ export function render(view, focusName = "") {
       return;
     }
     if (!templates) return;
-    cards = withDraftCards(withOfficialCards(templateCards(templates), officials), drafts);
+    // Drafts come before the official catalog: a just-saved template must not hide behind "Show all".
+    cards = withOfficialCards(withDraftCards(templateCards(templates), drafts), officials);
     if (!cards.length) {
       more.innerHTML = "";
       grid.innerHTML = `<div class="card" style="grid-column:1/-1">${emptyState({
