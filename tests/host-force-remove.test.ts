@@ -420,6 +420,32 @@ describe("a forced removal previews, then discards only that host's records", ()
   });
 });
 
+test("a create finishing after force removal cannot restore its self token", async () => {
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let entered = false;
+  const originalStart = edge.startContainer.bind(edge);
+  edge.startContainer = async (id) => {
+    entered = true;
+    await held;
+    await originalStart(id);
+  };
+  const creating = post("/api/boxes", { name: "late-token", cpus: 1, memoryMb: 256, host: "edge", selfToken: true });
+  await until(() => entered, "start to be held");
+  const box = app.hosts
+    .get("edge")
+    .specs.list()
+    .find((s) => s.name === "late-token")!;
+  expect(box).toBeDefined();
+  app.hosts.get("edge").host.status = "offline";
+  expect((await post("/api/hosts/edge/force-remove", { confirm: true })).status).toBe(200);
+  release();
+  expect((await creating).status).toBe(409);
+  expect(app.selfTokens.has(box.id)).toBe(false);
+});
+
 describe("a record written while the removal runs cannot come back", () => {
   test("a create held before its spec writes nothing after the host is removed", async () => {
     const gate = edge.hold("runHelper");
@@ -430,6 +456,9 @@ describe("a record written while the removal runs cannot come back", () => {
 
     const forced = await post("/api/hosts/edge/force-remove", { confirm: true });
     expect(forced.status).toBe(200);
+    // Reusing the id must not revive the old request's registration.
+    const readded = await post("/api/hosts", { id: "edge", endpoint: `unix://${EDGE_SOCKET}` });
+    expect(readded.status).toBe(201);
     gate.release();
 
     const late = await creating;
@@ -438,8 +467,6 @@ describe("a record written while the removal runs cannot come back", () => {
     expect(recordsOf("edge")).toEqual({ specs: [], volumes: [], checkpoints: [] });
 
     // Adding the id again lists no ghost of the box the held create would have made.
-    const readded = await post("/api/hosts", { id: "edge", endpoint: `unix://${EDGE_SOCKET}` });
-    expect(readded.status).toBe(201);
     const listed = (await (await api("/api/boxes")).json()) as { boxes: { name: string }[] };
     expect(listed.boxes.map((box) => box.name)).not.toContain("late");
   });
@@ -465,6 +492,40 @@ describe("a record written while the removal runs cannot come back", () => {
       target.openHost("edge");
       expect(write, `${name} write once reopened`).not.toThrow();
     }
+  });
+
+  test("old host views remain fenced after re-registration while the new host can write", async () => {
+    const box = await boxOn("edge", "alpha");
+    await takeCheckpoint(box.boxId);
+    const old = app.hosts.get("edge");
+    writeSchedule("edge", box.boxId);
+    writePendingRollback("edge", box.boxId);
+    const schedule = old.checkpoints.readSchedule(box.boxId)!;
+    const pending = old.checkpoints.pendingRollback(box.boxId)!;
+    const spec = old.specs.read(box.boxId)!;
+    const volume = old.volumes.list().find((item) => item.hostId === "edge")!;
+    const checkpoint = old.checkpoints.list().find((item) => item.hostId === "edge")!;
+    edge.down = true;
+    await app.hostAdmin.refresh();
+    expect((await post("/api/hosts/edge/force-remove", { confirm: true })).status).toBe(200);
+    edge.down = false;
+    expect((await post("/api/hosts", { id: "edge", endpoint: `unix://${EDGE_SOCKET}` })).status).toBe(201);
+    const fresh = app.hosts.get("edge");
+    for (const write of [
+      () => old.specs.write(spec),
+      () => old.volumes.write(volume),
+      () => old.checkpoints.write(checkpoint),
+      () => old.checkpoints.writeSchedule(schedule),
+      () => old.checkpoints.writePendingRollback(pending),
+      () => old.selfTokens.issue(box.boxId, "alpha"),
+    ])
+      expect(write).toThrow(expect.objectContaining({ key: "host_gone" }));
+    expect(() => fresh.specs.write(spec)).not.toThrow();
+    expect(() => fresh.volumes.write(volume)).not.toThrow();
+    expect(() => fresh.checkpoints.write(checkpoint)).not.toThrow();
+    expect(() => fresh.checkpoints.writeSchedule(schedule)).not.toThrow();
+    expect(() => fresh.checkpoints.writePendingRollback(pending)).not.toThrow();
+    expect(fresh.selfTokens.issue(box.boxId, "alpha")).toBeString();
   });
 
   test("a spec that moved to another host before the discard is left alone", async () => {

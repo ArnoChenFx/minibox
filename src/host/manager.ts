@@ -543,6 +543,7 @@ export class HostManager {
    */
   private forgetHost(id: string, ctx: HostCtx, view: HostView = this.view(ctx)): HostView {
     // A write that is already on its way must not bring a record of this host back after it is forgotten.
+    ctx.lifetime.retire();
     ctx.specs.closeHost(id);
     ctx.volumes.closeHost(id);
     ctx.checkpoints.closeHost(id);
