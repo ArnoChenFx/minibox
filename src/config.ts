@@ -13,6 +13,7 @@ import {
   resolveDataDir,
 } from "./data-dir";
 import { hostLabelsProblem } from "./host/store";
+import { formatIpv4Cidr, ipv4Overlaps, type Ipv4Network, parseIpv4Cidr } from "./lib/cidr";
 import { log } from "./lib/logger";
 import { parsePreviewBaseDomain } from "./preview/domain";
 
@@ -120,6 +121,12 @@ export interface Config {
    * `none` or `proxy-only` are always kept off the host, whatever this is set to.
    */
   blockHostGateway: boolean;
+  /**
+   * IPv4 networks an egress proxy may connect to although they are private, from `EGRESS_ALLOW_RANGES`. A fake-IP DNS
+   * proxy such as Clash, Surge or sing-box answers every name from a range of its own, and the egress proxy would
+   * otherwise refuse every allowlisted host. Empty, the default, leaves the proxy's refusal as it was.
+   */
+  egressAllowRanges: string[];
   /**
    * Free space, as a percentage of the disk, below which a host alerts and refuses new volumes and checkpoints. 0 turns
    * the check off.
@@ -293,6 +300,55 @@ function parseHostLabels(value: string | undefined): Record<string, string> {
   return labels;
 }
 
+/**
+ * Networks an egress proxy never reaches, whatever `EGRESS_ALLOW_RANGES` says. Each one either is the proxy's own
+ * machine or cannot be a fake-IP range: `0.0.0.0/8` is this host, `127.0.0.0/8` is loopback, `169.254.0.0/16` is
+ * link-local, which holds the cloud metadata address, and `224.0.0.0/3` is multicast and reserved.
+ */
+const REFUSED_EGRESS_RANGES = ["0.0.0.0/8", "127.0.0.0/8", "169.254.0.0/16", "224.0.0.0/3"] as const;
+
+/** A shorter prefix would open more than 16 million addresses with one entry, which no fake-IP range needs. */
+const MIN_EGRESS_ALLOW_PREFIX = 8;
+
+/**
+ * The private networks an egress proxy may reach, from `EGRESS_ALLOW_RANGES`, as `198.18.0.1/16` or `198.18.0.0/15`
+ * entries separated by commas. A fake-IP DNS proxy (Clash, Surge, sing-box) resolves every allowlisted name to an
+ * address in its own range, and the proxy refuses addresses in private ranges, so that range has to be named here.
+ *
+ * Each entry is an IPv4 address or network. Host bits are cleared, so Clash's `198.18.0.1/16` becomes `198.18.0.0/16`;
+ * an address with no `/n` is a single host, `/32`. The ranges are deduplicated and sorted by address. An entry that does
+ * not parse, has a prefix below 8, or overlaps a refused range stops startup, so a typo cannot open the wrong network.
+ */
+function parseEgressAllowRanges(value: string | undefined): string[] {
+  const ranges = new Map<string, Ipv4Network>();
+  for (const raw of (value ?? "").split(",")) {
+    const entry = raw.trim();
+    if (entry === "") continue;
+    const parsed = parseIpv4Cidr(entry.includes("/") ? entry : `${entry}/32`);
+    if (parsed === null) {
+      throw new Error(`EGRESS_ALLOW_RANGES: “${entry}” is not an IPv4 address or network (for example 198.18.0.0/15)`);
+    }
+    if (parsed.prefix < MIN_EGRESS_ALLOW_PREFIX) {
+      throw new Error(
+        `EGRESS_ALLOW_RANGES: “${entry}” is wider than /${MIN_EGRESS_ALLOW_PREFIX}; name the fake-IP range with a prefix from ${MIN_EGRESS_ALLOW_PREFIX} to 32`,
+      );
+    }
+    const refused = REFUSED_EGRESS_RANGES.flatMap((text) => {
+      const block = parseIpv4Cidr(text);
+      return block && ipv4Overlaps(parsed, block) ? [block] : [];
+    })[0];
+    if (refused) {
+      throw new Error(
+        `EGRESS_ALLOW_RANGES: “${entry}” overlaps ${formatIpv4Cidr(refused)}, which stays refused (this host, loopback, link-local and multicast or reserved addresses are never reached)`,
+      );
+    }
+    ranges.set(formatIpv4Cidr(parsed), parsed);
+  }
+  return [...ranges.values()]
+    .toSorted((a, b) => a.base - b.base || a.prefix - b.prefix)
+    .map((network) => formatIpv4Cidr(network));
+}
+
 function parseContainerRuntime(value: string | undefined): string | null {
   const v = nonBlank(value);
   if (v === undefined) return null;
@@ -405,6 +461,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     egressForwardCheckIntervalSec: intInRange(get("EGRESS_FORWARD_CHECK_INTERVAL_SEC"), 600, 60, 86400),
     hostDiskMinFreePercent: intInRange(get("HOST_DISK_MIN_FREE_PERCENT"), 10, 0, 100),
     blockHostGateway: isTruthy(get("BLOCK_HOST_GATEWAY")),
+    egressAllowRanges: parseEgressAllowRanges(get("EGRESS_ALLOW_RANGES")),
     sshPort,
     sshBind: nonBlank(get("SSH_BIND")) ?? host,
     sshPublicHost: parsePublicHost(get("SSH_PUBLIC_HOST")),

@@ -191,6 +191,87 @@ describe("BLOCK_HOST_GATEWAY", () => {
   });
 });
 
+describe("EGRESS_ALLOW_RANGES", () => {
+  test("is empty by default, so a proxy refuses private addresses exactly as before", () => {
+    expect(load({ ACCESS_KEY: KEY }).egressAllowRanges).toEqual([]);
+    expect(load({ ACCESS_KEY: KEY, EGRESS_ALLOW_RANGES: "  " }).egressAllowRanges).toEqual([]);
+  });
+
+  test("a fake-IP range is accepted, and host bits are cleared as Clash's default 198.18.0.1/16 needs", () => {
+    expect(load({ ACCESS_KEY: KEY, EGRESS_ALLOW_RANGES: "198.18.0.1/16" }).egressAllowRanges).toEqual([
+      "198.18.0.0/16",
+    ]);
+    expect(load({ ACCESS_KEY: KEY, EGRESS_ALLOW_RANGES: "198.18.0.1/15" }).egressAllowRanges).toEqual([
+      "198.18.0.0/15",
+    ]);
+    expect(load({ ACCESS_KEY: KEY, EGRESS_ALLOW_RANGES: "192.168.7.9/24" }).egressAllowRanges).toEqual([
+      "192.168.7.0/24",
+    ]);
+  });
+
+  test("an address without a prefix is one host, /32", () => {
+    expect(load({ ACCESS_KEY: KEY, EGRESS_ALLOW_RANGES: "100.64.3.7" }).egressAllowRanges).toEqual(["100.64.3.7/32"]);
+  });
+
+  test("repeats are dropped and the ranges are sorted by address", () => {
+    const cfg = load({
+      ACCESS_KEY: KEY,
+      EGRESS_ALLOW_RANGES: "198.18.0.0/15, 100.64.0.0/10, 198.18.0.1/15, 198.18.0.0/15",
+    });
+    expect(cfg.egressAllowRanges).toEqual(["100.64.0.0/10", "198.18.0.0/15"]);
+  });
+
+  test("private and shared ranges are allowed when the operator names them", () => {
+    const ranges = ["10.0.0.0/8", "100.64.0.0/10", "172.16.0.0/12", "192.168.0.0/16"];
+    expect(load({ ACCESS_KEY: KEY, EGRESS_ALLOW_RANGES: ranges.join(",") }).egressAllowRanges).toEqual(ranges);
+  });
+
+  test.each([
+    "0.0.0.0/0",
+    "0.0.0.0/7",
+    "10.0.0.0/7",
+    "127.0.0.1/8",
+    "169.254.169.254",
+    "169.254.0.0/24",
+    "224.0.0.0/4",
+    "240.0.0.0/4",
+    "::1/128",
+    "2001:db8::/32",
+    "198.18.0.300/16",
+    "198.18.0.0/33",
+    "198.18.0.0/abc",
+    "fake-ip",
+  ])("%s stops startup and names the variable and the entry", (entry) => {
+    let message = "";
+    try {
+      load({ ACCESS_KEY: KEY, EGRESS_ALLOW_RANGES: entry });
+    } catch (e) {
+      message = e instanceof Error ? e.message : String(e);
+    }
+    expect(message).toContain("EGRESS_ALLOW_RANGES");
+    expect(message).toContain(entry);
+  });
+
+  test("one bad entry stops startup even when the others are fine", () => {
+    expect(() => load({ ACCESS_KEY: KEY, EGRESS_ALLOW_RANGES: "198.18.0.0/15, nope" })).toThrow(
+      "EGRESS_ALLOW_RANGES: “nope”",
+    );
+  });
+
+  test("can come from .env, and the process env wins over it", () => {
+    writeFileSync(envFile, "EGRESS_ALLOW_RANGES=198.18.0.0/15\n");
+    expect(loadConfig({ ACCESS_KEY: KEY, DATA_DIR: dataDir }, { envFile }).egressAllowRanges).toEqual([
+      "198.18.0.0/15",
+    ]);
+    expect(
+      loadConfig(
+        { ACCESS_KEY: KEY, DATA_DIR: dataDir, EGRESS_ALLOW_RANGES: "100.64.0.0/10" },
+        { envFile },
+      ).egressAllowRanges,
+    ).toEqual(["100.64.0.0/10"]);
+  });
+});
+
 describe("MCP_ALLOW_OWNER_KEY", () => {
   test("is false by default, so /mcp refuses the owner access key unless the operator opts in", () => {
     expect(DEFAULT_MCP_ALLOW_OWNER_KEY).toBe(false);
