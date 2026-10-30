@@ -1,4 +1,4 @@
-import { chmodSync, lstatSync, mkdtempSync, readdirSync, readlinkSync, rmSync } from "node:fs";
+import { lstatSync, mkdtempSync, readdirSync, readlinkSync, realpathSync, rmSync } from "node:fs";
 import { join } from "node:path";
 
 import type { Subprocess } from "bun";
@@ -21,13 +21,9 @@ export const SWEEP_AFTER_MS = 2 * 60 * 60 * 1000;
 /** A directory with more entries than this is not worth judging by its files; it is left alone. */
 const SWEEP_ENTRY_LIMIT = 200_000;
 
-/** Makes the directory for the run of `pid` in `base`. */
+/** Makes the directory for the run of `pid` in `base`. Like any `mkdtemp` directory it is private to the user. */
 export function createTestRoot(base: string, pid: number = process.pid): string {
-  const root = mkdtempSync(join(base, `mbrun-${pid}-`));
-  // mkdtemp makes it private to the user. The real-engine tests bind-mount directories below it into containers that run
-  // as someone else, and those reach them the way they reach a directory of /tmp, through a parent others can enter.
-  chmodSync(root, 0o755);
-  return root;
+  return mkdtempSync(join(base, `mbrun-${pid}-`));
 }
 
 /**
@@ -82,9 +78,11 @@ export interface SweepDeps {
 
 /**
  * Removes the directories earlier runs left behind, for a run whose janitor did not do it: one that was killed with the
- * janitor, or on a machine without `sh`. It names three things as left over, and takes a directory only when all hold:
- * the process that made it is gone, nothing in it has been written for `idleMs`, and no process has it open or as its
- * working directory. Anything that is not a directory of this suite, as its name says, is not looked at.
+ * janitor, or on a machine without `sh`. It takes a directory only when all of these hold: its name is one of this suite's
+ * and it is a real directory of the current user; the process its name gives is gone (the old `minibox-test-data-*`
+ * name none); nothing in it has been written for `idleMs`; and no process has it open or as its working directory, which
+ * only /proc can tell. Without /proc a directory that names its process is judged by the first three, and one that does
+ * not is left. Anything else in the directory is not looked at.
  *
  * Returns the names it removed.
  */
@@ -98,9 +96,12 @@ export function sweepStaleRoots(base: string, overrides: Partial<SweepDeps> = {}
     remove: removeTree,
     ...overrides,
   };
+  // The processes' working directories and files come from /proc by their real paths, so the base is taken by its real path.
+  let dir: string;
   let names: string[];
   try {
-    names = readdirSync(base);
+    dir = realpathSync(base);
+    names = readdirSync(dir);
   } catch {
     return [];
   }
@@ -111,7 +112,7 @@ export function sweepStaleRoots(base: string, overrides: Partial<SweepDeps> = {}
   for (const name of names) {
     const owner = ROOT_NAME.exec(name);
     if (!owner && !LEGACY_NAME.test(name)) continue;
-    const path = join(base, name);
+    const path = join(dir, name);
     try {
       const stat = lstatSync(path);
       if (!stat.isDirectory() || (deps.uid !== null && stat.uid !== deps.uid)) continue;
@@ -121,6 +122,7 @@ export function sweepStaleRoots(base: string, overrides: Partial<SweepDeps> = {}
         open = deps.openPaths();
         opened = true;
       }
+      if (open === null && !owner) continue;
       if (open?.some((held) => held === path || held.startsWith(`${path}/`))) continue;
       deps.remove(path);
       removed.push(name);

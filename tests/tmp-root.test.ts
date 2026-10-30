@@ -51,11 +51,11 @@ const gone = () => false;
 const nothingOpen = () => [];
 
 describe("createTestRoot", () => {
-  test("makes a directory below the base that names the process, which others can enter", () => {
+  test("makes a directory below the base that names the process, and is private to the user", () => {
     const base = freshBase();
     const root = createTestRoot(base, 4242);
     expect(root.startsWith(`${base}/mbrun-4242-`)).toBe(true);
-    expect(statSync(root).mode & 0o777).toBe(0o755);
+    expect(statSync(root).mode & 0o777).toBe(0o700);
     expect(createTestRoot(base, 4242)).not.toBe(root);
   });
 
@@ -64,6 +64,8 @@ describe("createTestRoot", () => {
   });
 
   test("leaves the preview relay's socket paths inside the 103 bytes macOS allows", () => {
+    // The socket is `<16 hex of a sha256>.sock` in a `mbp-XXXXXX` directory of the temporary directory (createListener
+    // and scratchDir in src/preview/relay.ts); a macOS temporary directory is about 48 bytes.
     const tmp = "/var/folders/zz/zyxvpxvq6csfxvn_n0000000000000/T";
     const name = createTestRoot(freshBase(), 4_194_304).split("/").pop() ?? "";
     expect(join(tmp, name, "mbp-AbCdEf", "0123456789abcdef.sock").length).toBeLessThanOrEqual(103);
@@ -124,8 +126,13 @@ describe("sweepStaleRoots", () => {
     expect(sweep([file])).toEqual([]);
     expect(sweep([`${root}-other`, join(base, "mbrun-4242-AbCdEf2", "x")])).toEqual(["mbrun-4242-AbCdEf"]);
     const second = leftover(base, "mbrun-4243-AbCdEf", 3);
+    const old = leftover(base, "minibox-test-data-AbCdEf", 3);
+    // Without /proc nothing says who has a directory open. One that names its process is judged by that process; one that
+    // names none (the old `minibox-test-data-*`) is left.
     expect(sweep(null)).toEqual(["mbrun-4243-AbCdEf"]);
     expect(existsSync(second)).toBe(false);
+    expect(existsSync(old)).toBe(true);
+    expect(sweep([])).toEqual(["minibox-test-data-AbCdEf"]);
   });
 
   test("takes the directories earlier runs left directly in the temporary directory, which name no process", () => {
@@ -254,6 +261,58 @@ describe("sweepStaleRoots", () => {
     });
   });
 
+  test.skipIf(process.platform !== "linux")(
+    "keeps a directory a process holds when the temporary directory is reached through a link",
+    async () => {
+      const real = freshBase();
+      const link = `${freshBase()}-link`;
+      symlinkSync(real, link);
+      bases.push(link);
+      const root = leftover(real, "mbrun-4242-AbCdEf", 3);
+      // /proc names the working directory by its real path, whatever path the sweep was given.
+      const holder = Bun.spawn(["sleep", "30"], { cwd: join(root, "minibox-test-data-x", "app-x"), stdout: "ignore" });
+      try {
+        expect(sweepStaleRoots(link, { isAlive: gone })).toEqual([]);
+        expect(existsSync(root)).toBe(true);
+      } finally {
+        holder.kill();
+        await holder.exited;
+      }
+      expect(sweepStaleRoots(link, { isAlive: gone })).toEqual(["mbrun-4242-AbCdEf"]);
+      expect(existsSync(root)).toBe(false);
+    },
+  );
+
+  // A directory that holds an unreadable one is removed the hard way, with a `chmod -R` first; a link inside it must
+  // not lead either of them out of it.
+  test.skipIf(process.getuid?.() === 0)("leaves alone what a link inside a directory it removes points to", () => {
+    const base = freshBase();
+    const root = leftover(base, "mbrun-4242-AbCdEf", 3);
+    const outside = leftover(base, "outside", 100);
+    const kept = join(outside, "minibox-test-data-x", "app-x", "state.json");
+    const locked = join(root, "locked");
+    mkdirSync(locked);
+    writeFileSync(join(locked, "file"), "x");
+    const then = new Date(Date.now() - 3 * HOUR);
+    utimesSync(join(locked, "file"), then, then);
+    utimesSync(locked, then, then);
+    chmodSync(locked, 0o000);
+    symlinkSync(outside, join(root, "link-to-outside"));
+    // Adding the entries changed the time of the link and of the directory; both go back to three hours ago.
+    lutimesSync(join(root, "link-to-outside"), then, then);
+    utimesSync(root, then, then);
+    chmodSync(join(outside, "minibox-test-data-x"), 0o500);
+    try {
+      expect(sweepStaleRoots(base, { isAlive: gone, openPaths: nothingOpen })).toEqual(["mbrun-4242-AbCdEf"]);
+      expect(existsSync(root)).toBe(false);
+      expect(existsSync(kept)).toBe(true);
+      expect(statSync(join(outside, "minibox-test-data-x")).mode & 0o777).toBe(0o500);
+    } finally {
+      chmodSync(join(outside, "minibox-test-data-x"), 0o700);
+      if (existsSync(locked)) chmodSync(locked, 0o700);
+    }
+  });
+
   test("asks the system about the process the name gives", async () => {
     const base = freshBase();
     // The process that runs this is one that runs; one that has ended and been reaped is not.
@@ -293,6 +352,25 @@ describe("startJanitor", () => {
       expect(existsSync(root)).toBe(false);
     } finally {
       if (existsSync(join(root, "locked"))) chmodSync(join(root, "locked"), 0o700);
+    }
+  });
+
+  test("leaves alone what a link inside the directory points to", async () => {
+    const root = createTestRoot(freshBase());
+    const outside = leftover(freshBase(), "outside", 100);
+    const kept = join(outside, "minibox-test-data-x", "app-x", "state.json");
+    symlinkSync(outside, join(root, "link-to-outside"));
+    chmodSync(join(outside, "minibox-test-data-x"), 0o500);
+    try {
+      const janitor = startJanitor(root);
+      if (!janitor) throw new Error("no janitor");
+      janitor.stdin.end();
+      await janitor.exited;
+      expect(existsSync(root)).toBe(false);
+      expect(existsSync(kept)).toBe(true);
+      expect(statSync(join(outside, "minibox-test-data-x")).mode & 0o777).toBe(0o500);
+    } finally {
+      chmodSync(join(outside, "minibox-test-data-x"), 0o700);
     }
   });
 

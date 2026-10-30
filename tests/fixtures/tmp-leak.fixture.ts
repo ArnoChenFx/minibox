@@ -15,7 +15,7 @@ const go = `${ready}.go`;
 
 test("makes the temporary directories of the suite", async () => {
   const dirs = [
-    // The directory every test that builds an app gets its data directory from.
+    // A data directory from testConfig(), made below the one directory the suite makes for them.
     testConfig().dataDir,
     ...["bctx-", "mbp-", "mb-relay-", "minibox-files-test-"].map((prefix) => mkdtempSync(join(tmpdir(), prefix))),
   ];

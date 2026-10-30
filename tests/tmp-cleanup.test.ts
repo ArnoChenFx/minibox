@@ -15,7 +15,8 @@ const CASE_MS = 40_000;
 type Ending = "hang" | "finish" | "fail";
 
 function launch(env: Record<string, string>) {
-  return Bun.spawn([process.execPath, "test", FIXTURE, "--timeout", "4000"], {
+  // The run outlasts every case, so a signal that did not land shows as a run still going, not as one that ended by itself.
+  return Bun.spawn([process.execPath, "test", FIXTURE, "--timeout", "20000"], {
     cwd: ROOT,
     env: { ...process.env, ...env },
     stdout: "ignore",
@@ -112,31 +113,21 @@ describe("a bun test run leaves no temporary directory behind", () => {
     CASE_MS,
   );
 
-  for (const signal of ["SIGTERM", "SIGINT", "SIGKILL"] as const) {
+  for (const signal of ["SIGTERM", "SIGINT", "SIGHUP", "SIGKILL"] as const) {
     test(
       `when ${signal} stops it`,
       async () => {
         const run = await start("hang");
         expectMadeInOwnRoot(run);
+        expect(run.child.exitCode).toBeNull();
         run.child.kill(signal);
         await run.child.exited;
+        expect(run.child.signalCode).toBe(signal);
         expect(await leftovers(run)).toEqual([]);
       },
       CASE_MS,
     );
   }
-
-  test(
-    "when SIGHUP reaches it",
-    async () => {
-      const run = await start("hang");
-      expectMadeInOwnRoot(run);
-      run.child.kill("SIGHUP");
-      await run.child.exited;
-      expect(await leftovers(run)).toEqual([]);
-    },
-    CASE_MS,
-  );
 
   // What a process manager does when it stops a command: the signal goes to the whole group, and the janitor, which lives
   // in a group of its own, is not in it.
@@ -146,8 +137,10 @@ describe("a bun test run leaves no temporary directory behind", () => {
       async () => {
         const run = await start("hang");
         expectMadeInOwnRoot(run);
+        expect(run.child.exitCode).toBeNull();
         process.kill(-run.child.pid, signal);
         await run.child.exited;
+        expect(run.child.signalCode).toBe(signal);
         expect(await leftovers(run)).toEqual([]);
       },
       CASE_MS,
