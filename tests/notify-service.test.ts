@@ -71,7 +71,7 @@ function setup(overrides: Partial<NotificationsOptions> = {}, outcomes: (number 
   const clock = { now: NOW };
   const notify = new Notifications({
     store,
-    version: "0.6.8",
+    version: "0.6.9",
     allowPrivate: false,
     record: (note) => notes.push(note),
     transport: async (request) => {
