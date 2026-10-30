@@ -427,6 +427,63 @@ const hostRemove = defineOperation({
   run: async (ctx, input): Promise<{ host: HostView }> => ({ host: await hostsOf(ctx).remove(input.id) }),
 });
 
+const hostForceRemove = defineOperation({
+  name: "host.remove.force",
+  tag: "hosts",
+  summary: "Remove a lost host and its records",
+  kind: "destructive",
+  scope: "host:manage",
+  async: false,
+  conflicts: true,
+  input: z.object({
+    id: z.string().min(1).max(32).meta({
+      description:
+        "Host id. The host must exist, must not be the local host, and its last check must have failed (status offline). An online or unchecked host is a 409 host_not_offline.",
+    }),
+    confirm: z.boolean().optional().meta({
+      description:
+        "Without it nothing changes and the call answers 409 with details.preview, listing the boxes, volumes and checkpoints whose records would be discarded. Send true to discard them.",
+    }),
+  }),
+  output: z.object({
+    host: HostViewSchema,
+    discarded: z.object({
+      boxes: z.array(z.object({ id: z.string(), name: z.string() })),
+      volumes: z.array(z.object({ name: z.string(), engineName: z.string() })),
+      checkpoints: z.array(z.object({ id: z.string(), label: z.string() })),
+    }),
+  }),
+  rest: [{ method: "POST", path: "/api/hosts/:id/force-remove", body: true }],
+  cli: "host force-remove",
+  mcp: {
+    toolset: "meta",
+    name: "force_remove_host",
+    description:
+      "Remove a host whose machine is gone, discarding MiniBox's records of it: its boxes, its volume records (the shared tools volume too) and its checkpoint records. Only an offline host may be removed this way: use remove_host for one that answers. No engine is contacted and nothing on the machine is deleted, so a machine that is only unreachable keeps its containers as orphans MiniBox no longer manages, and its checkpoint repository stays in a volume there. Without confirm true the call changes nothing and returns confirmation_required with details.preview, which lists every record that would be discarded. Owner only.",
+  },
+  activity: { action: () => "host.remove.force", target: (input) => input.id },
+  audit: {
+    target: ({ id }, _resolved, result) => ({ kind: "host", id, name: result?.host.name ?? id }),
+    detail: (input, _resolved, result) => ({
+      host: input.id,
+      boxes: result?.discarded.boxes ?? [],
+      volumes: result?.discarded.volumes ?? [],
+      checkpoints: result?.discarded.checkpoints ?? [],
+    }),
+  },
+  run: async (ctx, input) => {
+    const removed = await hostsOf(ctx).forceRemove(input.id, input.confirm === true);
+    return {
+      host: removed.host,
+      discarded: {
+        boxes: removed.discarded.boxes,
+        volumes: removed.discarded.volumes.map(({ name, engineName }) => ({ name, engineName })),
+        checkpoints: removed.discarded.checkpoints,
+      },
+    };
+  },
+});
+
 const hostPairingCreate = defineOperation({
   name: "host.pairing.create",
   tag: "hosts",
@@ -483,6 +540,7 @@ export const hostOperations = [
   hostTest,
   hostLabelsSet,
   hostRemove,
+  hostForceRemove,
   hostPairingCreate,
   hostRevoke,
 ];

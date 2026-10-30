@@ -6,6 +6,12 @@ import { log } from "../lib/logger";
 import { type Msg, type Params, msg } from "../lib/messages";
 import { type EngineTarget, type DiskBreakdown, type Runtime, RuntimeError } from "../runtime";
 import { bookedOn, type Booking } from "../services/capacity";
+import {
+  discardHostRecords,
+  forceRemoveConfirmation,
+  type HostRecords,
+  hostRecords,
+} from "../services/host-force-remove";
 import type { AgentEvent, AgentHub, AgentStatus } from "./agent/hub";
 import { type Endpoint, endpointLabel, parseEndpoint } from "./endpoint";
 import { foldName } from "./label";
@@ -102,6 +108,12 @@ export interface HostUsage {
   readonly allocated: Booking | null;
   /** CPU cores and memory the running boxes use, approximated from their newest samples. Null while no sample is current. */
   readonly usage: { readonly cpus: number; readonly memoryBytes: number } | null;
+}
+
+/** What a forced removal removed: the host's view as it was, and every record it discarded. */
+export interface HostForceRemove {
+  readonly host: HostView;
+  readonly discarded: HostRecords;
 }
 
 /** Why a host has no `docker system df` reading. Null when it has one. */
@@ -486,22 +498,59 @@ export class HostManager {
       }
       await this.liftTools(ctx);
       if (this.options.release) await this.options.release(ctx);
-      const view = this.view(ctx);
-      const stored = this.stored.get(id);
-      const agentId = stored ? agentIdOf(stored) : null;
-      if (agentId !== null) this.options.agents.forget(agentId);
-      this.options.store.save([...this.stored.values()].filter((host) => host.id !== id));
-      this.options.detach(ctx);
-      this.options.registry.remove(id);
-      this.links.get(id)?.close();
-      this.links.delete(id);
-      this.stored.delete(id);
-      this.probes.delete(id);
-      this.backoff.delete(id);
-      this.options.store.removeCredentials(id);
+      const view = this.forgetHost(id, ctx);
       log.info("host.removed", { host: id });
       return view;
     });
+  }
+
+  /**
+   * Removes a host whose machine is gone for good, forgetting MiniBox's records of it and nothing else. The host must be
+   * offline: an online host is removed the ordinary way, which also takes back what MiniBox put on it, and a host whose
+   * state is unknown has not been checked yet. No engine is dialled, no `liftTools` and no `release` runs, and nothing on
+   * the machine is deleted, so a machine that is only unreachable keeps its containers as orphans. Without `confirm`
+   * nothing changes and the refusal lists every record a confirmed call would discard.
+   */
+  forceRemove(id: string, confirm: boolean): Promise<HostForceRemove> {
+    return this.exclusive(async () => {
+      if (id === LOCAL_HOST_ID) throw conflict(msg("host_is_local"));
+      if (!this.options.registry.has(id)) throw notFound(msg("host_not_found", { host: id }));
+      const ctx = this.options.registry.get(id);
+      if (ctx.host.status !== "offline") throw conflict(msg("host_not_offline", { host: id }));
+      if (!confirm) throw forceRemoveConfirmation(hostRecords(ctx));
+      const discarded = await discardHostRecords(ctx);
+      const view = this.forgetHost(id, ctx);
+      log.warn("host.force_removed", {
+        host: id,
+        boxes: discarded.boxes,
+        volumes: discarded.volumes.map((volume) => volume.name),
+        checkpoints: discarded.checkpoints.map((checkpoint) => checkpoint.id),
+      });
+      return { host: view, discarded };
+    });
+  }
+
+  /**
+   * Forgets one host's records and what was registered for it: an agent host's agent is forgotten (which also revokes it),
+   * the hosts file loses the host, what `attach` started is stopped, the registry entry and its link go, with the probe and
+   * backoff state, and the credential files are deleted. The view is taken before any of it, so a caller can report the
+   * host as it was. `remove` and `forceRemove` both end here.
+   */
+  private forgetHost(id: string, ctx: HostCtx): HostView {
+    const view = this.view(ctx);
+    const stored = this.stored.get(id);
+    const agentId = stored ? agentIdOf(stored) : null;
+    if (agentId !== null) this.options.agents.forget(agentId);
+    this.options.store.save([...this.stored.values()].filter((host) => host.id !== id));
+    this.options.detach(ctx);
+    this.options.registry.remove(id);
+    this.links.get(id)?.close();
+    this.links.delete(id);
+    this.stored.delete(id);
+    this.probes.delete(id);
+    this.backoff.delete(id);
+    this.options.store.removeCredentials(id);
+    return view;
   }
 
   /**

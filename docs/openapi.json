@@ -44065,6 +44065,408 @@
         }
       }
     },
+    "/api/hosts/{id}/force-remove": {
+      "post": {
+        "operationId": "host.remove.force",
+        "tags": [
+          "hosts"
+        ],
+        "summary": "Remove a lost host and its records",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 32,
+              "description": "Host id. The host must exist, must not be the local host, and its last check must have failed (status offline). An online or unchecked host is a 409 host_not_offline."
+            }
+          },
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "confirm": {
+                    "description": "Without it nothing changes and the call answers 409 with details.preview, listing the boxes, volumes and checkpoints whose records would be discarded. Send true to discard them.",
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "host": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "description": "Host id, such as local or lab. A box names its host in box.host."
+                        },
+                        "name": {
+                          "type": "string",
+                          "description": "The label the console shows. It is not a key: every call addresses a host by id. No two hosts may share one, so host.add and the pairing endpoints refuse a name another host already holds (409 host_name_taken) or a waiting pairing code holds (409 host_name_pending)."
+                        },
+                        "transport": {
+                          "type": "string",
+                          "enum": [
+                            "local",
+                            "unix",
+                            "tcp",
+                            "ssh",
+                            "agent"
+                          ],
+                          "description": "local is the machine MiniBox runs on. unix is another socket, tcp is mutual TLS, ssh tunnels to the socket, and agent is a MiniBox agent that dials in."
+                        },
+                        "endpoint": {
+                          "type": "string",
+                          "description": "The endpoint, without any credential."
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "online",
+                            "offline",
+                            "unknown"
+                          ]
+                        },
+                        "latencyMs": {
+                          "description": "Round trip of the last successful ping, in milliseconds.",
+                          "type": [
+                            "number",
+                            "null"
+                          ]
+                        },
+                        "capacity": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "cpus": {
+                                  "description": "CPUs boxes on this host may take. Null when the engine does not say.",
+                                  "type": [
+                                    "number",
+                                    "null"
+                                  ]
+                                },
+                                "memoryBytes": {
+                                  "description": "Memory boxes on this host may take, in bytes.",
+                                  "type": [
+                                    "number",
+                                    "null"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "cpus",
+                                "memoryBytes"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "dockerVersion": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "error": {
+                          "description": "The last failed check, as text. Null once a check succeeds.",
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "boxes": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991,
+                          "description": "Boxes whose spec names this host."
+                        },
+                        "createdAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "labels": {
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "additionalProperties": {
+                            "type": "string"
+                          },
+                          "description": "Labels the host carries, such as { \"gpu\": \"true\" }. An auto box create selects a host by them with its hostLabels field. Empty when the host carries none."
+                        },
+                        "agent": {
+                          "description": "The agent connection. Present on an agent host only.",
+                          "type": "object",
+                          "properties": {
+                            "connected": {
+                              "type": "boolean",
+                              "description": "Whether the agent is connected to this control plane now."
+                            },
+                            "version": {
+                              "type": "string",
+                              "description": "The agent's version, as it last said hello."
+                            },
+                            "protocol": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991,
+                              "description": "The agent protocol the agent speaks."
+                            },
+                            "lastSeenAt": {
+                              "description": "When the agent last sent a frame, as ISO time.",
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "upgradeRequired": {
+                              "type": "boolean",
+                              "description": "The agent speaks another protocol than this control plane, so it is refused until it is upgraded."
+                            },
+                            "revoked": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "connected",
+                            "version",
+                            "protocol",
+                            "lastSeenAt",
+                            "upgradeRequired",
+                            "revoked"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "name",
+                        "transport",
+                        "endpoint",
+                        "status",
+                        "latencyMs",
+                        "capacity",
+                        "dockerVersion",
+                        "error",
+                        "boxes",
+                        "createdAt",
+                        "labels"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "discarded": {
+                      "type": "object",
+                      "properties": {
+                        "boxes": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "name": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "name"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "volumes": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "name": {
+                                "type": "string"
+                              },
+                              "engineName": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "name",
+                              "engineName"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "checkpoints": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "label": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "label"
+                            ],
+                            "additionalProperties": false
+                          }
+                        }
+                      },
+                      "required": [
+                        "boxes",
+                        "volumes",
+                        "checkpoints"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "host",
+                    "discarded"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The name is already taken, this operation is already running, a volume is in use, an exec is not running, a checkpoint is pinned or cannot change, a change was requested without confirm set to true, or a terminal session is under a person's control (code taken_over). A refusal for a confirmation includes a preview of the change, and a rebuild preview includes the docker diff and the planned changes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request declares a body that is not JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable, or a storage pool backing the request cannot be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "destructive",
+        "x-scope": "host:manage",
+        "x-async": false,
+        "x-cli": "host force-remove",
+        "x-mcp": {
+          "name": "force_remove_host",
+          "toolset": "meta"
+        }
+      }
+    },
     "/api/hosts/pairing": {
       "post": {
         "operationId": "host.pairing.create",
