@@ -343,6 +343,8 @@ describe("forking an official template", () => {
 
     expect(l.runtime.builds.at(-1)?.tag).toBe("mbtest-template:node-copy");
     expect(l.runtime.builds.at(-1)?.files.get("Dockerfile")).toBe(SHIPPED_NODE);
+    // The rebuild writes back what it read, so the record now holds the copy instead of the old official source.
+    expect(recipeOnDisk(l, "node-copy").source).toEqual({ kind: "dockerfile", text: SHIPPED_NODE });
   });
 
   test("forkRecipe writes the fork's own copy even when it is handed the official source", async () => {
