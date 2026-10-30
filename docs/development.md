@@ -200,6 +200,7 @@ minibox/
 ├── LICENSE              The Apache License 2.0
 ├── NOTICE               Copyright and licenses of the vendored third-party components
 ├── .env.example         An example configuration, with the defaults in comments
+├── .env.zh.example      The same example with Chinese comments
 └── CHANGELOG.md         Release notes
 ```
 
