@@ -44,6 +44,7 @@ const ATTENTION_KINDS = [
   "host.disk_low",
   "host.cpu_overcommit",
   "host.memory_overcommit",
+  "host.forward_blocked",
 ] as const;
 
 const BoxRef = z.object({
@@ -94,7 +95,7 @@ const AttentionSchema = z.object({
   box: BoxRef.nullable().meta({ description: "The box the condition is about, when it is still there." }),
   params: z.record(z.string(), z.union([z.string(), z.number()])).meta({
     description:
-      "Values the console words the condition with. `used` and `limit` are bytes for a volume, `action` is `warn` or `stop`, `fields` lists the drifted settings, `checkpoint` names the rolled-back checkpoint, `free` and `min` are percentages of a host's disk, `booked` and `limit` are CPU cores for a host's overcommitted CPU and bytes for its overcommitted memory, and `detail` is the message the engine or the pool reported.",
+      "Values the console words the condition with. `used` and `limit` are bytes for a volume, `action` is `warn` or `stop`, `fields` lists the drifted settings, `checkpoint` names the rolled-back checkpoint, `free` and `min` are percentages of a host's disk, `booked` and `limit` are CPU cores for a host's overcommitted CPU and bytes for its overcommitted memory, `detail` is the message the engine or the pool reported, and for a host whose forwarding is blocked `bridge` is the uplink interface, `boxes` names the `proxy-only` boxes that lost the internet, `count` is how many there are, `detail` is what the host's iptables backends said, and `cause` is `policy` when a chain fell off its end (the case MiniBox offers to repair), `rule` when a DROP of the host's own decides it, or `unclear` when the reading left a rule unread.",
   }),
 });
 
@@ -374,6 +375,39 @@ async function overcommitAttention(host: HostCtx, hosts: readonly HostCtx[]): Pr
   return items;
 }
 
+/**
+ * The hosts whose `FORWARD` rules drop a `proxy-only` box's traffic. The check records one reading per host, and the
+ * warning stays until a pass finds the rules right: MiniBox changes nothing on its own, so a repair the owner confirms
+ * is a separate operation, and a repair that did not work leaves this here.
+ */
+function forwardAttention(hosts: readonly HostCtx[]): Attention[] {
+  return hosts.flatMap((host): Attention[] => {
+    // An offline host is already listed as offline, and its last reading is from before it went away. The host coming
+    // back asks for a fresh reading, which is what decides this item again.
+    if (host.host.status === "offline") return [];
+    const state = host.forward.stateOf(host.host.id);
+    if (!state || state.forwarding || state.skipped !== null || state.bridge === "") return [];
+    return [
+      {
+        kind: "host.forward_blocked",
+        severity: "error",
+        hostId: host.host.id,
+        at: state.at,
+        subject: host.host.name,
+        box: null,
+        params: {
+          bridge: state.bridge,
+          boxes: state.boxes.join(", "),
+          count: state.boxes.length,
+          detail: state.detail,
+          // Only a drop nobody asked for gets a button; anything else is reported as it is.
+          cause: state.cause ?? "unclear",
+        },
+      },
+    ];
+  });
+}
+
 async function stateAttention(ctx: OperationContext, boxes: readonly Box[], hosts: readonly HostCtx[]) {
   const items: Attention[] = [];
   const fallback = ctx.host.host.id;
@@ -476,6 +510,7 @@ async function stateAttention(ctx: OperationContext, boxes: readonly Box[], host
 
     items.push(...(overcommitted[position] ?? []));
   }
+  items.push(...forwardAttention(hosts));
   return items;
 }
 

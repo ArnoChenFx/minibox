@@ -297,7 +297,9 @@ describe("FakeRuntime follows engine semantics the services rely on", () => {
     const rt = new FakeRuntime();
     await rt.ensureBridgeNetwork("mbx-a", { interContainerComm: true, internal: true, subnet: "240.0.8.0/28" });
     await rt.ensureBridgeNetwork("mbx-a", { interContainerComm: true, internal: true, subnet: "240.0.8.0/28" });
-    expect(await rt.listNetworks()).toEqual([{ name: "mbx-a", subnets: ["240.0.8.0/28"] }]);
+    expect(await rt.listNetworks()).toEqual([
+      { name: "mbx-a", subnets: ["240.0.8.0/28"], bridge: expect.stringMatching(/^br-/) },
+    ]);
 
     expect(await rejectionOf(rt.ensureBridgeNetwork("mbx-a", { interContainerComm: true }))).toMatchObject({
       kind: "conflict",
@@ -336,7 +338,9 @@ describe("FakeRuntime follows engine semantics the services rely on", () => {
     await rt.connectNetwork(id, "mbx-uplink", { alias: "minibox-proxy" });
     await rt.connectNetwork(id, "mbx-uplink", { alias: "minibox-proxy" });
     expect(await rejectionOf(rt.connectNetwork(id, "missing"))).toMatchObject({ kind: "not_found" });
-    expect(await rt.listNetworks()).toEqual([{ name: "mbx-uplink", subnets: ["240.0.0.0/28"] }]);
+    expect(await rt.listNetworks()).toEqual([
+      { name: "mbx-uplink", subnets: ["240.0.0.0/28"], bridge: expect.stringMatching(/^br-/) },
+    ]);
   });
 
   test("the host ingress block is replaced as a whole, and an empty list clears it", async () => {

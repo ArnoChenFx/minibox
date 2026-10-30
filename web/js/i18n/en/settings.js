@@ -430,6 +430,28 @@ export default {
   "st.tokenPruneFailed": "Could not delete the ended tokens",
   "st.tokenCreateFailed": "Could not create the token",
   "st.tokenNone": "No agent tokens yet.",
+  "st.backups": "Backups",
+  "st.backupsHelp":
+    "Back up MiniBox's data directory on a schedule, without an external cron job. A scheduled backup is sealed with the passphrase in BACKUP_PASSPHRASE on the server, and BACKUP_KEEP decides how many stay.",
+  "st.backupSchedule": "Schedule",
+  "st.backupScheduleOffHelp": "Backups are made only when you run minibox backup, or call the API.",
+  "st.backupScheduleNote":
+    "A run that fell due while MiniBox was down happens once when it comes back, not once per missed slot. If BACKUP_KEEP is set, only the newest few are kept.",
+  "st.backupRunOk": "{time}, backup made",
+  "st.backupRunFailed": "{time}, failed: {error}",
+  "st.backupRunSkipped": "{time}, skipped: {reason}",
+  "st.backupSkip.busy": "another backup was already running; the schedule runs again at its next time",
+  "st.backupNeedsPassphrase":
+    "The server has no BACKUP_PASSPHRASE, so a schedule cannot be saved yet. Set it in .env (12 to 1024 characters) and restart MiniBox.",
+  "st.backupLostPassphrase":
+    "The server has no BACKUP_PASSPHRASE, so this schedule's runs fail and it cannot be changed. Set it in .env (12 to 1024 characters) and restart MiniBox, or turn the schedule off.",
+  "st.backupScheduleTitle": "Backup schedule",
+  "st.backupScheduleDesc": "Backs up the data directory in the background.",
+  "st.backupScheduleHelp":
+    "A scheduled backup runs inside MiniBox, so it needs BACKUP_PASSPHRASE set in .env. A run that fails is logged once and waits for its next slot.",
+  "st.backupScheduleSaved": "Backup schedule saved",
+  "st.backupScheduleOffDone": "Backup schedule turned off",
+  "st.backupScheduleFailed": "Backup schedule change failed",
   "st.targets": "Off-site targets",
   "st.targetsHelp":
     "Copy checkpoint packages and backups to an S3-compatible bucket or an SFTP folder, and pull them back when this host needs them. Credentials are stored as secrets and never shown again.",

@@ -45,6 +45,9 @@ const CLI_COMMANDS: Record<string, { argv: string[]; stdin?: string }> = {
   backup: { argv: [] },
   "backup ls": { argv: [] },
   "backup rm": { argv: ["backup-1"] },
+  "backup schedule get": { argv: [] },
+  "backup schedule set": { argv: ["--every-hours", "6"] },
+  "backup schedule clear": { argv: [] },
   "box create": { argv: ["alpha"] },
   "box list": { argv: [] },
   "box startup-command get": { argv: ["alpha"] },
@@ -288,6 +291,9 @@ const SAMPLES: Record<string, (boxId: string, app: App) => unknown> = {
   "checkpoint.schedule.clear": (id) => ({ id }),
   "backup.create": () => ({ passphrase: PASSPHRASE }),
   "backup.list": () => ({}),
+  "backup.schedule.get": () => ({}),
+  "backup.schedule.set": () => ({ everyHours: 6 }),
+  "backup.schedule.clear": () => ({}),
   "backup.download": () => ({ id: BACKUP_PLACEHOLDER }),
   "backup.delete": () => ({ id: BACKUP_PLACEHOLDER }),
   "target.list": () => ({}),
@@ -335,6 +341,7 @@ const SAMPLES: Record<string, (boxId: string, app: App) => unknown> = {
   "host.list": () => ({}),
   "host.usage": () => ({}),
   "host.disk": () => ({ id: "local" }),
+  "host.forward.repair": () => ({ id: "local" }),
   "host.add": () => ({ id: "lab", endpoint: "unix:///var/run/lab.sock" }),
   "host.test": () => ({ id: "lab", endpoint: "unix:///var/run/lab.sock" }),
   "host.labels.set": () => ({ id: "local", labels: { gpu: "true" } }),
@@ -630,6 +637,22 @@ async function preparedInput(
   }
   if (operation.name === "host.revoke") {
     await pairAgentHost(app, "edge");
+  }
+  if (operation.name === "host.forward.repair") {
+    // The repair is only offered for a host with a proxy-only box whose rules drop the uplink by policy, so the check
+    // has to find exactly that before the operation will do anything.
+    await app.operations.run("box.create", ctx, {
+      name: "gated",
+      cpus: 1,
+      memoryMb: 256,
+      egress: { mode: "proxy-only", domains: ["example.com"] },
+    });
+    (ctx.host.runtime as FakeRuntime).forwardVerdict = {
+      forwarding: false,
+      cause: "policy",
+      detail: "fake engine: FORWARD policy is DROP",
+    };
+    await app.egressForward.tick();
   }
   const sample = SAMPLES[operation.name];
   if (sample === undefined) throw new Error(`no sample input for ${operation.name}`);
@@ -1244,6 +1267,7 @@ describe("projections", () => {
       "list_hosts",
       "get_host_usage",
       "get_host_disk",
+      "repair_host_forward",
       "add_host",
       "test_host",
       "set_host_labels",
@@ -1262,6 +1286,7 @@ describe("projections", () => {
       "add_target",
       "attach_volume",
       "check_target",
+      "clear_backup_schedule",
       "clear_checkpoint_schedule",
       "copy_checkpoint",
       "create_backup",
@@ -1272,6 +1297,7 @@ describe("projections", () => {
       "detach_volume",
       "empty_trash",
       "export_checkpoint",
+      "get_backup_schedule",
       "get_checkpoint_schedule",
       "get_volume",
       "import_checkpoint",
@@ -1289,6 +1315,7 @@ describe("projections", () => {
       "remove_target",
       "replace_pools",
       "restore_trash",
+      "set_backup_schedule",
       "set_checkpoint_schedule",
       "set_volume_limits",
       "snapshot_volume",

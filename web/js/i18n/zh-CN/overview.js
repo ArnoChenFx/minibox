@@ -33,6 +33,7 @@ export default {
   "ov.attn.disk_low": "宿主机磁盘不足",
   "ov.attn.cpu_overcommit": "宿主机 CPU 超配",
   "ov.attn.memory_overcommit": "宿主机内存超配",
+  "ov.attn.forward_blocked": "仅代理的 Box 无法上网",
   "ov.text.oom": "Box 内存耗尽，系统终止了其中的一个进程。",
   "ov.text.checkpoint_failed": "检查点未能完成。",
   "ov.text.checkpoint_failed_detail": "检查点未能完成：{detail}",
@@ -46,6 +47,27 @@ export default {
   "ov.text.disk_low": "剩余 {free}%，低于 {min}% 的下限。",
   "ov.text.cpu_overcommit": "这台宿主机上预定的 CPU 已达 {booked}，超过超配比例允许的 {limit}，新建 Box 可能被拒绝。",
   "ov.text.memory_overcommit": "这台宿主机上预定的内存已达 {booked}，超过超配比例允许的 {limit}，新建 Box 可能被拒绝。",
+  "ov.forwardRepair": "添加规则",
+  "ov.forwardRepairHint": "先询问，确认后由 MiniBox 放行出站上行网络穿过宿主机的 FORWARD 链",
+  "ov.forwardRepairTitle": "在 {host} 上放行出站上行网络？",
+  "ov.forwardRepairMessage":
+    "MiniBox 会在 {host} 上添加自己的链，并在 FORWARD 末尾追加一条跳转到它的规则，所以它上面的规则仍先行决定。该链接受来自 {bridge}、从宿主机默认路由出去的新连接及其回程，不管目的地是哪里。宿主机防火墙的其它部分都不动。其上的仅代理 Box 恢复上网；开放出站的 Box 本来就不受影响。",
+  "ov.forwardRepairWhat":
+    "如果更愿意手动处理，命令见网络出站指南：https://github.com/ArnoChenFx/minibox/blob/main/docs/zh-CN/admin/network-egress.md#仅代理的-box-无法上网时。检查确认规则正确之前，这条警告会一直保留。",
+  "ov.forwardRepaired": "已添加 FORWARD 规则",
+  "ov.forwardRepairFailed": "无法添加 FORWARD 规则",
+  "ov.text.forward_blocked":
+    "这台宿主机的 FORWARD 规则丢弃了出站上行网络（{bridge}）的流量，其上 {count} 个仅代理的 Box（{boxes}）无法访问互联网。开放出站的 Box 不受影响。",
+  "ov.text.forward_blocked_unclear":
+    "这台宿主机的出站上行网络（{bridge}）看起来被丢弃，其上 {count} 个仅代理的 Box（{boxes}）可能没有网络。开放出站的 Box 不受影响。",
+  "ov.note.forward_policy":
+    "FORWARD 里没有规则放行这些流量，是链的默认策略把它们丢弃了。确认后由 MiniBox 添加规则，也可以手动添加。",
+  "ov.note.forward_rule":
+    "这是宿主机自己的一条 DROP 或 REJECT 规则有意为之。这里没有 MiniBox 可以添加的规则：如果这些 Box 应当出网，请手动改掉那条规则。",
+  "ov.note.forward_unreachable":
+    "FORWARD 里有一条规则用 -g 把这些流量永久交给了另一条链，或用 RETURN 结束了遍历，所以 MiniBox 追加在 FORWARD 末尾的规则永远走不到。请手动把放行规则加到那条链里，或加在那条规则之前。",
+  "ov.note.forward_unclear":
+    "其中有一条规则 MiniBox 读不懂，说不清原因。请手动查看规则；MiniBox 在这里不提供任何规则。",
   "actv.subtitle": "MiniBox 记录的每一次操作：谁做的、对哪个对象、结果如何。",
   "actv.filters": "筛选活动日志",
   "actv.box": "Box",

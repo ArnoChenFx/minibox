@@ -115,6 +115,13 @@ Commands:
                                        (or --passphrase-stdin). --out saves the archive here after a size/checksum check.
   minibox backup ls [--json]           List the backups kept on the server
   minibox backup rm <id> [--json]      Delete a backup kept on the server
+  minibox backup schedule get [--json]
+                                       Print the backup schedule, with its next and last run
+  minibox backup schedule set (--every-hours N | --at HH:MM [--timezone ZONE]) [--json]
+                                       Back up on a schedule inside MiniBox. Needs BACKUP_PASSPHRASE on the server,
+                                       and BACKUP_KEEP, when set, keeps only the newest few
+  minibox backup schedule clear [--json]
+                                       Remove the schedule. Backups already made are kept
   minibox restore <file> --data-dir DIR [--passphrase-stdin]
                                        Restore offline into an empty DATA_DIR. The passphrase is
                                        read as for backup.

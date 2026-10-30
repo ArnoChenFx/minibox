@@ -2,6 +2,8 @@ import { z } from "zod";
 
 import { endpointLabel, parseEndpoint } from "../host/endpoint";
 import type { HostManager, HostView } from "../host/manager";
+import { notFound } from "../lib/errors";
+import { msg } from "../lib/messages";
 import { defineOperation } from "./define";
 import type { OperationContext } from "./types";
 import { hostLabelsInput } from "./validation";
@@ -254,6 +256,71 @@ const hostDisk = defineOperation({
   run: (ctx, input) => hostsOf(ctx).disk(input.id),
 });
 
+/** One host's forwarding, as the check last read it. */
+const ForwardStateSchema = z.object({
+  bridge: z.string().meta({ description: "The uplink network's host interface, such as br-1a2b3c4d5e6f." }),
+  forwarding: z.boolean().meta({
+    description: "Whether a new connection arriving on that bridge would be forwarded to the internet.",
+  }),
+  cause: z.enum(["policy", "rule", "unreachable"]).nullable().meta({
+    description:
+      "What drops the uplink when it is dropped. policy is a chain falling off its end, the case MiniBox may repair. rule is a DROP or REJECT the host's own rules make on purpose. unreachable is the policy again, but a RETURN or -g in FORWARD ends the walk first, so a rule appended at the end would never be reached. Null when the reading is not certain, which is the case with nothing to offer.",
+  }),
+  detail: z
+    .string()
+    .meta({ description: "One line per iptables backend that answered, naming why it accepts or drops." }),
+  boxes: z.array(z.string()).meta({ description: "The proxy-only boxes on the host that need the forwarding." }),
+  at: z.string().meta({ description: "When the reading was taken, as ISO time." }),
+  repaired: z
+    .boolean()
+    .meta({ description: "Whether the owner confirmed a repair after this reading. The next pass decides again." }),
+  skipped: z.string().nullable().meta({
+    description: "Why the check cannot run on this host, such as an agent host, or null when it ran.",
+  }),
+  installed: z.boolean().meta({
+    description:
+      "Whether MiniBox's forward chain is on the host because a repair ran and nothing removed it since. It is removed when the host has no proxy-only box left, and when the host is removed.",
+  }),
+});
+
+const hostForwardRepair = defineOperation({
+  name: "host.forward.repair",
+  tag: "hosts",
+  summary: "Allow a host's egress uplink through FORWARD",
+  kind: "write",
+  scope: "host:manage",
+  async: false,
+  conflicts: true,
+  input: z.object({
+    id: z.string().min(1).max(32).meta({
+      description:
+        "Host id, as host.list reports it. The host must have a proxy-only box, and the check must have read its rules.",
+    }),
+  }),
+  output: z.object({ host: ForwardStateSchema }),
+  rest: [{ method: "POST", path: "/api/hosts/:id/forward", body: true }],
+  mcp: {
+    toolset: "meta",
+    name: "repair_host_forward",
+    description:
+      "Add MiniBox's own FORWARD chain for a host's egress uplink, so proxy-only boxes there can reach the internet again. MiniBox never does this on its own: it runs only when the owner confirms the Needs attention item on the overview, or calls this, and it refuses unless the last reading says the drop is the chain's policy rather than a rule somebody wrote. The chain is jumped to at the end of FORWARD, so Docker's own isolation chains and anything an operator put in DOCKER-USER still decide first, and it accepts only connections that arrive on the uplink bridge and leave through the host's default route, plus the replies. Nothing else is touched and the FORWARD policy stays as it is. Returns the reading taken right after, so a repair that did not work still reports forwarding false. Refused when the host has no IPv4 default route, since there is no interface to allow. Owner only.",
+  },
+  activity: { action: () => "host.forward.repair", target: (input) => input.id },
+  audit: {
+    target: ({ id }) => ({ kind: "host", id, name: id }),
+    detail: (_input, _resolved, result) => ({
+      bridge: result?.host.bridge ?? null,
+      forwarding: result?.host.forwarding ?? null,
+      boxes: result?.host.boxes ?? [],
+    }),
+  },
+  run: async (ctx, input) => {
+    const found = (ctx.allHosts?.() ?? [ctx.host]).find((candidate) => candidate.host.id === input.id);
+    if (!found) throw notFound(msg("host_not_found", { host: input.id }));
+    return { host: await found.forward.repair(found) };
+  },
+});
+
 const hostAdd = defineOperation({
   name: "host.add",
   tag: "hosts",
@@ -411,6 +478,7 @@ export const hostOperations = [
   hostList,
   hostUsage,
   hostDisk,
+  hostForwardRepair,
   hostAdd,
   hostTest,
   hostLabelsSet,

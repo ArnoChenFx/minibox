@@ -1,5 +1,7 @@
 export interface MovePreview {
   box: { id: string; name: string };
+  /** The path the move takes: `direct` sends the template image, `checkpoint` carries the data in a checkpoint. */
+  via?: string;
   from: string;
   to: string;
   running: boolean;

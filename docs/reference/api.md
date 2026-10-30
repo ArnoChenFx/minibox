@@ -2,7 +2,7 @@
 
 Every MiniBox operation is available over a JSON REST API under `/api`. The console, the [CLI](cli.md) and the [MCP tools](mcp.md) use the same operations.
 
-The full machine-readable description is the OpenAPI 3.1 document in [`openapi.json`](../openapi.json). Import it into any OpenAPI tool to generate a client. The document describes 157 operations in 23 groups.
+The full machine-readable description is the OpenAPI 3.1 document in [`openapi.json`](../openapi.json). Import it into any OpenAPI tool to generate a client. The document describes 162 operations in 23 groups.
 
 ## Authentication
 
@@ -145,7 +145,7 @@ The tables below list every operation in [`openapi.json`](../openapi.json), grou
 | `POST` | `/api/boxes/{id}/restart` | Restart a box |
 | `PATCH` | `/api/boxes/{id}/resources` | Change the CPU, memory or process limit of a box |
 | `POST` | `/api/boxes/{id}/rebuild` | Rebuild a box from its spec. Takes a safety checkpoint first, unless `safetyCheckpoint` is `false`. A `mounts` entry naming a volume with no record yet (such as `{ "volume": "brand-new-vol", "path": "/data", "mode": "rw" }`) creates an independent volume, which needs the owner or an unmodified admin token; other tokens get `403 storage_admin_required` |
-| `POST` | `/api/boxes/{id}/move` | Move a box to another host. Needs `If-Match`. Without `confirm: true` it returns `409 confirmation_required` with a preview |
+| `POST` | `/api/boxes/{id}/move` | Move a box to another host. Needs `If-Match`. Without `confirm: true` it returns `409 confirmation_required` with a preview. `via` picks the path: `direct` (the default) sends the template image and copies the volumes as archives; `checkpoint` takes a checkpoint of the box, copies it to the target, makes the box there from the copy and removes it from the old host, so no image is sent. The answer's `via` names the path taken and `leftovers` lists what stayed behind |
 | `GET` | `/api/boxes/{id}/logs` | Read the recent log output of a box |
 | `GET` | `/api/boxes/{id}/stats` | Read the current resource usage of a box |
 | `GET` | `/api/boxes/{id}/startup-command` | Read a box's startup command and its status. Needs `secret:use` |
@@ -294,6 +294,11 @@ These are owner only. A key logs in to every box over direct SSH, so no token ma
 | `GET` | `/api/backups` | List the backups kept on the server, newest first. Owner only |
 | `GET` | `/api/backups/{id}/download` | Download a backup archive as `<id>.mbbak`. Owner only |
 | `DELETE` | `/api/backups/{id}` | Delete a backup kept on the server. Owner only |
+| `GET` | `/api/backups/schedule` | Read the instance's backup schedule, with its next and last run. `null` when none is set, which is the default. `timezoneUnknown` is `true` when the saved zone is one the server no longer knows; the schedule then runs in UTC until it is set again. Owner only |
+| `PUT` | `/api/backups/schedule` | Set the schedule `{ "everyHours" }` or `{ "at": "HH:MM", "timezone" }`, not both. `timezone` is an IANA zone such as `Asia/Shanghai`; without it the time is UTC, and an unknown zone or a UTC offset such as `+08:00` is `400`. A due run seals one backup with `BACKUP_PASSPHRASE`, and `BACKUP_KEEP` then applies. Replaces any schedule the instance has. Owner only |
+| `DELETE` | `/api/backups/schedule` | Remove the backup schedule. Backups already made are kept. Owner only |
+
+A due run makes one backup through the same service as `POST /api/backups`, so it appears in `GET /api/backups` with origin `create`. A run that fell due while MiniBox was down happens once when it comes back, and a failed run is recorded on the schedule and logged once. See [Scheduled backups](../admin/backups.md#scheduled-backups).
 
 ### targets
 
@@ -384,6 +389,7 @@ An entry is kept for `TRASH_RETENTION_DAYS` days, see [Configuration](configurat
 | `GET` | `/api/hosts` | List hosts |
 | `GET` | `/api/hosts/usage` | Show what each host runs and uses |
 | `GET` | `/api/hosts/{id}/disk` | What the host's engine holds, as `docker system df` counts it: images, containers, volumes and build cache, each with its total and reclaimable bytes. Owner only. An agent host has no reading, and a host whose engine does not answer reports why. See [Engine storage](#engine-storage-docker-system-df) |
+| `POST` | `/api/hosts/{id}/forward` | Add the `FORWARD` rule the overview's forwarding warning offers, after the owner confirms it. Owner only. See [The egress forward allowance](#the-egress-forward-allowance) |
 | `POST` | `/api/hosts` | Add a host. Takes the fields below, plus an optional `labels` object, which is checked as `PATCH /api/hosts/{id}` checks it |
 | `POST` | `/api/hosts/test` | Test a host connection |
 | `PATCH` | `/api/hosts/{id}` | Replace a host's labels, as `{ "labels": { "gpu": "true" } }`. The local host takes them too. An empty object clears them. Returns `200` with the host |
@@ -444,6 +450,36 @@ The reading is the engine's own accounting, not the host filesystem's. The disk 
 | `engine` | The engine answered with an error. `detail` holds its own message. |
 
 A host id no host carries answers `404` (`host_not_found`).
+
+#### The egress forward allowance
+
+`POST /api/hosts/{id}/forward` is what the overview's **Proxy-only boxes have no internet** item offers as its button. It is a write, and it needs the owner: no token scope reaches it. MiniBox never calls it on its own.
+
+It answers the reading taken right after the change, in the shape the overview reads:
+
+```json
+{
+  "host": {
+    "bridge": "br-1a2b3c4d5e6f",
+    "forwarding": true,
+    "detail": "iptables accepts br-1a2b3c4d5e6f; iptables-legacy FORWARD policy is ACCEPT",
+    "boxes": ["agent"],
+    "at": "2026-10-26T10:00:00.000Z",
+    "repaired": true,
+    "skipped": null
+  }
+}
+```
+
+`forwarding` is what a new connection arriving on `bridge` and leaving for another interface would get. The call adds one chain of MiniBox's own, `MINIBOX-FWD-<hash>`, jumped to from the top of `FORWARD` in every readable iptables backend, which accepts that traffic and its replies. Nothing else on the host's firewall changes: the `FORWARD` policy stays as it is and other installs' chains are left alone. A repair that did not work answers `forwarding: false`, so the warning stays until a check finds the rules right.
+
+| Answer | When |
+|---|---|
+| `409 egress_forward_no_boxes` | The host has no `proxy-only` box, so nothing needs the rule. Nothing was changed. |
+| `409 egress_forward_unchecked` | The host's rules have not been read yet, so the bridge is not known. Wait for the next check, or add the rule by hand. |
+| `409 egress_forward_unsupported` | The check cannot run on this host, which today means an agent host. |
+| `404 host_not_found` | No host carries that id. |
+
 #### Host labels
 
 A host label is a key and a value, and `hostLabels` on a box create matches them. A key is lowercase letters, digits, dots, underscores and hyphens, starting with a letter, and may name a namespace with one slash, as in `org/arch`. A value is a single line of at most 256 characters, and may be empty. A host carries at most 32 labels. A label that breaks a rule is refused with `400` and the key `host_labels_invalid`, and nothing is written.
