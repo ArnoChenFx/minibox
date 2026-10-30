@@ -638,6 +638,7 @@ describe("the owner of the host's firewall rule", () => {
       const { scope } = setup({ record: freshScope(HOST, PREFIX) });
       scope.begin("somebody-else");
       scope.begin(PREFIX);
+      expect(scope.ingressOwner()).toBe(PREFIX);
     } finally {
       restore();
     }
@@ -654,10 +655,9 @@ describe("the scope file", () => {
   });
 
   test("it is written and read back, and holds the host and the prefix its MiniBox uses", () => {
-    const record = freshScope(HOST, PREFIX);
-    saveScope(scratch, record);
-    expect(loadScope(scratch, HOST)).toEqual(record);
+    saveScope(scratch, freshScope(HOST, PREFIX));
     expect(loadScope(scratch, HOST)).toEqual({ version: 1, hostId: HOST, labelPrefix: PREFIX });
+    expect(freshScope(HOST)).toEqual({ version: 1, hostId: HOST, labelPrefix: null });
   });
 
   test("an agent that has none reads null, and a welcome then writes one", () => {
