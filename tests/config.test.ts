@@ -250,7 +250,26 @@ describe("EGRESS_ALLOW_RANGES", () => {
     }
     expect(message).toContain("EGRESS_ALLOW_RANGES");
     expect(message).toContain(entry);
+    expect(message).toContain(reason);
   });
+
+  // Overlap is checked in both directions. Any network from /8 to /15 that holds 169.254.0.0/16 starts with 169, so
+  // these containment cases share that octet; the block is what has to be recognized as inside the entry.
+  test.each(["169.254.0.0/8", "169.254.0.0/9", "169.254.0.0/12", "169.254.0.0/15"])(
+    "%s contains the link-local range, so it is refused for overlapping it rather than accepted as a range within it",
+    (entry) => {
+      let message = "";
+      try {
+        load({ ACCESS_KEY: KEY, EGRESS_ALLOW_RANGES: entry });
+      } catch (e) {
+        message = e instanceof Error ? e.message : String(e);
+      }
+      expect(message).toContain("EGRESS_ALLOW_RANGES");
+      expect(message).toContain(entry);
+      expect(message).toContain("overlaps 169.254.0.0/16");
+      expect(message).not.toContain("wider than");
+    },
+  );
 
   test("one bad entry stops startup even when the others are fine", () => {
     expect(() => load({ ACCESS_KEY: KEY, EGRESS_ALLOW_RANGES: "198.18.0.0/15, nope" })).toThrow(
