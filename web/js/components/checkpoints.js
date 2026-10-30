@@ -8,10 +8,7 @@ import {
   newestFirst,
   passphraseOk,
   rowActions,
-  SCHEDULE_HOURS,
   SKIP_REASON_KEYS,
-  scheduleBody,
-  scheduleZone,
   usedPercent,
 } from "../lib/checkpoint-state.js";
 import { esc } from "../lib/dom.js";
@@ -21,6 +18,7 @@ import { hostFilter, hostName, hostsNow, multiHost } from "../lib/hosts.js";
 import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
 import { subscribe } from "../lib/live.js";
+import { bindScheduleForm, lastRunText, scheduleCardHtml, scheduleFieldsHtml, zonedTime } from "../lib/schedule-ui.js";
 import { confirmDialog, emptyState, nameError, openDialog, toast, toastError, withBusy } from "../lib/ui.js";
 import { flip, limitList } from "./list-toggle.js";
 import { openTasks, taskErrorText, waitTask } from "./tasks.js";
@@ -391,76 +389,48 @@ export function importCheckpoint() {
   });
 }
 
-/** The rule in words, as the card and the dialog say it. */
-function ruleText(schedule) {
-  if (schedule.mode === "daily") return t("ck.scheduleDaily", { at: schedule.at, zone: scheduleZone(schedule) });
-  return schedule.everyHours === 1 ? t("ck.scheduleEveryHour") : t("ck.scheduleEvery", { n: schedule.everyHours });
-}
+/** The words of a checkpoint schedule, for the shared card markup. */
+export const SCHEDULE_LABELS = {
+  title: "ck.schedule",
+  offHelp: "ck.scheduleOffHelp",
+  note: "ck.scheduleNote",
+  ok: "ck.runOk",
+  failed: "ck.runFailed",
+  none: "ck.lastRunNone",
+};
+
+const SCHEDULE_IDS = { hours: "ckHours", at: "ckAt", error: "ckScheduleErr" };
 
 function skipText(reason) {
   const key = SKIP_REASON_KEYS[reason];
   return key ? t(key) : (reason ?? "");
 }
 
-/** A time in the browser's local time, with the zone it is in, such as `2026/10/23 03:00（Asia/Shanghai）`. */
-function zonedTime(iso, zone) {
-  return `${dateTime(iso)}${t("ck.inZone", { zone })}`;
-}
-
-function lastRunText(run, zone) {
-  if (!run) return t("ck.lastRunNone");
-  const time = zonedTime(run.at, zone);
-  if (run.status === "ok") return t("ck.runOk", { time });
-  if (run.status === "skipped") return t("ck.runSkipped", { time, reason: skipText(run.reason) });
-  return t("ck.runFailed", { time, error: run.error ?? "" });
+/** A skipped checkpoint run says why, which the shared last-run line leaves to its caller. */
+function checkpointLastRunText(run, zone, labels) {
+  if (run?.status === "skipped") {
+    return t("ck.runSkipped", { time: zonedTime(run.at, zone), reason: skipText(run.reason) });
+  }
+  return lastRunText(run, zone, labels);
 }
 
 /** The schedule line of the card: off, or the rule with its next and last run, and the buttons that change it. */
 export function scheduleHtml(schedule, zone = browserTimezone()) {
-  if (!schedule) {
-    return `<div class="ck-schedule"><div class="ck-schedule-info">
-      <div class="ck-schedule-line"><strong>${esc(t("ck.schedule"))}</strong><span class="badge">${esc(t("ck.scheduleOff"))}</span></div>
-      <div class="help">${esc(t("ck.scheduleOffHelp"))}</div></div>
-      <div class="ck-schedule-actions"><button class="btn btn-sm" data-action="ck-schedule">${icon("clock")}${esc(t("ck.scheduleSet"))}</button></div>
-    </div>`;
-  }
-  return `<div class="ck-schedule"><div class="ck-schedule-info">
-    <div class="ck-schedule-line"><strong>${esc(t("ck.schedule"))}</strong><span class="badge badge-accent">${esc(ruleText(schedule))}</span></div>
-    <div class="help">${esc(t("ck.nextRun"))}: ${esc(zonedTime(schedule.nextRunAt, zone))}</div>
-    <div class="help">${esc(t("ck.lastRun"))}: ${esc(lastRunText(schedule.lastRun, zone))}</div>
-    <div class="help">${esc(t("ck.scheduleNote"))}</div>
-    ${schedule.timezoneUnknown ? callout("warn", t("ck.scheduleZoneUnknown", { zone: schedule.timezone ?? "" })) : ""}
-    </div>
-    <div class="ck-schedule-actions">
-      <button class="btn btn-sm" data-action="ck-schedule">${icon("clock")}${esc(t("ck.scheduleEdit"))}</button>
-      <button class="btn btn-sm" data-action="ck-schedule-off">${icon("x")}${esc(t("ck.scheduleTurnOff"))}</button>
-    </div>
-  </div>`;
+  return scheduleCardHtml(schedule, {
+    zone,
+    labels: SCHEDULE_LABELS,
+    action: "ck-schedule",
+    lastRun: checkpointLastRunText,
+  });
 }
 
 export function scheduleFormHtml(schedule, zone = browserTimezone()) {
-  const mode = schedule?.mode ?? "interval";
-  const saved = schedule?.mode === "daily" ? scheduleZone(schedule) : zone;
-  const moved =
-    saved !== zone ? `<div class="help">${esc(t("ck.scheduleZoneChange", { from: saved, zone }))}</div>` : "";
-  const modeButton = (value, title, hint) =>
-    `<button type="button" class="seg" data-mode="${value}" aria-pressed="${value === mode}"><strong>${esc(title)}</strong><span>${esc(hint)}</span></button>`;
-  return `<div class="field"><span class="label">${esc(t("ck.scheduleWhen"))}</span>
-      <div class="segmented segmented-2" role="group" aria-label="${esc(t("ck.scheduleWhen"))}">${modeButton("interval", t("ck.scheduleModeEvery"), t("ck.scheduleModeEveryHint"))}${modeButton("daily", t("ck.scheduleModeDaily"), t("ck.scheduleModeDailyHint"))}</div></div>
-    <div class="field${mode === "daily" ? " hidden" : ""}" data-field="interval"><label class="label" for="ckHours">${esc(t("ck.scheduleHours"))}</label>
-      <input class="input" id="ckHours" type="number" min="${SCHEDULE_HOURS.min}" max="${SCHEDULE_HOURS.max}" step="1" inputmode="numeric" value="${esc(schedule?.everyHours ?? 6)}" />
-      <div class="help">${esc(t("ck.scheduleHoursHelp"))}</div></div>
-    <div class="field${mode === "interval" ? " hidden" : ""}" data-field="daily"><label class="label" for="ckAt">${esc(t("ck.scheduleTime"))}</label>
-      <input class="input mono" id="ckAt" type="text" inputmode="numeric" maxlength="5" placeholder="02:30" autocomplete="off" spellcheck="false" value="${esc(schedule?.at ?? "02:00")}" />
-      <div class="help">${esc(t("ck.scheduleTimeHelp", { zone }))}</div>${moved}</div>
-    <div class="error-text" id="ckScheduleErr"></div>
-    ${callout("info", t("ck.scheduleHelp"))}`;
+  return scheduleFieldsHtml(schedule, { zone, ids: SCHEDULE_IDS, help: "ck.scheduleHelp" });
 }
 
 function askSchedule(schedule) {
   return new Promise((resolve) => {
     let result = null;
-    let mode = schedule?.mode ?? "interval";
     const { root, close } = openDialog({
       title: t("ck.scheduleTitle"),
       description: esc(t("ck.scheduleDesc")),
@@ -469,27 +439,15 @@ function askSchedule(schedule) {
       footer: `<button class="btn" data-close>${esc(t("common.cancel"))}</button><button class="btn btn-primary" id="ckScheduleOk">${esc(t("ck.scheduleSave"))}</button>`,
       onClose: () => resolve(result),
     });
-    const err = root.querySelector("#ckScheduleErr");
-    const show = (next) => {
-      mode = next;
-      for (const button of root.querySelectorAll("[data-mode]")) {
-        button.setAttribute("aria-pressed", String(button.dataset.mode === next));
-      }
-      root.querySelector('[data-field="interval"]').classList.toggle("hidden", next !== "interval");
-      root.querySelector('[data-field="daily"]').classList.toggle("hidden", next !== "daily");
-    };
-    for (const button of root.querySelectorAll("[data-mode]")) {
-      button.addEventListener("click", () => show(button.dataset.mode));
-    }
+    const submit = bindScheduleForm(root, {
+      ids: SCHEDULE_IDS,
+      invalid: "ck.scheduleInvalid",
+      onRule: (body) => {
+        result = body;
+      },
+    });
     root.querySelector("#ckScheduleOk").addEventListener("click", () => {
-      const body = scheduleBody(mode, {
-        hours: root.querySelector("#ckHours").value,
-        at: root.querySelector("#ckAt").value.trim(),
-      });
-      err.textContent = body ? "" : t("ck.scheduleInvalid");
-      if (!body) return;
-      result = body;
-      close();
+      if (submit() !== null) close();
     });
   });
 }

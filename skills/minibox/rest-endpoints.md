@@ -165,6 +165,7 @@ All paths are jailed inside the volume. `{id}` is a `vol_…` or a volume name; 
 | `GET` | `/api/boxes/{id}/logs/stream` | `box:read` | Server-sent events; `?tail=` |
 | `GET` | `/api/overview` | owner | What agents are doing and what needs attention |
 | `GET` | `/api/hosts`, `/api/hosts/usage`, `/api/hosts/{id}/disk` | owner | Hosts, and what a host's engine holds (`docker system df`) |
+| `POST` | `/api/hosts/{id}/forward` | owner | Adds the `FORWARD` rule the overview's "proxy-only boxes have no internet" item offers, after the owner confirms it. Returns the reading taken right after |
 
 | `GET` | `/api/hosts`, `/api/hosts/usage` | owner | Hosts, with the labels each one carries. A host is addressed by `id` everywhere; `name` is only the label the console shows, and no two hosts may share one |
 | `PATCH` | `/api/hosts/{id}` | owner | `labels`. The local host included |
@@ -179,6 +180,7 @@ All paths are jailed inside the volume. `{id}` is a `vol_…` or a volume name; 
 | `GET` | `/api/notify/channels` | owner | `hasSecret` only, never the secret |
 | `PUT` | `/api/notify/channels/{id}` | owner | Create or change a channel |
 | `POST` | `/api/backups` | owner | `{ "passphrase" }`. `202` |
+| `GET`/`PUT`/`DELETE` | `/api/backups/schedule` | owner | `everyHours`, or `at` + `timezone`. One schedule for the instance |
 | `GET` | `/api/targets` | owner | Off-site targets |
 
 Not in the OpenAPI document: `POST /api/packages` (raw `.mbckpt` upload), `GET /api/packages/{id}/download`, the SSE streams above, the terminal WebSocket at `/api/boxes/{id}/terminal`, the SSH WebSocket at `/api/ssh/{box}`, and the preview routes `/box/{name-or-id}/{port}/…`.

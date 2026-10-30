@@ -74,6 +74,9 @@ describe("OpenAPI document", () => {
       "backup.delete",
       "backup.download",
       "backup.list",
+      "backup.schedule.clear",
+      "backup.schedule.get",
+      "backup.schedule.set",
       "box.action.restart",
       "box.action.start",
       "box.action.stop",
@@ -135,7 +138,7 @@ describe("OpenAPI document", () => {
       "files.write",
       "host.add",
       "host.disk",
-
+      "host.forward.repair",
       "host.labels.set",
       "host.list",
       "host.pairing.create",

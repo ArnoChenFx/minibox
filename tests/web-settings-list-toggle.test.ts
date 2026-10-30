@@ -448,3 +448,64 @@ describe("a failed load keeps its handling", () => {
     expect(result.rows).toBe(0);
   });
 });
+
+describe("the backup schedule card", () => {
+  /** The requests the card made, and whether each button it drew is connected. */
+  type CardRun = {
+    requests: { path: string; method: string }[];
+    offButtons: string[];
+    onButtons: string[];
+    unbound: number;
+    errorCards: number;
+  };
+
+  const run = inBrowser<CardRun>(`
+    const module = await import(${JSON.stringify(join(COMPONENTS, "settings-backups.js"))});
+
+    const empty = card("stBackups");
+    answer = byPath({ "/api/backups/schedule": { schedule: null } });
+    await module.loadBackups(view(empty));
+    const off = {
+      requests: requests.map((request) => ({ path: request.path, method: request.method })),
+      offButtons: empty.querySelectorAll("[data-action]").map((node) => node.attributes["data-action"]),
+      onButtons: [],
+      unbound: unbound(empty),
+      errorCards: empty.querySelectorAll(".callout.danger").length,
+    };
+
+    const set = card("stBackups");
+    answer = byPath({
+      "/api/backups/schedule": {
+        schedule: {
+          mode: "interval",
+          everyHours: 6,
+          at: null,
+          timezone: null,
+          timezoneUnknown: false,
+          nextRunAt: "2026-10-20T11:00:00.000Z",
+          lastRun: { at: "2026-10-20T10:00:00.000Z", status: "ok", backupId: "bk_sample", bytes: 4096, error: null },
+        },
+      },
+    });
+    await module.loadBackups(view(set));
+    return {
+      requests: off.requests,
+      offButtons: off.offButtons,
+      onButtons: set.querySelectorAll("[data-action]").map((node) => node.attributes["data-action"]),
+      unbound: off.unbound + unbound(set),
+      errorCards: off.errorCards,
+    };
+  `);
+
+  test("loading the card reads the schedule once and offers the button that sets one", () => {
+    expect(run.requests).toEqual([{ path: "/api/backups/schedule", method: "GET" }]);
+    expect(run.offButtons).toEqual(["st-backup-schedule"]);
+    expect(run.errorCards).toBe(0);
+    // Every button the card drew is connected to a click.
+    expect(run.unbound).toBe(0);
+  });
+
+  test("a set schedule draws the change and turn-off buttons, not the set button alone", () => {
+    expect(run.onButtons.toSorted()).toEqual(["st-backup-schedule", "st-backup-schedule-off"]);
+  });
+});

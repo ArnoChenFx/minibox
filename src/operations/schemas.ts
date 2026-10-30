@@ -246,6 +246,44 @@ export const CheckpointScheduleSchema = z.object({
   lastRun: ScheduleLastRunSchema.nullable(),
 });
 
+/** The outcome of one scheduled backup run. `backupId` is the archive it made, null when the run made none. */
+const BackupScheduleLastRunSchema = z.object({
+  at: z.string(),
+  status: z.enum(["ok", "skipped", "failed"]).meta({
+    description:
+      "ok made a backup. skipped made none and nothing went wrong: reason says why, and the schedule runs again at its next time. failed could not make one: error says why.",
+  }),
+  backupId: z.string().nullable(),
+  bytes: z.number().int().nullable(),
+  /** Why a skipped run made no backup: `busy` when another backup held the backup folder. Null for any other run. */
+  reason: z.string().nullable(),
+  /** Why the run failed, in English. */
+  error: z.string().nullable(),
+  /** The message the failure came from, so a console can say it in its own language. Null for an unkeyed error. */
+  errorKey: z.string().nullable(),
+  errorParams: z.record(z.string(), z.union([z.string(), z.number()])).nullable(),
+});
+
+/**
+ * The instance's backup schedule. Exactly one of `everyHours` and `at` is set, as `mode` says. `null` means no schedule,
+ * which is the default.
+ */
+export const BackupScheduleSchema = z.object({
+  version: z.number().int(),
+  mode: z.enum(["interval", "daily"]),
+  everyHours: z.number().int().nullable(),
+  at: z.string().nullable(),
+  /** IANA zone of the daily time. Null for an interval, and for a daily time saved before zones, which runs in UTC. */
+  timezone: z.string().nullable(),
+  /** True when the saved zone is not one this server knows. The schedule then runs in UTC until it is set again. */
+  timezoneUnknown: z.boolean(),
+  createdBy: z.string().nullable(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  nextRunAt: z.string(),
+  lastRun: BackupScheduleLastRunSchema.nullable(),
+});
+
 /** A volume a rollback replaced or restored, and the path the box mounts it at. */
 const RollbackVolumeSchema = z.object({
   id: z.string(),

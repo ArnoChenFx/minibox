@@ -208,11 +208,20 @@ export function nextDailyAfter(at: string, timezone: string, from: Date): Date {
   return new Date(zonedInstant(timezone, today.year, today.month, today.day + 3, hour, minute));
 }
 
+/** What a due check needs of a schedule: its rule, and when the next run is. A backup schedule has the same fields. */
+export interface ScheduleTiming {
+  readonly mode: "interval" | "daily";
+  readonly everyHours: number | null;
+  readonly at: string | null;
+  readonly timezone: string | null;
+  readonly nextRunAt: string;
+}
+
 /**
  * The run after one at `now`, for a schedule that was due at `nextRunAt`. An interval stays on its own grid, so a run
  * that came late does not move the rest; a schedule that was down for days runs once and then waits for the next slot.
  */
-export function nextRunAfterRun(schedule: BoxSchedule, now: Date): Date {
+export function nextRunAfterRun(schedule: ScheduleTiming, now: Date): Date {
   if (schedule.mode === "daily") {
     return nextDailyAfter(schedule.at ?? "00:00", runZoneOf(schedule).zone, now);
   }
@@ -222,6 +231,6 @@ export function nextRunAfterRun(schedule: BoxSchedule, now: Date): Date {
   return new Date(due + steps * step);
 }
 
-export function isDue(schedule: BoxSchedule, now: Date): boolean {
+export function isDue(schedule: Pick<ScheduleTiming, "nextRunAt">, now: Date): boolean {
   return Date.parse(schedule.nextRunAt) <= now.getTime();
 }

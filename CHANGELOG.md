@@ -11,11 +11,13 @@
 
 - 迁移 Box 新增 `via: "checkpoint"`：用检查点把 Box 的数据带到目标宿主机，在那里恢复出卷（保留原存储池）并创建 Box，成功后才从原宿主机移除。运行中的源 Box 暂停到迁移提交，失败时恢复。默认仍是直接迁移，见[宿主机](docs/user-guide/hosts.md#move-a-box-to-another-host)。
 - 本地备份支持 `BACKUP_DIR` 与 `BACKUP_KEEP`：指定归档目录并保留最新的 N 份，符号链接按实际路径排除。新目录为 700，已有自定义目录保留权限，归档和记录为 600。
+- MiniBox 可以按计划备份自己（[#154](https://github.com/ArnoChenFx/minibox/issues/154)）：每隔 1 到 720 小时一次，或每天在某个时区的固定时间一次，默认关闭。到点用 `BACKUP_PASSPHRASE` 做一份备份并应用 `BACKUP_KEEP`；服务器没有设口令时，设置页会提前说明，保存也会被拒绝（409）。REST、MCP、CLI（`minibox backup schedule`）和设置页都可用，见[备份](docs/admin/backups.md#scheduled-backups)。
 - Agent 配对命令使用当前发布版镜像标签；非 HTTPS 连接显示警告。
 - 概览页提供首次使用引导，覆盖模板、Box 和 Agent 令牌配置。
 - 模板支持编辑构建来源、描述、启动命令和端口。所有者可编辑任意模板，令牌只能编辑自己创建的模板；官方模板的来源固定。
 - 存储管理员可为 Box 的角色卷指定存储池，共享工具卷按池选择。
 - 文件浏览器支持复制 Box 内绝对路径。
+- 概览页的**需要关注**新增**仅代理的 Box 无法上网**：宿主机的 `FORWARD` 规则丢弃出站上行网络时提示（默认每 10 分钟检查，`EGRESS_FORWARD_CHECK_INTERVAL_SEC` 可调）。只有按策略丢弃时才有**添加规则**按钮，确认后在 `FORWARD` 末尾追加 MiniBox 自己的链；其余情况只报告，原因见[网络出站](docs/admin/network-egress.md)。
 - 卷页面可以勾选和删除 Box 不会挂载的多余工具卷，状态显示“可清理”并说明清理孤立卷会跳过它；共享工具卷和被挂载的卷仍不能勾选，行内删除按钮也禁用并提示原因。卷列表与详情（REST、MCP）新增 `sharedTools` 字段，只有共享工具卷为 `true`。
 
 ### 修复与权限
