@@ -40,6 +40,9 @@ const SHIPPED_NODE = readFileSync(
   "utf8",
 );
 
+/** The Dockerfile the bundled base template ships with, read from the repository rather than from the service. */
+const SHIPPED_BASE = readFileSync(resolve(import.meta.dir, "..", "templates", "base", "Dockerfile"), "utf8");
+
 let restoreLogs: () => void;
 beforeEach(() => {
   restoreLogs = silenceLogs();
@@ -495,6 +498,48 @@ describe("a fork that fails", () => {
   });
 });
 
+describe("forking the bundled base template", () => {
+  const forkBase = async (l: Lab, name = "base-copy") =>
+    forkTemplate(l.host, await templateSourceImage(l.host, l.host.baseTemplateTag), { name, createdBy: "owner" });
+
+  test("the fork is a custom template with its own copy of the base Dockerfile, and the base template is untouched", async () => {
+    const l = lab();
+
+    await forkBase(l);
+
+    expect(recipeOnDisk(l, "base-copy").source).toEqual({ kind: "dockerfile", text: SHIPPED_BASE });
+    expect(readRecipe(l.host, "base-copy")?.imageId).toBe(
+      (await l.runtime.inspectImage("mbtest-template:base-copy")).id,
+    );
+    const listed = await listTemplates(l.host);
+    expect(listed.find((template) => template.name === "base-copy")?.buildKind).toBe("dockerfile");
+    // The base template is built by MiniBox itself and still has no recipe.
+    expect(readRecipe(l.host, "base")).toBeNull();
+    expect(listed.find((template) => template.name === "base")?.buildKind).toBeUndefined();
+  });
+
+  test("a MiniBox that cannot read the base Dockerfile still forks, warns, and leaves the fork without a recipe", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "minibox-templates-"));
+    const { app, runtime } = createTestApp({ templatesDir: dir, labelPrefix: "mbtest" });
+    const host = app.hosts.get();
+    runtime.seedImage(host.baseTemplateTag, { [host.keys.template]: "true", [host.keys.templateName]: "base" });
+    const l: Lab = { app, runtime, host, keys: host.keys, progress: [] };
+    const warnings = spyOn(log, "warn").mockImplementation(() => {});
+    try {
+      await forkBase(l);
+
+      expect(readRecipe(l.host, "base-copy")).toBeNull();
+      const missing = warnings.mock.calls.filter(([event]) => event === "template.fork_source_missing");
+      expect(missing).toHaveLength(1);
+      expect(missing[0]?.[1]).toMatchObject({ name: "base-copy", source: "base" });
+      expect((await l.runtime.inspectImage("mbtest-template:base-copy")).labels[l.keys.templateName]).toBe("base-copy");
+    } finally {
+      warnings.mockRestore();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 function namesOf(reply: Reply): (string | null)[] {
   return (reply.json.templates ?? []).map((template) => template.name);
 }
@@ -635,6 +680,31 @@ describe("template.fork over REST and tokens", () => {
     expect(rebuilt.status).toBe(202);
     expect((await finishedTask(harness.base, rebuilt.json.taskId ?? "")).status).toBe("succeeded");
     expect(harness.runtime.builds.at(-1)?.tag).toBe("mbtest-template:node-copy");
+    expect(harness.runtime.builds.at(-1)?.files.get("Dockerfile")).toBe(FROM_ALPINE_21);
+  });
+
+  test("the fork of the bundled base template answers buildKind dockerfile, and is edited and rebuilt from the source the edit names", async () => {
+    const base = harness.app.hosts.get().baseTemplateTag;
+
+    const made = await call(harness.base, forkPath(base), { body: { name: "base-copy" } });
+
+    expect(made.status).toBe(201);
+    expect((await call(harness.base, recipePath("mbtest-template:base-copy"))).json.recipe).toEqual({
+      buildKind: "dockerfile",
+      source: { kind: "dockerfile", text: SHIPPED_BASE },
+    });
+    expect((await call(harness.base, "/api/templates")).json.templates).toContainEqual(
+      expect.objectContaining({ ref: "mbtest-template:base-copy", buildKind: "dockerfile" }),
+    );
+    const edited = await call(harness.base, editPath("mbtest-template:base-copy"), {
+      method: "PATCH",
+      body: { source: { kind: "dockerfile", text: FROM_ALPINE_21 } },
+    });
+    expect(edited.status).toBe(200);
+    const rebuilt = await call(harness.base, rebuildPath("mbtest-template:base-copy"), { body: {} });
+    expect(rebuilt.status).toBe(202);
+    expect((await finishedTask(harness.base, rebuilt.json.taskId ?? "")).status).toBe("succeeded");
+    expect(harness.runtime.builds.at(-1)?.tag).toBe("mbtest-template:base-copy");
     expect(harness.runtime.builds.at(-1)?.files.get("Dockerfile")).toBe(FROM_ALPINE_21);
   });
 

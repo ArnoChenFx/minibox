@@ -15,6 +15,7 @@ import {
   buildKindOf,
   type DeclaredTemplate,
   editRecipe,
+  forkBaseRecipe,
   forkRecipe,
   readRecipe,
   type RecipeEdit,
@@ -244,6 +245,11 @@ export async function templateSourceImage(host: HostCtx, ref: string): Promise<T
   };
 }
 
+/** Whether `source` is the bundled base template, which MiniBox builds itself and keeps no recipe for. */
+function isBaseTemplate(host: HostCtx, source: TemplateSourceImage): boolean {
+  return source.ref === host.baseTemplateTag || source.image.tags.includes(host.baseTemplateTag);
+}
+
 /**
  * Forks a template: a new template image under `name` that holds the same system layer, so its description and its
  * recipe can change without touching the template it came from. The image is a fresh commit of a throwaway container of
@@ -252,8 +258,10 @@ export async function templateSourceImage(host: HostCtx, ref: string): Promise<T
  * fork is its own template, not a save of a box. The caller holds the new name through `holdingTemplateName`.
  *
  * A template built from a declared source brings its recipe along, pointed at the new image, so `template.rebuild`
- * rebuilds the fork from the source of the template it came from. A template with no recipe, such as one saved from a
- * box, forks too, and its fork has no recipe, so it cannot be rebuilt, exactly as the template it came from.
+ * rebuilds the fork from the source of the template it came from. The bundled base template has no recipe, and its fork
+ * gets one that holds the Dockerfile MiniBox ships for it, so the fork can be edited and rebuilt. A template with no
+ * recipe otherwise, such as one saved from a box, forks too, and its fork has no recipe, so it cannot be rebuilt, exactly
+ * as the template it came from.
  */
 export async function forkTemplate(
   host: HostCtx,
@@ -288,6 +296,7 @@ export async function forkTemplate(
   const forked = await runtime.inspectImage(`${repo}:${input.name}`);
   try {
     if (source.recipe) forkRecipe(host, input.name, source.recipe, forked.id, description, input.createdBy);
+    else if (isBaseTemplate(host, source)) forkBaseRecipe(host, input.name, forked.id, description, input.createdBy);
   } catch (e) {
     await runtime.removeImage(forked.id, { force: true }).catch(() => {});
     throw e;
