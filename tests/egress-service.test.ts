@@ -317,6 +317,21 @@ describe("allowed private ranges", () => {
     expect(after[0]?.id).not.toBe(before?.id);
     expect((after[0]?.spec.env ?? []).some((entry) => entry.startsWith("MINIBOX_EGRESS_RANGES="))).toBe(false);
   });
+
+  test("starting a box that is already running replaces its proxy and leaves the box's container alone", async () => {
+    const box = await newBox("fake-ip", { egress: proxyOnly() });
+    const before = proxiesOf(box.boxId)[0];
+    host.security.egressAllowRanges = ["198.18.0.0/15"];
+
+    const started = await boxes.startBox(host, box.name);
+
+    expect(started.id).toBe(box.id);
+    expect(runtime.containers.get(box.id)?.running).toBe(true);
+    const after = proxiesOf(box.boxId);
+    expect(after).toHaveLength(1);
+    expect(after[0]?.id).not.toBe(before?.id);
+    expect(after[0]?.spec.env).toContain('MINIBOX_EGRESS_RANGES=["198.18.0.0/15"]');
+  });
 });
 
 describe("recovery and cleanup", () => {
