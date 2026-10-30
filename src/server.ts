@@ -422,6 +422,7 @@ async function boot(): Promise<void> {
   app.retention.start();
   app.checkpointSweep.start();
   app.checkpointScheduler.start();
+  app.backupScheduler.start();
   app.containers.start();
   app.startups.start();
   app.lifecycle.start();
@@ -443,6 +444,7 @@ async function boot(): Promise<void> {
     app.retention.stop();
     app.checkpointSweep.stop();
     app.checkpointScheduler.stop();
+    app.backupScheduler.stop();
     app.containers.stop();
     app.startups.stop();
     app.lifecycle.stop();

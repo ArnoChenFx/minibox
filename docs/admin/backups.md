@@ -191,15 +191,62 @@ A backup that `BACKUP_KEEP` removes is gone for good. Push the ones you want to 
 
 Bad or unreadable records are logged and skipped; healthy records remain visible. Retention failures are logged and preserve completed archives. Startup maintenance failures do not stop the server. If the whole archive directory is unreadable, listing and creating backups fail; check its permissions.
 
-### Schedules
+### Scheduled backups
 
-MiniBox does not create backups on a schedule yet. To back up on a schedule, run `minibox backup` from cron or a task scheduler, and keep the passphrase where only that scheduler can read it:
+MiniBox can back itself up on a schedule, so you do not need cron. A schedule is one rule for the whole instance: every few hours, or once a day at a time you choose. It is off by default, and a set schedule survives a restart because it is a file in the data directory.
+
+A scheduled run needs a passphrase, and nobody is there to type one, so MiniBox reads it from `BACKUP_PASSPHRASE` in `.env`:
+
+```bash
+BACKUP_PASSPHRASE=correct horse battery staple
+```
+
+The rules are the same as a passphrase you type: 12 to 1024 characters, with no leading or trailing spaces and no line breaks. Blank leaves the passphrase unset: MiniBox then refuses to save a schedule, and says why, instead of saving one that would fail at its first slot. A schedule saved before the passphrase went missing fails once at its next slot, with the same message. An invalid value stops MiniBox at startup rather than leaving every run failed.
+
+The console says so before you try, not after: with no passphrase on the server, the card on **Settings → Backups** shows a warning, and **Set a schedule** is disabled (so is **Change schedule** for a schedule saved earlier; **Turn off** stays open). `minibox backup schedule get` prints the same note, and `GET /api/backups/schedule` reports it as `passphraseSet`.
+
+Keep `$` out of a passphrase in `.env`. Bun expands `$` in `.env` values even inside quotes, so `'ab$cd'` reaches MiniBox as `ab`, and a `#` cuts an unquoted value there too, so quote a passphrase that has one. If the passphrase needs a `$`, leave it out of `.env` and set `BACKUP_PASSPHRASE` in the process environment instead, such as the `environment:` of a compose file or a systemd `Environment=`. MiniBox reads `.env` on its own as well and refuses to start when the two readings differ, because it will not seal archives with a passphrase you did not write. Escaping the `$` as `\$` does not get around that: Bun understands it, but the two readings still differ.
+
+Set the schedule in **Settings → Backups**, under **Schedule**, with **Set a schedule**:
+
+1. Choose **Every few hours** and a whole number of hours from 1 to 720, or **Once a day** and a time of day. The daily time is in your browser's time zone, which the dialog names.
+2. Click **Save schedule**.
+
+The card then shows the rule, its **Next run** and its **Last run**, in your local time and with the zone. **Change schedule** edits it, and **Turn off** removes it. Turning a schedule off keeps the backups it already made.
+
+The same rule is available over the REST API and the command-line tool:
+
+```bash
+minibox backup schedule set --every-hours 6
+minibox backup schedule set --at 02:30 --timezone Asia/Shanghai
+minibox backup schedule get
+minibox backup schedule clear
+```
+
+`PUT /api/backups/schedule` sets it with `{ "everyHours": 6 }`, or with `{ "at": "02:30", "timezone": "Asia/Shanghai" }`, not both. `GET` on the same path reads it, `DELETE` removes it, and a `null` schedule means none is set. `GET` also says whether the server has a `BACKUP_PASSPHRASE` (`passphraseSet`), and `PUT` answers `409` when it has none. In `lastRun`, `status` is `ok`, `skipped` with a `reason` (`busy`: another backup held the folder), or `failed` with an `error`. A daily time takes an IANA zone such as `Asia/Shanghai`; without one it is UTC, and a UTC offset such as `+08:00` is refused. The MCP storage toolset offers `get_backup_schedule`, `set_backup_schedule` and `clear_backup_schedule`. These operations are for the owner only.
+
+What a run does:
+
+- A due run makes one backup, through the same service that `minibox backup` uses. It lands in the server's backup folder, `DATA_DIR/backups/` or `BACKUP_DIR`, so a scheduled backup and a manual one are the same kind of archive.
+- `BACKUP_KEEP` applies afterwards, exactly as it does to a manual backup. It is off by default, and then every scheduled backup stays, one per run, so set it before you rely on a schedule: with `BACKUP_KEEP=7` the schedule keeps the newest seven and removes the older ones. See [Keep only the newest backups](#keep-only-the-newest-backups).
+- A failed run is recorded on the schedule and logged once, and nothing runs again until the next slot. It does not retry in a loop.
+- A run that is due while another backup holds the folder, such as a manual backup that is still running, makes no backup and is recorded as **skipped**, not failed: **Last run** says why, the log has one `backup.scheduled_skipped` line, and there is no audit event, because nothing went wrong. The schedule runs again at its next time.
+- A run that fell due while MiniBox was down happens once when it comes back, not once per missed slot. An every-hours schedule keeps to its original times, so a late run does not move the later ones; a daily schedule runs at its next time.
+- Schedules are checked every minute. A backup made on a schedule appears in `GET /api/backups` and records the audit event `backup.scheduled`.
+
+Scheduled backups are sealed with the passphrase in `BACKUP_PASSPHRASE`, which stays in `.env` on the server. Keep it apart from the archives: it is what opens them.
+
+Keep the exact passphrase somewhere other than this server, and try a restore before you rely on the schedule. If `BACKUP_PASSPHRASE` differs between the process environment and `.env`, startup refuses it (see above) rather than seal archives with a passphrase you did not type.
+
+### Cron, if you prefer it
+
+A schedule inside MiniBox covers the usual case, and cron is still fine for people who prefer it. Running `minibox backup` from cron or a task scheduler also works, and it can download the archive to another machine with `--out`, which an in-app schedule does not do:
 
 ```
 30 3 * * * MINIBOX_URL=http://127.0.0.1:3920 MINIBOX_ACCESS_KEY=… MINIBOX_BACKUP_PASSPHRASE=… minibox backup
 ```
 
-Without `--out`, each run adds an archive to the server's backup folder, and `BACKUP_KEEP` decides how many stay. With `--out`, the archive is downloaded to the machine that runs the job, and the copy on the server counts against `BACKUP_KEEP` like any other.
+Without `--out`, each run adds an archive to the server's backup folder, and `BACKUP_KEEP` decides how many stay. With `--out`, the archive is downloaded to the machine that runs the job, and the copy on the server counts against `BACKUP_KEEP` like any other. Keep the passphrase where only that scheduler can read it. A cron job and a schedule both set would each make their own backups, so pick one.
 
 A pulled checkpoint package expires 24 hours after the pull. Objects on targets stay until you remove them.
 

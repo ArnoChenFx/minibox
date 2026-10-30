@@ -1,3 +1,4 @@
+import { loadBackups } from "../components/settings-backups.js";
 import { loadHosts } from "../components/settings-hosts.js";
 import { loadNotify } from "../components/settings-notify.js";
 import { loadRuntime, loadPreview } from "../components/settings-runtime.js";
@@ -20,6 +21,13 @@ const PANELS = {
   "ssh-keys": { html: () => `<div class="card" id="stSshKeys"></div>`, load: loadSshKeys },
   notify: { html: () => `<div class="card" id="stNotify"></div>`, load: loadNotify },
   targets: { html: () => `<div class="card" id="stTargets"></div>`, load: loadTargets },
+  backups: {
+    html: () => `<div class="card" id="stBackups">
+          <div class="card-head"><h3>${t("st.backups")}</h3>${icon("disk")}</div>
+          <div class="card-body"><div class="skeleton sk-line"></div><div class="skeleton sk-line"></div></div>
+        </div>`,
+    load: loadBackups,
+  },
   hosts: { html: () => `<div class="card" id="stHosts"></div>`, load: loadHosts },
   runtime: {
     html: () => `<div class="card" id="stRuntime">

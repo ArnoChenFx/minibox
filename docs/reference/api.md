@@ -2,7 +2,7 @@
 
 Every MiniBox operation is available over a JSON REST API under `/api`. The console, the [CLI](cli.md) and the [MCP tools](mcp.md) use the same operations.
 
-The full machine-readable description is the OpenAPI 3.1 document in [`openapi.json`](../openapi.json). Import it into any OpenAPI tool to generate a client. The document describes 157 operations in 23 groups.
+The full machine-readable description is the OpenAPI 3.1 document in [`openapi.json`](../openapi.json). Import it into any OpenAPI tool to generate a client. The document describes 162 operations in 23 groups.
 
 ## Authentication
 
@@ -294,6 +294,11 @@ These are owner only. A key logs in to every box over direct SSH, so no token ma
 | `GET` | `/api/backups` | List the backups kept on the server, newest first. Owner only |
 | `GET` | `/api/backups/{id}/download` | Download a backup archive as `<id>.mbbak`. Owner only |
 | `DELETE` | `/api/backups/{id}` | Delete a backup kept on the server. Owner only |
+| `GET` | `/api/backups/schedule` | Read the instance's backup schedule, with its next and last run. `null` when none is set, which is the default. `timezoneUnknown` is `true` when the saved zone is one the server no longer knows; the schedule then runs in UTC until it is set again. Owner only |
+| `PUT` | `/api/backups/schedule` | Set the schedule `{ "everyHours" }` or `{ "at": "HH:MM", "timezone" }`, not both. `timezone` is an IANA zone such as `Asia/Shanghai`; without it the time is UTC, and an unknown zone or a UTC offset such as `+08:00` is `400`. A due run seals one backup with `BACKUP_PASSPHRASE`, and `BACKUP_KEEP` then applies. Replaces any schedule the instance has. Owner only |
+| `DELETE` | `/api/backups/schedule` | Remove the backup schedule. Backups already made are kept. Owner only |
+
+A due run makes one backup through the same service as `POST /api/backups`, so it appears in `GET /api/backups` with origin `create`. A run that fell due while MiniBox was down happens once when it comes back, and a failed run is recorded on the schedule and logged once. See [Scheduled backups](../admin/backups.md#scheduled-backups).
 
 ### targets
 

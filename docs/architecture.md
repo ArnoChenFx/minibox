@@ -206,6 +206,7 @@ All three streams share one body, `src/events/sse-body.ts` (the third is the box
 - `src/services/container-watch.ts` turns engine start, stop and out-of-memory events into the `container.*` activity that the Activity tab shows.
 - `src/events/retention.ts` and `src/services/checkpoint-retention.ts` apply the retention limits. The second also purges the recycle bin entries whose time is up.
 - `src/services/checkpoint-schedule.ts` takes the scheduled checkpoints once a minute, and skips boxes that are stopped or asleep.
+- `src/services/backup-schedule.ts` takes the backup that the instance's schedule is due for, once a minute. It calls the same `BackupService.create` the manual path does, so `BACKUP_KEEP` applies, and a run that fell due while the server was down happens once rather than catching up.
 - `src/services/volume-usage.ts` runs `VolumeUsageWatcher`. It samples each volume's usage every `VOLUME_USAGE_INTERVAL_SEC` seconds, and checks the host disk's free-space floor on the same pass. Each volume is sampled on its own clock, with its own deadline, so a frozen NFS mount holds back only its own sample. The watcher keeps each volume's last level in memory, so an event is written when a volume crosses a limit, not on every pass. The sample logic is in `src/volumes/usage.ts`, the limit rules in `src/volumes/limits.ts`, and the disk floor in `src/volumes/disk.ts`.
 
 ## Terminals, sessions and SSH
@@ -225,7 +226,7 @@ SSH is the same shape at a larger scale: `/api/ssh/<box>` answers a plain `GET` 
 
 ## Backups and off-site targets
 
-`src/backup/create.ts` writes a backup. It copies each SQLite store from a snapshot that `VACUUM INTO` makes in a worker thread (`snapshot.ts`), lists the other files, and streams them through a strict USTAR writer (`tar.ts`) into a sealing writer (`seal.ts`), which encrypts 1 MiB chunks with AES-256-GCM under a scrypt key. `restore.ts` reads an archive into an empty directory through a staging folder. `store.ts` keeps the archives under `DATA_DIR/backups`, or under `BACKUP_DIR` when it is set, each with a record written last. `retention.ts` keeps the newest `BACKUP_KEEP` of them. `src/services/backup.ts` and `src/operations/backup.ts` expose them.
+`src/backup/schedule.ts` and `schedule-store.ts` keep the one backup schedule in `DATA_DIR/backup-schedule.json`, and `src/services/backup-schedule.ts` runs it. `src/backup/create.ts` writes a backup. It copies each SQLite store from a snapshot that `VACUUM INTO` makes in a worker thread (`snapshot.ts`), lists the other files, and streams them through a strict USTAR writer (`tar.ts`) into a sealing writer (`seal.ts`), which encrypts 1 MiB chunks with AES-256-GCM under a scrypt key. `restore.ts` reads an archive into an empty directory through a staging folder. `store.ts` keeps the archives under `DATA_DIR/backups`, or under `BACKUP_DIR` when it is set, each with a record written last. `retention.ts` keeps the newest `BACKUP_KEEP` of them. `src/services/backup.ts` and `src/operations/backup.ts` expose them.
 
 `src/targets/` reaches off-site targets. `s3.ts` uses Bun's S3 client with path-style addresses and a multipart writer. `sftp.ts` uses `ssh2`, with the host key pinned in `targets.json`. An adapter writes an object's archive before its record, and a pulled object is kept only when it matches its record. `src/services/targets.ts` runs the pushes and pulls, and `src/operations/targets.ts` exposes them. The credentials stay in `secrets/env` under the reserved `target.` names.
 
@@ -309,6 +310,7 @@ Every path is under `DATA_DIR`.
 | `checkpoints/schedules/` | `src/checkpoints/store.ts`, `src/services/checkpoint-schedule.ts` | Checkpoint schedules, one per box |
 | `packages/` | `src/checkpoints/packages.ts` | Exported checkpoint packages, sealed with a passphrase |
 | `backups/` | `src/backup/store.ts` | Stored backups: sealed archives, each with a record written last |
+| `backup-schedule.json` | `src/backup/schedule-store.ts`, `src/services/backup-schedule.ts` | The one backup schedule of the instance |
 | `targets.json` | `src/targets/store.ts` | Off-site targets: where each one is and its last sync. Their credentials are secrets named `target.<id>.<field>` |
 | `exec/` | `src/events/outputs.ts` | Saved output of commands |
 | `hosts.json`, `hosts/<id>/` | `src/host/store.ts` | Host records, with their labels, and their credential files |

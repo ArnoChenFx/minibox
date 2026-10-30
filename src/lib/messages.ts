@@ -300,6 +300,9 @@ export const MESSAGES = {
   package_not_found: "Package {id} was not found. Packages are kept for a day, so it may have expired.",
   backup_not_found: "Backup {id} was not found.",
   backup_exists: "Backup {id} is already stored here, so it was not stored again.",
+  backup_running: "A backup is already running. Wait for it to finish, then try again.",
+  backup_schedule_passphrase_unset:
+    "Scheduled backups are sealed with the passphrase in BACKUP_PASSPHRASE, and the server has none. Set it in .env (12 to 1024 characters) and restart MiniBox.",
   backup_invalid: "The backup is not valid: {reason}",
   backup_passphrase_invalid:
     "The passphrase must be 12 to 1024 characters, with no leading or trailing spaces and no line breaks.",

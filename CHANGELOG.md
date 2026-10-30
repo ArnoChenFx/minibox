@@ -10,6 +10,7 @@
 ### 新增
 
 - 本地备份支持 `BACKUP_DIR` 与 `BACKUP_KEEP`：指定归档目录并保留最新的 N 份，符号链接按实际路径排除。新目录为 700，已有自定义目录保留权限，归档和记录为 600。
+- MiniBox 可以按计划备份自己（[#154](https://github.com/ArnoChenFx/minibox/issues/154)）：每隔 1 到 720 小时一次，或每天在某个时区的固定时间一次，默认关闭。到点用 `BACKUP_PASSPHRASE` 做一份备份并应用 `BACKUP_KEEP`；服务器没有设口令时，设置页会提前说明，保存也会被拒绝（409）。REST、MCP、CLI（`minibox backup schedule`）和设置页都可用，见[备份](docs/admin/backups.md#scheduled-backups)。
 - Agent 配对命令使用当前发布版镜像标签；非 HTTPS 连接显示警告。
 - 概览页提供首次使用引导，覆盖模板、Box 和 Agent 令牌配置。
 - 模板支持编辑构建来源、描述、启动命令和端口。所有者可编辑任意模板，令牌只能编辑自己创建的模板；官方模板的来源固定。

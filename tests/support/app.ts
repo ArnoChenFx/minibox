@@ -32,6 +32,8 @@ export function testConfig(overrides: Partial<Config> = {}): Config {
     dataDir,
     backupDir: join(dataDir, "backups"),
     backupKeep: 0,
+    // A backup schedule is refused without one, so tests have it; a test about its absence says `null`.
+    backupPassphrase: "correct horse battery staple",
     dockerSocket: "/nonexistent-minibox-test.sock",
     labelPrefix,
     baseTemplateTag: `${labelPrefix}-template:base`,

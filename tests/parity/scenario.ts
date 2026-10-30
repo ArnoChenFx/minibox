@@ -1041,6 +1041,21 @@ async function recordScenario(): Promise<Exchange[]> {
     await send("delete the webhook channel again", "DELETE", alerts);
 
     await send("list backups before any is made", "GET", "/api/backups");
+    await send("read the backup schedule of an instance with none", "GET", "/api/backups/schedule");
+    await put("set an hourly backup schedule", "/api/backups/schedule", { everyHours: 6 });
+    await put("set a backup schedule with an hour and a time", "/api/backups/schedule", {
+      everyHours: 6,
+      at: "02:30",
+    });
+    await put("set a backup schedule past the longest interval", "/api/backups/schedule", { everyHours: 721 });
+    await put("set a daily backup schedule", "/api/backups/schedule", { at: "02:30", timezone: "Asia/Shanghai" });
+    await put("set a daily backup schedule in an unknown zone", "/api/backups/schedule", {
+      at: "02:30",
+      timezone: "Mars/Olympus",
+    });
+    await send("read the backup schedule", "GET", "/api/backups/schedule");
+    await send("clear the backup schedule", "DELETE", "/api/backups/schedule");
+    await send("clear the backup schedule again", "DELETE", "/api/backups/schedule");
     await post("back up with a short passphrase", "/api/backups", { passphrase: "short" });
     const made = await post("back up the data directory", "/api/backups", { passphrase: PASSPHRASE });
     const backup = (await waitTask(base, made.json)).result as { backup?: { id?: string } } | undefined;

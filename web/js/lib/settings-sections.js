@@ -9,6 +9,7 @@ export const SETTINGS_SECTIONS = [
   { id: "ssh-keys", label: "st.sshKeys" },
   { id: "notify", label: "st.notify" },
   { id: "targets", label: "st.targets" },
+  { id: "backups", label: "st.backups" },
   { id: "hosts", label: "st.hosts" },
   { id: "runtime", label: "st.runtime" },
   { id: "preview", label: "st.preview" },

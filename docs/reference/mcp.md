@@ -131,6 +131,9 @@ The tables below list each tool and the operation it calls, taken from the `x-mc
 | `create_backup` | `POST /api/backups`. Owner only. The task result holds the backup |
 | `list_backups` | `GET /api/backups`. Owner only |
 | `delete_backup` | `DELETE /api/backups/{id}`. Owner only |
+| `get_backup_schedule` | `GET /api/backups/schedule`. Owner only |
+| `set_backup_schedule` | `PUT /api/backups/schedule`. Owner only |
+| `clear_backup_schedule` | `DELETE /api/backups/schedule`. Owner only |
 | `list_targets` | `GET /api/targets`. Owner only |
 | `test_target` | `POST /api/targets/test`. Owner only |
 | `add_target` | `POST /api/targets`. Owner only |
