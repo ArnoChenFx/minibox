@@ -333,10 +333,9 @@ function parseEgressAllowRanges(value: string | undefined): string[] {
         `EGRESS_ALLOW_RANGES: “${entry}” is wider than /${MIN_EGRESS_ALLOW_PREFIX}; name the fake-IP range with a prefix from ${MIN_EGRESS_ALLOW_PREFIX} to 32`,
       );
     }
-    const refused = REFUSED_EGRESS_RANGES.flatMap((text) => {
-      const block = parseIpv4Cidr(text);
-      return block && ipv4Overlaps(parsed, block) ? [block] : [];
-    })[0];
+    const refused = REFUSED_EGRESS_RANGES.map((text) => parseIpv4Cidr(text)).find(
+      (block): block is Ipv4Network => block !== null && ipv4Overlaps(parsed, block),
+    );
     if (refused) {
       throw new Error(
         `EGRESS_ALLOW_RANGES: “${entry}” overlaps ${formatIpv4Cidr(refused)}, which stays refused (this host, loopback, link-local and multicast or reserved addresses are never reached)`,
