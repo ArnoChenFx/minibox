@@ -64,7 +64,7 @@ These ranges never pass, whatever this setting says, and an entry that overlaps 
 |---|---|
 | `0.0.0.0/8` | This host. |
 | `127.0.0.0/8` | Loopback. |
-| `169.254.0.0/16` | Link-local, which holds the cloud metadata address. |
+| `169.254.0.0/16` | Link-local. It holds the metadata address of most clouds; a few use one in a range you may name (see below). |
 | `224.0.0.0/3` | Multicast and reserved. |
 
 A value that reads as anything else, such as an IPv6 network or a typo, also stops startup. The error names the variable and the entry, so a mistake cannot quietly open a range the operator did not mean. For example:
@@ -74,7 +74,7 @@ EGRESS_ALLOW_RANGES: “198.18.0.1/7” is wider than /8; name the fake-IP range
 EGRESS_ALLOW_RANGES: “169.254.169.254” overlaps 169.254.0.0/16, which stays refused (this host, loopback, link-local and multicast or reserved addresses are never reached)
 ```
 
-`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16` and `100.64.0.0/10` are accepted, because an operator can mean them. **Be careful:** a host on the allowlist that resolves into one of those ranges is then reached from the proxy, which runs on the host's network. Naming `10.0.0.0/8` or `192.168.0.0/16` lets a `proxy-only` box reach the devices on your LAN, and `100.64.0.0/10` does the same for a Tailnet, as far as the allowlist and ports 80 and 443 reach. Name the fake-IP range only, and nothing wider.
+`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16` and `100.64.0.0/10` are accepted, because an operator can mean them. **Be careful:** a host on the allowlist that resolves into one of those ranges is then reached from the proxy, which runs on the host's network. Naming `10.0.0.0/8` or `192.168.0.0/16` lets a `proxy-only` box reach the devices on your LAN, and `100.64.0.0/10` does the same for a Tailnet, as far as the allowlist and ports 80 and 443 reach. The same goes for cloud metadata addresses that fall inside a range you name: `100.100.100.200` (Alibaba Cloud ECS) is inside `100.64.0.0/10`, and `192.0.0.192` (Oracle Cloud) is inside `192.0.0.0/24`. Port 80, one of the two the proxy allows, answers there, so an allowlisted host that resolves to one of them reaches it. `169.254.0.0/16`, the metadata address of most clouds, is refused for that reason. Name the fake-IP range only, as narrowly as the DNS proxy gives it, and nothing wider.
 
 The proxy reaches the fake addresses itself, so the fake-IP proxy must also be the one that takes the proxy container's traffic (a TUN device or a redirect on the host). If it is not, the connection fails and the event is `egress.failed … upstream`, not `private_address`.
 
