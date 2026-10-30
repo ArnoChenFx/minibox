@@ -113,6 +113,7 @@ export default {
   "err.snapshot_not_found": "找不到该快照。",
   "err.template_not_found": "找不到该模板。",
   "err.template_name_taken": "名为「{name}」的模板已存在。",
+  "err.template_name_reserved": "「{name}」是 MiniBox 为自己构建的模板保留的名称，请换一个名字。",
   "err.template_edit_empty":
     "没有要改的内容：请给出构建来源（source）、设置（init）或描述（description）。从 Box 保存的模板没有可改的构建来源。",
   "err.template_source_builtin":

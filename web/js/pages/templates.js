@@ -177,7 +177,7 @@ export function render(view, focusName = "") {
       .map((tp) => {
         const draft = tp.draft === true;
         const unbuilt = isUnbuilt(tp);
-        const deleteButton = `<button class="icon-btn danger" data-action="delete" data-ref="${esc(tp.ref)}" title="${t("tp.delete")}" aria-label="${t("tp.delete")}">${icon("trash")}</button>`;
+        const deleteButton = `<button class="icon-btn danger" data-action="delete" data-ref="${esc(tp.ref)}"${draft ? ` data-draft="true" data-host="${esc(tp.hostId)}"` : ""} title="${t("tp.delete")}" aria-label="${t("tp.delete")}">${icon("trash")}</button>`;
         return `<div class="card" style="display:flex;flex-direction:column" data-name="${esc(tp.name)}">
         <div class="card-body" style="flex:1">
           <div class="row between" style="margin-bottom:12px"><span class="avatar" style="width:36px;height:36px;border-radius:10px;display:grid;place-items:center;background:var(--accent-soft);color:var(--accent-text)">${icon("layers")}</span>
@@ -196,7 +196,7 @@ export function render(view, focusName = "") {
             ${
               draft
                 ? `<button class="btn btn-sm" data-action="rebuild" data-draft="true" data-ref="${esc(tp.ref)}" data-host="${esc(tp.hostId)}">${icon("hammer")}${t("tp.buildDraft")}</button>
-                 <button class="btn btn-sm" data-action="edit" data-ref="${esc(tp.ref)}" title="${esc(t("tp.edit"))}">${icon("pencil")}${t("tp.edit")}</button>`
+                 <button class="btn btn-sm" data-action="edit" data-draft="true" data-ref="${esc(tp.ref)}" data-host="${esc(tp.hostId)}" title="${esc(t("tp.edit"))}">${icon("pencil")}${t("tp.edit")}</button>`
                 : `${unbuilt && !multiHost() ? `<button class="btn btn-sm" data-action="build-official" data-name="${esc(tp.name)}">${icon("hammer")}${t("tp.buildOfficial")}</button>` : ""}
                  ${forkHtml(tp)}
                  ${tp.buildKind && !unbuilt ? `<button class="btn btn-sm" data-action="edit" data-ref="${esc(tp.ref)}" title="${esc(t("tp.edit"))}">${icon("pencil")}${t("tp.edit")}</button>` : ""}
@@ -309,7 +309,12 @@ export function render(view, focusName = "") {
       openForkTemplate({ card, cards, onForked: (template) => load(template?.name) });
     },
     edit: (b) => {
-      const card = cards.find((tp) => tp.ref === b.dataset.ref);
+      // A draft has a host of its own, so the card it belongs to is picked by host when two cards share one reference.
+      const card = cards.find((tp) =>
+        b.dataset.draft === "true"
+          ? tp.draft === true && tp.ref === b.dataset.ref && tp.hostId === b.dataset.host
+          : tp.ref === b.dataset.ref,
+      );
       if (!card) return;
       void openEditTemplate({ card, onEdited: (name) => load(name) });
     },
@@ -364,7 +369,13 @@ export function render(view, focusName = "") {
     },
     delete: async (b) => {
       const ref = b.dataset.ref;
-      const card = cards.find((tp) => tp.ref === ref);
+      // The draft card names the host that saved it, so a built template of the same name on another host is not the one
+      // this button deletes.
+      const card = cards.find((tp) =>
+        b.dataset.draft === "true"
+          ? tp.draft === true && tp.ref === ref && tp.hostId === b.dataset.host
+          : tp.ref === ref,
+      );
       if (!card) return;
       const isBase = ref === base;
       const draft = card.draft === true;

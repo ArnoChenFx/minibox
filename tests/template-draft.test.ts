@@ -6,6 +6,7 @@ import type { HostCtx } from "../src/host/registry";
 import { RuntimeError } from "../src/runtime";
 import * as boxes from "../src/services/boxes";
 import { draftTemplate, readRecipe } from "../src/services/template-builds";
+import { heldImage } from "../src/services/template-sync";
 import {
   assertTemplateNameAvailable,
   deleteTemplate,
@@ -14,7 +15,8 @@ import {
   saveBoxAsTemplate,
 } from "../src/services/templates";
 import { rejectionOf, silenceLogs } from "./support/app";
-import { call, finishedTask, type Harness, refused, startHarness } from "./support/tokens";
+import { bootCluster, type Cluster } from "./support/cluster";
+import { call, finishedTask, type Harness, mint, refused, startHarness } from "./support/tokens";
 
 const FROM_ALPINE = "FROM alpine:3.20\nRUN true\n";
 const FROM_ALPINE_21 = "FROM alpine:3.21\nRUN true\n";
@@ -26,6 +28,7 @@ beforeEach(() => {
 afterEach(() => restoreLogs());
 
 const draftPath = (ref: string) => `/api/templates/${encodeURIComponent(ref)}`;
+const namePath = (name: string) => `/api/templates/${encodeURIComponent(`mbtest-template:${name}`)}`;
 const DRAFTS = "/api/templates/drafts";
 
 function recipeFile(host: HostCtx, name: string): string {
@@ -93,7 +96,6 @@ describe("saving a template without building it", () => {
     // A draft is not a template yet: the template list, which lists images, does not show it.
     const listed = await call(harness.base, "/api/templates");
     expect((listed.json.templates ?? []).map((template) => template.ref)).not.toContain("mbtest-template:tool");
-    expect(harness.runtime.callsTo("buildImage")).toHaveLength(0);
   });
 
   test("a name an image or a draft holds is refused by a save, a build, a fork, a box save and a promotion", async () => {
@@ -264,5 +266,142 @@ describe("saving a template without building it", () => {
     });
     await deleteTemplate(host, "mbtest-template:tool");
     expect(await assertTemplateNameAvailable(host, "tool")).toBeUndefined();
+  });
+
+  test("a draft cannot take a name MiniBox builds a template under itself", async () => {
+    const host = harness.app.hosts.get();
+
+    for (const name of ["base", "node"]) {
+      const saved = await call(harness.base, DRAFTS, {
+        body: { name, source: { kind: "dockerfile", text: FROM_ALPINE } },
+      });
+      expect([name, refused(saved)]).toEqual([name, { status: 409, key: "template_name_reserved" }]);
+      // Nothing was written: the name is still the one the built-in build uses.
+      expect([name, draftTemplate(host, name)]).toEqual([name, null]);
+    }
+    expect(harness.runtime.callsTo("buildImage")).toHaveLength(0);
+  });
+
+  test("deleting a draft while it is being built is refused as busy, and the build still ends as a template", async () => {
+    await save("tool");
+    const host = harness.app.hosts.get();
+    const buildsBefore = harness.runtime.callsTo("buildImage").length;
+    const held = harness.runtime.hold("buildImage");
+    try {
+      const rebuilding = await call(harness.base, `${draftPath("mbtest-template:tool")}/rebuild`, {
+        method: "POST",
+      });
+      expect(rebuilding.status).toBe(202);
+      // Once buildImage is reached, the rebuild already holds the name, so the delete below must be refused.
+      for (let i = 0; i < 200 && harness.runtime.callsTo("buildImage").length === buildsBefore; i++)
+        await Bun.sleep(10);
+      expect(harness.runtime.callsTo("buildImage")).toHaveLength(buildsBefore + 1);
+
+      expect(
+        refused(
+          await call(harness.base, `${draftPath("mbtest-template:tool")}?host=${host.host.id}`, { method: "DELETE" }),
+        ),
+      ).toEqual({ status: 409, key: "template_busy" });
+      expect(draftTemplate(host, "tool")).not.toBeNull();
+
+      held.release();
+      expect((await finishedTask(harness.base, rebuilding.json.taskId ?? "")).status).toBe("succeeded");
+    } finally {
+      held.release();
+      await harness.app.tasks.drain();
+    }
+    // The build was not interrupted by the refused delete, so the draft became the template it was building.
+    expect(draftTemplate(host, "tool")).toBeNull();
+    expect(((await call(harness.base, "/api/templates")).json.templates ?? []).map((t) => t.ref)).toContain(
+      "mbtest-template:tool",
+    );
+  });
+
+  test("a token that creates a box from a draft learns nothing more than from a name it cannot use", async () => {
+    await save("tool");
+    const token = mint(harness.app, { name: "operator", preset: "operator" });
+
+    const draft = await call(harness.base, "/api/boxes", {
+      token: token.secret,
+      body: { name: "alpha", template: "mbtest-template:tool", cpus: 1, memoryMb: 256 },
+    });
+    const missing = await call(harness.base, "/api/boxes", {
+      token: token.secret,
+      body: { name: "beta", template: "mbtest-template:ghost", cpus: 1, memoryMb: 256 },
+    });
+
+    expect(refused(draft)).toEqual({ status: 403, key: "template_out_of_scope" });
+    expect(refused(draft)).toEqual(refused(missing));
+  });
+});
+
+describe("a draft and a built template under one name on different hosts", () => {
+  let cluster: Cluster;
+
+  beforeEach(async () => {
+    cluster = await bootCluster();
+  });
+
+  afterEach(() => cluster.close());
+
+  async function built(name: string): Promise<void> {
+    const started = await cluster.post("/api/templates", {
+      name,
+      source: { kind: "dockerfile", text: FROM_ALPINE },
+    });
+    expect(started.status).toBe(202);
+    const { taskId } = (await started.json()) as { taskId: string };
+    expect((await finishedTask(cluster.base, taskId)).status).toBe("succeeded");
+  }
+
+  async function draftOn(host: string, name: string): Promise<void> {
+    const saved = await cluster.post("/api/templates/drafts", {
+      name,
+      host,
+      source: { kind: "dockerfile", text: FROM_ALPINE_21 },
+    });
+    expect(saved.status).toBe(201);
+  }
+
+  test("without a host, a read and a delete name the built image, not the draft elsewhere", async () => {
+    await built("shared");
+    await draftOn("small", "shared");
+
+    const read = await cluster.api(`${namePath("shared")}/recipe`);
+    expect(read.status).toBe(200);
+    const recipe = (await read.json()) as { recipe: { source: { text: string } } };
+    expect(recipe.recipe.source.text).toBe(FROM_ALPINE);
+    // The read left the draft alone, and the built image is what the delete below removes.
+    expect(draftTemplate(cluster.app.hosts.get("small"), "shared")).not.toBeNull();
+    expect((await cluster.api(namePath("shared"), { method: "DELETE" })).status).toBe(200);
+    expect(await heldImage(cluster.app.hosts.get("local"), "mbtest-template:shared")).toBeNull();
+    expect(draftTemplate(cluster.app.hosts.get("small"), "shared")).not.toBeNull();
+
+    // With the host named, the draft is what is read and what the delete removes.
+    const byHost = await cluster.api(`${namePath("shared")}/recipe?host=small`);
+    expect(byHost.status).toBe(200);
+    expect(((await byHost.json()) as { recipe: { source: { text: string } } }).recipe.source.text).toBe(FROM_ALPINE_21);
+    expect((await cluster.api(`${namePath("shared")}?host=small`, { method: "DELETE" })).status).toBe(200);
+    expect(draftTemplate(cluster.app.hosts.get("small"), "shared")).toBeNull();
+  });
+
+  test("a copy to a host that holds a draft of the name is refused before any image is sent", async () => {
+    await built("shared");
+    await draftOn("small", "shared");
+
+    const synced = await cluster.post(`/api/templates/${encodeURIComponent("mbtest-template:shared")}/sync`, {
+      host: "small",
+    });
+    expect(synced.status).toBe(202);
+    const { taskId } = (await synced.json()) as { taskId: string };
+    const task = await finishedTask(cluster.base, taskId);
+    expect(task.status).toBe("failed");
+    expect(task.error?.key).toBe("template_name_taken");
+    // The refusal came before the transfer, so the target has neither the image nor a replaced draft.
+    expect(await heldImage(cluster.app.hosts.get("small"), "mbtest-template:shared")).toBeNull();
+    expect(draftTemplate(cluster.app.hosts.get("small"), "shared")?.recipe.source).toEqual({
+      kind: "dockerfile",
+      text: FROM_ALPINE_21,
+    });
   });
 });

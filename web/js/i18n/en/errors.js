@@ -137,6 +137,7 @@ export default {
   "err.snapshot_not_found": "Snapshot not found.",
   "err.template_not_found": "Template not found.",
   "err.template_name_taken": "A template named “{name}” already exists.",
+  "err.template_name_reserved": "{name} is a name MiniBox keeps for a template it builds itself. Choose another name.",
   "err.template_edit_empty":
     "Nothing to change: send a source, a setup (init) or a description. A template that was not built from a declared source has no source to edit.",
   "err.template_source_builtin":

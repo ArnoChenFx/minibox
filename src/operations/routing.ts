@@ -23,12 +23,10 @@ export function hostOfBox(ctx: OperationContext, ref: string): HostCtx {
 }
 
 /**
- * The host an image reference names: the one `host` picks when a request gives one, else the first host that holds the
- * image, the request's own host first. A reference no host holds stays on the request's host, so its not-found answer
- * is the same as it always was.
+ * The first host that holds `ref`, the request's own host first, or null when no host does. An offline host, and one that
+ * does not answer, is passed over. `hostOfImage` uses this and falls back to the request's host.
  */
-export async function hostOfImage(ctx: OperationContext, ref: string, host?: string): Promise<HostCtx> {
-  if (host !== undefined) return hostById(ctx, host);
+export async function hostHoldingImage(ctx: OperationContext, ref: string): Promise<HostCtx | null> {
   const others = (ctx.allHosts?.() ?? [ctx.host]).filter((candidate) => candidate !== ctx.host);
   for (const candidate of [ctx.host, ...others]) {
     if (candidate.host.status === "offline") continue;
@@ -39,7 +37,17 @@ export async function hostOfImage(ctx: OperationContext, ref: string, host?: str
       // A host that does not hold the image, or cannot answer, is passed over.
     }
   }
-  return ctx.host;
+  return null;
+}
+
+/**
+ * The host an image reference names: the one `host` picks when a request gives one, else the first host that holds the
+ * image, the request's own host first. A reference no host holds stays on the request's host, so its not-found answer
+ * is the same as it always was.
+ */
+export async function hostOfImage(ctx: OperationContext, ref: string, host?: string): Promise<HostCtx> {
+  if (host !== undefined) return hostById(ctx, host);
+  return (await hostHoldingImage(ctx, ref)) ?? ctx.host;
 }
 
 /** The host a named request runs on, or the request's own host when it names none. */

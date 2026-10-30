@@ -189,6 +189,7 @@ export const MESSAGES = {
   snapshot_not_found: "Snapshot not found.",
   template_not_found: "Template not found.",
   template_name_taken: "A template named “{name}” already exists.",
+  template_name_reserved: "{name} is a name MiniBox keeps for a template it builds itself. Choose another name.",
   template_busy: "Another change to the template “{name}” is still running. Try again when it ends.",
   template_image_missing:
     "Template image {image} does not exist. Build it on the Templates page or choose another template.",

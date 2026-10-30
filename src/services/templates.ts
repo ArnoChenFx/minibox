@@ -76,8 +76,6 @@ export interface TemplateDraftItem {
   ref: string;
   description: string | null;
   buildKind: BuildKind;
-  /** Who saved it, so the list shows a token only the drafts it saved, as the template list does. */
-  createdBy: string;
 }
 
 /** The templates saved on this host that are not built yet. They are listed apart from `listTemplates`, which lists images. */
@@ -87,7 +85,6 @@ export function listTemplateDrafts(host: HostCtx): TemplateDraftItem[] {
     ref: `${host.prefix}-template:${draft.name}`,
     description: draft.recipe.description,
     buildKind: draft.recipe.source.kind,
-    createdBy: draft.recipe.createdBy,
   }));
 }
 
@@ -395,9 +392,11 @@ export async function deleteTemplate(host: HostCtx, ref: string): Promise<void> 
   const tagged = ref.startsWith(prefix);
   const name = tagged ? ref.slice(prefix.length) : NAME_RE.test(ref) ? ref : "";
   // A draft has no image: its recipe is the whole template, so that is what a delete removes. A built template keeps the
-  // path it always had, and only its template reference removes the recipe beside the image.
+  // path it always had, and only its template reference removes the recipe beside the image. The name is held for the
+  // removal, so a build that is already running makes the delete answer `409 template_busy` instead of letting the build
+  // put the template back after the delete has said it succeeded.
   if (NAME_RE.test(name) && isDraftRecipe(host, name)) {
-    removeRecipe(host, name);
+    await holdingTemplate(host, name, async () => removeRecipe(host, name));
     return;
   }
   await removeLabeledImage(host, ref, host.keys.template, "template_not_found");

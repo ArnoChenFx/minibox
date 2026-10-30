@@ -7,7 +7,7 @@ import { NAME_RE } from "../lib/validation";
 import type { ImageDetails } from "../runtime";
 import { assertNoSecretInImage } from "../secrets/env";
 import { getBox } from "../services/boxes";
-import { OFFICIAL_TEMPLATES, officialOfRef } from "../services/official-templates";
+import { OFFICIAL_NAMES, OFFICIAL_TEMPLATES, officialOfRef } from "../services/official-templates";
 import {
   buildTemplateDraft,
   createDeclaredTemplate,
@@ -39,7 +39,16 @@ import type { TaskError, TaskReader } from "../tasks/types";
 import { assertTemplateAccess } from "../tokens/authorize";
 import { templateVisible } from "../tokens/model";
 import { defineOperation } from "./define";
-import { fromEveryHost, hostById, hostNamed, hostOfBox, hostOfImage, imageHosts, refuseAgent } from "./routing";
+import {
+  fromEveryHost,
+  hostById,
+  hostHoldingImage,
+  hostNamed,
+  hostOfBox,
+  hostOfImage,
+  imageHosts,
+  refuseAgent,
+} from "./routing";
 import {
   BuildResultSchema,
   EditedTemplateSchema,
@@ -200,6 +209,19 @@ const templateCreate = defineOperation({
 });
 
 /**
+ * Refuses a draft name MiniBox keeps for a template it builds itself: an official template's name, or the base
+ * template's. A draft there would take the name those builds need, and a box that asks for that template would find the
+ * saved source instead of the image.
+ */
+function assertDraftNameFree(host: HostCtx, name: string): void {
+  const reserved =
+    OFFICIAL_NAMES.includes(name as (typeof OFFICIAL_NAMES)[number]) ||
+    name === "base" ||
+    `${host.prefix}-template:${name}` === host.baseTemplateTag;
+  if (reserved) throw conflict(msg("template_name_reserved", { name }));
+}
+
+/**
  * Saves a template's source without building it. Nothing is pulled, cloned or built, so this answers at once and the
  * recipe file is all that is written. The name is held through `holdingTemplateName`, so a save, a build or a fork
  * cannot take it while this runs, and a name an image or a draft already holds is refused.
@@ -227,7 +249,11 @@ const templateDraftCreate = defineOperation({
       "Save a template's source without building it: kind dockerfile with text, git with url (and optional branch, subdir, dockerfile, secretRef), context with url of a .tar or .tar.gz (and optional dockerfile), or devcontainer with url of a repository (and optional branch, path, secretRef). Nothing is pulled, cloned or built, so this answers at once. The draft holds its name, and GET /api/templates does not list it until rebuild_template builds it; the saved source, description and setup survive that build, and a failed build keeps the draft. Optional host saves on that host, default local. Owner only. Returns the draft's ref and name.",
   },
   hostFor: (ctx, input) => hostNamed(ctx, input.host),
-  precondition: async ({ host }) => refuseAgent(host, "templates"),
+  precondition: async ({ host }, input) => {
+    refuseAgent(host, "templates");
+    // Before the name hold: these names belong to builds MiniBox runs itself, so a draft never takes them.
+    assertDraftNameFree(host, input.name);
+  },
   activity: { action: () => "template.draft.create", target: (input) => input.name },
   audit: {
     target: (input) => ({ kind: "template", name: input.name }),
@@ -266,17 +292,14 @@ const templateDraftList = defineOperation({
       "List the templates saved without building them, each with its source kind, description and the hostId that keeps the saved recipe. A draft is not a template yet: GET /api/templates does not list it, and a box cannot start from it until rebuild_template builds it. Pass host to list one host.",
   },
   run: async (ctx, input) => {
-    const { principal } = ctx;
     const templates = await fromEveryHost(imageHosts(ctx, input.host), async (on) =>
-      listTemplateDrafts(on)
-        .filter((draft) => templateVisible(principal, { createdBy: draft.createdBy }))
-        .map((draft) => ({
-          name: draft.name,
-          ref: draft.ref,
-          description: draft.description,
-          buildKind: draft.buildKind,
-          hostId: on.host.id,
-        })),
+      listTemplateDrafts(on).map((draft) => ({
+        name: draft.name,
+        ref: draft.ref,
+        description: draft.description,
+        buildKind: draft.buildKind,
+        hostId: on.host.id,
+      })),
     );
     return { templates };
   },
@@ -356,16 +379,19 @@ const templateInitInput = () =>
     });
 
 /**
- * The host a template reference names: the one the request gives, else the host that holds a saved draft of that name,
- * else the first host that holds the built image. A draft has no image to find, so it is looked for by its recipe.
+ * The host a template reference names: the one the request gives, else the first host that holds the built image, else
+ * the host that holds a saved draft of that name. A bare reference has always meant the image, so a draft elsewhere must
+ * not redirect an operation on a built template. A reference no host holds stays on the request's host.
  */
 async function hostOfTemplate(ctx: OperationContext, ref: string, host?: string): Promise<HostCtx> {
   if (host !== undefined) return hostById(ctx, host);
+  const byImage = await hostHoldingImage(ctx, ref);
+  if (byImage) return byImage;
   const hosts = [ctx.host, ...(ctx.allHosts?.() ?? []).filter((candidate) => candidate !== ctx.host)];
   const holder = hosts.find(
     (candidate) => candidate.host.status !== "offline" && draftTemplate(candidate, ref) !== null,
   );
-  return holder ?? hostOfImage(ctx, ref);
+  return holder ?? ctx.host;
 }
 
 /**

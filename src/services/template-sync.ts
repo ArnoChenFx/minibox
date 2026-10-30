@@ -1,10 +1,12 @@
 import type { HostCtx } from "../host/registry";
 import { untilAborted } from "../lib/abort";
+import { conflict } from "../lib/errors";
 import { log } from "../lib/logger";
+import { msg } from "../lib/messages";
 import { byteLog, type TransferProgress } from "../lib/transfer";
 import { type ImageDetails, isRuntimeError } from "../runtime";
 import { needsImage, sendImage } from "./image-transfer";
-import { copyRecipe } from "./template-builds";
+import { copyRecipe, isDraftRecipe } from "./template-builds";
 
 /** A host that holds a MiniBox template, and the image as that host's engine reports it. */
 export interface TemplateSource {
@@ -45,6 +47,9 @@ export async function findTemplateSource(hosts: readonly HostCtx[], ref: string)
  * recipe that built it, so a declared template keeps its setup there. The move that carries a box uses the same transfer,
  * so a template copy and a box move agree on what a host may hold. Returns whether an image was sent. `progress` carries
  * the stop signal and the task log that the transfer writes its bytes to.
+ *
+ * A target that holds a draft of the same name is refused before any image is sent: the draft holds that name, and a copy
+ * would leave both an image and a draft there, or overwrite the saved source with the source's built recipe.
  */
 export async function copyTemplate(
   source: TemplateSource,
@@ -52,6 +57,11 @@ export async function copyTemplate(
   ref: string,
   progress?: TransferProgress,
 ): Promise<boolean> {
+  const prefix = `${target.prefix}-template:`;
+  if (ref.startsWith(prefix)) {
+    const name = ref.slice(prefix.length);
+    if (isDraftRecipe(target, name)) throw conflict(msg("template_name_taken", { name }));
+  }
   const transfer = await needsImage(target, ref, source.image);
   if (transfer) {
     await sendImage(source.host, target, ref, source.image.id, progress?.signal, byteLog(progress, "Sent"));

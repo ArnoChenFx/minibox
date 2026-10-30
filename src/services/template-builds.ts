@@ -286,9 +286,8 @@ export function editRecipe(
  * stays a draft until `buildTemplateDraft` builds it. The caller holds the name through `holdingTemplate`.
  */
 export function editDraftRecipe(host: HostCtx, draft: DraftTemplate, edit: RecipeEdit): TemplateRecipe {
-  if (edit.source !== undefined && draft.recipe.source.kind === "official") {
-    throw badRequest(msg("template_source_builtin", { name: draft.name }));
-  }
+  // A draft can only be saved from a source `templateSource()` accepts, which never names an official template, so there
+  // is no built-in source to protect here as there is in `editTemplate`.
   const next: TemplateRecipe = { ...withRecipeEdit(draft.recipe, edit), imageId: null, draft: true };
   writeRecipe(host, draft.name, next);
   return next;
@@ -313,6 +312,9 @@ export function copyRecipe(from: HostCtx, to: HostCtx, ref: string, imageId: str
   if (!NAME_RE.test(name)) return;
   const recipe = readStoredRecipe(from, name);
   if (!recipe || recipe.imageId !== imageId || readStoredRecipe(to, name)?.imageId === imageId) return;
+  // A draft on the target holds the name, so a copy never replaces the source it saved. `copyTemplate` refuses the copy
+  // before the image is sent; this is the narrow guard for any other caller of a recipe copy.
+  if (isDraftRecipe(to, name)) return;
   writeRecipe(to, name, recipe);
 }
 

@@ -191,7 +191,7 @@ describe.skipIf(!executablePath)("saving a template without building it (real br
   test(
     "deleting a draft removes its card and keeps every image",
     async () => {
-      const removed = runtime.callsTo("removeImage").length ?? 0;
+      const removed = runtime.callsTo("removeImage").length;
       await card("edit-draft").getByRole("button", { name: "Delete template" }).click();
       await webExpect(dialog()).toContainText("It was never built, so no image is removed.");
       await dialog().getByRole("button", { name: "Delete template" }).click();
