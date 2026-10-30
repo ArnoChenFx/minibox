@@ -126,7 +126,17 @@ export const ServerFrameSchema = z.discriminatedUnion("type", [
     protocol: z.number().int(),
     serverVersion: TEXT,
   }),
-  z.object({ type: z.literal("welcome"), hostId: ID, protocol: z.number().int() }),
+  z.object({
+    type: z.literal("welcome"),
+    hostId: ID,
+    protocol: z.number().int(),
+    /**
+     * The control plane's `LABEL_PREFIX`. It pins nothing by itself: what the agent takes as its own is the label on the
+     * resource. An agent whose record names a prefix only compares it and logs a difference; an agent with no record at
+     * all (paired before scopes existed) writes it down. Absent from a control plane that predates the field.
+     */
+    labelPrefix: z.string().max(64).optional(),
+  }),
   z.object({
     type: z.literal("refused"),
     code: z.enum(["auth_failed", "protocol_mismatch", "revoked"]),
@@ -180,6 +190,11 @@ export const PairResponseSchema = z.object({
   agentId: ID,
   hostId: ID,
   protocol: z.number().int(),
+  /**
+   * The control plane's `LABEL_PREFIX`, as it stood when the code was spent. The agent keeps it as the MiniBox it serves,
+   * which is what the owner of the host's firewall rule must be. Absent from a control plane that predates the field.
+   */
+  labelPrefix: z.string().max(64).optional(),
 });
 export type PairResponse = z.infer<typeof PairResponseSchema>;
 

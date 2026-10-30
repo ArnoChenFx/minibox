@@ -66,6 +66,7 @@ These are the manual steps for changes made in 0.4 and later. Read the ones that
 ### Hosts
 
 - **Agent needs an upgrade.** When a host shows **Agent needs an upgrade**, pull the newer `minibox-agent` image and recreate its container with the same data volume. See the [agent reference](../reference/agent.md).
+- **Agents manage only what is MiniBox's.** An agent now works only on the containers, volumes and networks that carry its own label, and refuses anything else on that machine's engine as not found. A box on an agent host is put on one of MiniBox's networks, never on the engine's default `bridge`. If the boxes on an agent host use a container runtime other than `runc` (`RUNTIME=runsc`, for example), run the agent with `-e AGENT_ALLOWED_RUNTIMES=runsc`, or new boxes on it are refused. See [What the agent manages](../reference/agent.md#what-the-agent-manages).
 - **Docker socket after `scripts/restart.sh`.** The script gives the Docker socket to your primary group with mode 660. After it runs, only that group and root can use Docker. See [Security](security.md).
 
 ## Upgrade the release image

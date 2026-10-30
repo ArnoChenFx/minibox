@@ -287,11 +287,13 @@ describe("the control plane's agent API, over HTTP and a real socket", () => {
 
     const paired = await pairWithCode(pairing.code, pairingKey());
     expect(paired.status).toBe(201);
-    const reply = (await paired.json()) as { agentId: string; hostId: string; protocol: number };
+    const reply = (await paired.json()) as { agentId: string; hostId: string; protocol: number; labelPrefix?: string };
+    // The answer names the control plane's prefix, which the agent keeps as the MiniBox it serves.
     expect(reply).toEqual({
       agentId: expect.stringMatching(/^[0-9a-f]{32}$/),
       hostId: "edge",
       protocol: AGENT_PROTOCOL,
+      labelPrefix: "mbtest",
     });
 
     const hosts = (await (await api("/api/hosts")).json()) as { hosts: Array<Record<string, unknown>> };

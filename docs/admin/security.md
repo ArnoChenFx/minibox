@@ -8,6 +8,7 @@ MiniBox is built for one trusted user, on a machine that the user controls. Read
 - **The container runs as root.** It needs the Docker socket, which is root-equivalent. To narrow this, put a socket proxy in front of the socket, that forwards only the Docker API calls MiniBox uses. Point `DOCKER_SOCKET` at the proxy. Or run MiniBox against a rootless Docker or Podman socket.
 - **Boxes are not a security sandbox for untrusted code.** Boxes share the host's kernel. They are fine for your own agents. For untrusted third-party code, use a sandbox such as gVisor, or a microVM. Set `RUNTIME=runsc` to use gVisor, if it is installed in the Docker engine.
 - **Do not mount the Docker socket or sensitive host paths into a box.**
+- **An agent host works only on its own resources.** An [agent](../reference/agent.md) mounts its machine's Docker socket too, but it acts only on the containers, volumes and networks that carry its own label, and refuses the rest as not found. A MiniBox that has been taken over cannot use an agent to stop, read, mount or remove what else runs on that machine. It can still make the agent pull images and read the metadata of any image on the engine, and run boxes there, and whoever can run code inside the agent's container has the whole engine. See [What the agent manages](../reference/agent.md#what-the-agent-manages).
 
 ## The access key
 

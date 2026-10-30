@@ -5,6 +5,9 @@ import { resolveVersion } from "../version";
 import { AgentClient } from "./client";
 import { type AgentIdentity, generateKeyPairPem, loadIdentity, saveIdentity } from "./identity";
 import { AGENT_PAIR_PATH, AGENT_PROTOCOL, type PairRequest, type PairResponse, PairResponseSchema } from "./protocol";
+import { AgentScope, freshScope, loadScope, saveScope } from "./scope";
+import { scopedRuntime } from "./scoped-runtime";
+import { findSelf } from "./self";
 
 export const USAGE = `Usage: bun src/agent/main.ts --server <url> [--pair <code>]
 
@@ -12,8 +15,10 @@ export const USAGE = `Usage: bun src/agent/main.ts --server <url> [--pair <code>
   --pair <code>    The one-time code from Settings > Hosts > Add host > Agent. Needed once, on the first start.
 
 Environment:
-  DATA_DIR         Where the agent keeps its identity. Default /data.
-  DOCKER_SOCKET    The Docker socket to manage. Default /var/run/docker.sock.`;
+  DATA_DIR                  Where the agent keeps its identity. Default /data.
+  DOCKER_SOCKET             The Docker socket to manage. Default /var/run/docker.sock.
+  AGENT_ALLOWED_RUNTIMES    Container runtimes besides runc that a box may ask for, comma separated, such as runsc.
+                            Default: runc only.`;
 
 export class UsageError extends Error {}
 
@@ -91,6 +96,14 @@ export async function pairWith(server: string, request: PairRequest, fetcher: Fe
   return parsed.data;
 }
 
+/** The container runtimes a box may ask for besides runc, from a comma-separated setting. Names the engine could not use are dropped. */
+export function allowedRuntimesOf(raw: string | undefined): string[] {
+  return (raw ?? "")
+    .split(",")
+    .map((name) => name.trim())
+    .filter((name) => /^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$/.test(name));
+}
+
 export interface AgentDeps {
   readonly fetch?: Fetcher;
   readonly runtime?: Runtime;
@@ -146,6 +159,8 @@ export async function runAgent(
         server: args.server,
         pairedAt: (deps.now ?? (() => new Date()))().toISOString(),
       };
+      // Written before the identity, so an agent that exists is never without it: this one labels everything it makes.
+      saveScope(dataDir, freshScope(reply.hostId, reply.labelPrefix ?? null));
       saveIdentity(dataDir, identity, keys.privateKeyPem);
       stored = loadIdentity(dataDir);
       log.info("agent.paired", { agentId: reply.agentId, hostId: reply.hostId });
@@ -156,12 +171,27 @@ export async function runAgent(
     return 2;
   }
   const server = args.server ?? stored.identity.server;
-  const runtime = deps.runtime ?? createDockerRuntime(env.DOCKER_SOCKET?.trim() || "/var/run/docker.sock");
+  const engine = deps.runtime ?? createDockerRuntime(env.DOCKER_SOCKET?.trim() || "/var/run/docker.sock");
+  let scope: AgentScope;
+  try {
+    scope = new AgentScope({
+      hostId: stored.identity.hostId,
+      dataDir,
+      runtime: engine,
+      record: loadScope(dataDir, stored.identity.hostId),
+      findSelf: () => findSelf(engine),
+    });
+  } catch (e) {
+    log.error("agent.scope_unreadable", { error: e instanceof Error ? e.message : String(e) });
+    return 1;
+  }
+  const runtime = scopedRuntime(engine, scope, { allowedRuntimes: allowedRuntimesOf(env.AGENT_ALLOWED_RUNTIMES) });
   const client = new AgentClient({
     server,
     agentId: stored.identity.agentId,
     privateKey: stored.privateKey,
     runtime,
+    scope,
     version,
   });
   log.info("agent.starting", { hostId: stored.identity.hostId, version, server });

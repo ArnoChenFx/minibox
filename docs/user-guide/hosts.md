@@ -35,6 +35,8 @@ The command runs the agent image at the tag of this MiniBox's own version, so th
 
 A pairing code works once and expires after 10 minutes. MiniBox spends it as soon as it receives it, so if the agent loses the reply and cannot save its credentials, the code is no longer valid. Then remove the agent's container and create a new code. You can also ask for a new code before the old one expires, for example after closing the dialog: create it again with the same id. The new code replaces the old one, which then no longer pairs. Only the first start needs the code. For the options, the data volume and the operations an agent allows, see the [agent reference](../reference/agent.md).
 
+An agent works only on the containers, volumes and networks that it makes, and labels, itself. Whatever else runs on that machine's engine is not listed to MiniBox and cannot be reached from it, even by a MiniBox that has been taken over. A box that asks for another container runtime than `runc`, such as gVisor (`RUNTIME=runsc`), needs `AGENT_ALLOWED_RUNTIMES` on the agent, or it is refused. [What the agent manages](../reference/agent.md#what-the-agent-manages) has the details.
+
 ## Add a host with a Docker address
 
 1. Click **Settings** in the sidebar, then open the **Hosts** section.

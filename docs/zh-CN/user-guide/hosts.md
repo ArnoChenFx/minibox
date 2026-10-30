@@ -35,6 +35,8 @@ Agent 是一个小程序，运行在宿主机上的容器中，并主动连接 M
 
 配对码只能使用一次，10 分钟后过期。MiniBox 一收到配对码就会将其作废，因此若 Agent 丢失了响应、未能保存凭据，该配对码将不再有效。此时请移除 Agent 的容器，然后点击 **生成新的配对码**。配对码过期前也可以重新生成（例如关掉了对话框）：用同一个标识再生成一次即可，新配对码会替换旧的，旧配对码随即作废。只有首次启动需要配对码。关于启动参数、数据卷以及 Agent 允许的操作，见 [Agent（英文）](../../reference/agent.md)。
 
+Agent 只处理它自己创建并打上标签的容器、卷和网络。这台机器的引擎上运行的其他东西不会被列给 MiniBox，也无法通过 MiniBox 触达，即使 MiniBox 已被攻破也一样。Box 若要求 `runc` 以外的容器运行时（例如 gVisor，即 `RUNTIME=runsc`），需要在 Agent 上设置 `AGENT_ALLOWED_RUNTIMES`，否则会被拒绝。详见[Agent 管什么（英文）](../../reference/agent.md#what-the-agent-manages)。
+
 ## 通过 Docker 地址添加宿主机
 
 1. 在侧栏点击 **设置**，然后打开 **宿主机** 部分。

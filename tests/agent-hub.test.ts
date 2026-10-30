@@ -39,11 +39,11 @@ afterEach(() => {
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
-function setup() {
+function setup(options: { labelPrefix?: string } = {}) {
   const dataDir = mkdtempSync(join(tmpdir(), "minibox-hub-test-"));
   dirs.push(dataDir);
   const store = new AgentStore(dataDir);
-  const hub = new AgentHub({ store, pairing: new PairingBook(), serverVersion: "0.4.0-test" });
+  const hub = new AgentHub({ store, pairing: new PairingBook(), serverVersion: "0.4.0-test", ...options });
   hubs.push(hub);
   const pair = generateKeyPairSync("ed25519");
   const publicKeyPem = pair.publicKey.export({ type: "spki", format: "pem" }).toString();
@@ -94,6 +94,25 @@ describe("the handshake", () => {
       revoked: false,
     });
     expect(events).toEqual([{ type: "connected", agentId: record.agentId }]);
+  });
+
+  test("the welcome names the control plane's label prefix when it has one, and says nothing of it when it has none", () => {
+    const named = setup({ labelPrefix: "minibox" });
+    const record = named.enroll();
+    const socket = fakeSocket();
+    const session = named.hub.attach(socket, "10.0.0.1");
+    session.receive(helloFrame(named.key, nonceOf(socket), record.agentId));
+    expect(framesOf(socket, "welcome")).toEqual([
+      { type: "welcome", hostId: "edge", protocol: AGENT_PROTOCOL, labelPrefix: "minibox" },
+    ]);
+
+    // A control plane that predates the field sends a welcome without it, which an agent reads as having been told nothing.
+    const bare = setup();
+    const bareRecord = bare.enroll();
+    const bareSocket = fakeSocket();
+    const bareSession = bare.hub.attach(bareSocket, "10.0.0.1");
+    bareSession.receive(helloFrame(bare.key, nonceOf(bareSocket), bareRecord.agentId));
+    expect(framesOf(bareSocket, "welcome")[0]).not.toHaveProperty("labelPrefix");
   });
 
   test("a hello signed by another key is refused as auth_failed, and the socket is closed 4401", () => {
