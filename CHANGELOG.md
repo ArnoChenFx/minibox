@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### 修复
+
+- **创建 Box 的「自定义卷」在 Box 名称还没填时也显示将要新建的卷名**：角色卷以 Box 名命名，名称为空时此前下拉里只写「新建 workspace 卷」一类措辞，看不出会建成什么名字，说明行也只说「新建 cache 卷（预览）」。现在按命名规则显示占位名 `<Box 名称>-workspace`、`<Box 名称>-home`、`<Box 名称>-cache`（英文 `<box name>-workspace` 等），选项与说明行都带「（预览）」，说明行写明名字取决于之后填写的 Box 名称；填上名称后照旧变成 `alpha-workspace`。占位名只是展示：`roleVolumeNames()` 仍返回 `name: null`、另带 `placeholder`，它不参与 `exact`/重名后缀判断，也不会被提交或写进任何请求（角色行仍只发 `{ role, pool }`）。共享 tools 卷与 `auto` 宿主机两种情形不变。新增 `cb.previewBoxNamePlaceholder`、`cb.previewUnnamedName`、`cb.previewUnnamedNamePool` 中英文案。测试：`tests/web-lib.test.ts` 覆盖空名称的占位、填入名称后的真名与占位不进 `exact`，`tests/web-components.test.ts` 钉住下拉选项的占位文案，`tests/i18n.test.ts` 钉住新词条；真机浏览器测试交给 CI。
+
 ### 工程化
 
 - 每次 `bun test` 运行使用自己的临时目录 `mbrun-<pid>-…`（`bunfig.toml` 预加载 `tests/support/preload.ts`），由独立会话里的看护进程在运行结束后删除，正常结束、失败、被信号终止或被 SIGKILL 杀掉都一样。此前 Bun 结束测试时不触发 `exit`，夹具里的 `exit` 清理从不执行，每次运行都会在系统临时目录留下 `minibox-test-data-*`，被超时杀掉的运行还会留下其余目录。看护进程也被杀时，下次运行启动时清扫遗留目录：拥有进程已不在、两小时内没有写入、没有进程占用。说明见 `docs/development.md`。
