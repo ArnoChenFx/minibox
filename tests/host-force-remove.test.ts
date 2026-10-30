@@ -444,6 +444,29 @@ describe("a record written while the removal runs cannot come back", () => {
     expect(listed.boxes.map((box) => box.name)).not.toContain("late");
   });
 
+  test("each store refuses a write for a closed host on its own, and takes it again once the host is reopened", async () => {
+    const box = await boxOn("edge", "alpha");
+    await takeCheckpoint(box.boxId);
+    const store = app.hosts.get("edge");
+    const spec = store.specs.list().find((item) => item.hostId === "edge");
+    const volume = store.volumes.list().find((item) => item.hostId === "edge");
+    const checkpoint = store.checkpoints.list().find((item) => item.hostId === "edge");
+    if (!spec || !volume || !checkpoint)
+      throw new Error("the edge host holds no spec, volume or checkpoint to write back");
+    // Each store is closed alone, so a guard that the other two cover would not hide a missing one.
+    const stores = [
+      { name: "spec", target: store.specs, write: () => store.specs.write(spec) },
+      { name: "volume", target: store.volumes, write: () => store.volumes.write(volume) },
+      { name: "checkpoint", target: store.checkpoints, write: () => store.checkpoints.write(checkpoint) },
+    ];
+    for (const { name, target, write } of stores) {
+      target.closeHost("edge");
+      expect(write, `${name} write while closed`).toThrow(expect.objectContaining({ key: "host_gone" }));
+      target.openHost("edge");
+      expect(write, `${name} write once reopened`).not.toThrow();
+    }
+  });
+
   test("a spec that moved to another host before the discard is left alone", async () => {
     const box = await boxOn("edge", "alpha");
     edge.down = true;
