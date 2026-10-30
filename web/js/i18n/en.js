@@ -144,11 +144,12 @@ export default {
   "tp.forkDesc":
     "Copy the image and build recipe of <code>{ref}</code> into a new template. The template it comes from stays as it is.",
   "tp.forkWhat":
-    "The copy keeps the build source and the setup command, so you can change its name and description and then rebuild it from the same source. A template saved from a box has no build source, so its copy cannot be rebuilt.",
+    "The copy keeps the build source and the setup command, so you can change its name and description and then rebuild it from the same source. A template saved from a box has no build source, so its copy cannot be rebuilt. A fork of an official template keeps a copy of the Dockerfile MiniBox ships instead, so the copy can be edited and rebuilt like any other.",
   "tp.forkConfirm": "Fork template",
   "tp.forking": "Forking…",
   "tp.forked": "Template forked",
   "tp.forkFailed": "Couldn't fork template",
+  "tp.forkUnbuilt": "Not built on any host yet. Build it first: a fork copies the built image, not the source.",
   "tp.hosts": "Hosts",
   "tp.present": "Present",
   "tp.absent": "Missing",
