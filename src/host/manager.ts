@@ -154,8 +154,18 @@ export interface HostManagerOptions {
   readonly detach: (host: HostCtx) => void;
   /** Lifts the shared tools volume a host is going away with, through the same guards as any delete. */
   readonly liftToolsVolume?: (host: HostCtx) => Promise<void>;
+  /**
+   * Takes back what the control plane put on a host that is going away for good, while its engine can still be reached.
+   * It runs when a host is removed and never at shutdown, which detaches the same hosts and must leave them as they are.
+   */
+  readonly release?: (host: HostCtx) => Promise<void>;
   /** Called when a remote host's engine becomes reachable, so its boxes are reconciled. */
   readonly onLive?: (host: HostCtx) => void;
+  /**
+   * Called when a host's engine answered after being offline, or after a connection that dropped came back. The
+   * firewall may have been reloaded while it was away, so the egress forward check is asked to read the rules again.
+   */
+  readonly onReachable?: (host: HostCtx) => void;
   /** The agents that dial in. An agent host's engine is reached through its connection here. */
   readonly agents: AgentHub;
   /**
@@ -475,6 +485,7 @@ export class HostManager {
         throw new AppError(409, "conflict", msg("host_in_use", { host: id, count: usage.total }), usage);
       }
       if (this.options.liftToolsVolume) await this.options.liftToolsVolume(ctx);
+      if (this.options.release) await this.options.release(ctx);
       const view = this.view(ctx);
       const stored = this.stored.get(id);
       const agentId = stored ? agentIdOf(stored) : null;
@@ -610,7 +621,9 @@ export class HostManager {
   onLink(frame: LinkFrame): void {
     if (!this.options.registry.has(frame.hostId)) return;
     const ctx = this.options.registry.get(frame.hostId);
+    const wasOnline = ctx.host.status === "online";
     ctx.host.status = frame.state === "live" ? "online" : "offline";
+    if (frame.state === "live" && !wasOnline) this.options.onReachable?.(ctx);
     if (frame.state === "live" && ctx.host.transport !== "local") this.options.onLive?.(ctx);
   }
 
@@ -836,6 +849,7 @@ export class HostManager {
       await within(ctx.runtime.ping(), ENGINE_READ_TIMEOUT_MS);
       const latencyMs = Math.round(performance.now() - started);
       const info = await within(ctx.runtime.info(), ENGINE_READ_TIMEOUT_MS);
+      const cameBack = ctx.host.status !== "online";
       ctx.host.status = "online";
       this.backoff.delete(id);
       this.probes.set(id, {
@@ -845,6 +859,8 @@ export class HostManager {
         containers: { running: info.containers.running, total: info.containers.total },
         error: null,
       });
+      // A host that just answered may have been rebooted or had its firewall reloaded, so its forwarding is read again.
+      if (cameBack) this.options.onReachable?.(ctx);
     } catch (e) {
       ctx.host.status = "offline";
       const failures = (this.backoff.get(id)?.failures ?? 0) + 1;

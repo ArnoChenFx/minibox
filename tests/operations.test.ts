@@ -335,6 +335,7 @@ const SAMPLES: Record<string, (boxId: string, app: App) => unknown> = {
   "host.list": () => ({}),
   "host.usage": () => ({}),
   "host.disk": () => ({ id: "local" }),
+  "host.forward.repair": () => ({ id: "local" }),
   "host.add": () => ({ id: "lab", endpoint: "unix:///var/run/lab.sock" }),
   "host.test": () => ({ id: "lab", endpoint: "unix:///var/run/lab.sock" }),
   "host.labels.set": () => ({ id: "local", labels: { gpu: "true" } }),
@@ -630,6 +631,22 @@ async function preparedInput(
   }
   if (operation.name === "host.revoke") {
     await pairAgentHost(app, "edge");
+  }
+  if (operation.name === "host.forward.repair") {
+    // The repair is only offered for a host with a proxy-only box whose rules drop the uplink by policy, so the check
+    // has to find exactly that before the operation will do anything.
+    await app.operations.run("box.create", ctx, {
+      name: "gated",
+      cpus: 1,
+      memoryMb: 256,
+      egress: { mode: "proxy-only", domains: ["example.com"] },
+    });
+    (ctx.host.runtime as FakeRuntime).forwardVerdict = {
+      forwarding: false,
+      cause: "policy",
+      detail: "fake engine: FORWARD policy is DROP",
+    };
+    await app.egressForward.tick();
   }
   const sample = SAMPLES[operation.name];
   if (sample === undefined) throw new Error(`no sample input for ${operation.name}`);
@@ -1244,6 +1261,7 @@ describe("projections", () => {
       "list_hosts",
       "get_host_usage",
       "get_host_disk",
+      "repair_host_forward",
       "add_host",
       "test_host",
       "set_host_labels",

@@ -110,9 +110,16 @@ export function render(view) {
   };
 
   let latest = null;
+  /** Reads the overview now, which a repair does after it changes a host, rather than waiting for the next poll. */
+  const reloadOverview = async () => {
+    const next = await api("/api/overview").catch(() => null);
+    if (!next) return;
+    latest = next;
+    drawWatch(view, next, reloadOverview);
+  };
   const stopFeed = followOverview((overview) => {
     latest = overview;
-    drawWatch(view, overview);
+    drawWatch(view, overview, reloadOverview);
   });
 
   let hostList = hostsNow();
@@ -164,7 +171,7 @@ export function render(view) {
       void loadDisk();
       if (loaded) renderBoxes(view, boxes);
       redrawOnboarding();
-      if (latest) drawWatch(view, latest);
+      if (latest) drawWatch(view, latest, reloadOverview);
     }),
     subscribe("sync", (frame) => {
       const next = boxesOfSync(frame);

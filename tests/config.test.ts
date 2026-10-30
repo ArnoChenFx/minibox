@@ -396,6 +396,19 @@ describe("volume usage sampling and the host disk floor", () => {
       expect(load({ ACCESS_KEY: KEY, VOLUME_USAGE_INTERVAL_SEC: value }).volumeUsageIntervalSec).toBe(600);
     }
   });
+  test("the forward check is every 600 seconds by default, and EGRESS_FORWARD_CHECK_INTERVAL_SEC sets it from 60 to 86400", () => {
+    expect(load({ ACCESS_KEY: KEY }).egressForwardCheckIntervalSec).toBe(600);
+    expect(load({ ACCESS_KEY: KEY, EGRESS_FORWARD_CHECK_INTERVAL_SEC: "60" }).egressForwardCheckIntervalSec).toBe(60);
+    expect(load({ ACCESS_KEY: KEY, EGRESS_FORWARD_CHECK_INTERVAL_SEC: "86400" }).egressForwardCheckIntervalSec).toBe(
+      86400,
+    );
+    for (const value of ["30", "86401", "1.5", "often"]) {
+      expect(load({ ACCESS_KEY: KEY, EGRESS_FORWARD_CHECK_INTERVAL_SEC: value }).egressForwardCheckIntervalSec).toBe(
+        600,
+      );
+    }
+  });
+
   test("HOST_DISK_MIN_FREE_PERCENT is 10 by default, 0 turns the floor off, and a value above 100 is ignored", () => {
     expect(load({ ACCESS_KEY: KEY }).hostDiskMinFreePercent).toBe(10);
     expect(load({ ACCESS_KEY: KEY, HOST_DISK_MIN_FREE_PERCENT: "0" }).hostDiskMinFreePercent).toBe(0);

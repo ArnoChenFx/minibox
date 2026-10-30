@@ -104,6 +104,8 @@ export async function startLocked(host: HostCtx, box: Box, options: StartOptions
     throw e;
   }
   await setDesired(host, box.boxId, "running", null);
+  // A proxy-only box starting is when its owner looks, so the host's forwarding is read again rather than waited for.
+  if (host.specs.read(box.boxId)?.egress?.mode === "proxy-only") host.forward.boxStarted(host.host.id);
   if (!box.running || !host.selfTokens.has(box.boxId)) await deliverSelfToken(host, box.boxId, box.id);
   await host.sampler.observe(box.id);
   host.pulse.touch(box.boxId, "wake");

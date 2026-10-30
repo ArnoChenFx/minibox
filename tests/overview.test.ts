@@ -583,6 +583,64 @@ describe("what needs attention", () => {
     ]);
   });
 
+  test("a host whose FORWARD rules drop a proxy-only box's traffic is an error, naming the bridge and the boxes", async () => {
+    const h = start();
+    const host = h.app.hosts.get();
+    await makeBox(h.base, "agent", undefined, {
+      egress: { mode: "proxy-only", domains: ["example.com"] },
+    });
+    h.runtime.forwardVerdict = { forwarding: false, cause: "policy", detail: "iptables FORWARD policy is DROP" };
+    await h.app.egressForward.tick();
+
+    const view = await overview(h.base);
+    expect(view.attention).toEqual([
+      expect.objectContaining({
+        kind: "host.forward_blocked",
+        severity: "error",
+        hostId: host.host.id,
+        subject: host.host.name,
+        box: null,
+        params: expect.objectContaining({
+          boxes: "agent",
+          count: 1,
+          detail: "iptables FORWARD policy is DROP",
+        }),
+      }),
+    ]);
+    expect(String(view.attention[0]?.params.bridge)).toMatch(/^br-/);
+  });
+
+  test("a host whose rules are fine lists nothing, and an open box alone is never checked", async () => {
+    const h = start();
+    await makeBox(h.base, "plain");
+    await h.app.egressForward.tick();
+    expect((await overview(h.base)).attention).toEqual([]);
+  });
+
+  test("an offline host is not also listed for forwarding, since its last reading is from before it went away", async () => {
+    const h = start();
+    await makeBox(h.base, "agent", undefined, { egress: { mode: "proxy-only", domains: ["example.com"] } });
+    h.runtime.forwardVerdict = { forwarding: false, cause: "policy", detail: "iptables FORWARD policy is DROP" };
+    await h.app.egressForward.tick();
+    expect((await overview(h.base)).attention.map((item) => item.kind)).toEqual(["host.forward_blocked"]);
+
+    h.app.hosts.get().host.status = "offline";
+    expect((await overview(h.base)).attention.map((item) => item.kind)).toEqual(["host.offline"]);
+  });
+
+  test("the item clears once a pass finds the rules right, since the check is what decides", async () => {
+    const h = start();
+    await makeBox(h.base, "agent", undefined, { egress: { mode: "proxy-only", domains: ["example.com"] } });
+    h.runtime.forwardVerdict = { forwarding: false, cause: "policy", detail: "iptables FORWARD policy is DROP" };
+    await h.app.egressForward.tick();
+    expect((await overview(h.base)).attention.map((item) => item.kind)).toEqual(["host.forward_blocked"]);
+
+    h.runtime.forwardVerdict = { forwarding: true, cause: null, detail: "iptables accepts the uplink" };
+    h.app.egressForward.hostOnline(h.app.hosts.get().host.id);
+    await h.app.egressForward.tick();
+    expect((await overview(h.base)).attention).toEqual([]);
+  });
+
   test("boxes that reserve more memory than the host allows are a warning, with the booked and allowed bytes", async () => {
     const h = start();
     h.app.monitor.snapshot = async () => TIGHT_HOST;

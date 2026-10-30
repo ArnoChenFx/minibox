@@ -77,6 +77,8 @@ export const SESSION_OPERATIONS = ["execResize", "execInspect", "execKill"] as c
  */
 export const REFUSED_OPERATIONS = [
   "commitContainer",
+  "checkHostForward",
+  "allowHostForward",
   "putArchive",
   "writeContainerFile",
   "getArchive",

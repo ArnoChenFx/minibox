@@ -767,6 +767,9 @@ async function recordScenario(): Promise<Exchange[]> {
     // What a host's engine holds (`docker system df`), and a host id no host carries.
     await send("read the engine storage of the local host", "GET", "/api/hosts/local/disk");
     await send("read the engine storage of a missing host", "GET", "/api/hosts/nowhere/disk");
+    // The egress forward check, and the repair the owner confirms from the overview.
+    await post("repair forwarding on a host with no proxy-only box", "/api/hosts/local/forward", {});
+    await post("repair forwarding on a missing host", "/api/hosts/nowhere/forward", {});
 
     const portBox = boxId(
       (await post("create a box to export", "/api/boxes", { name: "portbox", cpus: 1, memoryMb: 256 })).json,

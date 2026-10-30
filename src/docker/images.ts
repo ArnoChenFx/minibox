@@ -103,6 +103,8 @@ export function imageMethods(engine: Engine): ImageMethods {
             dockerfile: spec.dockerfile,
             buildargs: spec.args,
             ...(spec.target === undefined ? {} : { target: spec.target }),
+            ...(spec.pull === true ? { pull: true } : {}),
+            ...(spec.noCache === true ? { nocache: true } : {}),
           },
         );
         return await new Promise<string>((resolve, reject) => {

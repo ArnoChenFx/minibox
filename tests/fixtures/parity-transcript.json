@@ -2152,6 +2152,22 @@
     "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Host “nowhere” was not found.\",\"retryable\":false,\"key\":\"host_not_found\",\"params\":{\"host\":\"nowhere\"}}}"
   },
   {
+    "step": "repair forwarding on a host with no proxy-only box",
+    "method": "POST",
+    "path": "/api/hosts/local/forward",
+    "status": 409,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"conflict\",\"message\":\"This host has no proxy-only box, so nothing needs its FORWARD chain. Nothing was changed.\",\"retryable\":false,\"key\":\"egress_forward_no_boxes\"}}"
+  },
+  {
+    "step": "repair forwarding on a missing host",
+    "method": "POST",
+    "path": "/api/hosts/nowhere/forward",
+    "status": 404,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Host “nowhere” was not found.\",\"retryable\":false,\"key\":\"host_not_found\",\"params\":{\"host\":\"nowhere\"}}}"
+  },
+  {
     "step": "create a box to export",
     "method": "POST",
     "path": "/api/boxes",
