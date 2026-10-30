@@ -129,7 +129,7 @@ describe.skipIf(!executablePath)("a tool's JSON description (real browser)", () 
     // A load without a fragment is a real navigation, which closes any dialog a test left open.
     await page.goto(consoleUrl);
     await page.goto(`${consoleUrl}/#${boxHash}`);
-    await webExpect(page.locator("#bdToolRows .spinner")).toHaveCount(0);
+    await webExpect(page.locator("#bdToolRows .skeleton")).toHaveCount(0);
     await webExpect(page.locator('#bdToolRows [data-action="tool-copy-json"]').first()).toBeVisible();
   }
 
@@ -178,6 +178,34 @@ describe.skipIf(!executablePath)("a tool's JSON description (real browser)", () 
     app?.tokens.stop();
     app?.events.close();
   });
+
+  test(
+    "while the catalog loads the table holds placeholder rows, which give way to the tools",
+    async () => {
+      const { promise: held, resolve: release } = Promise.withResolvers<void>();
+      await page.route("**/api/tools?id=*", async (route) => {
+        await held;
+        await route.continue();
+      });
+      try {
+        await page.goto(consoleUrl);
+        await page.goto(`${consoleUrl}/#${boxHash}`);
+        // Eight rows of five cells, each a shimmering line, in the table's own columns; the words are for a screen reader.
+        await webExpect(page.locator("#bdToolRows")).toHaveAttribute("aria-busy", "true");
+        await webExpect(page.locator("#bdToolRows tr")).toHaveCount(8);
+        await webExpect(page.locator("#bdToolRows .skeleton")).toHaveCount(40);
+        await webExpect(page.locator("#bdToolRows .sr-only")).toHaveText("Loading catalog…");
+        await webExpect(page.locator("#bdToolRows .spinner")).toHaveCount(0);
+      } finally {
+        release();
+      }
+      await webExpect(page.locator('#bdToolRows [data-action="tool-copy-json"]').first()).toBeVisible();
+      await page.unroute("**/api/tools?id=*");
+      await webExpect(page.locator("#bdToolRows .skeleton")).toHaveCount(0);
+      await webExpect(page.locator("#bdToolRows")).not.toHaveAttribute("aria-busy", "true");
+    },
+    TIMEOUT_MS,
+  );
 
   test(
     "a built-in tool's copy button puts its catalog entry on the clipboard as valid JSON, with the entry's commands",
