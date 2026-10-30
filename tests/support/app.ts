@@ -77,6 +77,7 @@ export function testConfig(overrides: Partial<Config> = {}): Config {
     egressForwardCheckIntervalSec: 600,
     hostDiskMinFreePercent: 10,
     blockHostGateway: false,
+    egressAllowRanges: [],
     sshPort: null,
     sshBind: "127.0.0.1",
     sshPublicHost: null,

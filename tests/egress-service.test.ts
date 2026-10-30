@@ -3,6 +3,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:tes
 import type { App } from "../src/app";
 import { hostFirewallChain } from "../src/docker/host-firewall";
 import { type EgressPolicy, normalizeEgress } from "../src/egress/policy";
+import { proxyEnv, proxyEnvMatches } from "../src/egress/proxy";
 import type { HostCtx } from "../src/host/registry";
 import { AppError } from "../src/lib/errors";
 import { RuntimeError } from "../src/runtime";
@@ -248,6 +249,95 @@ describe("BLOCK_HOST_GATEWAY", () => {
     await newBox("plain");
 
     expect(runtime.hostIngressBlock).toEqual([]);
+  });
+});
+
+describe("allowed private ranges", () => {
+  test("proxyEnv sets the ranges variable only when there are ranges", () => {
+    const without = ['MINIBOX_EGRESS_ALLOW=["example.com"]', "MINIBOX_EGRESS_PORT=3128"];
+    expect(proxyEnv(["example.com"])).toEqual(without);
+    expect(proxyEnv(["example.com"], [])).toEqual(without);
+    expect(proxyEnv(["example.com"], ["198.18.0.0/15"])).toEqual([
+      ...without,
+      'MINIBOX_EGRESS_RANGES=["198.18.0.0/15"]',
+    ]);
+  });
+
+  test("a proxy is reused only when its environment is the one wanted, ranges present or absent", () => {
+    const wanted = proxyEnv(["example.com"], ["198.18.0.0/15"]);
+    expect(proxyEnvMatches(wanted, wanted)).toBe(true);
+    expect(proxyEnvMatches(proxyEnv(["example.com"]), wanted)).toBe(false);
+    expect(proxyEnvMatches(wanted, proxyEnv(["example.com"]))).toBe(false);
+    expect(
+      proxyEnvMatches(proxyEnv(["example.com"], ["198.18.0.0/15"]), proxyEnv(["example.com"], ["100.64.0.0/10"])),
+    ).toBe(false);
+    expect(proxyEnvMatches(proxyEnv(["other.com"], ["198.18.0.0/15"]), wanted)).toBe(false);
+  });
+
+  test("a proxy-only box's proxy carries EGRESS_ALLOW_RANGES, and an unchanged setting reuses that proxy", async () => {
+    ({ app, runtime, host } = setup({ egressAllowRanges: ["198.18.0.0/15"] }));
+    const box = await newBox("fake-ip", { egress: proxyOnly() });
+    const [proxy] = proxiesOf(box.boxId);
+    if (!proxy) throw new Error("no proxy");
+    expect(proxy.spec.env).toContain('MINIBOX_EGRESS_RANGES=["198.18.0.0/15"]');
+
+    await boxes.stopBox(host, box.name);
+    await boxes.startBox(host, box.name);
+
+    expect(proxiesOf(box.boxId).map((candidate) => candidate.id)).toEqual([proxy.id]);
+  });
+
+  test("setting EGRESS_ALLOW_RANGES replaces a proxy that was created without it", async () => {
+    const box = await newBox("fake-ip", { egress: proxyOnly() });
+    const before = proxiesOf(box.boxId)[0];
+    expect((before?.spec.env ?? []).some((entry) => entry.startsWith("MINIBOX_EGRESS_RANGES="))).toBe(false);
+
+    host.security.egressAllowRanges = ["198.18.0.0/15"];
+    await boxes.stopBox(host, box.name);
+    await boxes.startBox(host, box.name);
+
+    const after = proxiesOf(box.boxId);
+    expect(after).toHaveLength(1);
+    expect(after[0]?.id).not.toBe(before?.id);
+    expect(after[0]?.spec.env).toContain('MINIBOX_EGRESS_RANGES=["198.18.0.0/15"]');
+  });
+
+  test("removing EGRESS_ALLOW_RANGES replaces the proxy, so the next one allows no private ranges", async () => {
+    ({ app, runtime, host } = setup({ egressAllowRanges: ["198.18.0.0/15"] }));
+    const box = await newBox("fake-ip", { egress: proxyOnly() });
+    const before = proxiesOf(box.boxId)[0];
+    expect(before?.spec.env).toContain('MINIBOX_EGRESS_RANGES=["198.18.0.0/15"]');
+
+    host.security.egressAllowRanges = [];
+    await boxes.stopBox(host, box.name);
+    await boxes.startBox(host, box.name);
+
+    const after = proxiesOf(box.boxId);
+    expect(after).toHaveLength(1);
+    expect(after[0]?.id).not.toBe(before?.id);
+    expect((after[0]?.spec.env ?? []).some((entry) => entry.startsWith("MINIBOX_EGRESS_RANGES="))).toBe(false);
+  });
+
+  test("starting a box that is already running replaces its proxy and leaves the box's container alone", async () => {
+    const box = await newBox("fake-ip", { egress: proxyOnly() });
+    const before = proxiesOf(box.boxId)[0];
+    host.security.egressAllowRanges = ["198.18.0.0/15"];
+
+    const started = await boxes.startBox(host, box.name);
+
+    expect(started.id).toBe(box.id);
+    expect(runtime.containers.get(box.id)?.running).toBe(true);
+    // A restart or stop of the box would show up here; replacing the proxy only touches the proxy's container.
+    const touched = runtime.calls.filter(
+      (call) =>
+        (call.op === "restartContainer" || call.op === "stopContainer" || call.op === "removeContainer") &&
+        call.args[0] === box.id,
+    );
+    expect(touched).toEqual([]);
+    const after = proxiesOf(box.boxId);
+    expect(after).toHaveLength(1);
+    expect(after[0]?.id).not.toBe(before?.id);
+    expect(after[0]?.spec.env).toContain('MINIBOX_EGRESS_RANGES=["198.18.0.0/15"]');
   });
 });
 

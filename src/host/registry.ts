@@ -49,6 +49,8 @@ interface HostSecurity {
   network: string;
   /** Keeps boxes on the default network off the host. See `BLOCK_HOST_GATEWAY`. */
   blockHostGateway: boolean;
+  /** Private IPv4 networks an egress proxy may reach anyway, from `EGRESS_ALLOW_RANGES`. Empty leaves the proxy as it was. */
+  egressAllowRanges: string[];
 }
 
 /** What a host can give to boxes. Null where the engine does not report the figure. */
@@ -234,6 +236,7 @@ export function createHost(cfg: Config, runtime: Runtime, shared: SharedStores, 
       runtime: cfg.containerRuntime,
       network: boxNetworkName(cfg.labelPrefix),
       blockHostGateway: cfg.blockHostGateway,
+      egressAllowRanges: cfg.egressAllowRanges,
     },
     monitor: new HostMonitor(() => ctx, cfg.metricsIntervalMs, cfg.metricsHistory, shared.live),
     sampler: new HostSampler(
