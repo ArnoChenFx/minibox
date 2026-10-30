@@ -498,10 +498,11 @@ describe("a fork that fails", () => {
   });
 });
 
-describe("forking the bundled base template", () => {
-  const forkBase = async (l: Lab, name = "base-copy") =>
-    forkTemplate(l.host, await templateSourceImage(l.host, l.host.baseTemplateTag), { name, createdBy: "owner" });
+/** A fork of the bundled base template on `l`, as the console's fork action makes one. */
+const forkBase = async (l: Lab, name = "base-copy") =>
+  forkTemplate(l.host, await templateSourceImage(l.host, l.host.baseTemplateTag), { name, createdBy: "owner" });
 
+describe("forking the bundled base template", () => {
   test("the fork is a custom template with its own copy of the base Dockerfile, and the base template is untouched", async () => {
     const l = lab();
 
