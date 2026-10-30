@@ -165,7 +165,8 @@ function hostActions(host, hosts) {
   // Only an offline host can have been lost. The ordinary removal still answers first: it works when nothing is left,
   // and its 409 names what holds it, which is the moment the force path is meant for.
   if (!forceRemoveShown(host)) return remove;
-  const force = `<button class="btn btn-sm" data-force-remove-host="${esc(host.id)}" data-host-name="${esc(label)}" data-host-agent="${host.agent ? "true" : "false"}">${icon("alert")}${t("st.hostForceRemove")}</button>`;
+  // A text-only secondary action: the full label fits beside Remove, wrapping onto a second line where it must.
+  const force = `<button class="btn btn-sm" data-force-remove-host="${esc(host.id)}" data-host-name="${esc(label)}" data-host-agent="${host.agent ? "true" : "false"}">${t("st.hostForceRemove")}</button>`;
   return `${remove}${force}`;
 }
 

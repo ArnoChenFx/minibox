@@ -30,9 +30,8 @@ interface Rect {
 
 interface ActionLayout {
   overflow: number;
-  /** The table's width when squeezed to its minimum, so a wider second action shows up even when the card has room. */
-  minWidth: number;
   viewport: number;
+  actions: Rect;
   remove: Rect;
   force: Rect;
 }
@@ -43,7 +42,7 @@ const measure = (page: Page): Promise<ActionLayout | null> =>
     interface El {
       scrollWidth: number;
       clientWidth: number;
-      style: { width: string };
+      parentElement: El | null;
       getBoundingClientRect(): {
         left: number;
         right: number;
@@ -58,10 +57,10 @@ const measure = (page: Page): Promise<ActionLayout | null> =>
       innerWidth: number;
     };
     const wrap = view.document.querySelector("#stHosts .table-wrap");
-    const table = view.document.querySelector("#stHosts .host-table");
     const remove = view.document.querySelector("#stHosts [data-remove-host='edge']");
     const force = view.document.querySelector("#stHosts [data-force-remove-host='edge']");
-    if (!wrap || !table || !remove || !force) return null;
+    const actions = force?.parentElement ?? null;
+    if (!wrap || !remove || !force || !actions) return null;
     const box = (el: El): Rect => {
       const rect = el.getBoundingClientRect();
       return {
@@ -73,12 +72,13 @@ const measure = (page: Page): Promise<ActionLayout | null> =>
         height: rect.height,
       };
     };
-    const overflow = wrap.scrollWidth - wrap.clientWidth;
-    // Squeezed to 1px, the auto-layout table takes its minimum width. Restored before anything else is measured.
-    table.style.width = "1px";
-    const minWidth = table.getBoundingClientRect().width;
-    table.style.width = "";
-    return { overflow, minWidth, viewport: view.innerWidth, remove: box(remove), force: box(force) };
+    return {
+      overflow: wrap.scrollWidth - wrap.clientWidth,
+      viewport: view.innerWidth,
+      actions: box(actions),
+      remove: box(remove),
+      force: box(force),
+    };
   });
 
 /** Whether two boxes share any area. */
@@ -166,11 +166,11 @@ describe.skipIf(!executablePath)("the host force-removal button fits the hosts t
             expect(box.right).toBeLessThanOrEqual(layout.viewport);
           }
 
-          // The second action does not widen the table: with it hidden, the table's minimum width is the same.
+          // The second action does not widen the row: with it hidden, the actions column is no narrower.
           await page.addStyleTag({ content: "[data-force-remove-host]{display:none!important}" });
           const baseline = await measure(page);
           expect(baseline?.overflow).toBe(0);
-          expect(layout.minWidth).toBeLessThanOrEqual((baseline?.minWidth ?? 0) + 1);
+          expect(layout.actions.width).toBeLessThanOrEqual((baseline?.actions.width ?? 0) + 1);
         } finally {
           await context.close();
         }
