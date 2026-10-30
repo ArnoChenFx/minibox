@@ -246,6 +246,13 @@ describe.skipIf(!executablePath)("editing a template from the Templates page (re
       // Its Dockerfile ships with MiniBox, so there is no field to edit and the dialog says why.
       await webExpect(dialog().locator("#teDockerfile")).toHaveCount(0);
       await webExpect(dialog()).toContainText("built from MiniBox's own Dockerfile");
+      // The blocks of the form are spaced apart, the two notes among them: no block touches the one above it.
+      await page.waitForTimeout(500);
+      const gaps = (await page.evaluate(
+        `(() => { const rects = []; for (const el of document.querySelector(".dialog .form-stack").children) { const r = el.getBoundingClientRect(); rects.push({ top: r.top, bottom: r.bottom }); } return rects.map((r, i) => (i === 0 ? 16 : r.top - rects[i - 1].bottom)); })()`,
+      )) as number[];
+      expect(gaps.length).toBeGreaterThanOrEqual(4);
+      expect(Math.min(...gaps)).toBeGreaterThanOrEqual(12);
 
       sent.length = 0;
       await dialog().locator("#tePorts").fill("8080");

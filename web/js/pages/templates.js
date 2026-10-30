@@ -172,6 +172,7 @@ export function render(view, focusName = "") {
     const { shown, toggle } = limitList(view, "templates", matches, {
       keep: (tp) => tp.name === pendingFocus,
       searching: searchTerms(query).length > 0,
+      defaultExpanded: true,
     });
     grid.innerHTML = shown
       .map((tp) => {

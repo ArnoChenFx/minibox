@@ -44,6 +44,10 @@ describe("i18n dictionaries", () => {
   test("translations keep the same placeholders", () => {
     for (const [k, v] of Object.entries(en)) expect([k, placeholders(zh[k] ?? "")]).toEqual([k, placeholders(v)]);
   });
+  test("no translation carries markdown, which the console prints as it is", () => {
+    for (const words of [en, zh])
+      for (const [k, v] of Object.entries(words)) expect([k, v.includes("**")]).toEqual([k, false]);
+  });
   test("every server message key has a UI translation", () => {
     for (const k of Object.keys(MESSAGES)) expect([k, `err.${k}` in en]).toEqual([k, true]);
   });
