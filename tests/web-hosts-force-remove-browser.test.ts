@@ -30,6 +30,8 @@ interface Rect {
 
 interface ActionLayout {
   overflow: number;
+  /** The table's width when squeezed to its minimum, so a wider second action shows up even when the card has room. */
+  minWidth: number;
   viewport: number;
   remove: Rect;
   force: Rect;
@@ -41,6 +43,7 @@ const measure = (page: Page): Promise<ActionLayout | null> =>
     interface El {
       scrollWidth: number;
       clientWidth: number;
+      style: { width: string };
       getBoundingClientRect(): {
         left: number;
         right: number;
@@ -55,9 +58,10 @@ const measure = (page: Page): Promise<ActionLayout | null> =>
       innerWidth: number;
     };
     const wrap = view.document.querySelector("#stHosts .table-wrap");
+    const table = view.document.querySelector("#stHosts .host-table");
     const remove = view.document.querySelector("#stHosts [data-remove-host='edge']");
     const force = view.document.querySelector("#stHosts [data-force-remove-host='edge']");
-    if (!wrap || !remove || !force) return null;
+    if (!wrap || !table || !remove || !force) return null;
     const box = (el: El): Rect => {
       const rect = el.getBoundingClientRect();
       return {
@@ -69,12 +73,12 @@ const measure = (page: Page): Promise<ActionLayout | null> =>
         height: rect.height,
       };
     };
-    return {
-      overflow: wrap.scrollWidth - wrap.clientWidth,
-      viewport: view.innerWidth,
-      remove: box(remove),
-      force: box(force),
-    };
+    const overflow = wrap.scrollWidth - wrap.clientWidth;
+    // Squeezed to 1px, the auto-layout table takes its minimum width. Restored before anything else is measured.
+    table.style.width = "1px";
+    const minWidth = table.getBoundingClientRect().width;
+    table.style.width = "";
+    return { overflow, minWidth, viewport: view.innerWidth, remove: box(remove), force: box(force) };
   });
 
 /** Whether two boxes share any area. */
@@ -161,6 +165,12 @@ describe.skipIf(!executablePath)("the host force-removal button fits the hosts t
             expect(box.left).toBeGreaterThanOrEqual(0);
             expect(box.right).toBeLessThanOrEqual(layout.viewport);
           }
+
+          // The second action does not widen the table: with it hidden, the table's minimum width is the same.
+          await page.addStyleTag({ content: "[data-force-remove-host]{display:none!important}" });
+          const baseline = await measure(page);
+          expect(baseline?.overflow).toBe(0);
+          expect(layout.minWidth).toBeLessThanOrEqual((baseline?.minWidth ?? 0) + 1);
         } finally {
           await context.close();
         }

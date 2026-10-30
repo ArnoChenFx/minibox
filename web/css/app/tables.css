@@ -79,7 +79,8 @@ table.table {
 .table.host-table [data-force-remove-host] {
   height: auto;
   min-height: 28px;
-  padding: 4px 8px;
+  padding: 4px 6px;
+  gap: 4px;
   line-height: 1.15;
   white-space: normal;
 }
