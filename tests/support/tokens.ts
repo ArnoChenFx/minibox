@@ -35,6 +35,7 @@ export function startHarness(
       app.throttle.stop();
       app.sessions.stop();
       app.tokens.stop();
+      app.terminals.shutdown();
       app.events.close();
     },
   };

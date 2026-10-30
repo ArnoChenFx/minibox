@@ -105,6 +105,7 @@ describe.skipIf(!executablePath)("the console's top navigation (real browser)", 
     app?.throttle.stop();
     app?.sessions.stop();
     app?.tokens.stop();
+    app?.terminals.shutdown();
     app?.events.close();
   });
 

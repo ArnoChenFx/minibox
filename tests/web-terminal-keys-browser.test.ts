@@ -177,6 +177,7 @@ describe.skipIf(!executablePath)("the terminal's key row (real browser)", () => 
     app?.throttle.stop();
     app?.sessions.stop();
     app?.tokens.stop();
+    app?.terminals.shutdown();
     app?.events.close();
   });
 
