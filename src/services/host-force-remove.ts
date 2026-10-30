@@ -133,9 +133,11 @@ export function recordsChanged(records: HostRecords): AppError {
  * as orphans MiniBox no longer knows about. Box records are cleared as a box delete clears them without its engine, and
  * schedules and pending rollbacks that name the host are dropped with them.
  *
- * Each store is closed and read under its own lock, and a write that arrives after that is refused by the store
- * (`host_gone`), so a create, checkpoint or volume that was already on its way cannot put a record back. The set is
- * re-read there rather than taken from the preview, so a spec that has since moved to another host is left alone.
+ * Each store is closed before anything is read, and the read-and-drop runs synchronously, so a write that arrives
+ * afterwards is refused by the store (`host_gone`) and one already on disk is listed and removed. A store lock is
+ * deliberately not taken: a create holds the volume lock across an engine helper, and a lost machine must not stay
+ * listed until that call returns. The set is read here rather than taken from the preview, so a spec that has since
+ * moved to another host is left alone.
  *
  * A confirmation may name the digest of the preview it saw. When the records are no longer that set, nothing is removed,
  * the host is put back into service and the caller answers with a fresh preview instead.
