@@ -12,13 +12,16 @@ import { newCheckpointId } from "../src/checkpoints/id";
 import { SCHEDULE_VERSION } from "../src/checkpoints/schedule";
 import { ROLLBACK_VERSION } from "../src/checkpoints/types";
 import { hostsPath } from "../src/data-dir";
+import { sharedStore } from "../src/host/gone";
 import { setLogSink } from "../src/lib/logger";
 import { startServer } from "../src/server";
+import { createBox } from "../src/services/box-create";
 import { newBoxId } from "../src/specs/revision";
 import { requiredScopes, scopeAllowed } from "../src/tokens/model";
+import { reserveVolumeRemoval, reserveVolumeSnapshot } from "../src/volumes/activity";
 import type { SocketData } from "../src/ws/socket";
 import { silenceLogs, TEST_KEY, testConfig } from "./support/app";
-import { FakeRuntime } from "./support/fake-runtime";
+import { FakeRuntime, type Op } from "./support/fake-runtime";
 import { FakeCheckpointEngine } from "./support/fake-snapshots";
 
 const GIB = 1024 ** 3;
@@ -465,6 +468,8 @@ describe("a record written while the removal runs cannot come back", () => {
     expect(late.status).toBe(409);
     expect(await errorOf(late)).toMatchObject({ key: "host_gone" });
     expect(recordsOf("edge")).toEqual({ specs: [], volumes: [], checkpoints: [] });
+    // The container is not made at all: the registration it holds is gone, though a host of the same id is back.
+    expect(edge.callsTo("createContainer")).toEqual([]);
 
     // Adding the id again lists no ghost of the box the held create would have made.
     const listed = (await (await api("/api/boxes")).json()) as { boxes: { name: string }[] };
@@ -645,5 +650,159 @@ describe("the linked records a forced removal and a box delete clear", () => {
     expect(deleted.status).toBe(200);
     expect(host.checkpoints.readSchedule(box.boxId)).toBeNull();
     expect(host.checkpoints.pendingRollback(box.boxId)).toBeNull();
+  });
+});
+
+/** Takes the edge host away, then adds the same id again, so a request holding the old registration meets a live host. */
+async function removeAndReadd(): Promise<void> {
+  app.hosts.get("edge").host.status = "offline";
+  expect((await post("/api/hosts/edge/force-remove", { confirm: true })).status).toBe(200);
+  expect((await post("/api/hosts", { id: "edge", endpoint: `unix://${EDGE_SOCKET}` })).status).toBe(201);
+}
+
+/** The engine calls that make something. A request on a removed registration must make none after the removal. */
+const MAKING: readonly Op[] = ["createVolume", "runHelper", "createContainer", "startContainer"];
+const madeSince = (from: number): Op[] =>
+  edge.calls
+    .slice(from)
+    .map((call) => call.op)
+    .filter((op) => MAKING.includes(op));
+
+/**
+ * Makes the first call of `runtime` to `method` wait until `release`. `hold` can gate only the engine calls that
+ * FakeRuntime awaits a gate in, and these two are not among them.
+ */
+function stallOnce(runtime: FakeRuntime, method: "ensureBridgeNetwork" | "setHostIngressBlock") {
+  const original = runtime[method].bind(runtime) as (...args: unknown[]) => Promise<unknown>;
+  let reached = false;
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  (runtime as unknown as Record<string, unknown>)[method] = async (...args: unknown[]) => {
+    if (reached) return original(...args);
+    reached = true;
+    await gate;
+    return original(...args);
+  };
+  return { reached: () => reached, release };
+}
+
+describe("a create that holds a removed registration stops at its next step", () => {
+  test("a create begun on the old registration makes nothing once the id is back", async () => {
+    const old = app.hosts.get("edge");
+    await removeAndReadd();
+    const from = edge.calls.length;
+    await expect(createBox(old, { name: "stale", cpus: 1, memoryMb: 256 })).rejects.toMatchObject({ key: "host_gone" });
+    expect(madeSince(from)).toEqual([]);
+    // Not even the shared network is made for it.
+    expect(edge.callsTo("ensureBridgeNetwork")).toEqual([]);
+  });
+
+  test("a create held before its first lock makes no volume or container once the id is back", async () => {
+    // The create is on its way to the first spec lock, with the box network still to be checked.
+    const stall = stallOnce(edge, "ensureBridgeNetwork");
+    const creating = post("/api/boxes", { name: "early", cpus: 1, memoryMb: 256, host: "edge" });
+    await until(stall.reached, "the create to reach the box network");
+    await removeAndReadd();
+    const from = edge.calls.length;
+    stall.release();
+
+    const late = await creating;
+    expect(late.status).toBe(409);
+    expect(await errorOf(late)).toMatchObject({ key: "host_gone" });
+    expect(madeSince(from)).toEqual([]);
+    expect(recordsOf("edge")).toEqual({ specs: [], volumes: [], checkpoints: [] });
+  });
+
+  test("a create held after its volumes, before its spec lock, makes no container once the id is back", async () => {
+    // The helper that hands the new volumes to the box's user runs after the last volume is made, before the spec lock.
+    const gate = edge.hold("runHelper", () => edge.callsTo("createVolume").length > 0);
+    const creating = post("/api/boxes", { name: "volumes", cpus: 1, memoryMb: 256, host: "edge" });
+    await until(() => {
+      const made = edge.calls.findIndex((call) => call.op === "createVolume");
+      return made >= 0 && edge.calls.slice(made).some((call) => call.op === "runHelper");
+    }, "the volume helper");
+    await removeAndReadd();
+    const from = edge.calls.length;
+    gate.release();
+
+    const late = await creating;
+    expect(late.status).toBe(409);
+    expect(await errorOf(late)).toMatchObject({ key: "host_gone" });
+    expect(madeSince(from)).toEqual([]);
+  });
+
+  test("a create held after its spec never starts its container once the id is back", async () => {
+    const stall = stallOnce(edge, "setHostIngressBlock");
+    const creating = post("/api/boxes", {
+      name: "walled",
+      cpus: 1,
+      memoryMb: 256,
+      host: "edge",
+      egress: { mode: "proxy-only", presets: ["agent-default"] },
+    });
+    await until(stall.reached, "the create to reach the host firewall");
+    await removeAndReadd();
+    const from = edge.calls.length;
+    stall.release();
+
+    const late = await creating;
+    expect(late.status).toBe(409);
+    expect(await errorOf(late)).toMatchObject({ key: "host_gone" });
+    expect(madeSince(from)).toEqual([]);
+  });
+
+  test("a create whose host goes while it finishes is taken back, not left running with no record", async () => {
+    let entered = false;
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    // The last step of a create: the container is started and the spec written, and the box is about to be read back.
+    app.hosts.get("edge").sampler.observe = async () => {
+      entered = true;
+      await held;
+    };
+    const creating = post("/api/boxes", { name: "finishing", cpus: 1, memoryMb: 256, host: "edge" });
+    await until(() => entered, "the create to reach its last step");
+    expect(edge.containers.size).toBe(1);
+    // The id is not added again: a host that comes back adopts the engine volumes this create made, and that is not what is checked.
+    app.hosts.get("edge").host.status = "offline";
+    expect((await post("/api/hosts/edge/force-remove", { confirm: true })).status).toBe(200);
+    release();
+
+    const late = await creating;
+    expect(late.status).toBe(409);
+    expect(await errorOf(late)).toMatchObject({ key: "host_gone" });
+    expect(edge.containers.size).toBe(0);
+    expect(edge.volumes.size).toBe(0);
+    expect(recordsOf("edge")).toEqual({ specs: [], volumes: [], checkpoints: [] });
+  });
+});
+
+describe("a registration that is gone stays gone", () => {
+  test("an ordinary removal retires it too: the old context cannot write once the id is added again", async () => {
+    const local = await boxOn(undefined, "base");
+    const spec = { ...app.hosts.get().specs.read(local.boxId)!, hostId: "edge" };
+    const old = app.hosts.get("edge");
+    expect((await api("/api/hosts/edge", { method: "DELETE" })).status).toBe(200);
+    expect((await post("/api/hosts", { id: "edge", endpoint: `unix://${EDGE_SOCKET}` })).status).toBe(201);
+
+    expect(() => old.specs.write(spec)).toThrow(expect.objectContaining({ key: "host_gone" }));
+    expect(() => app.hosts.get("edge").specs.write(spec)).not.toThrow();
+  });
+
+  test("what is kept per store outlives a registration: a snapshot reserved on the old one still blocks a removal", async () => {
+    const releaseSnapshot = reserveVolumeSnapshot(app.hosts.get("edge"), "mbfrc-vol");
+    expect(releaseSnapshot).not.toBeNull();
+    await removeAndReadd();
+    const fresh = app.hosts.get("edge");
+    expect(sharedStore(fresh.volumes)).toBe(sharedStore(app.hosts.get().volumes));
+    expect(reserveVolumeRemoval(fresh, "mbfrc-vol")).toBeNull();
+    releaseSnapshot?.();
+    const removal = reserveVolumeRemoval(fresh, "mbfrc-vol");
+    expect(removal).not.toBeNull();
+    removal?.();
   });
 });

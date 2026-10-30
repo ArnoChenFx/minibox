@@ -176,7 +176,6 @@ export function discardHostRecords(host: HostCtx, expectedDigest?: string): Disc
     host.volumes.openHost(id);
     return { changed: true, records };
   }
-  host.lifetime.retire();
   for (const box of records.boxes) {
     // Read again rather than trusting the list above: a move may have written this spec to another host meanwhile,
     // and another host's record must not go with this one.

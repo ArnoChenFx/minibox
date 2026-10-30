@@ -174,7 +174,15 @@ export async function createBox(
     await undoCreate(host, attempt);
     throw e;
   }
-  return getBox(host, containerId);
+  try {
+    return await getBox(host, containerId);
+  } catch (e) {
+    // The host may have been removed after the container started: its records went with it, so the box cannot be read
+    // back or claimed. The create is taken back like one that failed earlier, rather than left running with no record.
+    if (!host.lifetime.retired) throw e;
+    await undoCreate(host, attempt);
+    throw hostGone(host.host.id);
+  }
 }
 
 /**
@@ -382,7 +390,6 @@ async function buildBox(
   if (egress || security.blockHostGateway) await syncHostFirewall(host);
   host.lifetime.assertActive();
   await runtime.startContainer(containerId);
-  host.lifetime.assertActive();
   if (input.selfToken) await provisionSelfToken(host, { boxId: id, name: input.name }, containerId);
   await host.sampler.observe(containerId);
   host.pulse.touch(id, "create");
