@@ -140,7 +140,8 @@ describe.skipIf(!executablePath)("forking a template from the Templates page (re
     app?.events.close();
   });
 
-  const card = (name: string) => page.locator(`#tpGrid [data-name="${name}"]`);
+  // A card is a direct child of the grid: an unbuilt one also holds a Build button that carries the template name.
+  const card = (name: string) => page.locator(`#tpGrid > [data-name="${name}"]`);
   const dialog = () => page.getByRole("dialog");
 
   test(
@@ -194,6 +195,23 @@ describe.skipIf(!executablePath)("forking a template from the Templates page (re
     "the forked template can be rebuilt from its card, which a template saved from a box cannot",
     async () => {
       await webExpect(card("tool-copy-2").getByRole("button", { name: "Rebuild" })).toBeVisible();
+    },
+    TIMEOUT_MS,
+  );
+
+  test(
+    "an official template no host holds shows the Fork button off, and forcing a click opens nothing",
+    async () => {
+      // Nothing built `node` in this cluster, so its card is one no host holds.
+      const unbuilt = card("node");
+      await webExpect(unbuilt).toBeVisible();
+      const fork = unbuilt.getByRole("button", { name: "Fork", exact: true });
+      await webExpect(fork).toBeVisible();
+      await webExpect(fork).toBeDisabled();
+      await webExpect(fork).toHaveAttribute("title", /Build it first/);
+
+      await fork.click({ force: true });
+      await webExpect(dialog()).toHaveCount(0);
     },
     TIMEOUT_MS,
   );
