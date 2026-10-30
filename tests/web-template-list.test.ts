@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 
+import { ROOT } from "../src/config";
 import en from "../web/js/i18n/en.js";
 import zh from "../web/js/i18n/zh-CN.js";
 import {
@@ -148,6 +151,12 @@ describe("the fork action a card offers", () => {
     expect(en["tp.forkUnbuilt"]).toContain("Build it first");
     expect(zh["tp.forkUnbuilt"]).toContain("请先构建");
     expect(zh["tp.forkUnbuilt"]).not.toBe(en["tp.forkUnbuilt"]);
+  });
+
+  test("the page draws the button from the action, so the off one is disabled and carries the reason", () => {
+    const page = readFileSync(join(ROOT, "web", "js", "pages", "templates.js"), "utf8");
+    expect(page).toContain("forkAction(tp)");
+    expect(page).toMatch(/disabled title="\$\{esc\(t\(fork\.reason\)\)\}"/);
   });
 });
 
