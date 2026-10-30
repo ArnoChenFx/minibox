@@ -174,7 +174,15 @@ export async function createBox(
     await undoCreate(host, attempt);
     throw e;
   }
-  return getBox(host, containerId);
+  try {
+    return await getBox(host, containerId);
+  } catch (e) {
+    // The host may have been removed after the container started: its records went with it, so the box cannot be read
+    // back or claimed. The create is taken back like one that failed earlier, rather than left running with no record.
+    if (!host.lifetime.retired) throw e;
+    await undoCreate(host, attempt);
+    throw hostGone(host.host.id);
+  }
 }
 
 /**
@@ -239,6 +247,7 @@ async function buildBox(
   record?: RecordNote,
 ): Promise<string> {
   const { runtime, keys, prefix, security } = host;
+  host.lifetime.assertActive();
   if (host.specs.isClosed(host.host.id)) throw hostGone(host.host.id);
   if (host.specs.findByName(input.name)) throw conflict(msg("box_exists", { name: input.name }));
   if (input.selfToken) assertSelfTokenHost(host);
@@ -255,6 +264,7 @@ async function buildBox(
   const id = boxIdFor(host, input.id);
   attempt.boxId = id;
   const reserved = await host.specs.exclusive(async () => {
+    host.lifetime.assertActive();
     if (host.specs.isClosed(host.host.id)) throw hostGone(host.host.id);
     const planned = await planEgress(host, policy);
     if (!planned) return null;
@@ -274,6 +284,7 @@ async function buildBox(
 
   const containerId = await host.specs.exclusive(async () => {
     // The host may have been removed while this create was preparing its volumes, so nothing more is made for it.
+    host.lifetime.assertActive();
     if (host.specs.isClosed(host.host.id)) throw hostGone(host.host.id);
     if (host.specs.findByName(input.name)) throw conflict(msg("box_exists", { name: input.name }));
     const now = new Date().toISOString();
@@ -377,6 +388,7 @@ async function buildBox(
 
   if (egress) await ensureEgressProxy(host, { boxId: id, id: containerId, name: input.name }, egress);
   if (egress || security.blockHostGateway) await syncHostFirewall(host);
+  host.lifetime.assertActive();
   await runtime.startContainer(containerId);
   if (input.selfToken) await provisionSelfToken(host, { boxId: id, name: input.name }, containerId);
   await host.sampler.observe(containerId);

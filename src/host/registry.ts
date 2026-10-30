@@ -19,6 +19,7 @@ import { StartupLaunches } from "../services/startup";
 import { SpecStore } from "../specs/store";
 import { SelfTokenStore } from "../tokens/self-store";
 import { VolumeStore } from "../volumes/store";
+import { fenceHostWrites, HostLifetime } from "./gone";
 import { relabel, unlabel } from "./label";
 import { type LiveSink, NO_LIVE } from "./live";
 import { HostMonitor } from "./metrics";
@@ -98,6 +99,8 @@ const NO_FORWARD: ForwardWatch = {
 /** Everything business code needs to act on one host. `host.id` is the hostId the internal APIs are scoped by. */
 export interface HostCtx {
   host: Host;
+  /** Permanent lifetime of this registration, independent of a reused host id. */
+  lifetime: HostLifetime;
   runtime: Runtime;
   prefix: string;
   keys: LabelKeys;
@@ -213,7 +216,9 @@ export interface LocalHostOptions {
 
 /** The host every box has when no other is configured. Its runtime is passed in, so a test can supply a fake. */
 export function createHost(cfg: Config, runtime: Runtime, shared: SharedStores, identity: HostIdentity): HostCtx {
+  const lifetime = new HostLifetime(identity.id);
   const ctx: HostCtx = {
+    lifetime,
     host: {
       id: identity.id,
       name: identity.name,
@@ -244,12 +249,12 @@ export function createHost(cfg: Config, runtime: Runtime, shared: SharedStores, 
       { intervalMs: cfg.metricsIntervalMs, history: cfg.metricsHistory },
       shared.live,
     ),
-    specs: shared.specs,
-    volumes: shared.volumes,
+    specs: fenceHostWrites(shared.specs, lifetime, ["write"]),
+    volumes: fenceHostWrites(shared.volumes, lifetime, ["write"]),
     secrets: shared.secrets,
     pulse: shared.pulse,
-    checkpoints: shared.checkpoints,
-    selfTokens: shared.selfTokens,
+    checkpoints: fenceHostWrites(shared.checkpoints, lifetime, ["write", "writeSchedule", "writePendingRollback"]),
+    selfTokens: fenceHostWrites(shared.selfTokens, lifetime, ["issue"]),
     questions: shared.questions,
     fileUploadMaxBytes: cfg.fileUploadMaxMb * 1024 * 1024,
     checkpointEngine: shared.checkpointEngine,
