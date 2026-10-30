@@ -266,6 +266,31 @@ describe("the agent's own container and the volumes it runs on", () => {
     expect((await scoped.inspectContainer(mine)).id).toBe(mine);
   });
 
+  test("an engine that cannot say which container the agent is fails the call, and is asked again", async () => {
+    const rt = new FakeRuntime();
+    rt.seedImage(IMAGE);
+    const self = rt.seedContainer({ image: IMAGE, name: "the-agent", running: true, labels: MINE });
+    let asked = 0;
+    const scope = new AgentScope({
+      hostId: HOST,
+      dataDir: scratch,
+      runtime: rt,
+      record: freshScope(HOST),
+      findSelf: async () => {
+        asked += 1;
+        if (asked === 1) throw new RuntimeError("unavailable", "the engine is busy");
+        return { containerId: self, volumes: new Set<string>() };
+      },
+    });
+    const scoped = scopedRuntime(rt, scope);
+    // "Cannot tell" is not "not in a container": the first answer fails the call instead of leaving the agent free to
+    // manage itself, and is not kept as an answer.
+    await refusedAs(scoped.inspectContainer(self), "unavailable");
+    // Asked again, the engine says which container it is, and that one is not managed.
+    await refusedAs(scoped.inspectContainer(self), "not_found");
+    expect(asked).toBe(2);
+  });
+
   test("the container is found from the mount table, then from the hostname", async () => {
     const rt = new FakeRuntime();
     rt.seedImage(IMAGE);
