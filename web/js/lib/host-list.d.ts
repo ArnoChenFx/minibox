@@ -14,6 +14,18 @@ export declare function boxesOnHost<T extends HostedBox>(boxes: readonly T[], ho
 
 export declare const isUnreachable: (box: HostedBox) => boolean;
 
+/** One host, as `GET /api/hosts` lists it, for the decision to offer force removal. */
+export interface ForceRemovableHost {
+  id?: string;
+  transport?: string;
+  status?: string;
+  boxes?: number;
+  [key: string]: unknown;
+}
+
+/** Whether a host's row offers force removal: it is not this machine and its last check failed. */
+export declare const forceRemoveShown: (host: ForceRemovableHost | null | undefined) => boolean;
+
 export declare const HOST_BADGE: Record<string, string>;
 
 export interface LabelledHost {

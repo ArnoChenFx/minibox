@@ -2,6 +2,7 @@ import { join } from "node:path";
 
 import { ActivityLog } from "./activity";
 import { LoginLimiter } from "./auth";
+import { BackupScheduleStore } from "./backup/schedule-store";
 import type { SnapshotEngine } from "./checkpoints/engine";
 import { ResticEngine } from "./checkpoints/restic";
 import { CheckpointStore } from "./checkpoints/store";
@@ -40,10 +41,12 @@ import type { EngineTarget, Runtime } from "./runtime";
 import { SecretStore } from "./secrets/store";
 import { ActivityPulse } from "./services/activity-pulse";
 import { BackupService } from "./services/backup";
+import { BackupScheduler } from "./services/backup-schedule";
 import { CheckpointSweep } from "./services/checkpoint-retention";
 import { CheckpointScheduler } from "./services/checkpoint-schedule";
 import { ContainerWatch } from "./services/container-watch";
 import { FirewallStore } from "./services/egress-firewall";
+import { EgressForwardWatcher } from "./services/egress-forward";
 import { EgressLog } from "./services/egress-log";
 import { ExecManager } from "./services/exec";
 import { LifecycleWatcher } from "./services/lifecycle";
@@ -111,9 +114,13 @@ export interface App {
   checkpointSweep: CheckpointSweep;
   /** Takes the checkpoints that box schedules are due for. Only runs once the server has started. */
   checkpointScheduler: CheckpointScheduler;
+  /** Takes the backup that the instance's backup schedule is due for. Only runs once the server has started. */
+  backupScheduler: BackupScheduler;
   tasks: TaskManager;
   /** Backups of DATA_DIR: created, kept, and streamed to a download or a target. */
   backups: BackupService;
+  /** The one backup schedule of this instance: its file, its next run and its last run. Off until one is set. */
+  backupSchedule: BackupScheduleStore;
   /** Off-site targets that packages and backups are pushed to and pulled from. */
   targets: TargetService;
   operations: Executor;
@@ -133,6 +140,11 @@ export interface App {
   lifecycle: LifecycleWatcher;
   /** Samples each volume's usage and raises the limit and host disk events. See `VOLUME_USAGE_INTERVAL_SEC`. */
   volumeUsage: VolumeUsageWatcher;
+  /**
+   * Checks that a `proxy-only` box's traffic is still forwarded by its host, and lists the condition on the overview.
+   * See `EGRESS_FORWARD_CHECK_INTERVAL_SEC`.
+   */
+  egressForward: EgressForwardWatcher;
   ssh: SshGateway;
   /** The owner's SSH public keys, which log in to every box over direct SSH. */
   sshKeys: SshKeyStore;
@@ -244,6 +256,8 @@ function openTaskStore(path: string): TaskStore {
 
 export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App {
   const hosts = new HostRegistry();
+  // Built before the local host, so that host is given the check its boxes' starts and the overview ask for.
+  const egressForward = new EgressForwardWatcher({ hosts, everyMs: cfg.egressForwardCheckIntervalSec * 1000 });
   const specs = new SpecStore(cfg.dataDir);
   const volumes = new VolumeStore(cfg.dataDir);
   const bus = new Bus<AppTopics>();
@@ -271,6 +285,7 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
       secrets,
       egress,
       firewall,
+      forward: egressForward,
       selfTokens,
       questions,
       activity,
@@ -278,7 +293,7 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
     },
   );
   hosts.add(local);
-  const knownSecrets = [cfg.accessKey];
+  const knownSecrets = [cfg.accessKey, ...(cfg.backupPassphrase ? [cfg.backupPassphrase] : [])];
   const redactor = createRedactor({ knownSecrets });
   const tokens = new TokenStore({
     file: tokensPath(cfg.dataDir),
@@ -295,6 +310,7 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
   const eventsPath = deps.eventsPath ?? join(cfg.dataDir, "events.db");
   const tasksPath = join(cfg.dataDir, "tasks.db");
   const events = openEventStore(eventsPath, redactor);
+  const backupSchedule = new BackupScheduleStore(cfg.dataDir);
   const backups = new BackupService({
     dataDir: cfg.dataDir,
     backupDir: cfg.backupDir,
@@ -370,6 +386,7 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
       multiHost,
       egress,
       firewall,
+      forward: egressForward,
       selfTokens,
       questions,
       activity,
@@ -384,6 +401,7 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
       containers.unwatch(host.host.id);
       startups.unwatch(host.host.id);
       host.sampler.stop();
+      egressForward.forget(host.host.id);
     },
     liftToolsVolume: async (host) => {
       // A host that is going away cannot keep its shared tools volumes: they are the one kind of volume no other
@@ -393,7 +411,9 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
         await deleteVolume(host, tools.id, { skipTrash: true, teardown: true });
       }
     },
+    release: (host) => egressForward.release(host),
     onLive: reconcileOnLive,
+    onReachable: (host) => egressForward.hostOnline(host.host.id),
     agents,
     localLabels: cfg.localHostLabels,
   });
@@ -454,8 +474,10 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
     retention,
     checkpointSweep: new CheckpointSweep(hosts, undefined, recordNote),
     checkpointScheduler: new CheckpointScheduler(hosts, recordNote),
+    backupScheduler: new BackupScheduler(backupSchedule, backups, cfg.backupPassphrase, recordNote),
     tasks,
     backups,
+    backupSchedule,
     targets,
     operations: new Executor(OPERATIONS, {
       activity,
@@ -465,6 +487,8 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
       previewBaseDomain: cfg.previewBaseDomain,
       notify,
       backups,
+      backupSchedule,
+      backupPassphraseSet: cfg.backupPassphrase !== null,
       targets,
       sshKeys,
       hooks: {
@@ -483,6 +507,7 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
     pulse,
     lifecycle,
     volumeUsage,
+    egressForward,
     ssh,
     sshKeys,
     sshDirect,

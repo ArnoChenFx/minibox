@@ -318,6 +318,21 @@ export default {
     "{name} is removed from MiniBox and its stored credentials are deleted. A host that still holds boxes, volumes or checkpoints cannot be removed.",
   "st.hostRemoved": "Host removed",
   "st.hostRemoveFailed": "Could not remove the host",
+  "st.hostForceRemove": "Force remove",
+  "st.hostForceRemoveTitle": "Force-remove this lost host?",
+  "st.hostForceRemoveMessage":
+    "{name} is removed from MiniBox, and the boxes, volume records and checkpoint records MiniBox holds for it are dropped. MiniBox does not connect to the machine: if it is actually alive, its containers are not deleted and become orphans MiniBox no longer manages.",
+  "st.hostForceRemoveAgent": "Its agent is forgotten too: it is disconnected at once and cannot reconnect.",
+  "st.hostForceRemoveNothing":
+    "MiniBox holds no boxes, volumes or checkpoints for this host. Only the host entry is removed.",
+  "st.hostForceRemoveBoxes": "Boxes ({count})",
+  "st.hostForceRemoveVolumes": "Volumes ({count})",
+  "st.hostForceRemoveCheckpoints": "Checkpoints ({count})",
+  "st.hostForceRemoveNoPreview": "The server did not return a preview of what would be discarded.",
+  "st.hostForceRemoved": "Host force-removed",
+  "st.hostForceRemoveChanged":
+    "The records changed while you were confirming, so nothing was removed. Check the updated preview and confirm again.",
+  "st.hostForceRemoveFailed": "Could not force-remove the host",
   "st.hostLocal": "This machine",
   "st.disk.title": "Engine storage (docker system df)",
   "st.disk.images": "Images",
@@ -381,7 +396,7 @@ export default {
   "st.agentUpgradeHelp":
     "It speaks another agent protocol than this MiniBox. Pull the latest minibox-agent image and recreate the container with the same data volume.",
   "st.agentRemoveMessage":
-    "{name} is removed from MiniBox. Its agent is disconnected at once and cannot reconnect; to use the machine again, pair it with a new code. A host that still holds boxes, volumes or checkpoints cannot be removed. Removing deletes no container or volume on the machine, and the agent's container keeps running idle there: stop and remove it on the machine with docker rm -f.",
+    "{name} is removed from MiniBox. Its agent is disconnected at once and cannot reconnect; to use the machine again, pair it with a new code. A host that still holds boxes, volumes or checkpoints cannot be removed. Removing deletes no container on the machine, and the only volumes it deletes are MiniBox's own shared tools volumes there. If the machine is connected and refuses, nothing is removed and you can try again. The agent's container keeps running idle: stop and remove it on the machine with docker rm -f.",
   "st.tokenExpiry": "Expires in (days)",
   "st.tokenExpiryHelp": "Leave empty for no expiry.",
   "st.tokenQuotas": "Quotas",
@@ -430,6 +445,28 @@ export default {
   "st.tokenPruneFailed": "Could not delete the ended tokens",
   "st.tokenCreateFailed": "Could not create the token",
   "st.tokenNone": "No agent tokens yet.",
+  "st.backups": "Backups",
+  "st.backupsHelp":
+    "Back up MiniBox's data directory on a schedule, without an external cron job. A scheduled backup is sealed with the passphrase in BACKUP_PASSPHRASE on the server, and BACKUP_KEEP decides how many stay.",
+  "st.backupSchedule": "Schedule",
+  "st.backupScheduleOffHelp": "Backups are made only when you run minibox backup, or call the API.",
+  "st.backupScheduleNote":
+    "A run that fell due while MiniBox was down happens once when it comes back, not once per missed slot. If BACKUP_KEEP is set, only the newest few are kept.",
+  "st.backupRunOk": "{time}, backup made",
+  "st.backupRunFailed": "{time}, failed: {error}",
+  "st.backupRunSkipped": "{time}, skipped: {reason}",
+  "st.backupSkip.busy": "another backup was already running; the schedule runs again at its next time",
+  "st.backupNeedsPassphrase":
+    "The server has no BACKUP_PASSPHRASE, so a schedule cannot be saved yet. Set it in .env (12 to 1024 characters) and restart MiniBox.",
+  "st.backupLostPassphrase":
+    "The server has no BACKUP_PASSPHRASE, so this schedule's runs fail and it cannot be changed. Set it in .env (12 to 1024 characters) and restart MiniBox, or turn the schedule off.",
+  "st.backupScheduleTitle": "Backup schedule",
+  "st.backupScheduleDesc": "Backs up the data directory in the background.",
+  "st.backupScheduleHelp":
+    "A scheduled backup runs inside MiniBox, so it needs BACKUP_PASSPHRASE set in .env. A run that fails is logged once and waits for its next slot.",
+  "st.backupScheduleSaved": "Backup schedule saved",
+  "st.backupScheduleOffDone": "Backup schedule turned off",
+  "st.backupScheduleFailed": "Backup schedule change failed",
   "st.targets": "Off-site targets",
   "st.targetsHelp":
     "Copy checkpoint packages and backups to an S3-compatible bucket or an SFTP folder, and pull them back when this host needs them. Credentials are stored as secrets and never shown again.",

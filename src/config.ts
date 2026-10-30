@@ -12,7 +12,9 @@ import {
   resolveBackupDir,
   resolveDataDir,
 } from "./data-dir";
+import { MIN_EGRESS_ALLOW_PREFIX } from "./egress/proxy";
 import { hostLabelsProblem } from "./host/store";
+import { formatIpv4Cidr, ipv4Overlaps, type Ipv4Network, parseIpv4Cidr } from "./lib/cidr";
 import { log } from "./lib/logger";
 import { parsePreviewBaseDomain } from "./preview/domain";
 
@@ -31,6 +33,11 @@ export interface Config {
   backupDir: string;
   /** How many backups `BACKUP_KEEP` retains, newest first. 0 keeps every backup, which is the default. */
   backupKeep: number;
+  /**
+   * The passphrase a scheduled backup is sealed with, from `BACKUP_PASSPHRASE`. Null when it is unset, which leaves a due
+   * run failed with a message saying so, since a schedule has nobody to ask.
+   */
+  backupPassphrase: string | null;
   dockerSocket: string;
   labelPrefix: string;
   baseTemplateTag: string;
@@ -105,10 +112,22 @@ export interface Config {
   /** How often every volume's usage is sampled, in seconds. */
   volumeUsageIntervalSec: number;
   /**
+   * How often MiniBox checks that a `proxy-only` box's traffic is still forwarded by the host, in seconds. A pass runs a
+   * short-lived privileged helper, so it is not free: the default is ten minutes, and the first pass runs soon after
+   * start. A host with no `proxy-only` box is not read at all.
+   */
+  egressForwardCheckIntervalSec: number;
+  /**
    * Keeps boxes on the default network from reaching services on the host through the bridge gateway. Boxes with egress
    * `none` or `proxy-only` are always kept off the host, whatever this is set to.
    */
   blockHostGateway: boolean;
+  /**
+   * IPv4 networks an egress proxy may connect to although they are private, from `EGRESS_ALLOW_RANGES`. A fake-IP DNS
+   * proxy such as Clash, Surge or sing-box answers every name from a range of its own, and the egress proxy would
+   * otherwise refuse every allowlisted host. Empty, the default, leaves the proxy's refusal as it was.
+   */
+  egressAllowRanges: string[];
   /**
    * Free space, as a percentage of the disk, below which a host alerts and refuses new volumes and checkpoints. 0 turns
    * the check off.
@@ -232,6 +251,25 @@ function parseBackupKeep(value: string | undefined): number {
   return intInRange(value, 0, 0, MAX_BACKUP_KEEP);
 }
 
+/**
+ * The passphrase a scheduled backup is sealed with. The same rules as a passphrase on the command line: 12 to 1024
+ * characters, with no leading or trailing spaces and no line breaks. Blank means no schedule can run, and an invalid
+ * value stops startup: unlike `BACKUP_KEEP`, a typo here cannot delete anything, but it would leave every run failed.
+ */
+function parseBackupPassphrase(value: string | undefined): string | null {
+  // Blank is off. Anything else is used exactly as given: trimming it would seal a scheduled backup with a passphrase
+  // that is not the one the operator types, so an untrimmed value is refused instead.
+  if ((value ?? "").trim() === "") return null;
+  const passphrase = value ?? "";
+  const length = [...passphrase].length;
+  if (length < 12 || length > 1024 || passphrase !== passphrase.trim() || /[\r\n\0]/.test(passphrase)) {
+    throw new Error(
+      "BACKUP_PASSPHRASE: the passphrase must be 12 to 1024 characters, with no leading or trailing spaces and no line breaks",
+    );
+  }
+  return passphrase;
+}
+
 function parseHostOvercommit(value: string | undefined): number {
   const v = nonBlank(value);
   if (v === undefined) return 1;
@@ -261,6 +299,51 @@ function parseHostLabels(value: string | undefined): Record<string, string> {
     labels[key] = label;
   }
   return labels;
+}
+
+/**
+ * Networks an egress proxy never reaches, whatever `EGRESS_ALLOW_RANGES` says. Each one either is the proxy's own
+ * machine or cannot be a fake-IP range: `0.0.0.0/8` is this host, `127.0.0.0/8` is loopback, `169.254.0.0/16` is
+ * link-local, which holds the cloud metadata address, and `224.0.0.0/3` is multicast and reserved.
+ */
+const REFUSED_EGRESS_RANGES = ["0.0.0.0/8", "127.0.0.0/8", "169.254.0.0/16", "224.0.0.0/3"] as const;
+
+/**
+ * The private networks an egress proxy may reach, from `EGRESS_ALLOW_RANGES`, as `198.18.0.1/16` or `198.18.0.0/15`
+ * entries separated by commas. A fake-IP DNS proxy (Clash, Surge, sing-box) resolves every allowlisted name to an
+ * address in its own range, and the proxy refuses addresses in private ranges, so that range has to be named here.
+ *
+ * Each entry is an IPv4 address or network. Host bits are cleared, so Clash's `198.18.0.1/16` becomes `198.18.0.0/16`;
+ * an address with no `/n` is a single host, `/32`. The ranges are deduplicated and sorted by address. An entry that does
+ * not parse, has a prefix below 8, or overlaps a refused range stops startup, so a typo cannot open the wrong network.
+ */
+function parseEgressAllowRanges(value: string | undefined): string[] {
+  const ranges = new Map<string, Ipv4Network>();
+  for (const raw of (value ?? "").split(",")) {
+    const entry = raw.trim();
+    if (entry === "") continue;
+    const parsed = parseIpv4Cidr(entry.includes("/") ? entry : `${entry}/32`);
+    if (parsed === null) {
+      throw new Error(`EGRESS_ALLOW_RANGES: “${entry}” is not an IPv4 address or network (for example 198.18.0.0/15)`);
+    }
+    if (parsed.prefix < MIN_EGRESS_ALLOW_PREFIX) {
+      throw new Error(
+        `EGRESS_ALLOW_RANGES: “${entry}” is wider than /${MIN_EGRESS_ALLOW_PREFIX}; name the fake-IP range with a prefix from ${MIN_EGRESS_ALLOW_PREFIX} to 32`,
+      );
+    }
+    const refused = REFUSED_EGRESS_RANGES.map((text) => parseIpv4Cidr(text)).find(
+      (block): block is Ipv4Network => block !== null && ipv4Overlaps(parsed, block),
+    );
+    if (refused) {
+      throw new Error(
+        `EGRESS_ALLOW_RANGES: “${entry}” overlaps ${formatIpv4Cidr(refused)}, which stays refused (this host, loopback, link-local and multicast or reserved addresses are never reached)`,
+      );
+    }
+    ranges.set(formatIpv4Cidr(parsed), parsed);
+  }
+  return [...ranges.values()]
+    .toSorted((a, b) => a.base - b.base || a.prefix - b.prefix)
+    .map((network) => formatIpv4Cidr(network));
 }
 
 function parseContainerRuntime(value: string | undefined): string | null {
@@ -298,6 +381,16 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
   const file = readEnvFile(options.envFile ?? ENV_PATH);
   const get = (k: string) => env[k] ?? file[k];
 
+  // Bun expands dotenv values before populating process.env. Never silently seal with a different secret.
+  if (
+    file.BACKUP_PASSPHRASE !== undefined &&
+    env.BACKUP_PASSPHRASE !== undefined &&
+    file.BACKUP_PASSPHRASE !== env.BACKUP_PASSPHRASE
+  ) {
+    throw new Error(
+      'BACKUP_PASSPHRASE differs between the environment and .env: Bun expands "$" in .env values, even inside quotes, and cuts an unquoted value at "#", so the environment holds something the file does not say. Set it only in the process environment, or use a passphrase without "$" in .env. Escaping the "$" does not help, because the two readings still differ.',
+    );
+  }
   const dataDir = resolveDataDir(nonBlank(env.DATA_DIR) ?? nonBlank(file.DATA_DIR), ROOT);
   const backupDir = resolveBackupDir(nonBlank(env.BACKUP_DIR) ?? nonBlank(file.BACKUP_DIR), dataDir, ROOT);
   const refused = backupDirRefusal(backupDir, dataDir);
@@ -323,6 +416,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     dataDir,
     backupDir,
     backupKeep: parseBackupKeep(get("BACKUP_KEEP")),
+    backupPassphrase: parseBackupPassphrase(get("BACKUP_PASSPHRASE")),
     labelPrefix,
     dockerSocket: get("DOCKER_SOCKET")?.trim() || "/var/run/docker.sock",
     baseTemplateTag: get("BASE_TEMPLATE")?.trim() || `${labelPrefix}-template:base`,
@@ -361,8 +455,10 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     previewBaseDomain: parsePreviewBaseDomain(get("PREVIEW_BASE_DOMAIN")),
     notifyAllowPrivate: isTruthy(get("NOTIFY_ALLOW_PRIVATE")),
     volumeUsageIntervalSec: intInRange(get("VOLUME_USAGE_INTERVAL_SEC"), 600, 60, 86400),
+    egressForwardCheckIntervalSec: intInRange(get("EGRESS_FORWARD_CHECK_INTERVAL_SEC"), 600, 60, 86400),
     hostDiskMinFreePercent: intInRange(get("HOST_DISK_MIN_FREE_PERCENT"), 10, 0, 100),
     blockHostGateway: isTruthy(get("BLOCK_HOST_GATEWAY")),
+    egressAllowRanges: parseEgressAllowRanges(get("EGRESS_ALLOW_RANGES")),
     sshPort,
     sshBind: nonBlank(get("SSH_BIND")) ?? host,
     sshPublicHost: parsePublicHost(get("SSH_PUBLIC_HOST")),

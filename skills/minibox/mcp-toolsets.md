@@ -45,9 +45,9 @@ A URL with several toolsets: `http://127.0.0.1:3920/mcp?toolsets=core,meta,sessi
 
 | Tool | Needs | What it does |
 |---|---|---|
-| `list_hosts`, `get_host_usage`, `get_host_disk`, `add_host`, `test_host`, `remove_host` | owner | Host management. No token scope reaches it |
+| `list_hosts`, `get_host_usage`, `get_host_disk`, `repair_host_forward`, `add_host`, `test_host`, `remove_host`, `force_remove_host` | owner | Host management. No token scope reaches it |
 
-| `list_hosts`, `get_host_usage`, `add_host`, `test_host`, `set_host_labels`, `remove_host` | owner | Host management and host labels. No token scope reaches it |
+| `list_hosts`, `get_host_usage`, `add_host`, `test_host`, `set_host_labels`, `remove_host`, `force_remove_host` | owner | Host management and host labels. No token scope reaches it |
 | `list_notify_channels`, `set_notify_channel`, `delete_notify_channel`, `test_notify_channel`, `list_notify_deliveries` | owner | Notification channels. No token scope reaches it |
 
 ## session
@@ -84,6 +84,7 @@ Listing and closing sessions are REST and CLI only (`GET`/`DELETE /api/boxes/{id
 | `export_checkpoint`, `import_checkpoint`, `copy_checkpoint` | owner | Checkpoint packages and host copies. Each returns a task |
 | `get_checkpoint_schedule`, `set_checkpoint_schedule`, `clear_checkpoint_schedule` | owner | A box's checkpoint schedule |
 | `create_backup`, `list_backups`, `delete_backup` | owner | Backups of the data directory |
+| `get_backup_schedule`, `set_backup_schedule`, `clear_backup_schedule` | owner | The instance's backup schedule |
 | `list_targets`, `test_target`, `add_target`, `check_target`, `list_target_objects`, `remove_target`, `push_to_target`, `pull_from_target` | owner | Off-site targets |
 
 ## tools
@@ -104,7 +105,7 @@ Listing and closing sessions are REST and CLI only (`GET`/`DELETE /api/boxes/{id
 | Tool | Needs | What it does |
 |---|---|---|
 | `rebuild_box` | `box:write` | `id`, `template`, `mounts`, `env`, `network`, `egress`, `profile`, `confirm`, `safetyCheckpoint` |
-| `move_box` | owner or admin credential | `id`, `host`, `confirm`, `expectedRevision` |
+| `move_box` | owner or admin credential | `id`, `host`, `confirm`, `via` (`direct` or `checkpoint`), `expectedRevision` |
 
 Both need `confirm: true`; without it the call changes nothing and returns `confirmation_required` with `details.preview`.
 

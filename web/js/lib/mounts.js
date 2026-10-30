@@ -41,7 +41,8 @@ export function roleMount(role) {
  * exists: the shared tools volume is one per pool, so the answer follows the pool the tools role goes to.
  *
  * `preview` is what `roleVolumeNames` predicted for the box being created. Without it the roles carry no name, and the
- * dialog falls back to naming the role.
+ * dialog falls back to naming the role. A role whose box has no name yet carries a `placeholder` the dialog shows
+ * instead, which is the naming rule with the box name left out, and not a name.
  */
 export function createMountChoices(volumes, sharedTools, preview = null) {
   // A shared tools volume is one per pool, so a create can mount one for each pool it puts a tools volume on.
@@ -78,8 +79,21 @@ export function createMountChoices(volumes, sharedTools, preview = null) {
  * makes a free name with `freeName` (`-<pool>`, then `-2`, `-3`…), and display names are unique per host rather than per
  * pool: a name another pool uses is still taken, so the suffix applies and the dialog cannot know which one. `hostKnown`
  * is false for automatic placement, which picks the host inside the create, so the shared tools volume cannot be named.
+ *
+ * `boxNamePlaceholder` is the text the dialog uses for a box name it does not have yet, such as `<box name>`. A role
+ * volume named after the box gets no name while the box has none, but carries `<placeholder>-<role>` as its
+ * `placeholder`, so the dialog can keep the naming rule visible. The placeholder is display only: it is never compared
+ * with the names the host uses, never takes a suffix, and is never sent.
  */
-export function roleVolumeNames({ boxName, hostId, labelPrefix, sharedTools, taken = [], hostKnown = true }) {
+export function roleVolumeNames({
+  boxName,
+  hostId,
+  labelPrefix,
+  sharedTools,
+  taken = [],
+  hostKnown = true,
+  boxNamePlaceholder = null,
+}) {
   const names = {};
   const box = typeof boxName === "string" ? boxName.trim() : "";
   const takenSet = new Set(taken);
@@ -97,9 +111,17 @@ export function roleVolumeNames({ boxName, hostId, labelPrefix, sharedTools, tak
       names.tools = { name, exists: false, exact: !takenSet.has(name), hostKnown: true };
       continue;
     }
-    // Without a box name the server has nothing to name the volume after, and the dialog says so instead of guessing.
+    // Without a box name the server has nothing to name the volume after. The dialog still shows the naming rule with
+    // the placeholder the operator replaces, which is display only: it never counts as taken and is never sent.
     const name = box ? `${box}-${mount.role}` : null;
-    names[mount.role] = { name, exists: false, exact: name !== null && !takenSet.has(name), hostKnown };
+    const placeholder = name === null && boxNamePlaceholder ? `${boxNamePlaceholder}-${mount.role}` : null;
+    names[mount.role] = {
+      name,
+      ...(placeholder ? { placeholder } : {}),
+      exists: false,
+      exact: name !== null && !takenSet.has(name),
+      hostKnown,
+    };
   }
   return names;
 }
@@ -122,11 +144,13 @@ export function previewRoleNames(rows, names) {
  * The lines the Volumes section says under its rows: what the create would make, one line per role a row still names.
  * Each line is an i18n key, its parameters, and the role it is about, so the dialog can name the pool the row picked. A
  * volume that is already there (the shared tools volume) says so, and a name the host already uses says the server may
- * add a suffix, so the dialog never promises a name it cannot know.
+ * add a suffix, so the dialog never promises a name it cannot know. A role volume whose box has no name yet shows its
+ * placeholder, so the naming rule is visible before the box is named.
  */
 export function previewNoteLines(rows, names) {
-  return previewRoleNames(rows, names).map(({ role, name, exists, exact, hostKnown }) => {
+  return previewRoleNames(rows, names).map(({ role, name, placeholder, exists, exact, hostKnown }) => {
     if (exists) return { key: "cb.previewShared", params: { name }, role };
+    if (name === null && placeholder) return { key: "cb.previewUnnamedName", params: { name: placeholder }, role };
     if (name === null && !hostKnown) return { key: "cb.previewHostUnknown", params: { role }, role };
     if (name === null) return { key: "cb.previewUnnamed", params: { role }, role };
     return { key: exact ? "cb.previewCreate" : "cb.previewCreateInexact", params: { name }, role };

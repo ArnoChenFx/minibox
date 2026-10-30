@@ -35,6 +35,11 @@ export function relabel(hosts: readonly Labelled[]): void {
   for (const host of list) peers.set(host, list);
 }
 
+/** Forgets the list a host was labelled among, once it is no longer registered: it is labelled by its name alone from then on. */
+export function unlabel(host: Labelled): void {
+  peers.delete(host);
+}
+
 /**
  * The label a message about one host quotes: its name, with its id when another registered host shares that name. A host
  * that is not registered is labelled by its name alone. The label is worked out when it is asked for, so it is never

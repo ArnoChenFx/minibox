@@ -299,6 +299,19 @@ export default {
   "st.hostRemoveMessage": "{name} 将从 MiniBox 中移除，其已保存的凭据会被删除。仍有 Box、卷或检查点的宿主机无法移除。",
   "st.hostRemoved": "已移除宿主机",
   "st.hostRemoveFailed": "无法移除宿主机",
+  "st.hostForceRemove": "强制移除",
+  "st.hostForceRemoveTitle": "强制移除这台已丢失的宿主机？",
+  "st.hostForceRemoveMessage":
+    "「{name}」将从 MiniBox 中移除，MiniBox 为它保存的 Box、卷记录与检查点记录会一并丢弃。MiniBox 不会连接那台机器：如果机器其实还在，它上面的容器不会被删除，会变成 MiniBox 不再管理的孤儿。",
+  "st.hostForceRemoveAgent": "它的 Agent 也会被遗忘：立即断开，且无法再次连接。",
+  "st.hostForceRemoveNothing": "MiniBox 没有为这台宿主机保存任何 Box、卷或检查点，只会移除宿主机这一条记录。",
+  "st.hostForceRemoveBoxes": "Box（{count}）",
+  "st.hostForceRemoveVolumes": "卷（{count}）",
+  "st.hostForceRemoveCheckpoints": "检查点（{count}）",
+  "st.hostForceRemoveNoPreview": "服务器没有返回将被丢弃内容的预览。",
+  "st.hostForceRemoved": "已强制移除宿主机",
+  "st.hostForceRemoveChanged": "确认期间记录发生了变化，未移除任何内容。请查看更新后的预览并再次确认。",
+  "st.hostForceRemoveFailed": "无法强制移除宿主机",
   "st.hostLocal": "本机",
   "st.disk.title": "引擎存储（docker system df）",
   "st.disk.images": "镜像",
@@ -358,7 +371,7 @@ export default {
   "st.agentUpgradeHelp":
     "它使用的 Agent 协议与当前 MiniBox 不同。请拉取最新的 minibox-agent 镜像，并用同一个数据卷重新创建容器。",
   "st.agentRemoveMessage":
-    "{name} 将从 MiniBox 中移除，其 Agent 会立即断开，且无法再次连接；要再用这台机器，需用新的配对码重新配对。仍有 Box、卷或检查点的宿主机无法移除。移除不会删除机器上的任何容器或卷，Agent 的容器会在机器上空转，请在那台机器上用 docker rm -f 停止并删除该容器。",
+    "{name} 将从 MiniBox 中移除，其 Agent 会立即断开，且无法再次连接；要再用这台机器，需用新的配对码重新配对。仍有 Box、卷或检查点的宿主机无法移除。移除不会删除机器上的任何容器，唯一会删除的卷是 MiniBox 在那里创建的共享工具卷（每个存储池一个）。机器在线却拒绝删除时，什么都不会移除，可以再试。Agent 的容器会在机器上空转，请在那台机器上用 docker rm -f 停止并删除该容器。",
   "st.tokenExpiry": "有效期（天）",
   "st.tokenExpiryHelp": "留空表示不过期。",
   "st.tokenQuotas": "配额",
@@ -404,6 +417,28 @@ export default {
   "st.tokenPruneFailed": "无法删除已失效的令牌",
   "st.tokenCreateFailed": "无法创建令牌",
   "st.tokenNone": "还没有 Agent 令牌。",
+  "st.backups": "备份",
+  "st.backupsHelp":
+    "按计划备份 MiniBox 的数据目录，无需外部 cron。按计划备份使用服务器上的 BACKUP_PASSPHRASE 封装，BACKUP_KEEP 决定保留几份。",
+  "st.backupSchedule": "计划",
+  "st.backupScheduleOffHelp": "只有运行 minibox backup 或调用 API 时才会创建备份。",
+  "st.backupScheduleNote":
+    "MiniBox 停机期间到点的运行会在启动后执行一次，不会把错过的每次都补上。设置了 BACKUP_KEEP 时，只保留最新的几份。",
+  "st.backupRunOk": "{time}，已创建备份",
+  "st.backupRunFailed": "{time}，失败：{error}",
+  "st.backupRunSkipped": "{time}，已跳过：{reason}",
+  "st.backupSkip.busy": "当时已有备份在运行；计划会在下一个时间点再次运行",
+  "st.backupNeedsPassphrase":
+    "服务器没有设置 BACKUP_PASSPHRASE，暂时无法保存计划。请在 .env 中设置（12 到 1024 个字符）并重启 MiniBox。",
+  "st.backupLostPassphrase":
+    "服务器没有设置 BACKUP_PASSPHRASE，所以这个计划的运行会失败，也无法修改。请在 .env 中设置（12 到 1024 个字符）并重启 MiniBox，或者关闭计划。",
+  "st.backupScheduleTitle": "备份计划",
+  "st.backupScheduleDesc": "在后台备份数据目录。",
+  "st.backupScheduleHelp":
+    "按计划备份在 MiniBox 内运行，因此需要在 .env 中设置 BACKUP_PASSPHRASE。失败的运行只记录一次日志，并等待下一个时间点。",
+  "st.backupScheduleSaved": "备份计划已保存",
+  "st.backupScheduleOffDone": "备份计划已关闭",
+  "st.backupScheduleFailed": "备份计划修改失败",
   "st.targets": "异地目标",
   "st.targetsHelp":
     "把检查点包和备份复制到 S3 兼容的存储桶或 SFTP 文件夹，需要时再拉回本机。凭据保存为密钥，保存后不再显示。",

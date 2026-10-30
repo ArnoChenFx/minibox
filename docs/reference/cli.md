@@ -149,6 +149,7 @@ A session that a person has taken over in the console refuses `session send` wit
 |---|---|
 | `minibox volume delete <id\|name>... [--skip-trash] [--yes] [--json]` | Deletes volumes on any host. Without `--yes`, only the preview prints. Each volume is deleted as `DELETE /api/volumes/{id}` deletes one: its data is kept in the recycle bin unless `--skip-trash` is set, and a volume that a box or container uses is refused. Exits `1` when a volume is not removed |
 | `minibox volume prune [id\|name...] [--older-than 30d] [--yes] [--json]` | Lists the orphaned volumes, which are MiniBox volumes that no box or container uses. `--yes` removes exactly the volumes it listed. Naming volumes limits the list to them. `--older-than` keeps the volumes used more recently. A volume created or used in the last five minutes is never listed |
+| `minibox volume snapshot <id\|name> [--label TEXT] [--pin] [--no-wait] [--json]` | Snapshots one volume on its own, without a box, and prints the checkpoint's id once the backup has finished. `--pin` keeps it through automatic cleanup. `--no-wait` prints the task's id and returns at once. A cache volume and the shared tools volume are refused, since neither is ever part of a checkpoint |
 
 Explicit volume creation/deletion and orphan pruning require the owner or an unmodified admin token. Batch deletion uses `volume:delete`, which the admin preset includes. `--skip-trash` also requires `trash:skip`, or the owner; the skip option does not grant storage administrator identity. See [Volumes and storage](../user-guide/volumes-and-storage.md#delete-several-volumes-or-clean-up-orphans).
 
@@ -263,9 +264,12 @@ The `backup` commands use the access key, and they are for the owner only. `rest
 | `minibox backup [--out FILE] [--overwrite] [--passphrase-stdin] [--json]` | Backs up DATA_DIR on the server into a sealed archive, while MiniBox runs. With `--out`, it also downloads the archive to `FILE`, and checks its size and checksum. Without `--out`, the backup stays on the server, and the command prints its ID. |
 | `minibox backup ls [--json]` | Lists the backups kept on the server |
 | `minibox backup rm <id> [--json]` | Deletes a backup kept on the server |
+| `minibox backup schedule get [--json]` | Prints the backup schedule, with its next and last run. A schedule that is off says so, and so does a server with no `BACKUP_PASSPHRASE` |
+| `minibox backup schedule set (--every-hours N \| --at HH:MM [--timezone ZONE]) [--json]` | Backs up on a schedule inside MiniBox, with no external cron. `--every-hours` is a whole number from 1 to 720; `--at` is a daily time, in `--timezone` or UTC when that is omitted. The passphrase comes from `BACKUP_PASSPHRASE` on the server |
+| `minibox backup schedule clear [--json]` | Removes the schedule. Backups it already made are kept |
 | `minibox restore <file> --data-dir DIR [--passphrase-stdin]` | Restores an archive into an empty `DIR`. Without `--data-dir`, it uses `DATA_DIR`. Stop MiniBox first. |
 
-The archives are kept in `DATA_DIR/backups/`, or in `BACKUP_DIR` when that is set, and `BACKUP_KEEP` keeps only the newest few. See [Backups](../admin/backups.md#retention-and-schedules).
+The archives are kept in `DATA_DIR/backups/`, or in `BACKUP_DIR` when that is set, and `BACKUP_KEEP`, when set, keeps only the newest few; unset, every archive stays. A schedule makes the same archives, so without `BACKUP_KEEP` it adds one per run and removes none. See [Backups](../admin/backups.md#retention-and-schedules).
 
 The passphrase comes from `MINIBOX_BACKUP_PASSPHRASE`, or from the first line of standard input with `--passphrase-stdin`.
 
@@ -273,6 +277,7 @@ The passphrase comes from `MINIBOX_BACKUP_PASSPHRASE`, or from the first line of
 read -rs -p "Backup passphrase: " MINIBOX_BACKUP_PASSPHRASE && export MINIBOX_BACKUP_PASSPHRASE
 minibox backup --out minibox-backup.mbbak
 minibox restore minibox-backup.mbbak --data-dir /srv/minibox-data
+minibox backup schedule set --at 03:30 --timezone Asia/Shanghai
 ```
 
 ## Recycle bin
@@ -313,12 +318,13 @@ See [Access, sessions and tokens](../user-guide/access-and-tokens.md) for the pr
 
 ## Hosts
 
-Only labels are reachable from the command line. Adding, removing and revoking a host is done in the console or through the [REST API](api.md).
+Labels and the force removal of a lost host are reachable from the command line. Adding a host, removing one the ordinary way and revoking one is done in the console or through the [REST API](api.md).
 
 | Command | Meaning |
 |---|---|
 | `minibox host labels get <id> [--json]` | Prints the labels of one host, as a JSON object. `--json` prints the same. |
 | `minibox host labels set <id> [--label KEY=VALUE]...` | Replaces the labels of one host, the local host included, so an `auto` box create can select it with `--host-label`. With no `--label`, the host carries none afterwards. Prints the id and the labels as JSON, or the response with `--json`. |
+| `minibox host force-remove <id> [--yes] [--json]` | Discards MiniBox's records of a lost, offline host: its boxes, its volume records (the shared tools volume too) and its checkpoint records. The machine is never contacted. Without `--yes` it prints the preview and changes nothing. `--yes` sends no digest, so it discards whatever the host holds when it runs; the preview printed without `--yes` is a separate call. Owner only. See [Force-remove a lost machine](../user-guide/hosts.md#force-remove-a-lost-machine). |
 
 See [Choose a host by labels](../user-guide/hosts.md#choose-a-host-by-labels).
 

@@ -176,7 +176,7 @@ const checkpointCreate = defineOperation({
   resolve: ({ host }, input) => getBox(host, input.id),
   beforeTask: async (ctx, input, box) => {
     // A backup commits a system image and copies the volumes through a helper, and an agent host can run neither. The
-    // refusal names the feature, as export and copy do, instead of surfacing later as a generic unsupported operation.
+    // refusal names the feature, as copy and import do, instead of surfacing later as a generic unsupported operation.
     // It sits here rather than in `precondition` because that hook also promises a 422 in the OpenAPI document, which
     // this operation never answers with; a refusal here is still the response, not a failed task.
     refuseAgent(ctx.host, "checkpoints");

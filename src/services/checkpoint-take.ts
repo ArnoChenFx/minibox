@@ -53,7 +53,7 @@ export interface BackupOptions {
   /** Makes the record a recycle bin entry, which keeps the data until the mark's `expiresAt`. */
   trash?: TrashMark;
   /**
-   * Leaves a stopped box stopped once the backup has completed. A caller that removes the box next needs this, since a
+   * Leaves a paused or stopped box quiesced once the backup has completed. A caller that removes the box next needs this, since a
    * restart would only make that removal wait on it.
    */
   keepStopped?: boolean;

@@ -65,7 +65,7 @@ Use at least 20 random characters. See [Security](security.md).
 ### Image tags
 
 - `X.Y.Z`, `X.Y` and `latest` point to releases. Pre-releases such as `1.0.0-rc.1` get only their exact tag.
-- To pin a version, use its full tag, such as `ghcr.io/arnochenfx/minibox:0.6.8`.
+- To pin a version, use its full tag, such as `ghcr.io/arnochenfx/minibox:0.6.10`.
 
 ### The base template
 
@@ -76,7 +76,7 @@ The release image does not include the base template. MiniBox builds it on a hos
 From a checkout of the repository:
 
 ```bash
-docker build --build-arg MINIBOX_VERSION=0.6.8 -t minibox .
+docker build --build-arg MINIBOX_VERSION=0.6.10 -t minibox .
 ```
 
 Use the `minibox` image in the `docker run` command above in place of the release image.
@@ -95,6 +95,8 @@ bun start
 The server listens on `127.0.0.1:3920`. Open <http://127.0.0.1:3920>, and sign in with the key in `data/access_key`.
 
 If no `ACCESS_KEY` is set in the environment or in `.env`, MiniBox writes a generated key to `DATA_DIR/access_key`. The file has mode 600. MiniBox never writes `.env`.
+
+To read the comments in Chinese, copy `.env.zh.example` instead of `.env.example`. The two files set the same options with the same defaults.
 
 `bun run build:template` always tags the image `minibox-template:base`. If you change `LABEL_PREFIX` or `BASE_TEMPLATE`, build the base template from the **Templates** tab of **Library** instead.
 

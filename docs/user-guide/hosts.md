@@ -111,18 +111,43 @@ A host whose running boxes reserve more CPU or memory than its capacity times `H
 ## Move a box to another host
 
 1. Open the box and click **Move to host**. The button appears when there is more than one host.
-2. Choose the target host and click **Preview**. The preview lists each volume and what happens to it, whether the template image is sent, and whether the box starts on the target. Nothing changes yet.
+2. Choose the target host, choose how the box travels, and click **Preview**. The preview lists the path, each volume and what happens to it, whether the template image is sent, whether the box starts on the target, and that a running box is paused until the move commits. Nothing changes yet.
 3. Click **Move box**. The move runs as a task in the task panel.
 
-What a move does:
+There are two paths, and the choice is the `via` field of `POST /api/boxes/:id/move`:
 
-- The template image is sent to the target when the target does not have it, and the template's recipe comes with it.
-- Local volumes are copied to the target. A running box is paused while they are copied. NFS volumes are attached on the target and not copied. The tools volume is replaced by the target's shared tools volume.
-- The box is created on the target and started there if it was running. The box is removed from the old host only after it runs on the target. If any step fails before that, the move is undone and the box stays where it was.
+- **direct** (the default, and what MiniBox did before this path existed): the template image is sent to the target when the target does not have it, and the volumes are copied as archives.
+- **checkpoint**: MiniBox checkpoints the box, copies the checkpoint to the target, restores the volumes, and removes the source box. The target still needs the template image; the checkpoint copy sends it when missing. Both hosts must support image transfer and checkpoint helpers.
+
+Either way:
+
+- The box is created on the target and started there if it was running. The box is removed from the old host only after it runs on the target. If any step fails before that, the move is undone and the box stays where it was, still running and still holding its volumes.
 - The box keeps its id, name, volumes, environment variables and history. Its writable layer, running processes and IP address are lost, as in a rebuild.
-- Checkpoints stay on the old host and are not restored on the new one. The preview counts them. A checkpoint holds its volume data, and copying every checkpoint would make a move slow, so a move leaves them behind. To keep one with the box, [copy it](checkpoints.md#copy-to-another-host) to the new host, or [export](checkpoints.md#export-and-import) it and import it there.
+- The tools volume is replaced by the target's shared tools volume. A volume on shared storage, such as NFS, is never removed from the old host by a move.
 
-Only the owner or an admin token can move a box. Boxes with bind-mount volumes, or with volumes another box also mounts, cannot be moved.
+What differs between the two paths:
+
+- Either way the box's own checkpoints stay on the old host, and the preview counts them. A checkpoint holds volume data, and copying every checkpoint would make a move slow. To keep one with the box, [copy it](checkpoints.md#copy-to-another-host) to the new host, or [export](checkpoints.md#export-and-import) it and import it there.
+- A checkpoint move also takes a checkpoint of its own for the transfer, and removes it afterwards, on both hosts, so a move leaves no extra checkpoint behind. It carries only what a checkpoint holds: the workspace, the home, and any recorded volume the box mounts. A cache volume is made again empty on the target.
+- A direct move attaches a volume on NFS or other shared storage on the target without copying it, so its storage stays where it is. A checkpoint move carries that volume's data in the checkpoint like any other, and makes the restored volume on the target in the storage pool the source volume was in, so a volume keeps its pool. The source volume of shared storage stays on the old host as an independent volume, listed among the leftovers.
+- Both paths keep a running source box paused until the move commits and its source container is removed. A failed move resumes the source. A stopped box stays stopped.
+
+Refusals name why, in the message:
+
+- A volume a checkpoint cannot read refuses a checkpoint move. Use **direct** for that box, which copies the volume as it is. A volume in a `path` pool, which is a path on the host, refuses both paths: neither can carry it to another host.
+- A volume another box also mounts, and a volume the box mounts twice, refuse a checkpoint move: a copy carries one snapshot per volume, so it cannot carry another box's data or the same volume twice.
+- An agent host on either side refuses both paths. An agent does not copy images, volumes or archives, and the helpers both paths run are refused there, so a move to or from one would fail half way. Create the box on the agent host instead.
+
+Only the owner or an admin token can move a box.
+
+### What to watch the first time
+
+The CI suite moves boxes between two hosts with a fake engine and a fake snapshot engine: the previews, the refusals, the restored data, and every failure path are covered there. It does not run restic, a real engine, or two real machines. The first time you use the checkpoint path on real hardware, watch these in the task log:
+
+- `Taking a checkpoint of …` then `Copying the checkpoint to …` — the pack and unpack run restic in a helper container on each host, so both hosts need the restic image pulled, which takes a few minutes the first time.
+- `Restoring /workspace on …` and the volumes listed under it — the sizes restic reads are in the log, and the target needs that much free space.
+- `Creating the box on …` — the target must hold the template. If no host can send it, the move is refused before any checkpoint is taken, so a refusal here means the copy landed without it.
+- The finished task's `leftovers` — empty is the expected answer. A leftover volume or checkpoint could not be removed and is kept so you can remove it by hand.
 
 ## See your hosts
 
@@ -148,9 +173,25 @@ An **agent host has no such reading.** The agent carries the operations a box ne
 
 Click **Remove** next to the host, and confirm. A host that still has boxes, volumes or checkpoints cannot be removed. The **local** host cannot be removed.
 
-An agent host has only **Remove**. Removing it revokes its agent first: the agent is disconnected at once and cannot reconnect, and MiniBox forgets its record. To use the machine again, pair it with a new code and a new data volume, as the [agent reference](../reference/agent.md#remove-revoke-upgrade-and-re-pair) describes. Removing deletes no container or volume on the machine, and the agent's container keeps running idle there. Stop and remove that container on the machine with `docker rm -f`.
+Removing a host also deletes the shared tools volumes MiniBox made on its machine, one for each storage pool, which do not count as the host's volumes. If the machine answers and refuses, the removal stops with its error and changes nothing, so you can try again. If the machine is offline there is nothing to delete through, so the host is removed anyway, and the log line `host.tools_volume_left` names the volumes that stay on the machine, to delete there with `docker volume rm`.
+
+An agent host has only **Remove**. Removing it revokes its agent first: the agent is disconnected at once and cannot reconnect, and MiniBox forgets its record. To use the machine again, pair it with a new code and a new data volume, as the [agent reference](../reference/agent.md#remove-revoke-upgrade-and-re-pair) describes. Removing deletes no container on the machine, and the only volumes it deletes are MiniBox's own shared tools volumes there (named `<prefix>-tools-<host id>`, one for each storage pool), which only MiniBox's boxes mount. The agent's container keeps running idle there. Stop and remove that container on the machine with `docker rm -f`.
 
 To cut off an agent at once while its host still holds boxes, volumes or checkpoints, call `POST /api/hosts/{id}/revoke`. The endpoint is kept for this and for existing scripts. A revoked host stays listed, marked **Revoked**, until you remove it.
+
+## Force-remove a lost machine
+
+When a machine is gone for good — wiped, scrapped or lost — its boxes, volumes and checkpoints stay recorded in MiniBox, and neither deleting a box nor removing the host can finish, because both need the machine's engine. While the host is offline, its row on the **Settings → Hosts** page also offers **Force remove**.
+
+That button discards **only MiniBox's records** of the host:
+
+- each box's spec, with its revision history, and the records a box delete clears without the engine: its checkpoint schedule, a rollback still waiting for its confirm or undo, its self token, the questions its agent asked, and its idle heartbeat;
+- every volume record that names the host, the shared tools volume included;
+- every checkpoint record that names the host, recycle-bin entries included.
+
+It never connects to the machine. MiniBox sends no ping, removes no container and deletes no volume there, so a machine that is only unreachable or switched off keeps its containers, which become orphans MiniBox no longer manages. The checkpoint data is not on this control plane either: each host's restic repository lives in a Docker volume on that host, so it went with the machine. Packages exported or uploaded before the loss are files on this control plane, under `DATA_DIR/packages`, and are left for their own expiry, so one can still be imported elsewhere.
+
+The confirmation lists what will be discarded before anything happens. `POST /api/hosts/{id}/force-remove` does the same: without `confirm: true` it changes nothing and answers `409` with `details.preview`, which carries a `digest` of the records it listed. Send that `digest` back with `confirm: true` and the records are read again; if anything was added or moved since the preview, nothing is discarded and the call answers `409 host_records_changed` with a fresh preview. A call without a `digest` discards whatever the host holds when it runs, and reports exactly that. Only an offline host can be force-removed — an online or unchecked host is `409 host_not_offline`, and the ordinary removal is the way for a host that answers — and only the owner may do it: no agent token reaches it, whatever scopes it holds. An agent host's agent is forgotten with the host, so it is disconnected at once and cannot reconnect. `minibox host force-remove <id>` prints the preview, and `--yes` discards it.
 
 ## Limits
 
@@ -159,5 +200,6 @@ To cut off an agent at once while its host still holds boxes, volumes or checkpo
 - **Auto** only considers hosts that already hold the template, unless an owner's official template may be built on one. To say which hosts it may use, give them labels and pass `hostLabels`; without them it considers every online host.
 - A box cannot move to or from an agent host yet, because an agent copies neither images nor volumes. With more than one host, the **Move to host** button of a box on an agent host is off, with the reason as its tooltip, and the API answers `501 move_agent_unsupported`. Create the box on the host you want it on. An agent host does not support templates, snapshots or port preview yet, so **Save as template** is off there too, and a box with a self token cannot be created on one, because an agent cannot write the token file.
 - Host-level CPU and memory use is shown for the local host only. A remote host shows the cores and memory that its engine reports, and the use of its own boxes.
-- The command-line tool's host commands read and set labels only: `minibox host labels get` and `minibox host labels set`. Adding and removing a host is done in the console or through the [REST API](../reference/api.md), and revoking one through the REST API.
+- The command-line tool's host commands read and set labels, and forget a lost host's records: `minibox host labels get`, `minibox host labels set` and `minibox host force-remove <id> [--yes]`. Adding a host is done in the console or through the [REST API](../reference/api.md), the ordinary removal and revoking through the REST API.
+- A host whose machine is gone for good can be [force-removed](#force-remove-a-lost-machine) while it is offline, which discards MiniBox's records of it. Deleting a box still needs the host's engine to answer, so on a machine that answers, the boxes must be deleted there or the host force-removed once it is offline. A host that holds nothing but its shared tools volumes can be removed while its machine is offline.
 - An [agent token](access-and-tokens.md) can be limited to specific hosts.

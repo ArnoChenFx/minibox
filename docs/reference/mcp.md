@@ -80,6 +80,7 @@ The tables below list each tool and the operation it calls, taken from the `x-mc
 | `test_host` | `POST /api/hosts/test` |
 | `set_host_labels` | `PATCH /api/hosts/{id}`. Takes `id` and `labels`, the local host included. An empty object clears them |
 | `remove_host` | `DELETE /api/hosts/{id}` |
+| `force_remove_host` | `POST /api/hosts/{id}/force-remove`. Owner only. Only an offline host, and without `confirm` it returns the preview of the records it would discard and removes nothing |
 | `list_notify_channels` | `GET /api/notify/channels`. Owner only |
 | `set_notify_channel` | `PUT /api/notify/channels/{id}`. Owner only |
 | `delete_notify_channel` | `DELETE /api/notify/channels/{id}`. Owner only |
@@ -131,6 +132,9 @@ The tables below list each tool and the operation it calls, taken from the `x-mc
 | `create_backup` | `POST /api/backups`. Owner only. The task result holds the backup |
 | `list_backups` | `GET /api/backups`. Owner only |
 | `delete_backup` | `DELETE /api/backups/{id}`. Owner only |
+| `get_backup_schedule` | `GET /api/backups/schedule`. Owner only |
+| `set_backup_schedule` | `PUT /api/backups/schedule`. Owner only |
+| `clear_backup_schedule` | `DELETE /api/backups/schedule`. Owner only |
 | `list_targets` | `GET /api/targets`. Owner only |
 | `test_target` | `POST /api/targets/test`. Owner only |
 | `add_target` | `POST /api/targets`. Owner only |

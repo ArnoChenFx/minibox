@@ -12,13 +12,15 @@ import { type Runtime, RuntimeError } from "../runtime";
 import { SecretStore } from "../secrets/store";
 import { ActivityPulse } from "../services/activity-pulse";
 import { EgressFirewall, FirewallStore } from "../services/egress-firewall";
+import type { ForwardState } from "../services/egress-forward";
 import { EgressLog } from "../services/egress-log";
 import { BoxPower } from "../services/power";
 import { StartupLaunches } from "../services/startup";
 import { SpecStore } from "../specs/store";
 import { SelfTokenStore } from "../tokens/self-store";
 import { VolumeStore } from "../volumes/store";
-import { relabel } from "./label";
+import { fenceHostWrites, HostLifetime } from "./gone";
+import { relabel, unlabel } from "./label";
 import { type LiveSink, NO_LIVE } from "./live";
 import { HostMonitor } from "./metrics";
 import { HostSampler } from "./sampler";
@@ -48,6 +50,8 @@ interface HostSecurity {
   network: string;
   /** Keeps boxes on the default network off the host. See `BLOCK_HOST_GATEWAY`. */
   blockHostGateway: boolean;
+  /** Private IPv4 networks an egress proxy may reach anyway, from `EGRESS_ALLOW_RANGES`. Empty leaves the proxy as it was. */
+  egressAllowRanges: string[];
 }
 
 /** What a host can give to boxes. Null where the engine does not report the figure. */
@@ -66,9 +70,37 @@ interface DiskPolicy {
   readonly minFreePercent: number;
 }
 
+/**
+ * The egress forward check, as a host reaches it: a box starting and a host coming back online ask for a fresh reading,
+ * the overview reads the last one, and the owner's confirmation repairs the rules. The app owns the one instance.
+ */
+export interface ForwardWatch {
+  /** A box started on this host, which is a moment the owner looks at. */
+  boxStarted(hostId: string): void;
+  /** The host's engine answered again, so its firewall may have changed. */
+  hostOnline(hostId: string): void;
+  /** A host went away: its verdict goes with it. */
+  forget(hostId: string): void;
+  /** The host's last reading, or null when no pass has run for it. */
+  stateOf(hostId: string): ForwardState | null;
+  /** Adds the forward allowance for this host's uplink, after the owner confirmed it. */
+  repair(host: HostCtx): Promise<ForwardState>;
+}
+
+/** The watcher a host built without the app has: it reads nothing, so a test that does not care sees no warning. */
+const NO_FORWARD: ForwardWatch = {
+  boxStarted: () => undefined,
+  hostOnline: () => undefined,
+  forget: () => undefined,
+  stateOf: () => null,
+  repair: () => Promise.reject(new Error("the egress forward check is not running")),
+};
+
 /** Everything business code needs to act on one host. `host.id` is the hostId the internal APIs are scoped by. */
 export interface HostCtx {
   host: Host;
+  /** Permanent lifetime of this registration, independent of a reused host id. */
+  lifetime: HostLifetime;
   runtime: Runtime;
   prefix: string;
   keys: LabelKeys;
@@ -114,6 +146,8 @@ export interface HostCtx {
   egress: EgressLog;
   /** The source lists this host's firewall was last set to, for the egress block. Each host keeps its own. */
   firewall: EgressFirewall;
+  /** Reads whether a `proxy-only` box's traffic is still forwarded by this host, and repairs the rule when confirmed. */
+  forward: ForwardWatch;
   /** The recent-activity feed the console shows. Services write to it for changes the operation registry does not record. */
   activity: ActivityLog;
   /** CPU and memory a single box may take on this host. The local host reads the machine, others read the engine. */
@@ -138,6 +172,8 @@ export interface SharedStores {
   readonly egress?: EgressLog;
   /** Defaults to a store that is kept in memory. The app keeps it under `DATA_DIR`. */
   readonly firewall?: FirewallStore;
+  /** Defaults to a check that reads nothing. The app passes the one that runs on an interval. */
+  readonly forward?: ForwardWatch;
   /** Defaults to a feed of its own. The app passes the one the console reads. */
   readonly activity?: ActivityLog;
 }
@@ -174,12 +210,15 @@ export interface LocalHostOptions {
   readonly multiHost?: () => boolean;
   readonly egress?: EgressLog;
   readonly firewall?: FirewallStore;
+  readonly forward?: ForwardWatch;
   readonly activity?: ActivityLog;
 }
 
 /** The host every box has when no other is configured. Its runtime is passed in, so a test can supply a fake. */
 export function createHost(cfg: Config, runtime: Runtime, shared: SharedStores, identity: HostIdentity): HostCtx {
+  const lifetime = new HostLifetime(identity.id);
   const ctx: HostCtx = {
+    lifetime,
     host: {
       id: identity.id,
       name: identity.name,
@@ -202,6 +241,7 @@ export function createHost(cfg: Config, runtime: Runtime, shared: SharedStores, 
       runtime: cfg.containerRuntime,
       network: boxNetworkName(cfg.labelPrefix),
       blockHostGateway: cfg.blockHostGateway,
+      egressAllowRanges: cfg.egressAllowRanges,
     },
     monitor: new HostMonitor(() => ctx, cfg.metricsIntervalMs, cfg.metricsHistory, shared.live),
     sampler: new HostSampler(
@@ -209,12 +249,12 @@ export function createHost(cfg: Config, runtime: Runtime, shared: SharedStores, 
       { intervalMs: cfg.metricsIntervalMs, history: cfg.metricsHistory },
       shared.live,
     ),
-    specs: shared.specs,
-    volumes: shared.volumes,
+    specs: fenceHostWrites(shared.specs, lifetime, ["write"]),
+    volumes: fenceHostWrites(shared.volumes, lifetime, ["write"]),
     secrets: shared.secrets,
     pulse: shared.pulse,
-    checkpoints: shared.checkpoints,
-    selfTokens: shared.selfTokens,
+    checkpoints: fenceHostWrites(shared.checkpoints, lifetime, ["write", "writeSchedule", "writePendingRollback"]),
+    selfTokens: fenceHostWrites(shared.selfTokens, lifetime, ["issue"]),
     questions: shared.questions,
     fileUploadMaxBytes: cfg.fileUploadMaxMb * 1024 * 1024,
     checkpointEngine: shared.checkpointEngine,
@@ -230,6 +270,7 @@ export function createHost(cfg: Config, runtime: Runtime, shared: SharedStores, 
     diskPolicy: { minFreePercent: cfg.hostDiskMinFreePercent },
     egress: shared.egress ?? new EgressLog(() => undefined),
     firewall: new EgressFirewall(identity.id, shared.firewall ?? new FirewallStore(null)),
+    forward: shared.forward ?? NO_FORWARD,
     activity: shared.activity ?? new ActivityLog(),
     capacity: async () => {
       if (identity.transport !== "local") return engineCapacity(runtime);
@@ -276,6 +317,7 @@ export function createLocalHost(
       multiHost: options.multiHost ?? (() => false),
       egress: options.egress,
       firewall: options.firewall,
+      forward: options.forward,
       activity: options.activity,
     },
     {
@@ -313,6 +355,7 @@ export class HostRegistry {
     if (hostId === LOCAL_HOST_ID) throw new Error("the local host cannot be removed");
     const ctx = this.hosts.get(hostId);
     this.hosts.delete(hostId);
+    if (ctx) unlabel(ctx.host);
     relabel(this.list().map((item) => item.host));
     return ctx;
   }

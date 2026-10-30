@@ -1,3 +1,4 @@
+import { sharedStore } from "../host/gone";
 import type { HostCtx } from "../host/registry";
 import type { VolumeStore } from "./store";
 
@@ -14,10 +15,11 @@ const activity = new WeakMap<VolumeStore, Map<string, Activity>>();
  * reader until the engine has answered. Holding this across the backup also protects the gaps between its helpers.
  */
 function reserve(host: HostCtx, engineName: string, removing: boolean): (() => void) | null {
-  let volumes = activity.get(host.volumes);
+  const store = sharedStore(host.volumes);
+  let volumes = activity.get(store);
   if (!volumes) {
     volumes = new Map();
-    activity.set(host.volumes, volumes);
+    activity.set(store, volumes);
   }
   const key = `${host.host.id}\0${engineName}`;
   const state = volumes.get(key) ?? { snapshots: 0, removing: false };
@@ -42,5 +44,5 @@ export const reserveVolumeRemoval = (host: HostCtx, engineName: string): (() => 
   reserve(host, engineName, true);
 
 export function volumeSnapshotting(host: HostCtx, engineName: string): boolean {
-  return (activity.get(host.volumes)?.get(`${host.host.id}\0${engineName}`)?.snapshots ?? 0) > 0;
+  return (activity.get(sharedStore(host.volumes))?.get(`${host.host.id}\0${engineName}`)?.snapshots ?? 0) > 0;
 }

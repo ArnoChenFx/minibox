@@ -95,6 +95,9 @@
 .watch-who > * {
   min-width: 0;
 }
+.watch-who > strong {
+  min-width: 0;
+}
 .watch-who > strong + .watch-actor {
   grid-column: span 2;
 }
@@ -203,6 +206,14 @@
   text-overflow: ellipsis;
   white-space: pre;
 }
+/* What an attention row says about its cause is a line of its own under the row, in full: the reason is not something a
+   hover has to reveal, and a phone has no hover. */
+.watch-note {
+  grid-column: 2 / -1;
+  margin: 0 0 2px;
+  font-size: 12px;
+  line-height: 1.5;
+}
 /* An attention row explains itself on the line, cut at the edge; the full text is its title. */
 .watch-text {
   min-width: 0;
@@ -238,6 +249,21 @@
     gap: 8px;
     overflow: hidden;
   }
+  /* On a phone an attention row shares one line with the time, so its label and subject are cut rather than pushing
+     the time off the row. The full text is the row's own title. */
+  .watch-who > strong {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  /* A phone has no hover, so what an attention row says wraps rather than being cut at the edge. */
+  .watch-text {
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+    line-height: 1.5;
+    padding: 3px 0;
+  }
   .watch-state:empty {
     display: none;
   }
@@ -254,5 +280,16 @@
   }
   .watch-detail {
     grid-area: detail;
+  }
+  /* An attention row reads: who and when, what it says, why, then the actions. */
+  .watch-attention .watch-row {
+    grid-template-areas:
+      "ico who time"
+      ". cmd cmd"
+      ". note note"
+      ". actions actions";
+  }
+  .watch-note {
+    grid-area: note;
   }
 }

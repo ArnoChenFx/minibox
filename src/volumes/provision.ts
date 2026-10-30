@@ -71,6 +71,10 @@ async function undoCreated(host: HostCtx, record: VolumeRecord): Promise<void> {
   const outcome = await removeEngine(host, record.engineName);
   if (outcome.status === "failed") throw new Error(outcome.detail);
   host.volumes.remove(record.id);
+  // A host removed and added again while this attempt ran took the engine volume in under a record of its own, and that
+  // record now describes a volume that is gone.
+  const adopted = host.volumes.findByEngine(host.host.id, record.engineName);
+  if (adopted) host.volumes.remove(adopted.id);
 }
 
 /**
@@ -106,7 +110,13 @@ export async function provisionRoleMounts(
 ): Promise<BoxMount[]> {
   const own = changes ?? new VolumeChanges();
   try {
-    return await host.volumes.exclusive(() => provisionRoleMountsLocked(host, box, roles, known, own, restored, pools));
+    const planned = await host.volumes.exclusive(() =>
+      provisionRoleMountsLocked(host, box, roles, known, own, restored, pools),
+    );
+    // The chown runs in a helper container, which may take minutes. It is done after the record lock is released, so a
+    // host that is being removed (or any other writer) is not held up behind it; a late record write is refused there.
+    await chownEngines(host, planned.chown, known);
+    return planned.mounts;
   } catch (e) {
     if (!changes) await own.rollback();
     throw e;
@@ -121,7 +131,7 @@ async function provisionRoleMountsLocked(
   changes: VolumeChanges,
   restored: ReadonlyMap<VolumeRole, VolumeRecord>,
   pools: ReadonlyMap<VolumeRole, string>,
-): Promise<BoxMount[]> {
+): Promise<{ mounts: BoxMount[]; chown: string[] }> {
   const wanted = new Set(roles);
   const plans = defaultRolePlans(host, box, pools).filter((plan) => wanted.has(plan.role));
   const mounts: BoxMount[] = [];
@@ -153,8 +163,7 @@ async function provisionRoleMountsLocked(
     if (created.chown) chown.push(created.record.engineName);
     mounts.push(mountFor(plan.role, created.record.engineName));
   }
-  await chownEngines(host, chown, known);
-  return mounts;
+  return { mounts, chown };
 }
 
 /**
@@ -177,20 +186,21 @@ export async function createIndependentVolume(
 }
 
 /**
- * An empty volume for data a checkpoint restores into: owned by `owner` when one is given, else independent. Its name
- * is made free the way a box's role volume is. It is not chowned, because the restore writes the owners the snapshot
- * recorded. Without `changes`, a failure removes what this call created before it is thrown.
+ * An empty volume for data a checkpoint restores into: owned by `owner` when one is given, else independent. It is made
+ * in `pool` when one is named, else in the pool of its role, as a new box's volume is. Its name is made free the way a
+ * box's role volume is. It is not chowned, because the restore writes the owners the snapshot recorded. Without
+ * `changes`, a failure removes what this call created before it is thrown.
  */
 export async function createRestoredVolume(
   host: HostCtx,
-  input: { name: string; role: VolumeRole | null; owner: string | null; createdBy: string | null },
+  input: { name: string; role: VolumeRole | null; owner: string | null; createdBy: string | null; pool?: string },
   known: Set<string>,
   changes?: VolumeChanges,
 ): Promise<VolumeRecord> {
   const own = changes ?? new VolumeChanges();
   try {
     return await host.volumes.exclusive(async () => {
-      const pool = resolvePool(host, { role: input.role });
+      const pool = resolvePool(host, { pool: input.pool, role: input.role });
       const created = await materialize(
         host,
         {

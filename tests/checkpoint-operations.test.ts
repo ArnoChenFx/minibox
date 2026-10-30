@@ -514,6 +514,25 @@ describe("an agent host and checkpoints", () => {
     }
   });
 
+  test("an import onto an agent host is refused with the feature named, before any task starts", async () => {
+    const host = harness.app.hosts.get();
+    host.host.transport = "agent";
+    try {
+      const reply = await call(harness.base, "/api/packages/pk_neverexisted/import", {
+        method: "POST",
+        body: { passphrase: "correct horse battery staple" },
+      });
+      expect(reply).toMatchObject({
+        status: 501,
+        json: { error: { code: "unsupported", key: "agent_host_unsupported", params: { feature: "checkpoints" } } },
+      });
+      expect(reply.json).not.toHaveProperty("taskId");
+      expect(harness.app.tasks.list({ limit: 10 })).toEqual([]);
+    } finally {
+      host.host.transport = "local";
+    }
+  });
+
   test("the refusal is the operation's, not the runtime's: a plain local host still takes a checkpoint", async () => {
     const boxId = await makeBox("beta");
     const started = await call(harness.base, `/api/boxes/${boxId}/checkpoints`, { method: "POST", body: {} });

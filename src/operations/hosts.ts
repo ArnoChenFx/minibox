@@ -2,6 +2,8 @@ import { z } from "zod";
 
 import { endpointLabel, parseEndpoint } from "../host/endpoint";
 import type { HostManager, HostView } from "../host/manager";
+import { notFound } from "../lib/errors";
+import { msg } from "../lib/messages";
 import { defineOperation } from "./define";
 import type { OperationContext } from "./types";
 import { hostLabelsInput } from "./validation";
@@ -254,6 +256,71 @@ const hostDisk = defineOperation({
   run: (ctx, input) => hostsOf(ctx).disk(input.id),
 });
 
+/** One host's forwarding, as the check last read it. */
+const ForwardStateSchema = z.object({
+  bridge: z.string().meta({ description: "The uplink network's host interface, such as br-1a2b3c4d5e6f." }),
+  forwarding: z.boolean().meta({
+    description: "Whether a new connection arriving on that bridge would be forwarded to the internet.",
+  }),
+  cause: z.enum(["policy", "rule", "unreachable"]).nullable().meta({
+    description:
+      "What drops the uplink when it is dropped. policy is a chain falling off its end, the case MiniBox may repair. rule is a DROP or REJECT the host's own rules make on purpose. unreachable is the policy again, but a RETURN or -g in FORWARD ends the walk first, so a rule appended at the end would never be reached. Null when the reading is not certain, which is the case with nothing to offer.",
+  }),
+  detail: z
+    .string()
+    .meta({ description: "One line per iptables backend that answered, naming why it accepts or drops." }),
+  boxes: z.array(z.string()).meta({ description: "The proxy-only boxes on the host that need the forwarding." }),
+  at: z.string().meta({ description: "When the reading was taken, as ISO time." }),
+  repaired: z
+    .boolean()
+    .meta({ description: "Whether the owner confirmed a repair after this reading. The next pass decides again." }),
+  skipped: z.string().nullable().meta({
+    description: "Why the check cannot run on this host, such as an agent host, or null when it ran.",
+  }),
+  installed: z.boolean().meta({
+    description:
+      "Whether MiniBox's forward chain is on the host because a repair ran and nothing removed it since. It is removed when the host has no proxy-only box left, and when the host is removed.",
+  }),
+});
+
+const hostForwardRepair = defineOperation({
+  name: "host.forward.repair",
+  tag: "hosts",
+  summary: "Allow a host's egress uplink through FORWARD",
+  kind: "write",
+  scope: "host:manage",
+  async: false,
+  conflicts: true,
+  input: z.object({
+    id: z.string().min(1).max(32).meta({
+      description:
+        "Host id, as host.list reports it. The host must have a proxy-only box, and the check must have read its rules.",
+    }),
+  }),
+  output: z.object({ host: ForwardStateSchema }),
+  rest: [{ method: "POST", path: "/api/hosts/:id/forward", body: true }],
+  mcp: {
+    toolset: "meta",
+    name: "repair_host_forward",
+    description:
+      "Add MiniBox's own FORWARD chain for a host's egress uplink, so proxy-only boxes there can reach the internet again. MiniBox never does this on its own: it runs only when the owner confirms the Needs attention item on the overview, or calls this, and it refuses unless the last reading says the drop is the chain's policy rather than a rule somebody wrote. The chain is jumped to at the end of FORWARD, so Docker's own isolation chains and anything an operator put in DOCKER-USER still decide first, and it accepts only connections that arrive on the uplink bridge and leave through the host's default route, plus the replies. Nothing else is touched and the FORWARD policy stays as it is. Returns the reading taken right after, so a repair that did not work still reports forwarding false. Refused when the host has no IPv4 default route, since there is no interface to allow. Owner only.",
+  },
+  activity: { action: () => "host.forward.repair", target: (input) => input.id },
+  audit: {
+    target: ({ id }) => ({ kind: "host", id, name: id }),
+    detail: (_input, _resolved, result) => ({
+      bridge: result?.host.bridge ?? null,
+      forwarding: result?.host.forwarding ?? null,
+      boxes: result?.host.boxes ?? [],
+    }),
+  },
+  run: async (ctx, input) => {
+    const found = (ctx.allHosts?.() ?? [ctx.host]).find((candidate) => candidate.host.id === input.id);
+    if (!found) throw notFound(msg("host_not_found", { host: input.id }));
+    return { host: await found.forward.repair(found) };
+  },
+});
+
 const hostAdd = defineOperation({
   name: "host.add",
   tag: "hosts",
@@ -360,6 +427,67 @@ const hostRemove = defineOperation({
   run: async (ctx, input): Promise<{ host: HostView }> => ({ host: await hostsOf(ctx).remove(input.id) }),
 });
 
+const hostForceRemove = defineOperation({
+  name: "host.remove.force",
+  tag: "hosts",
+  summary: "Remove a lost host and its records",
+  kind: "destructive",
+  scope: "host:manage",
+  async: false,
+  conflicts: true,
+  input: z.object({
+    id: z.string().min(1).max(32).meta({
+      description:
+        "Host id. The host must exist, must not be the local host, and its last check must have failed (status offline). An online or unchecked host is a 409 host_not_offline.",
+    }),
+    confirm: z.boolean().optional().meta({
+      description:
+        "Without it nothing changes and the call answers 409 with details.preview, listing the boxes, volumes and checkpoints whose records would be discarded. Send true to discard them.",
+    }),
+    digest: z.string().min(1).max(64).optional().meta({
+      description:
+        "The preview digest this call confirms. When given, the records are read again under their locks and a set that changed answers 409 host_records_changed with a fresh preview, discarding nothing. Omit it to discard whatever the host holds when the call runs.",
+    }),
+  }),
+  output: z.object({
+    host: HostViewSchema,
+    discarded: z.object({
+      boxes: z.array(z.object({ id: z.string(), name: z.string() })),
+      volumes: z.array(z.object({ name: z.string(), engineName: z.string() })),
+      checkpoints: z.array(z.object({ id: z.string(), label: z.string() })),
+    }),
+  }),
+  rest: [{ method: "POST", path: "/api/hosts/:id/force-remove", body: true }],
+  cli: "host force-remove",
+  mcp: {
+    toolset: "meta",
+    name: "force_remove_host",
+    description:
+      "Remove a host whose machine is gone, discarding MiniBox's records of it: its boxes, its volume records (the shared tools volume too) and its checkpoint records. Only an offline host may be removed this way: use remove_host for one that answers. No engine is contacted and nothing on the machine is deleted, so a machine that is only unreachable keeps its containers as orphans MiniBox no longer manages, and its checkpoint repository stays in a volume there. Without confirm true the call changes nothing and returns confirmation_required with details.preview, which lists every record that would be discarded. Owner only.",
+  },
+  activity: { action: () => "host.remove.force", target: (input) => input.id },
+  audit: {
+    target: ({ id }, _resolved, result) => ({ kind: "host", id, name: result?.host.name ?? id }),
+    detail: (input, _resolved, result) => ({
+      host: input.id,
+      boxes: result?.discarded.boxes ?? [],
+      volumes: result?.discarded.volumes ?? [],
+      checkpoints: result?.discarded.checkpoints ?? [],
+    }),
+  },
+  run: async (ctx, input) => {
+    const removed = await hostsOf(ctx).forceRemove(input.id, input.confirm === true, input.digest);
+    return {
+      host: removed.host,
+      discarded: {
+        boxes: removed.discarded.boxes,
+        volumes: removed.discarded.volumes.map(({ name, engineName }) => ({ name, engineName })),
+        checkpoints: removed.discarded.checkpoints,
+      },
+    };
+  },
+});
+
 const hostPairingCreate = defineOperation({
   name: "host.pairing.create",
   tag: "hosts",
@@ -411,10 +539,12 @@ export const hostOperations = [
   hostList,
   hostUsage,
   hostDisk,
+  hostForwardRepair,
   hostAdd,
   hostTest,
   hostLabelsSet,
   hostRemove,
+  hostForceRemove,
   hostPairingCreate,
   hostRevoke,
 ];

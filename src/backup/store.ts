@@ -51,6 +51,8 @@ export interface BackupStoreOptions {
  */
 export class BackupStore {
   private readonly archiveDir: string;
+  /** The problem last logged for each record, so a bad file is named once and not on every listing. */
+  private readonly reported = new Map<string, string>();
 
   constructor(
     private readonly dataDir: string,
@@ -104,17 +106,26 @@ export class BackupStore {
     try {
       text = readFileSync(this.recordPath(id), "utf8");
     } catch (e) {
-      if (!isEnoent(e)) log.warn("backup.record_unreadable", { id, error: String(e) });
+      if (!isEnoent(e)) this.unreadable(id, String(e));
       return null;
     }
     try {
       const parsed = BackupRecordSchema.safeParse(JSON.parse(text));
-      if (parsed.success && parsed.data.id === id) return parsed.data;
-      log.warn("backup.record_unreadable", { id, error: "not a backup record" });
+      if (parsed.success && parsed.data.id === id) {
+        this.reported.delete(id);
+        return parsed.data;
+      }
+      this.unreadable(id, "not a backup record");
     } catch (e) {
-      log.warn("backup.record_unreadable", { id, error: String(e) });
+      this.unreadable(id, String(e));
     }
     return null;
+  }
+
+  private unreadable(id: string, error: string): void {
+    if (this.reported.get(id) === error) return;
+    this.reported.set(id, error);
+    log.warn("backup.record_unreadable", { id, error });
   }
 
   /** Stored backups, newest first. A record that cannot be read is skipped and logged. */
@@ -140,6 +151,7 @@ export class BackupStore {
 
   /** Removes the archive and its record. A missing one is not an error, so a retry can finish the job. */
   remove(id: string): void {
+    this.reported.delete(id);
     for (const path of [this.pathFor(id), this.recordPath(id), this.partialPath(id)]) {
       try {
         unlinkSync(path);
@@ -154,7 +166,7 @@ export class BackupStore {
     try {
       return statSync(this.pathFor(id)).size;
     } catch (e) {
-      if (!isEnoent(e)) log.warn("backup.record_unreadable", { id, error: String(e) });
+      if (!isEnoent(e)) this.unreadable(id, String(e));
       return null;
     }
   }

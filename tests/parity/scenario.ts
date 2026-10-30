@@ -767,6 +767,12 @@ async function recordScenario(): Promise<Exchange[]> {
     // What a host's engine holds (`docker system df`), and a host id no host carries.
     await send("read the engine storage of the local host", "GET", "/api/hosts/local/disk");
     await send("read the engine storage of a missing host", "GET", "/api/hosts/nowhere/disk");
+    // The egress forward check, and the repair the owner confirms from the overview.
+    await post("repair forwarding on a host with no proxy-only box", "/api/hosts/local/forward", {});
+    await post("repair forwarding on a missing host", "/api/hosts/nowhere/forward", {});
+    // The owner's forced removal of a lost host. The local host and a missing host are the refusals a clean instance gives.
+    await post("force-remove the local host", "/api/hosts/local/force-remove", { confirm: true });
+    await post("force-remove a missing host", "/api/hosts/nowhere/force-remove", { confirm: true });
 
     const portBox = boxId(
       (await post("create a box to export", "/api/boxes", { name: "portbox", cpus: 1, memoryMb: 256 })).json,
@@ -1038,6 +1044,21 @@ async function recordScenario(): Promise<Exchange[]> {
     await send("delete the webhook channel again", "DELETE", alerts);
 
     await send("list backups before any is made", "GET", "/api/backups");
+    await send("read the backup schedule of an instance with none", "GET", "/api/backups/schedule");
+    await put("set an hourly backup schedule", "/api/backups/schedule", { everyHours: 6 });
+    await put("set a backup schedule with an hour and a time", "/api/backups/schedule", {
+      everyHours: 6,
+      at: "02:30",
+    });
+    await put("set a backup schedule past the longest interval", "/api/backups/schedule", { everyHours: 721 });
+    await put("set a daily backup schedule", "/api/backups/schedule", { at: "02:30", timezone: "Asia/Shanghai" });
+    await put("set a daily backup schedule in an unknown zone", "/api/backups/schedule", {
+      at: "02:30",
+      timezone: "Mars/Olympus",
+    });
+    await send("read the backup schedule", "GET", "/api/backups/schedule");
+    await send("clear the backup schedule", "DELETE", "/api/backups/schedule");
+    await send("clear the backup schedule again", "DELETE", "/api/backups/schedule");
     await post("back up with a short passphrase", "/api/backups", { passphrase: "short" });
     const made = await post("back up the data directory", "/api/backups", { passphrase: PASSPHRASE });
     const backup = (await waitTask(base, made.json)).result as { backup?: { id?: string } } | undefined;

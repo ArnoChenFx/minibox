@@ -7,6 +7,7 @@
     "scripts/*.ts",
     "tests/**/*.test.ts",
     "tests/support/pair-writer.ts",
+    "tests/fixtures/*.fixture.ts",
     "web/*.html",
     "web/js/{app,login,boot}.js",
     "site/index.html",

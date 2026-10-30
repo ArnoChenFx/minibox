@@ -32,10 +32,11 @@ interface BoxRow {
   mounts: BoxMount[];
 }
 
-/** One entry of the `mounts` a create sends: a volume that exists, or a role to create. */
+/** One entry of the `mounts` a create sends: a volume that exists, or a role to create, with the pool it picked. */
 interface SentMount {
   volume?: string;
   role?: string;
+  pool?: string;
   path?: string;
 }
 
@@ -94,8 +95,8 @@ describe.skipIf(!executablePath)("the create box dialog's preview volume names (
 
   const dialog = () => page.getByRole("dialog");
 
-  /** Opens the create dialog in Customize mode, with the box name already filled in. */
-  const openCustom = async (name: string): Promise<ReturnType<typeof dialog>> => {
+  /** Opens the create dialog in Customize mode, with the box name filled in when one is given. */
+  const openCustom = async (name?: string): Promise<ReturnType<typeof dialog>> => {
     // A dialog left open by a failed test would swallow the click that opens the next one.
     await page
       .getByRole("dialog")
@@ -107,7 +108,7 @@ describe.skipIf(!executablePath)("the create box dialog's preview volume names (
     await page.locator('[data-action="create"]').first().click();
     const box = dialog();
     await webExpect(box).toBeVisible();
-    await box.locator("#cbName").fill(name);
+    if (name !== undefined) await box.locator("#cbName").fill(name);
     await box.locator("#cbVolumes .fold-toggle").click();
     await box.locator('#cbVolMode [data-vol-mode="custom"]').click();
     await webExpect(box.locator("#cbMountRows [data-mount]")).toHaveCount(4);
@@ -357,6 +358,87 @@ describe.skipIf(!executablePath)("the create box dialog's preview volume names (
         english("cb.previewShared", { name: sharedToolsName() }),
       );
       expect(await rowOptionTexts(box)).toContain(english("mount.roleSharedExists", { name: sharedToolsName() }));
+    },
+    TIMEOUT_MS,
+  );
+
+  test(
+    "an unnamed box shows the naming rule, and neither the create nor the volumes it makes carry a placeholder",
+    async () => {
+      // No name is typed: the dialog has only the placeholder the dictionaries hold.
+      const box = await openCustom();
+      const placeholder = english("cb.previewBoxNamePlaceholder");
+      const placeholderVolume = (role: string) => `${placeholder}-${role}`;
+      const previewLabel = (name: string) => english("mount.roleWillCreate", { name });
+
+      // The rows of the roles named after the box show `<box name>-<role> (preview)`, not a bare role.
+      expect(await rowOptionTexts(box)).toContain(previewLabel(placeholderVolume("workspace")));
+      expect(await rowOptionTexts(box)).toContain(previewLabel(placeholderVolume("home")));
+      expect(await rowOptionTexts(box)).toContain(previewLabel(placeholderVolume("cache")));
+      // The lines show the same names, say they are a preview, and say the name follows the Box name typed later.
+      await webExpect(box.locator("#cbVolPreviewNote")).toContainText(
+        english("cb.previewUnnamedName", { name: placeholderVolume("workspace") }),
+      );
+      await webExpect(box.locator("#cbVolPreviewNote")).toContainText(
+        english("cb.previewUnnamedName", { name: placeholderVolume("home") }),
+      );
+      await webExpect(box.locator("#cbVolPreviewNote")).toContainText(
+        english("cb.previewUnnamedName", { name: placeholderVolume("cache") }),
+      );
+
+      // A name replaces the placeholder, and clearing it brings the naming rule back.
+      await box.locator("#cbName").fill("alpha");
+      await webExpect(box.locator("#cbVolPreviewNote")).toContainText(
+        english("cb.previewCreate", { name: "alpha-workspace" }),
+      );
+      expect(await rowOptionTexts(box)).toContain(previewLabel("alpha-workspace"));
+      await box.locator("#cbName").fill("");
+      await webExpect(box.locator("#cbVolPreviewNote")).toContainText(
+        english("cb.previewUnnamedName", { name: placeholderVolume("workspace") }),
+      );
+      expect(await rowOptionTexts(box)).toContain(previewLabel(placeholderVolume("cache")));
+
+      // A pool pick while the name is empty says where the volume goes without inventing a name for it.
+      const workspaceRow = box.locator("#cbMountRows [data-mount]").first();
+      await webExpect(workspaceRow.locator('[data-pool] option[value="local"]')).toHaveCount(1);
+      await workspaceRow.locator("[data-pool]").selectOption("local");
+      await webExpect(workspaceRow.locator("[data-pool]")).toHaveValue("local");
+      await webExpect(box.locator("#cbVolPreviewNote")).toContainText(
+        english("cb.previewUnnamedNamePool", { name: placeholderVolume("workspace"), pool: "local" }),
+      );
+
+      // The request body the dialog sends, captured before the server sees it.
+      const captured: { sent: { mounts?: SentMount[] } | null } = { sent: null };
+      await page.route("**/api/boxes", async (route) => {
+        if (route.request().method() !== "POST") return route.continue();
+        captured.sent = route.request().postDataJSON() as { mounts?: SentMount[] };
+        await route.continue();
+      });
+
+      await box.locator("#cbName").fill("alpha");
+      await box.locator("#cbSubmit").click();
+      await webExpect(box).toHaveCount(0);
+      const created = await boxNamed("alpha");
+      expect(captured.sent).not.toBeNull();
+
+      // Nothing of the naming rule is sent: the row is a role (with the pool it picked), never a name.
+      const sent = JSON.stringify(captured.sent);
+      expect(sent).not.toContain("<");
+      expect(sent).not.toContain(placeholder);
+      expect(sent.toLowerCase()).not.toContain("box name");
+      expect(sent).not.toContain("Box 名称");
+      expect(captured.sent?.mounts).toContainEqual({ role: "workspace", pool: "local" });
+
+      // The volumes the create made are named after the box, and none of them is a placeholder either.
+      const names = (await volumesOn(hostId)).map((volume) => volume.name);
+      expect(names).toContain("alpha-workspace");
+      expect(names).toContain("alpha-home");
+      expect(names).toContain("alpha-cache");
+      expect(names.some((name) => name.includes("<") || name.toLowerCase().includes("box name"))).toBe(false);
+      expect(created.mounts.find((mount) => mount.role === "workspace")?.volumeName).toBe("alpha-workspace");
+      expect(created.mounts.find((mount) => mount.role === "home")?.volumeName).toBe("alpha-home");
+      expect(created.mounts.find((mount) => mount.role === "cache")?.volumeName).toBe("alpha-cache");
+      await page.unroute("**/api/boxes");
     },
     TIMEOUT_MS,
   );

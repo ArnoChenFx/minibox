@@ -83,7 +83,15 @@ function setup(limits: { pendingMax?: number; pendingPerAddressMax?: number; now
       protocol: AGENT_PROTOCOL,
       pairedAt: "2026-10-22T00:00:00.000Z",
     });
-  return { hub, store, enroll, key: pair.privateKey };
+  const enrollAs = (hostId: string) =>
+    hub.enroll({
+      hostId,
+      publicKeyPem,
+      version: AGENT_VERSION,
+      protocol: AGENT_PROTOCOL,
+      pairedAt: "2026-10-22T00:00:00.000Z",
+    });
+  return { hub, store, enroll, enrollAs, key: pair.privateKey };
 }
 
 function helloFrame(key: KeyObject, nonce: string, agentId: string): string {
@@ -171,7 +179,7 @@ describe("the cap on sockets that have not authenticated", () => {
     const { hub } = setup({ pendingMax: 3, pendingPerAddressMax: 2 });
     const crowd = [open(hub, "a"), open(hub, "a"), open(hub, "b"), open(hub, "c")];
     expect(crowd.map((held) => held.socket.closed.length)).toEqual([0, 0, 0, 1]);
-    // The address limit still bites first on a fourth address, which the global count has room for.
+    // A new address is refused for the total. Where both limits are full, the address is the one that is named.
     expect(hub.pendingRefusal("d")).toEqual({ scope: "total", pending: 3, max: 3 });
     expect(hub.pendingRefusal("a")).toEqual({ scope: "address", pending: 2, max: 2 });
   });
@@ -269,6 +277,55 @@ describe("the cap on sockets that have not authenticated", () => {
     expect(reconnect.socket.closed).toEqual([]);
     expect(framesOf(reconnect.socket, "welcome")).toHaveLength(1);
     expect(hub.status(record.agentId)?.connected).toBe(true);
+  });
+
+  test("authenticated agents hold no place in the total either, however many are connected", () => {
+    const { hub, enrollAs, key } = setup({ pendingMax: 2, pendingPerAddressMax: 2 });
+    // Three agents are connected, which is more than the total allows to be waiting.
+    for (const [index, hostId] of ["one", "two", "three"].entries()) {
+      const connected = connectAgent(hub, key, enrollAs(hostId).agentId, `198.51.100.${index + 1}`);
+      expect(connected.socket.closed).toEqual([]);
+      expect(framesOf(connected.socket, "welcome")).toHaveLength(1);
+    }
+    expect(hub.pendingRefusal("203.0.113.99")).toBeNull();
+    const next = open(hub, "203.0.113.99");
+    expect(next.socket.closed).toEqual([]);
+    expect(framesOf(next.socket, "challenge")).toHaveLength(1);
+  });
+
+  test("a socket that cannot be written to holds no place and is closed, although opening it fails", () => {
+    const { hub } = setup({ pendingPerAddressMax: 1 });
+    const closed: Array<{ code: number; reason: string }> = [];
+    const broken: AgentSocket = {
+      send: () => {
+        throw new Error("the socket is gone");
+      },
+      close: (code, reason) => {
+        closed.push({ code, reason });
+      },
+    };
+    expect(() => hub.attach(broken, LOCAL)).toThrow("the socket is gone");
+    // The caller got no session to detach and no timer was set, so nothing else would ever close it.
+    expect(closed).toEqual([{ code: 1011, reason: "the challenge could not be sent" }]);
+    const next = open(hub);
+    expect(next.socket.closed).toEqual([]);
+    expect(framesOf(next.socket, "challenge")).toHaveLength(1);
+  });
+
+  test("a socket that cannot be closed either still gives its place back, and the failure raised is the send's", () => {
+    const { hub } = setup({ pendingPerAddressMax: 1 });
+    const gone: AgentSocket = {
+      send: () => {
+        throw new Error("the socket is gone");
+      },
+      close: () => {
+        throw new Error("already closed");
+      },
+    };
+    expect(() => hub.attach(gone, LOCAL)).toThrow("the socket is gone");
+    const next = open(hub);
+    expect(next.socket.closed).toEqual([]);
+    expect(framesOf(next.socket, "challenge")).toHaveLength(1);
   });
 
   test("both limits are configurable for a test: set to 1, the first socket is challenged and the second is refused", () => {

@@ -6,6 +6,8 @@ import { call, type Engine } from "./engine";
 import { toRuntimeError } from "./errors";
 
 const ICC_OPTION = "com.docker.network.bridge.enable_icc";
+/** The option a bridge takes its host interface name from, instead of the `br-<id>` the engine picks. */
+const BRIDGE_NAME_OPTION = "com.docker.network.bridge.name";
 
 interface BridgeSpec {
   interContainerComm: boolean;
@@ -15,6 +17,19 @@ interface BridgeSpec {
 
 function subnetsOf(network: Docker.NetworkInspectInfo): string[] {
   return (network.IPAM?.Config ?? []).flatMap((entry) => (entry.Subnet ? [entry.Subnet] : []));
+}
+
+/**
+ * The host interface the bridge driver made for a network. A bridge takes the name its options give it, or
+ * `br-` and the first 12 characters of the network id, which is how the engine names them. A network on another driver
+ * has no such interface here.
+ */
+function bridgeOf(network: Docker.NetworkInspectInfo): string | null {
+  if (network.Driver !== "bridge") return null;
+  const named = network.Options?.[BRIDGE_NAME_OPTION]?.trim();
+  if (named) return named;
+  const short = (network.Id ?? "").slice(0, 12);
+  return short ? `br-${short}` : null;
 }
 
 /** An existing network can be used only if it is a bridge that matches every setting the caller asked for. */
@@ -117,6 +132,7 @@ export function networkMethods(engine: Engine): NetworkMethods {
         name: network.Name,
         subnets: subnetsOf(network),
         labels: network.Labels ?? {},
+        bridge: bridgeOf(network),
       }));
     },
 

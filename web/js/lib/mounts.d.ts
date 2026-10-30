@@ -53,6 +53,12 @@ export interface CreateMountChoice {
  */
 export interface RoleVolumeName {
   name: string | null;
+  /**
+   * The name the dialog shows while the box has no name yet, such as `<box name>-workspace`, when it is known. It is
+   * display only: the server names the volume from the box name, so the placeholder never counts as taken and is never
+   * sent.
+   */
+  placeholder?: string | null;
   /** True when the volume is there already: the shared tools volume of the host the box goes to. */
   exists: boolean;
   exact: boolean;
@@ -76,6 +82,11 @@ export interface RoleNameInput {
   taken?: readonly string[];
   /** False when the create picks the host itself (`auto`), so the shared tools volume has no name yet. */
   hostKnown?: boolean;
+  /**
+   * The text the dialog shows for a Box name that is not typed yet, such as `<box name>`. A role volume named after the
+   * box gets `<placeholder>-<role>` as its `placeholder`, which the dialog shows until the box is named.
+   */
+  boxNamePlaceholder?: string | null;
 }
 
 export type MountProblem =
@@ -142,7 +153,8 @@ export declare function previewRoleNames(
 ): (RoleVolumeName & { role: string })[];
 /**
  * The lines the Volumes section says under its rows, as i18n keys and their parameters: `cb.previewCreate`,
- * `cb.previewCreateInexact`, `cb.previewShared`, `cb.previewUnnamed` or `cb.previewHostUnknown`.
+ * `cb.previewCreateInexact`, `cb.previewShared`, `cb.previewUnnamed`, `cb.previewUnnamedName` or
+ * `cb.previewHostUnknown`.
  */
 export declare function previewNoteLines(
   rows: readonly { volume: string }[],

@@ -131,6 +131,11 @@ export function targetsPath(dataDir: string): string {
   return join(dataDir, "targets.json");
 }
 
+/** The one backup schedule of this instance: its rule, its next run and its last run. Mode 600. Absent when it is off. */
+export function backupSchedulePath(dataDir: string): string {
+  return join(dataDir, "backup-schedule.json");
+}
+
 /** The owner's SSH public keys for direct SSH logins. Mode 600, since the file decides who gets a shell. */
 export function sshKeysPath(dataDir: string): string {
   return join(dataDir, "ssh_keys.json");

@@ -377,6 +377,7 @@ describe("a saturated control plane", () => {
 describe("the agent's timers", () => {
   test("the hello timeout starts when the socket opens, so a slow dial does not spend it", async () => {
     const { client, sockets } = setup({ autoOpen: false, helloTimeoutMs: 30, connectTimeoutMs: 10_000 });
+    const logs = logLines();
     const done = client.run();
     try {
       await waitFor(() => sockets.length === 1, "the first dial");
@@ -387,21 +388,29 @@ describe("the agent's timers", () => {
       // Open and silent: now the hello timeout runs, and the agent closes the socket and dials again.
       await waitFor(() => (sockets[0]?.closes.length ?? 0) === 1, "the hello timeout to close the socket");
       await waitFor(() => sockets.length === 2, "a second dial");
+      // The log says which timeout it was, which the close that follows does not.
+      expect(logs.lines.filter((line) => line.includes("agent.hello_timeout"))).toHaveLength(1);
+      expect(logs.lines.filter((line) => line.includes("agent.connect_timeout"))).toHaveLength(0);
     } finally {
       client.stop();
       await done;
+      logs.restore();
     }
   });
 
   test("a dial that never opens is given up after the connect timeout, and the agent dials again", async () => {
     const { client, sockets } = setup({ autoOpen: false, connectTimeoutMs: 30, helloTimeoutMs: 10_000 });
+    const logs = logLines();
     const done = client.run();
     try {
       await waitFor(() => (sockets[0]?.closes.length ?? 0) === 1, "the connect timeout to close the socket");
       await waitFor(() => sockets.length === 2, "a second dial");
+      expect(logs.lines.filter((line) => line.includes("agent.connect_timeout"))).toHaveLength(1);
+      expect(logs.lines.filter((line) => line.includes("agent.hello_timeout"))).toHaveLength(0);
     } finally {
       client.stop();
       await done;
+      logs.restore();
     }
   });
 

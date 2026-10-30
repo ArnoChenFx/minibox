@@ -33,6 +33,7 @@ export default {
   "ov.attn.disk_low": "Host disk low",
   "ov.attn.cpu_overcommit": "Host CPU overcommitted",
   "ov.attn.memory_overcommit": "Host memory overcommitted",
+  "ov.attn.forward_blocked": "Proxy-only boxes have no internet",
   "ov.text.oom": "The box ran out of memory and the kernel ended a process in it.",
   "ov.text.checkpoint_failed": "The checkpoint did not complete.",
   "ov.text.checkpoint_failed_detail": "The checkpoint did not complete: {detail}",
@@ -49,6 +50,27 @@ export default {
     "Its boxes reserve {booked}, past the {limit} the overcommit ratio allows. A new box may be refused.",
   "ov.text.memory_overcommit":
     "Its boxes reserve {booked}, past the {limit} the overcommit ratio allows. A new box may be refused.",
+  "ov.forwardRepair": "Add the rule",
+  "ov.forwardRepairHint": "Ask first, then let MiniBox allow the egress uplink through the host's FORWARD chain",
+  "ov.forwardRepairTitle": "Allow the egress uplink on {host}?",
+  "ov.forwardRepairMessage":
+    "MiniBox will add its own chain on {host} and append one jump to it at the end of FORWARD, so every rule above it still decides first. The chain accepts new connections arriving on {bridge} and leaving through the host's default route, wherever they are going, plus their replies. Nothing else on the host's firewall changes. Proxy-only boxes there get the internet back; open boxes were never affected.",
+  "ov.forwardRepairWhat":
+    "If you would rather do it by hand, the commands are in the network egress guide: https://github.com/ArnoChenFx/minibox/blob/main/docs/admin/network-egress.md#when-a-proxy-only-box-has-no-internet. The warning stays until a check finds the rules right.",
+  "ov.forwardRepaired": "Added the FORWARD rule",
+  "ov.forwardRepairFailed": "Couldn't add the FORWARD rule",
+  "ov.text.forward_blocked":
+    "The host's FORWARD rules drop the egress uplink ({bridge}), so its {count} proxy-only box(es) ({boxes}) cannot reach the internet. Open boxes are unaffected.",
+  "ov.text.forward_blocked_unclear":
+    "The egress uplink ({bridge}) looks dropped on this host, so its {count} proxy-only box(es) ({boxes}) may have no internet. Open boxes are unaffected.",
+  "ov.note.forward_policy":
+    "No rule in FORWARD accepts that traffic, so the chain's policy drops it. Confirm to let MiniBox add the rule, or add it by hand.",
+  "ov.note.forward_rule":
+    "A DROP or REJECT rule of the host's own does it, on purpose. MiniBox has no rule to add here: change that rule by hand if these boxes should get out.",
+  "ov.note.forward_unreachable":
+    "A rule in FORWARD hands that traffic to another chain for good (-g) or ends the walk (RETURN), so a rule MiniBox appended to FORWARD would never be reached. Add the allowance in that chain, or above that rule, by hand.",
+  "ov.note.forward_unclear":
+    "One of the rules is one MiniBox cannot read, so it cannot say why. Read the rules by hand; MiniBox offers no rule here.",
   "actv.subtitle": "Every operation MiniBox has recorded: who acted, on what, and how it ended.",
   "actv.filters": "Filter the activity log",
   "actv.box": "Box",

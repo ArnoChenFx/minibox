@@ -161,6 +161,30 @@ export interface NetworkSummary {
   subnets: string[];
   /** The labels the network was created with. Empty for a network made without any, as older MiniBox versions did. */
   labels: Record<string, string>;
+  /**
+   * The host interface the bridge driver made for it, such as `br-1a2b3c4d5e6f`, or null when the engine does not say.
+   * The host's firewall rules match traffic by this interface, so the egress forward check needs it.
+   */
+  bridge: string | null;
+}
+
+/**
+ * Why the host's rules dropped the uplink. `policy` is a chain falling off its end, `rule` a `DROP` written on purpose,
+ * and `unreachable` the policy again after a `RETURN` or `-g` in `FORWARD` ended the walk, where nothing MiniBox
+ * appends would be reached.
+ */
+export type HostForwardCause = "policy" | "rule" | "unreachable";
+
+export interface HostForwardCheck {
+  /** True when the connection would be forwarded, so an egress proxy on that bridge can reach the internet. */
+  readonly forwarding: boolean;
+  /**
+   * What dropped the packet, when every backend that drops agrees and no rule was left unread. Null otherwise, which
+   * is the case MiniBox reports without offering to change anything.
+   */
+  readonly cause: HostForwardCause | null;
+  /** One line per iptables backend that was read, naming why it accepts or drops. */
+  readonly detail: string;
 }
 
 /** Where a helper finds its `HelperSpec.secrets`, read-only. */
@@ -298,6 +322,10 @@ export interface BuildSpec {
   target?: string;
   tag: string;
   labels: Record<string, string>;
+  /** Pulls the base image again even when the engine has it, as `--pull`. */
+  pull?: boolean;
+  /** Ignores the build cache, as `--no-cache`. With `pull`, this is what lets a rebuild take what changed upstream. */
+  noCache?: boolean;
   /** Called with each chunk of build output as the engine produces it. */
   onLog?: (chunk: string) => void;
   /** Closes the build stream. The call rejects with `AbortError` once that connection has closed. */
@@ -567,8 +595,27 @@ export interface Runtime {
    */
   connectNetwork(containerId: string, name: string, opts?: { alias?: string }): Promise<void>;
 
-  /** The networks the engine holds, with their IPv4 subnets. */
+  /** The networks the engine holds, with their IPv4 subnets and bridge interfaces. */
   listNetworks(): Promise<NetworkSummary[]>;
+
+  /**
+   * Reads the host's `FORWARD` chain and answers whether a new connection arriving on `bridge` from `source` would be
+   * forwarded. MiniBox writes none of those rules: Docker does, and a host whose policy is `DROP`, a leftover legacy
+   * table or a firewall reload can drop them. Runs a short-lived privileged helper on the host network and changes
+   * nothing, so a remote agent host runs it on its own engine. The probe is a new TCP connection, not a real one: it
+   * proves what the rules decide, not that the internet is reachable.
+   */
+  checkHostForward(owner: string, bridge: string, source: string): Promise<HostForwardCheck>;
+
+  /**
+   * Adds MiniBox's own `FORWARD` chain for `owner` and appends a jump to it at the **end** of `FORWARD`, so the packet
+   * only reaches it when nothing above decided and Docker's own isolation chains were walked first. The chain accepts a
+   * new connection arriving on `bridge` that leaves through the host's default route, and the replies that come back.
+   * Nothing else is touched: the policy and other installs' rules stay as they are. An empty `bridge` removes the jump
+   * and the chain, which is how a host stops carrying a rule it no longer needs, and a host with no IPv4 default route
+   * is refused rather than guessed at. Runs a short-lived privileged helper on the host network.
+   */
+  allowHostForward(owner: string, bridge: string): Promise<void>;
 
   /**
    * Replaces one install's host firewall rules: new connections that the host itself receives from any of `sources`

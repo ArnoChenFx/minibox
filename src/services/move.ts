@@ -36,7 +36,14 @@ import { startupNow } from "./startup";
 import { copyRecipe } from "./template-builds";
 
 /** What a move keeps. Volumes are copied to the target, or attached again where the storage is shared. */
-const MOVE_KEEPS = ["id", "name", "volumes", "env", "history"] as const;
+export const MOVE_KEEPS = ["id", "name", "volumes", "env", "history"] as const;
+
+/**
+ * How a box reaches its target. `direct` sends the template image and copies the volumes with tar archives. `checkpoint`
+ * takes a checkpoint of the box, copies that checkpoint to the target and makes the box there from it.
+ */
+export const MOVE_VIA = ["direct", "checkpoint"] as const;
+export type MoveVia = (typeof MOVE_VIA)[number];
 
 /** Path inside the helper containers where a volume is mounted. */
 const HELPER_PATH = "/mnt";
@@ -46,11 +53,12 @@ const MB = 1024 * 1024;
 /**
  * `copy`: the data goes to a new volume on the target. `remount`: an NFS volume is the same storage on both hosts, so
  * the record moves and the data stays. `tools`: the target's shared tools volume takes the place of this box's, and the
- * tools themselves are not copied.
+ * tools themselves are not copied. `checkpoint`: the data travels inside the checkpoint and is restored into a new
+ * volume on the target. `empty`: the volume is made again on the target with nothing in it, as a cache volume is.
  */
-type VolumeAction = "copy" | "remount" | "tools";
+export type VolumeAction = "copy" | "remount" | "tools" | "checkpoint" | "empty";
 
-interface MoveVolume {
+export interface MoveVolume {
   readonly mount: BoxMount;
   readonly source: VolumeRecord;
   readonly action: VolumeAction;
@@ -60,6 +68,8 @@ interface MoveVolume {
 
 export interface MovePreview {
   readonly box: { readonly id: string; readonly name: string };
+  /** The path the move takes, `direct` or `checkpoint`. */
+  readonly via: MoveVia;
   readonly from: string;
   readonly to: string;
   readonly running: boolean;
@@ -81,13 +91,15 @@ export interface MovePreview {
   readonly revision: { readonly current: number; readonly next: number };
 }
 
-interface Leftover {
-  readonly kind: "container" | "volume";
+export interface Leftover {
+  readonly kind: "container" | "volume" | "checkpoint";
   readonly name: string;
 }
 
 export interface MoveResult {
   readonly box: Box;
+  /** The path the move took, `direct` or `checkpoint`. */
+  readonly via: MoveVia;
   readonly from: string;
   readonly to: string;
   readonly checkpoints: number;
@@ -106,7 +118,7 @@ interface MovePlan {
 }
 
 /** What a run has changed on the target and on the source, so a failure can take it back. */
-interface RunState {
+export interface RunState {
   created: string | null;
   paused: boolean;
   /** The box's self token was issued on the target, which replaces the source's: undo must issue the source a new one. */
@@ -159,7 +171,12 @@ export async function moveBox(
   });
 }
 
-async function planMove(from: HostCtx, to: HostCtx, box: Box, spec: BoxSpec, revision: number): Promise<MovePlan> {
+/**
+ * The refusals every move makes, whichever path it takes: a box that is not on `from`, a stale revision, the box's own
+ * host, a box with its own egress network, and an agent host on either side. An agent refuses the archives, helpers and
+ * images both paths need, so a move that reached one would fail half way instead of answering at once.
+ */
+export function assertMovable(from: HostCtx, to: HostCtx, box: Box, spec: BoxSpec, revision: number): void {
   if (spec.hostId !== from.host.id) throw notFound(msg("box_not_found"));
   if (spec.revision !== revision) throw revisionMismatch(spec.revision, revision);
   if (to.host.id === from.host.id) throw badRequest(msg("move_same_host", { host: to.host.id }), { field: "host" });
@@ -167,6 +184,10 @@ async function planMove(from: HostCtx, to: HostCtx, box: Box, spec: BoxSpec, rev
   if (from.host.transport === "agent" || to.host.transport === "agent") {
     throw new AppError(501, "unsupported", msg("move_agent_unsupported"));
   }
+}
+
+async function planMove(from: HostCtx, to: HostCtx, box: Box, spec: BoxSpec, revision: number): Promise<MovePlan> {
+  assertMovable(from, to, box, spec, revision);
   await assertReachable(to);
   refuseExpired(from, spec.id);
   if (from.checkpoints.pendingRollback(spec.id)) throw conflict(msg("rollback_pending", { box: box.name }));
@@ -203,7 +224,7 @@ async function planMove(from: HostCtx, to: HostCtx, box: Box, spec: BoxSpec, rev
   };
 }
 
-async function assertReachable(host: HostCtx): Promise<void> {
+export async function assertReachable(host: HostCtx): Promise<void> {
   try {
     await untilAborted(host.runtime.ping(), AbortSignal.timeout(host.readTimeoutMs));
   } catch (e) {
@@ -212,7 +233,7 @@ async function assertReachable(host: HostCtx): Promise<void> {
   }
 }
 
-async function sourceImage(host: HostCtx, ref: string): Promise<ImageDetails> {
+export async function sourceImage(host: HostCtx, ref: string): Promise<ImageDetails> {
   try {
     return await host.runtime.inspectImage(ref);
   } catch (e) {
@@ -223,7 +244,7 @@ async function sourceImage(host: HostCtx, ref: string): Promise<ImageDetails> {
   }
 }
 
-async function assertRoomFor(host: HostCtx, spec: BoxSpec): Promise<void> {
+export async function assertRoomFor(host: HostCtx, spec: BoxSpec): Promise<void> {
   const { cpus, memoryBytes } = spec.resources;
   await assertCapacity(host, {
     cpus: cpus ?? undefined,
@@ -242,7 +263,7 @@ async function containerExists(host: HostCtx, name: string): Promise<boolean> {
   }
 }
 
-function checkpointsOn(host: HostCtx, boxId: string): number {
+export function checkpointsOn(host: HostCtx, boxId: string): number {
   return host.checkpoints
     .list()
     .filter((record) => record.boxId === boxId && record.hostId === host.host.id && record.trash === null).length;
@@ -278,6 +299,7 @@ function nameTaken(host: HostCtx, name: string): boolean {
 function previewOf(from: HostCtx, to: HostCtx, plan: MovePlan): MovePreview {
   return {
     box: { id: plan.spec.id, name: plan.spec.name },
+    via: "direct",
     from: from.host.id,
     to: to.host.id,
     running: plan.running,
@@ -373,7 +395,7 @@ async function runMove(
  * The name the box's container takes on the target: the box's own name when the target has it free. Two hosts that share
  * one engine share its names, so the target then takes a suffixed name. The spec records whichever name it gets.
  */
-async function targetContainerName(host: HostCtx, boxId: string): Promise<string> {
+export async function targetContainerName(host: HostCtx, boxId: string): Promise<string> {
   const formal = containerName(host.prefix, boxId);
   if (!(await containerExists(host, formal))) return formal;
   return `${formal}-${randomBytes(3).toString("hex")}`;
@@ -383,7 +405,7 @@ function throwIfCancelled(progress: Progress | undefined): void {
   if (progress?.signal?.aborted) throw abortError();
 }
 
-interface MovedVolumes {
+export interface MovedVolumes {
   /** Source engine volume name to the name the target mounts. */
   resolved: Map<string, string>;
   /** Source records whose data was copied. Removed from the source once the box has moved. */
@@ -405,6 +427,9 @@ async function moveVolumes(
   for (const move of plan.volumes) {
     throwIfCancelled(progress);
     const source = move.source;
+    // A volume the box mounts at two paths is one volume: it is moved once, and both mounts take what it became. Copied
+    // for each mount, it would leave a second copy on the target that nothing mounts and nothing lists.
+    if (moved.resolved.has(source.engineName)) continue;
     if (move.action === "copy") {
       say(`Copying volume ${source.name}.`);
       const copy = await to.volumes.exclusive(() =>
@@ -518,7 +543,7 @@ async function attachSharedVolume(
 }
 
 /** The target's shared tools volume for the pool, made when the target has none yet. Tools are not copied. */
-async function sharedToolsOn(
+export async function sharedToolsOn(
   host: HostCtx,
   source: VolumeRecord,
   changes: VolumeChanges,
@@ -547,7 +572,7 @@ async function sharedToolsOn(
  * Moves the box's record to the target and removes the box from the source. The spec is written once, so a reader sees
  * the box on one host or the other. The revision and the host are checked again under the spec lock.
  */
-async function commitMove(
+export async function commitMove(
   from: HostCtx,
   to: HostCtx,
   boxId: string,
@@ -577,7 +602,7 @@ async function commitMove(
  * Takes back a move that failed before the commit: the target container, the volumes and records the move made, and the
  * pause on the source. Each step is logged if it fails, and the original error is still the one thrown.
  */
-async function undoMove(
+export async function undoMove(
   from: HostCtx,
   to: HostCtx,
   spec: BoxSpec,
@@ -613,7 +638,7 @@ async function undoMove(
  * box has already moved. It is reported as a leftover, and a copied volume that could not be removed is kept as an
  * independent volume so it can be seen and removed.
  */
-async function finishMove(
+export async function finishMove(
   from: HostCtx,
   to: HostCtx,
   spec: BoxSpec,
@@ -668,6 +693,7 @@ async function finishMove(
   const box = await getBox(to, spec.id);
   return {
     box,
+    via: "direct",
     from: from.host.id,
     to: to.host.id,
     checkpoints: checkpointsOn(from, spec.id),

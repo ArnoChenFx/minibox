@@ -66,6 +66,25 @@ table.table {
 .table .actions > .btn + .btn {
   margin-left: 6px;
 }
+/* A host whose machine is gone offers two actions beside each other in a row that has six columns. Stacked, the row
+   stays as wide as its widest button, so the hosts table never scrolls sideways on a narrow screen. */
+.table.host-table .actions:has([data-force-remove-host]) {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+}
+.table.host-table .actions:has([data-force-remove-host]) > .btn + .btn {
+  margin-left: 0;
+}
+.table.host-table [data-force-remove-host] {
+  height: auto;
+  min-height: 28px;
+  max-width: 92px;
+  padding: 4px 6px;
+  gap: 4px;
+  line-height: 1.15;
+  white-space: normal;
+}
 /* The hosts table sits beside the settings menu, so its cells keep a tighter side padding to fit six columns. */
 .table.host-table th,
 .table.host-table td {
@@ -517,7 +536,8 @@ table.table {
 }
 /* One line above the volumes table: why the rows that sit on an agent host keep their browse, measure and snapshot
    buttons off. The rows share one reason, so the table says it once rather than repeating it on every row. */
-.vol-agent-note {
+/* It is also a `.help`, which sets a grey 12px and is defined after this file, so the rule names both classes. */
+.help.vol-agent-note {
   padding: 10px 18px;
   border-bottom: 1px solid var(--border);
   background: var(--warning-soft);

@@ -92,7 +92,7 @@ describe.skipIf(!executablePath)("editing a template from the Templates page (re
     // An official template: its Dockerfile ships with MiniBox, so the dialog offers no source field for it.
     await createDeclaredTemplate(
       host,
-      { name: "official-node", source: { kind: "official", name: "node" }, createdBy: "owner" },
+      { name: "node", source: { kind: "official", name: "node" }, createdBy: "owner" },
       {},
     );
     server = startServer(app);
@@ -239,7 +239,7 @@ describe.skipIf(!executablePath)("editing a template from the Templates page (re
   test(
     "an official template's dialog offers its setup and description only, and saving sends no source",
     async () => {
-      const edit = card("official-node").getByRole("button", { name: "Edit", exact: true });
+      const edit = card("node").getByRole("button", { name: "Edit", exact: true });
       await webExpect(edit).toBeVisible();
       await edit.click();
       await webExpect(dialog()).toBeVisible();
@@ -257,8 +257,8 @@ describe.skipIf(!executablePath)("editing a template from the Templates page (re
       expect(body.init).toEqual({ postCreate: [], forwardPorts: [8080] });
       const host = app?.hosts.get();
       if (!host) throw new Error("the test app has a host");
-      expect(readRecipe(host, "official-node")?.source).toEqual({ kind: "official", name: "node" });
-      expect(readRecipe(host, "official-node")?.init).toEqual({ forwardPorts: [8080] });
+      expect(readRecipe(host, "node")?.source).toEqual({ kind: "official", name: "node" });
+      expect(readRecipe(host, "node")?.init).toEqual({ forwardPorts: [8080] });
     },
     TIMEOUT_MS,
   );

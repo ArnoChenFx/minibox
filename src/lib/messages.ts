@@ -300,6 +300,9 @@ export const MESSAGES = {
   package_not_found: "Package {id} was not found. Packages are kept for a day, so it may have expired.",
   backup_not_found: "Backup {id} was not found.",
   backup_exists: "Backup {id} is already stored here, so it was not stored again.",
+  backup_running: "A backup is already running. Wait for it to finish, then try again.",
+  backup_schedule_passphrase_unset:
+    "Scheduled backups are sealed with the passphrase in BACKUP_PASSPHRASE, and the server has none. Set it in .env (12 to 1024 characters) and restart MiniBox.",
   backup_invalid: "The backup is not valid: {reason}",
   backup_passphrase_invalid:
     "The passphrase must be 12 to 1024 characters, with no leading or trailing spaces and no line breaks.",
@@ -345,6 +348,18 @@ export const MESSAGES = {
   egress_network_conflict:
     "The private network {network} already exists with other settings. Remove it, then try again.",
   egress_host_gateway_failed: "The host firewall could not be updated: {detail}",
+  egress_forward_unsupported: "The forwarding check cannot run on this host: {reason}",
+  egress_forward_no_boxes: "This host has no proxy-only box, so nothing needs its FORWARD chain. Nothing was changed.",
+  egress_forward_unchecked:
+    "This host's FORWARD rules have not been read yet, so MiniBox cannot say which rule to add. Wait for the next check, or add the rule by hand.",
+  egress_forward_not_blocked:
+    "The last check found this host's forwarding right, so there is nothing to add. It runs again on its own interval.",
+  egress_forward_not_repairable_rule:
+    "MiniBox will not change this host's forwarding: a DROP or REJECT rule of the host's own matches traffic from the uplink bridge, so the host is doing what it was told and MiniBox's rule would undo that. Change the DROP by hand if it is not what you want.",
+  egress_forward_not_repairable_unreachable:
+    "MiniBox will not change this host's forwarding: a rule in FORWARD hands the uplink's traffic to another chain for good (-g) or ends the walk (RETURN), so a rule MiniBox appended to FORWARD would never be reached. Add the allowance in that chain, or above that rule, by hand.",
+  egress_forward_not_repairable_unclear:
+    "MiniBox will not change this host's forwarding: one of the host's rules is one MiniBox cannot evaluate, so it cannot say what is dropping the uplink. Read the rules by hand, or add the allowance if you know it is right.",
   egress_needs_network: "Egress {mode} and network {network} cannot be set together. Egress sets the box network.",
   cpu_over_host: "CPU cores exceed the host limit ({cores} cores).",
   memory_over_host: "Memory exceeds the host limit ({gb} GB).",
@@ -405,6 +420,14 @@ export const MESSAGES = {
   host_not_found: "Host “{host}” was not found.",
   host_is_local: "The local host cannot be removed.",
   host_in_use: "Host “{host}” still holds {count} boxes, volumes or checkpoints. Remove them first.",
+  host_not_offline:
+    "Host “{host}” is not offline. Force removal is for a machine that is gone: use the ordinary removal, or delete the boxes on it first.",
+  host_gone:
+    "Host “{host}” was removed from MiniBox while this change was running, so nothing more was written for it.",
+  host_records_changed:
+    "The records changed after the preview, so nothing was removed. Review the new preview and confirm it again.",
+  host_force_remove_confirm:
+    "Nothing was removed. Send the same request with confirm set to true to discard MiniBox's records of this host: its boxes, its volume records (the shared tools volume too) and its checkpoint records. The machine is not contacted, so if it is still there its containers are not deleted and become orphans MiniBox no longer manages.",
   host_endpoint_invalid: "The endpoint is not valid: {reason}",
   host_credentials_missing: "The {field} is required for this host.",
   host_credentials_invalid: "The {field} is not a PEM block of the kind this host needs.",
@@ -441,12 +464,18 @@ export const MESSAGES = {
     "A socket that never sends a hello holds a place until it times out. If a real agent is refused, check for a proxy or tunnel in front of MiniBox: with TRUST_PROXY off, every client shares one address and one limit.",
   runtime_unsupported: "This host cannot run that operation: {detail}",
   move_agent_unsupported:
-    "A box cannot move to or from an agent host yet, because an agent copies neither images nor volumes. Create the box on the host you want it on instead.",
+    "A box cannot move to or from an agent host, by either path. An agent does not copy images, volumes or archives, and the helpers both paths run are refused there. Create the box on the agent host instead.",
   preview_agent_unsupported: "Port preview is not supported on agent hosts yet.",
   box_moving: "This box is moving to another host. Try again when the move finishes.",
   box_changing: "This box is being rebuilt or updated. Try the move again when that finishes.",
   move_confirm:
     "Moving copies the box's volumes to {to}, starts it there if it runs now, and removes it from {from} once it runs there. Send confirm: true to continue.",
+  move_confirm_checkpoint:
+    "Moving {box} through a checkpoint takes a checkpoint of it, copies that checkpoint to {to}, makes the box there from it, and removes it from {from} once it runs there. Send confirm: true to continue.",
+  move_checkpoint_template_missing:
+    "Host {host} does not hold template {image}, and no host holds it as a template it could send from, so the box could not be made there. Copy the template to {host} first, or move with via direct.",
+  move_checkpoint_volume_unrepresentable:
+    "Volume {volume}, mounted at {path}, cannot travel in a checkpoint: a checkpoint cannot read it, or the box mounts it more than once. Use via direct, which copies the volume as it is, or change the box's mounts first.",
   move_same_host: "The box already runs on host {host}, so it cannot move there.",
   move_owner_only: "Only the owner or an admin credential may move a box.",
   move_changed: "The box changed while it was moving, so the move was undone. Refresh the box and try again.",

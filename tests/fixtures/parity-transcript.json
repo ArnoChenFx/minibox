@@ -2152,6 +2152,38 @@
     "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Host “nowhere” was not found.\",\"retryable\":false,\"key\":\"host_not_found\",\"params\":{\"host\":\"nowhere\"}}}"
   },
   {
+    "step": "repair forwarding on a host with no proxy-only box",
+    "method": "POST",
+    "path": "/api/hosts/local/forward",
+    "status": 409,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"conflict\",\"message\":\"This host has no proxy-only box, so nothing needs its FORWARD chain. Nothing was changed.\",\"retryable\":false,\"key\":\"egress_forward_no_boxes\"}}"
+  },
+  {
+    "step": "repair forwarding on a missing host",
+    "method": "POST",
+    "path": "/api/hosts/nowhere/forward",
+    "status": 404,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Host “nowhere” was not found.\",\"retryable\":false,\"key\":\"host_not_found\",\"params\":{\"host\":\"nowhere\"}}}"
+  },
+  {
+    "step": "force-remove the local host",
+    "method": "POST",
+    "path": "/api/hosts/local/force-remove",
+    "status": 409,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"conflict\",\"message\":\"The local host cannot be removed.\",\"retryable\":false,\"key\":\"host_is_local\"}}"
+  },
+  {
+    "step": "force-remove a missing host",
+    "method": "POST",
+    "path": "/api/hosts/nowhere/force-remove",
+    "status": 404,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Host “nowhere” was not found.\",\"retryable\":false,\"key\":\"host_not_found\",\"params\":{\"host\":\"nowhere\"}}}"
+  },
+  {
     "step": "create a box to export",
     "method": "POST",
     "path": "/api/boxes",
@@ -2982,6 +3014,78 @@
     "status": 200,
     "contentType": "application/json; charset=utf-8",
     "body": "{\"backups\":[]}"
+  },
+  {
+    "step": "read the backup schedule of an instance with none",
+    "method": "GET",
+    "path": "/api/backups/schedule",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"schedule\":null,\"passphraseSet\":true}"
+  },
+  {
+    "step": "set an hourly backup schedule",
+    "method": "PUT",
+    "path": "/api/backups/schedule",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"schedule\":{\"version\":1,\"mode\":\"interval\",\"everyHours\":6,\"at\":null,\"timezone\":null,\"createdBy\":\"owner\",\"createdAt\":\"<time>\",\"updatedAt\":\"<time>\",\"nextRunAt\":\"<time>\",\"lastRun\":null,\"timezoneUnknown\":false}}"
+  },
+  {
+    "step": "set a backup schedule with an hour and a time",
+    "method": "PUT",
+    "path": "/api/backups/schedule",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"A schedule runs every 1 to 720 hours, or once a day at a time such as 02:30. Send either everyHours or at, not both.\",\"retryable\":false,\"key\":\"schedule_rule_invalid\"}}"
+  },
+  {
+    "step": "set a backup schedule past the longest interval",
+    "method": "PUT",
+    "path": "/api/backups/schedule",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"A schedule runs every 1 to 720 hours, or once a day at a time such as 02:30. Send either everyHours or at, not both.\",\"retryable\":false,\"key\":\"schedule_rule_invalid\",\"details\":{\"field\":\"everyHours\"}}}"
+  },
+  {
+    "step": "set a daily backup schedule",
+    "method": "PUT",
+    "path": "/api/backups/schedule",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"schedule\":{\"version\":1,\"mode\":\"daily\",\"everyHours\":null,\"at\":\"02:30\",\"timezone\":\"Asia/Shanghai\",\"createdBy\":\"owner\",\"createdAt\":\"<time>\",\"updatedAt\":\"<time>\",\"nextRunAt\":\"<time>\",\"lastRun\":null,\"timezoneUnknown\":false}}"
+  },
+  {
+    "step": "set a daily backup schedule in an unknown zone",
+    "method": "PUT",
+    "path": "/api/backups/schedule",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"The time zone must be an IANA name such as Asia/Shanghai or UTC.\",\"retryable\":false,\"key\":\"schedule_timezone_invalid\",\"details\":{\"field\":\"timezone\"}}}"
+  },
+  {
+    "step": "read the backup schedule",
+    "method": "GET",
+    "path": "/api/backups/schedule",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"schedule\":{\"version\":1,\"mode\":\"daily\",\"everyHours\":null,\"at\":\"02:30\",\"timezone\":\"Asia/Shanghai\",\"createdBy\":\"owner\",\"createdAt\":\"<time>\",\"updatedAt\":\"<time>\",\"nextRunAt\":\"<time>\",\"lastRun\":null,\"timezoneUnknown\":false},\"passphraseSet\":true}"
+  },
+  {
+    "step": "clear the backup schedule",
+    "method": "DELETE",
+    "path": "/api/backups/schedule",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"ok\":true}"
+  },
+  {
+    "step": "clear the backup schedule again",
+    "method": "DELETE",
+    "path": "/api/backups/schedule",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"ok\":true}"
   },
   {
     "step": "back up with a short passphrase",

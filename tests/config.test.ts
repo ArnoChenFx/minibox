@@ -191,6 +191,114 @@ describe("BLOCK_HOST_GATEWAY", () => {
   });
 });
 
+describe("EGRESS_ALLOW_RANGES", () => {
+  test("is empty by default, so a proxy refuses private addresses exactly as before", () => {
+    expect(load({ ACCESS_KEY: KEY }).egressAllowRanges).toEqual([]);
+    expect(load({ ACCESS_KEY: KEY, EGRESS_ALLOW_RANGES: "  " }).egressAllowRanges).toEqual([]);
+  });
+
+  test("a fake-IP range is accepted, and host bits are cleared as Clash's default 198.18.0.1/16 needs", () => {
+    expect(load({ ACCESS_KEY: KEY, EGRESS_ALLOW_RANGES: "198.18.0.1/16" }).egressAllowRanges).toEqual([
+      "198.18.0.0/16",
+    ]);
+    expect(load({ ACCESS_KEY: KEY, EGRESS_ALLOW_RANGES: "198.18.0.1/15" }).egressAllowRanges).toEqual([
+      "198.18.0.0/15",
+    ]);
+    expect(load({ ACCESS_KEY: KEY, EGRESS_ALLOW_RANGES: "192.168.7.9/24" }).egressAllowRanges).toEqual([
+      "192.168.7.0/24",
+    ]);
+  });
+
+  test("an address without a prefix is one host, /32", () => {
+    expect(load({ ACCESS_KEY: KEY, EGRESS_ALLOW_RANGES: "100.64.3.7" }).egressAllowRanges).toEqual(["100.64.3.7/32"]);
+  });
+
+  test("repeats are dropped and the ranges are sorted by address", () => {
+    const cfg = load({
+      ACCESS_KEY: KEY,
+      EGRESS_ALLOW_RANGES: "198.18.0.0/15, 100.64.0.0/10, 198.18.0.1/15, 198.18.0.0/15",
+    });
+    expect(cfg.egressAllowRanges).toEqual(["100.64.0.0/10", "198.18.0.0/15"]);
+  });
+
+  test("private and shared ranges are allowed when the operator names them", () => {
+    const ranges = ["10.0.0.0/8", "100.64.0.0/10", "172.16.0.0/12", "192.168.0.0/16"];
+    expect(load({ ACCESS_KEY: KEY, EGRESS_ALLOW_RANGES: ranges.join(",") }).egressAllowRanges).toEqual(ranges);
+  });
+
+  test.each([
+    // A prefix below 8 is refused before the range is compared with anything.
+    ["0.0.0.0/0", "wider than /8"],
+    ["0.0.0.0/7", "wider than /8"],
+    ["10.0.0.0/7", "wider than /8"],
+    ["224.0.0.0/4", "wider than /8"],
+    ["240.0.0.0/4", "wider than /8"],
+    // Prefix 8 or longer, but equal to or inside a range that stays refused.
+    ["0.0.0.0/8", "overlaps 0.0.0.0/8"],
+    ["0.1.2.3/32", "overlaps 0.0.0.0/8"],
+    ["127.0.0.0/8", "overlaps 127.0.0.0/8"],
+    ["127.0.0.1/32", "overlaps 127.0.0.0/8"],
+    ["169.254.0.0/16", "overlaps 169.254.0.0/16"],
+    ["169.254.169.254", "overlaps 169.254.0.0/16"],
+    ["169.254.0.0/24", "overlaps 169.254.0.0/16"],
+    ["224.0.0.0/8", "overlaps 224.0.0.0/3"],
+    ["240.0.0.1/32", "overlaps 224.0.0.0/3"],
+    ["255.255.255.255", "overlaps 224.0.0.0/3"],
+    // Not an IPv4 address or network at all.
+    ["::1/128", "is not an IPv4"],
+    ["2001:db8::/32", "is not an IPv4"],
+    ["198.18.0.300/16", "is not an IPv4"],
+    ["198.18.0.0/33", "is not an IPv4"],
+    ["198.18.0.0/abc", "is not an IPv4"],
+    ["fake-ip", "is not an IPv4"],
+  ])("%s stops startup with “%s”", (entry, reason) => {
+    let message = "";
+    try {
+      load({ ACCESS_KEY: KEY, EGRESS_ALLOW_RANGES: entry });
+    } catch (e) {
+      message = e instanceof Error ? e.message : String(e);
+    }
+    expect(message).toContain("EGRESS_ALLOW_RANGES");
+    expect(message).toContain(entry);
+    expect(message).toContain(reason);
+  });
+
+  // Overlap is checked in both directions. Any network from /8 to /15 that holds 169.254.0.0/16 starts with 169, so
+  // these containment cases share that octet; the block is what has to be recognized as inside the entry.
+  test.each(["169.254.0.0/8", "169.254.0.0/9", "169.254.0.0/12", "169.254.0.0/15"])(
+    "%s contains the link-local range, so it is refused for overlapping it rather than accepted as a range within it",
+    (entry) => {
+      let message = "";
+      try {
+        load({ ACCESS_KEY: KEY, EGRESS_ALLOW_RANGES: entry });
+      } catch (e) {
+        message = e instanceof Error ? e.message : String(e);
+      }
+      expect(message).toContain("EGRESS_ALLOW_RANGES");
+      expect(message).toContain(entry);
+      expect(message).toContain("overlaps 169.254.0.0/16");
+      expect(message).not.toContain("wider than");
+    },
+  );
+
+  test("one bad entry stops startup even when the others are fine", () => {
+    expect(() => load({ ACCESS_KEY: KEY, EGRESS_ALLOW_RANGES: "198.18.0.0/15, nope" })).toThrow(
+      "EGRESS_ALLOW_RANGES: “nope”",
+    );
+  });
+
+  test("can come from .env, and the process env wins over it", () => {
+    writeFileSync(envFile, "EGRESS_ALLOW_RANGES=198.18.0.0/15\n");
+    expect(loadConfig({ ACCESS_KEY: KEY, DATA_DIR: dataDir }, { envFile }).egressAllowRanges).toEqual([
+      "198.18.0.0/15",
+    ]);
+    expect(
+      loadConfig({ ACCESS_KEY: KEY, DATA_DIR: dataDir, EGRESS_ALLOW_RANGES: "100.64.0.0/10" }, { envFile })
+        .egressAllowRanges,
+    ).toEqual(["100.64.0.0/10"]);
+  });
+});
+
 describe("MCP_ALLOW_OWNER_KEY", () => {
   test("is false by default, so /mcp refuses the owner access key unless the operator opts in", () => {
     expect(DEFAULT_MCP_ALLOW_OWNER_KEY).toBe(false);
@@ -396,6 +504,19 @@ describe("volume usage sampling and the host disk floor", () => {
       expect(load({ ACCESS_KEY: KEY, VOLUME_USAGE_INTERVAL_SEC: value }).volumeUsageIntervalSec).toBe(600);
     }
   });
+  test("the forward check is every 600 seconds by default, and EGRESS_FORWARD_CHECK_INTERVAL_SEC sets it from 60 to 86400", () => {
+    expect(load({ ACCESS_KEY: KEY }).egressForwardCheckIntervalSec).toBe(600);
+    expect(load({ ACCESS_KEY: KEY, EGRESS_FORWARD_CHECK_INTERVAL_SEC: "60" }).egressForwardCheckIntervalSec).toBe(60);
+    expect(load({ ACCESS_KEY: KEY, EGRESS_FORWARD_CHECK_INTERVAL_SEC: "86400" }).egressForwardCheckIntervalSec).toBe(
+      86400,
+    );
+    for (const value of ["30", "86401", "1.5", "often"]) {
+      expect(load({ ACCESS_KEY: KEY, EGRESS_FORWARD_CHECK_INTERVAL_SEC: value }).egressForwardCheckIntervalSec).toBe(
+        600,
+      );
+    }
+  });
+
   test("HOST_DISK_MIN_FREE_PERCENT is 10 by default, 0 turns the floor off, and a value above 100 is ignored", () => {
     expect(load({ ACCESS_KEY: KEY }).hostDiskMinFreePercent).toBe(10);
     expect(load({ ACCESS_KEY: KEY, HOST_DISK_MIN_FREE_PERCENT: "0" }).hostDiskMinFreePercent).toBe(0);

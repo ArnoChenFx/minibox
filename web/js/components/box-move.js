@@ -1,6 +1,6 @@
 import { api, enc } from "../lib/api.js";
 import { esc } from "../lib/dom.js";
-import { hostLabel } from "../lib/host-list.js";
+import { hostLabel, hostOfBox } from "../lib/host-list.js";
 import { hostName, hostsNow, refreshHosts } from "../lib/hosts.js";
 import { t } from "../lib/i18n.js";
 import { movedBoxHash } from "../lib/routes.js";
@@ -15,6 +15,13 @@ const ACTION_KEY = {
   copy: "mv.action.copy",
   remount: "mv.action.remount",
   tools: "mv.action.tools",
+  checkpoint: "mv.action.checkpoint",
+  empty: "mv.action.empty",
+};
+
+const VIA_KEY = {
+  direct: "mv.via.direct",
+  checkpoint: "mv.via.checkpoint",
 };
 
 function volumeLine(volume, to) {
@@ -29,29 +36,57 @@ export function movePreviewHtml(preview) {
   const volumes = (preview.volumes ?? []).map((volume) => volumeLine(volume, preview.to)).join("");
   const image = preview.image?.transfer ? t("mv.imageSend", { to }) : t("mv.imageHave", { to });
   const starts = preview.starts ? t("mv.starts", { to }) : t("mv.staysStopped");
+  // Both paths pause a running box when its data is taken and keep it paused until the move commits.
+  const pauses = preview.running ? `<div class="help">${esc(t("mv.pauses", { from }))}</div>` : "";
   const keeps = KEEPS.map((name) => t(`mv.keep.${name}`)).join(", ");
   const loses = LOSES.map((name) => t(`rebuild.lose.${name}`)).join(", ");
   const checkpointKey = preview.checkpoints === 1 ? "mv.checkpoint" : "mv.checkpoints";
+  // The box's own checkpoints stay on the source host on either path. The checkpoint path's own, taken for the transfer, is
+  // removed afterwards and is not among them.
   const checkpoints =
     preview.checkpoints > 0
       ? `<p class="help">${esc(t(checkpointKey, { count: String(preview.checkpoints), from, to }))}</p>`
       : "";
+  const via = preview.via
+    ? `<div class="help">${esc(t("mv.via", { via: t(VIA_KEY[preview.via] ?? "mv.via.direct", { to }), from, to }))}</div>`
+    : "";
   return `<div class="rebuild-preview"><strong>${esc(t("mv.previewTitle"))}</strong>
+    ${via}
     <div class="help" style="margin-top:8px">${esc(t("mv.volumes"))}</div>
     <ul class="move-volumes">${volumes || `<li class="help">${esc(t("mv.noVolumes"))}</li>`}</ul>
     <div class="help">${esc(t("mv.image", { image: preview.image?.ref ?? "" }))}: ${esc(image)}</div>
     <div class="help">${esc(starts)}</div>
+    ${pauses}
     ${checkpoints}
     <div class="help">${esc(t("mv.keeps"))}: ${esc(keeps)}</div>
     <div class="help">${esc(t("mv.loses"))}: ${esc(loses)}</div>
     <div class="help">${esc(t("mv.revision", { from: String(preview.revision?.current ?? ""), to: String(preview.revision?.next ?? "") }))}</div></div>`;
 }
 
-function hostOptions(box) {
-  return hostsNow()
-    .filter((host) => host.id !== box.hostId && host.status === "online")
-    .map((host) => `<option value="${esc(host.id)}">${esc(hostLabel(host, hostsNow()))}</option>`)
+const isAgent = (host) => host.transport === "agent";
+
+/**
+ * The target choices of the move dialog, and whether any of them can be picked. A box cannot move to an agent host, which
+ * copies neither images nor volumes, so such a host is listed with the reason and cannot be picked: the server would
+ * refuse it only after the preview. `agentsOnly` is set when every other host is an agent host, online or not: a host
+ * that is only offline is one the sentence "add a host that is not an agent" would be wrong about.
+ */
+export function moveTargets(box, hosts) {
+  const others = hosts.filter((host) => host.id !== hostOfBox(box));
+  const online = others.filter((host) => host.status === "online");
+  const options = online
+    .map((host) => {
+      const label = hostLabel(host, hosts);
+      return isAgent(host)
+        ? `<option value="${esc(host.id)}" disabled>${esc(`${label} — ${t("mv.agentTarget")}`)}</option>`
+        : `<option value="${esc(host.id)}">${esc(label)}</option>`;
+    })
     .join("");
+  return {
+    options,
+    usable: online.some((host) => !isAgent(host)),
+    agentsOnly: others.length > 0 && others.every(isAgent),
+  };
 }
 
 /**
@@ -60,24 +95,29 @@ function hostOptions(box) {
  */
 export async function openMove(box) {
   await refreshHosts();
-  const options = hostOptions(box);
+  const { options, usable, agentsOnly } = moveTargets(box, hostsNow());
   const { root, close } = openDialog({
     title: t("mv.title"),
     description: t("mv.desc"),
     iconName: "move",
     wide: true,
-    body: options
+    body: usable
       ? `<p class="help">${esc(t("mv.help"))}</p>
         <div class="field"><label class="label" for="mvHost">${esc(t("mv.host"))}</label>
           <select class="select" id="mvHost">${options}</select></div>
+        <div class="field"><label class="label" for="mvVia">${esc(t("mv.viaLabel"))}</label>
+          <select class="select" id="mvVia">
+            <option value="direct">${esc(t("mv.via.direct"))}</option>
+            <option value="checkpoint">${esc(t("mv.via.checkpointOption"))}</option>
+          </select></div>
         <div class="error-text" id="mvErr"></div>
         <div class="move-preview" id="mvPreview" hidden></div>`
-      : `<p class="help">${esc(t("mv.noHosts"))}</p>`,
+      : `<p class="help">${esc(t(agentsOnly ? "mv.agentsOnly" : "mv.noHosts"))}</p>`,
     footer: `<button class="btn" data-close>${esc(t("common.cancel"))}</button>
-      ${options ? `<button class="btn btn-primary" id="mvPreviewBtn">${esc(t("mv.preview"))}</button>` : ""}
+      ${usable ? `<button class="btn btn-primary" id="mvPreviewBtn">${esc(t("mv.preview"))}</button>` : ""}
       <button class="btn btn-danger" id="mvApply" hidden>${esc(t("mv.apply"))}</button>`,
   });
-  if (!options) return;
+  if (!usable) return;
 
   const ref = box.boxId ?? box.id;
   const send = (body) =>
@@ -87,15 +127,24 @@ export async function openMove(box) {
       headers: { "if-match": String(box.revision) },
     });
 
+  const invalidatePreview = () => {
+    root.querySelector("#mvPreview").hidden = true;
+    root.querySelector("#mvApply").hidden = true;
+  };
+  root.querySelector("#mvHost").addEventListener("change", invalidatePreview);
+  root.querySelector("#mvVia").addEventListener("change", invalidatePreview);
+
   root.querySelector("#mvPreviewBtn").addEventListener("click", async (event) => {
     const to = root.querySelector("#mvHost").value;
+    const via = root.querySelector("#mvVia").value;
     root.querySelector("#mvErr").textContent = "";
     root.querySelector("#mvApply").hidden = true;
     try {
-      await withBusy(event.currentTarget, () => send({ host: to }));
+      await withBusy(event.currentTarget, () => send({ host: to, via: root.querySelector("#mvVia").value }));
       root.querySelector("#mvErr").textContent = t("mv.noPreview");
     } catch (err) {
       if (err?.code === "confirmation_required" && err.details?.preview) {
+        if (root.querySelector("#mvHost").value !== to || root.querySelector("#mvVia").value !== via) return;
         root.querySelector("#mvPreview").hidden = false;
         root.querySelector("#mvPreview").innerHTML = movePreviewHtml(err.details.preview);
         root.querySelector("#mvApply").hidden = false;
@@ -109,7 +158,9 @@ export async function openMove(box) {
     const to = root.querySelector("#mvHost").value;
     root.querySelector("#mvErr").textContent = "";
     try {
-      const started = await withBusy(event.currentTarget, () => send({ host: to, confirm: true }));
+      const started = await withBusy(event.currentTarget, () =>
+        send({ host: to, via: root.querySelector("#mvVia").value, confirm: true }),
+      );
       close();
       toast(t("mv.started"), { message: t("mv.startedText", { name: box.name, to: hostName(to) }) });
       openTasks(started.taskId);

@@ -6,6 +6,13 @@ import { log } from "../lib/logger";
 import { type Msg, type Params, msg } from "../lib/messages";
 import { type EngineTarget, type DiskBreakdown, type Runtime, RuntimeError } from "../runtime";
 import { bookedOn, type Booking } from "../services/capacity";
+import {
+  discardHostRecords,
+  forceRemoveConfirmation,
+  type HostRecords,
+  hostRecords,
+  recordsChanged,
+} from "../services/host-force-remove";
 import type { AgentEvent, AgentHub, AgentStatus } from "./agent/hub";
 import { type Endpoint, endpointLabel, parseEndpoint } from "./endpoint";
 import { foldName } from "./label";
@@ -104,6 +111,12 @@ export interface HostUsage {
   readonly usage: { readonly cpus: number; readonly memoryBytes: number } | null;
 }
 
+/** What a forced removal removed: the host's view as it was, and every record it discarded. */
+export interface HostForceRemove {
+  readonly host: HostView;
+  readonly discarded: HostRecords;
+}
+
 /** Why a host has no `docker system df` reading. Null when it has one. */
 type DiskBreakdownReason = "agent_host" | "offline" | "timeout" | "engine";
 
@@ -154,8 +167,18 @@ export interface HostManagerOptions {
   readonly detach: (host: HostCtx) => void;
   /** Lifts the shared tools volume a host is going away with, through the same guards as any delete. */
   readonly liftToolsVolume?: (host: HostCtx) => Promise<void>;
+  /**
+   * Takes back what the control plane put on a host that is going away for good, while its engine can still be reached.
+   * It runs when a host is removed and never at shutdown, which detaches the same hosts and must leave them as they are.
+   */
+  readonly release?: (host: HostCtx) => Promise<void>;
   /** Called when a remote host's engine becomes reachable, so its boxes are reconciled. */
   readonly onLive?: (host: HostCtx) => void;
+  /**
+   * Called when a host's engine answered after being offline, or after a connection that dropped came back. The
+   * firewall may have been reloaded while it was away, so the egress forward check is asked to read the rules again.
+   */
+  readonly onReachable?: (host: HostCtx) => void;
   /** The agents that dial in. An agent host's engine is reached through its connection here. */
   readonly agents: AgentHub;
   /**
@@ -474,23 +497,90 @@ export class HostManager {
       if (usage.total > 0) {
         throw new AppError(409, "conflict", msg("host_in_use", { host: id, count: usage.total }), usage);
       }
-      if (this.options.liftToolsVolume) await this.options.liftToolsVolume(ctx);
-      const view = this.view(ctx);
-      const stored = this.stored.get(id);
-      const agentId = stored ? agentIdOf(stored) : null;
-      if (agentId !== null) this.options.agents.forget(agentId);
-      this.options.store.save([...this.stored.values()].filter((host) => host.id !== id));
-      this.options.detach(ctx);
-      this.options.registry.remove(id);
-      this.links.get(id)?.close();
-      this.links.delete(id);
-      this.stored.delete(id);
-      this.probes.delete(id);
-      this.backoff.delete(id);
-      this.options.store.removeCredentials(id);
+      await this.liftTools(ctx);
+      if (this.options.release) await this.options.release(ctx);
+      const view = this.forgetHost(id, ctx);
       log.info("host.removed", { host: id });
       return view;
     });
+  }
+
+  /**
+   * Removes a host whose machine is gone for good, forgetting MiniBox's records of it and nothing else. The host must be
+   * offline: an online host is removed the ordinary way, which also takes back what MiniBox put on it, and a host whose
+   * state is unknown has not been checked yet. No engine is dialled, no `liftTools` and no `release` runs, and nothing on
+   * the machine is deleted, so a machine that is only unreachable keeps its containers as orphans. Without `confirm`
+   * nothing changes and the refusal lists every record a confirmed call would discard.
+   */
+  forceRemove(id: string, confirm: boolean, digest?: string): Promise<HostForceRemove> {
+    return this.exclusive(async () => {
+      if (id === LOCAL_HOST_ID) throw conflict(msg("host_is_local"));
+      if (!this.options.registry.has(id)) throw notFound(msg("host_not_found", { host: id }));
+      const ctx = this.options.registry.get(id);
+      if (ctx.host.status !== "offline") throw conflict(msg("host_not_offline", { host: id }));
+      if (!confirm) throw forceRemoveConfirmation(hostRecords(ctx));
+      // The view is taken before the records go, so it still says how many boxes the host held.
+      const view = this.view(ctx);
+      const outcome = discardHostRecords(ctx, digest);
+      if (outcome.changed) throw recordsChanged(outcome.records);
+      const forgotten = this.forgetHost(id, ctx, view);
+      const discarded = outcome.records;
+      log.warn("host.force_removed", {
+        host: id,
+        boxes: discarded.boxes,
+        volumes: discarded.volumes.map((volume) => volume.name),
+        checkpoints: discarded.checkpoints.map((checkpoint) => checkpoint.id),
+      });
+      return { host: forgotten, discarded };
+    });
+  }
+
+  /**
+   * Forgets one host's records and what was registered for it: an agent host's agent is forgotten (which also revokes it),
+   * the hosts file loses the host, what `attach` started is stopped, the registry entry and its link go, with the probe and
+   * backoff state, and the credential files are deleted. The view is taken before any of it, so a caller can report the
+   * host as it was. `remove` and `forceRemove` both end here.
+   */
+  private forgetHost(id: string, ctx: HostCtx, view: HostView = this.view(ctx)): HostView {
+    // A write that is already on its way must not bring a record of this host back after it is forgotten.
+    ctx.lifetime.retire();
+    ctx.specs.closeHost(id);
+    ctx.volumes.closeHost(id);
+    ctx.checkpoints.closeHost(id);
+    const stored = this.stored.get(id);
+    const agentId = stored ? agentIdOf(stored) : null;
+    if (agentId !== null) this.options.agents.forget(agentId);
+    this.options.store.save([...this.stored.values()].filter((host) => host.id !== id));
+    this.options.detach(ctx);
+    this.options.registry.remove(id);
+    this.links.get(id)?.close();
+    this.links.delete(id);
+    this.stored.delete(id);
+    this.probes.delete(id);
+    this.backoff.delete(id);
+    this.options.store.removeCredentials(id);
+    return view;
+  }
+
+  /**
+   * Lifts the host's shared tools volumes as it goes, when the app gave a way to. A machine that is offline, whether it
+   * is switched off, lost, or an agent that was revoked, cannot lose them, and holding the host back for that would keep
+   * it listed for good: its volumes stay where they are, and the log names them for whoever uses the machine next. A
+   * machine that answers and refuses is another matter. The removal stops with its reason, and nothing has changed.
+   */
+  private async liftTools(ctx: HostCtx): Promise<void> {
+    const lift = this.options.liftToolsVolume;
+    if (!lift) return;
+    try {
+      await lift(ctx);
+    } catch (e) {
+      if (ctx.host.status !== "offline") throw e;
+      const left = ctx.volumes
+        .list()
+        .filter((volume) => volume.hostId === ctx.host.id && volume.role === "tools")
+        .map((volume) => volume.engineName);
+      log.warn("host.tools_volume_left", { host: ctx.host.id, volumes: left, error: reasonOf(e) });
+    }
   }
 
   /**
@@ -523,8 +613,8 @@ export class HostManager {
       if (this.options.registry.has(grant.hostId) || this.stored.has(grant.hostId)) {
         throw conflict(msg("host_exists", { host: grant.hostId }));
       }
-      // The code was checked for its name when it was issued; a name another host has taken since then is refused here,
-      // as the id check above already answers after the code is spent.
+      // A waiting code holds its name against every other host, so the name cannot have been taken since it was issued.
+      // This is a guard that should not fire: it answers a name that is held anyway, not by a check the code ever needed.
       const name = this.freeName(grant.name, grant.hostId);
       const now = this.now().toISOString();
       const record = this.options.agents.enroll({
@@ -615,7 +705,9 @@ export class HostManager {
   onLink(frame: LinkFrame): void {
     if (!this.options.registry.has(frame.hostId)) return;
     const ctx = this.options.registry.get(frame.hostId);
+    const wasOnline = ctx.host.status === "online";
     ctx.host.status = frame.state === "live" ? "online" : "offline";
+    if (frame.state === "live" && !wasOnline) this.options.onReachable?.(ctx);
     if (frame.state === "live" && ctx.host.transport !== "local") this.options.onLive?.(ctx);
   }
 
@@ -637,20 +729,25 @@ export class HostManager {
    * which names the host that holds it, when another host has it, or with `host_name_taken_by_id` when the name is the
    * id a host without a name would be named after, so the operator knows to give one. A waiting pairing code for another
    * host holds its name too, refused with `host_name_pending`; a code for `id` itself does not, as a new code for that id
-   * replaces it. Names are compared with `foldName`, and a name is never compared with an id: ids address a host, a name
-   * is only the label a person reads.
+   * replaces it, and neither does a code for a host that exists by now. Names are compared with `foldName`, and a name is
+   * never compared with an id: ids address a host, a name is only the label a person reads. Every caller has refused an
+   * `id` that is already a host before it asks, so no host is excused from the comparison.
    */
   private freeName(raw: string | undefined, id: string): string {
     const given = raw?.trim() ?? "";
     const name = given || id;
     const taken = foldName(name);
     const holder =
-      this.options.registry.list().find((ctx) => ctx.host.id !== id && foldName(ctx.host.name) === taken)?.host.id ??
-      [...this.stored.values()].find((host) => host.id !== id && foldName(host.name) === taken)?.id;
+      this.options.registry.list().find((ctx) => foldName(ctx.host.name) === taken)?.host.id ??
+      [...this.stored.values()].find((host) => foldName(host.name) === taken)?.id;
     if (holder !== undefined) {
       throw conflict(msg(given ? "host_name_taken" : "host_name_taken_by_id", { name, host: holder }));
     }
-    const waiting = this.options.agents.waitingName(name, id);
+    const waiting = this.options.agents.waitingName(
+      name,
+      id,
+      (hostId) => this.options.registry.has(hostId) || this.stored.has(hostId),
+    );
     if (waiting !== null) throw conflict(msg("host_name_pending", { name, host: waiting.hostId }));
     return name;
   }
@@ -784,6 +881,10 @@ export class HostManager {
 
   /** Builds the host's context and attaches it. A host whose credentials are missing is still registered, and every call fails. */
   private register(stored: StoredHost): void {
+    // A host id that was removed can be added again, and the stores must accept its records once it is back.
+    this.options.shared.specs.openHost(stored.id);
+    this.options.shared.volumes.openHost(stored.id);
+    this.options.shared.checkpoints.openHost(stored.id);
     const endpoint = parseEndpoint(stored.endpoint);
     const identity: HostIdentity = {
       id: stored.id,
@@ -841,6 +942,7 @@ export class HostManager {
       await within(ctx.runtime.ping(), ENGINE_READ_TIMEOUT_MS);
       const latencyMs = Math.round(performance.now() - started);
       const info = await within(ctx.runtime.info(), ENGINE_READ_TIMEOUT_MS);
+      const cameBack = ctx.host.status !== "online";
       ctx.host.status = "online";
       this.backoff.delete(id);
       this.probes.set(id, {
@@ -850,6 +952,8 @@ export class HostManager {
         containers: { running: info.containers.running, total: info.containers.total },
         error: null,
       });
+      // A host that just answered may have been rebooted or had its firewall reloaded, so its forwarding is read again.
+      if (cameBack) this.options.onReachable?.(ctx);
     } catch (e) {
       ctx.host.status = "offline";
       const failures = (this.backoff.get(id)?.failures ?? 0) + 1;

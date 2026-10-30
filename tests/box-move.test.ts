@@ -176,6 +176,34 @@ describe("moving a box to another host", () => {
     expect(local.volumes.list().some((record) => record.engineName === volume.engineName)).toBe(false);
   });
 
+  test("a volume the box mounts at two paths is copied once, and both mounts take the copy", async () => {
+    const volume = await dataVolume(cluster);
+    const box = await boxOn(cluster, undefined, "dev", {
+      mounts: [
+        { volume: "data", path: "/data", mode: "rw" },
+        { volume: "data", path: "/data-copy", mode: "ro" },
+      ],
+    });
+
+    const done = await confirmed(box.boxId, "small", box.revision);
+    expect(done.status).toBe("succeeded");
+    expect(done.result).toMatchObject({ leftovers: [] });
+
+    const local = cluster.app.hosts.get();
+    const mounts = local.specs.read(box.boxId)?.mounts ?? [];
+    const first = mounts.find((mount) => mount.path === "/data")?.volume ?? "";
+    const second = mounts.find((mount) => mount.path === "/data-copy")?.volume ?? "";
+    expect(first).not.toBe("");
+    expect(second).toBe(first);
+    expect(cluster.engines.small.filesOf(first).has("notes.txt")).toBe(true);
+    // One volume on the target for the one the box had, and none left over that nothing mounts.
+    const onTarget = local.volumes
+      .list()
+      .filter((record) => record.hostId === "small" && record.name.startsWith("data"));
+    expect(onTarget.map((record) => record.engineName)).toEqual([first]);
+    expect(cluster.engines.local.volumes.has(volume.engineName)).toBe(false);
+  });
+
   test("a move onto a host whose shared tools volume the engine lost recreates it, and the box mounts it there", async () => {
     await boxOn(cluster, "small", "seed", { mounts: undefined });
     const target = cluster.app.hosts.get("small");

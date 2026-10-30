@@ -422,10 +422,12 @@ async function boot(): Promise<void> {
   app.retention.start();
   app.checkpointSweep.start();
   app.checkpointScheduler.start();
+  app.backupScheduler.start();
   app.containers.start();
   app.startups.start();
   app.lifecycle.start();
   app.volumeUsage.start();
+  app.egressForward.start();
   const server = startServer(app);
   log.info("server.started", startupFields(cfg, version));
   await startDirectSsh(app);
@@ -442,10 +444,12 @@ async function boot(): Promise<void> {
     app.retention.stop();
     app.checkpointSweep.stop();
     app.checkpointScheduler.stop();
+    app.backupScheduler.stop();
     app.containers.stop();
     app.startups.stop();
     app.lifecycle.stop();
     app.volumeUsage.stop();
+    app.egressForward.stop();
     app.notify.stop();
     app.throttle.stop();
     app.sessions.stop();
