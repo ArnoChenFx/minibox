@@ -9,8 +9,6 @@ import { AgentClient } from "../src/agent/client";
 import { generateKeyPairPem, loadIdentity, type StoredIdentity, saveIdentity } from "../src/agent/identity";
 import { pairWith } from "../src/agent/main";
 import { AGENT_CLOSE, AGENT_PAIR_PATH, AGENT_PROTOCOL, signHello } from "../src/agent/protocol";
-import { AgentScope, loadScope, OWNER_LABEL } from "../src/agent/scope";
-import { scopedRuntime } from "../src/agent/scoped-runtime";
 import { type App, createApp } from "../src/app";
 import { agentsPath } from "../src/data-dir";
 import { normalizeCode, PairingBook } from "../src/host/agent/pairing";
@@ -246,33 +244,6 @@ describe("the control plane's agent API, over HTTP and a real socket", () => {
     return client;
   }
 
-  /**
-   * An agent whose engine is behind its scope, as `minibox-agent` runs it, and which has no scope file yet, as one paired
-   * before labels existed, started by an operator who named the prefix. Its scope is kept in `dir`.
-   */
-  function runScopedAgent(stored: StoredIdentity, engine: FakeRuntime, dir: string): AgentClient {
-    const scope = new AgentScope({
-      hostId: stored.identity.hostId,
-      dataDir: dir,
-      runtime: engine,
-      record: null,
-      adoptPrefix: "mbtest",
-      findSelf: async () => null,
-    });
-    const client = new AgentClient({
-      server: base,
-      agentId: stored.identity.agentId,
-      privateKey: stored.privateKey,
-      runtime: scopedRuntime(engine, scope),
-      scope,
-      version: AGENT_VERSION,
-      minBackoffMs: 10,
-      maxBackoffMs: 50,
-    });
-    agents.push({ client, done: client.run() });
-    return client;
-  }
-
   beforeEach(() => {
     restoreLogs = silenceLogs();
     local = new FakeRuntime();
@@ -417,41 +388,6 @@ describe("the control plane's agent API, over HTTP and a real socket", () => {
       status: "online",
       agent: { connected: true, version: AGENT_VERSION },
     });
-  });
-
-  test("an agent that serves through its scope adopts what an older MiniBox made when its operator names the prefix, and labels what it makes", async () => {
-    // An image of somebody else's, so the stranger carries no label of MiniBox's.
-    const image = "alpine:3.20";
-    // What an older MiniBox left on that machine: its labels and none of the agent's. And somebody else's container.
-    const older = edgeEngine.seedContainer({
-      image,
-      name: "older-box",
-      running: true,
-      labels: { mbtest: "true", "mbtest.box": "true" },
-    });
-    const stranger = edgeEngine.seedContainer({ image, name: "stranger", running: true, labels: {} });
-    const { code } = (await (await post("/api/hosts/pairing", { id: "edge", name: "Edge" })).json()) as {
-      code: string;
-    };
-    const scopeDir = tempDir();
-    const stored = await enrollAgent(code, tempDir());
-    runScopedAgent(stored, edgeEngine, scopeDir);
-    await waitFor(() => app.agents.status(stored.identity.agentId)?.connected === true, "the agent to connect");
-    await waitFor(() => app.hosts.get("edge").host.status === "online", "the host to go online");
-
-    // The box the control plane makes on the host is made through the scope, and carries its label.
-    const made = await post("/api/boxes", { name: "alpha", cpus: 1, memoryMb: 256, host: "edge" });
-    expect(made.status).toBe(201);
-    const keys = app.hosts.get("edge").keys;
-    const alpha = [...edgeEngine.containers.values()].find((container) => container.labels[keys.name] === "alpha");
-    expect(alpha?.labels[OWNER_LABEL]).toBe("edge");
-
-    // The agent adopted the older box once, on the prefix its operator named and the welcome came to confirm, and not the
-    // stranger.
-    const adopted = loadScope(scopeDir, "edge")?.adopted.containers;
-    expect(adopted).toContain(older);
-    expect(adopted).not.toContain(stranger);
-    expect(adopted).not.toContain(alpha?.id);
   });
 
   test("removing an agent host deletes its shared tools volume on the machine, and nothing else there", async () => {

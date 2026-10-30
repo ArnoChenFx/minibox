@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -48,7 +48,8 @@ interface Setup {
   readonly scoped: ServedRuntime;
 }
 
-/** An engine, a scope over it and the engine behind that scope. `record` null is an agent paired before labels existed. */
+/** An engine, a scope over it and the engine behind that scope. `record` null is an agent with no scope file, as one
+ * paired before scopes existed. */
 function setup(
   options: {
     record?: ScopeRecord | null;
@@ -62,7 +63,7 @@ function setup(
     hostId: HOST,
     dataDir: scratch,
     runtime,
-    record: options.record === undefined ? freshScope(HOST, new Date()) : options.record,
+    record: options.record === undefined ? freshScope(HOST) : options.record,
     findSelf: async () => options.self ?? null,
   });
   return { runtime, scope, scoped: scopedRuntime(runtime, scope, { allowedRuntimes: options.allowedRuntimes }) };
@@ -243,7 +244,7 @@ describe("the agent's own container and the volumes it runs on", () => {
       hostId: HOST,
       dataDir: scratch,
       runtime: own,
-      record: freshScope(HOST, new Date()),
+      record: freshScope(HOST),
       findSelf: async () => ({ containerId: self, volumes: new Set([SELF_VOLUME]) }),
     });
     const scoped = scopedRuntime(own, scope);
@@ -500,7 +501,7 @@ describe("lists and events", () => {
       hostId: HOST,
       dataDir: scratch,
       runtime,
-      record: freshScope(HOST, new Date()),
+      record: freshScope(HOST),
       findSelf: async () => ({ containerId: own, volumes: new Set(["minibox-agent"]) }),
     });
     const scoped = scopedRuntime(runtime, scope);
@@ -577,231 +578,9 @@ describe("lists and events", () => {
   });
 });
 
-/**
- * A scope over an engine for an agent paired before labels existed (no record), or one that kept a record. Its operator
- * has named `adoptPrefix`, as `AGENT_ADOPT_PREFIX` does, unless a test says it has not.
- */
-function legacy(runtime: FakeRuntime, record: ScopeRecord | null = null, adoptPrefix: string | null = PREFIX) {
-  const scope = new AgentScope({ hostId: HOST, dataDir: scratch, runtime, record, adoptPrefix });
-  return { scope, scoped: scopedRuntime(runtime, scope) };
-}
-
-describe("an agent that was paired before containers carried the label", () => {
-  const LEGACY = { "mbtest.box": "true", "mbtest.name": "old" };
-
-  /** An engine as an older MiniBox left it, with a stranger's resources beside MiniBox's. */
-  function engine(): { runtime: FakeRuntime; old: string; stranger: string; lookalikes: string[] } {
-    const { runtime } = setup();
-    const old = container(runtime, "mbtest-old", LEGACY);
-    const stranger = container(runtime, "stranger", {});
-    // Labels that are not MiniBox's, though some look like it: another install whose prefix starts with ours, and a tool
-    // that labels what it makes in its own way.
-    const lookalikes = [
-      container(runtime, "compose-web", { "com.docker.compose.project": "web" }),
-      container(runtime, "another-install", { mbtest2: "true", "mbtest2.name": "old" }),
-      container(runtime, "dashed", { "mbtest-box": "true" }),
-    ];
-    runtime.volumes.set("mbtest-ws-old", { name: "mbtest-ws-old", labels: { "mbtest.volume": "true" } });
-    runtime.volumes.set("strangers-volume", { name: "strangers-volume", labels: {} });
-    runtime.volumes.set("compose-volume", { name: "compose-volume", labels: { "com.docker.compose.project": "web" } });
-    runtime.volumes.set("another-volume", { name: "another-volume", labels: { "mbtest2.volume": "true" } });
-    runtime.seedNetwork("mbtest-boxes");
-    runtime.seedNetwork("mbtest-egress-abc");
-    runtime.seedNetwork("strangers-network");
-    runtime.seedNetwork("mbtest2-boxes");
-    runtime.seedNetwork("mbtest-boxes2");
-    runtime.seedNetwork("mbtest-egress");
-    return { runtime, old, stranger, lookalikes };
-  }
-
-  test("until the control plane welcomes it, it manages nothing that existed", async () => {
-    const { runtime, old } = engine();
-    const { scoped } = legacy(runtime);
-    await refusedAs(scoped.inspectContainer(old), "not_found");
-  });
-
-  test("when its operator has named the prefix and the control plane welcomes it, it adopts what carries it, and nothing else", async () => {
-    const { runtime, old, stranger, lookalikes } = engine();
-    const { scope, scoped } = legacy(runtime);
-    scope.begin(PREFIX);
-
-    expect((await scoped.inspectContainer(old)).name).toBe("mbtest-old");
-    for (const other of [stranger, ...lookalikes]) await refusedAs(scoped.inspectContainer(other), "not_found");
-    expect((await scoped.inspectVolume("mbtest-ws-old")).name).toBe("mbtest-ws-old");
-    for (const other of ["strangers-volume", "compose-volume", "another-volume"]) {
-      await refusedAs(scoped.inspectVolume(other), "not_found");
-    }
-    expect((await scoped.listNetworks()).map((network) => network.name).toSorted()).toEqual([
-      "mbtest-boxes",
-      "mbtest-egress-abc",
-    ]);
-    await scoped.removeNetwork("mbtest-egress-abc");
-    await refusedAs(scoped.removeNetwork("strangers-network"), "not_found");
-    expect(runtime.networks.has("strangers-network")).toBe(true);
-  });
-
-  test("the control plane cannot widen what is adopted: the prefix its operator named is the one used, whatever it says", async () => {
-    const { runtime, old, lookalikes } = engine();
-    const { scope, scoped } = legacy(runtime);
-    // A prefix that would take a Compose stack, one that would take every label with a dot, and one that is another install's.
-    for (const named of ["com.docker.compose", "com", "mbtest2"]) scope.begin(named);
-    expect((await scoped.inspectContainer(old)).id).toBe(old);
-    for (const other of lookalikes) await refusedAs(scoped.inspectContainer(other), "not_found");
-    await refusedAs(scoped.inspectVolume("compose-volume"), "not_found");
-    await refusedAs(scoped.inspectVolume("another-volume"), "not_found");
-    expect(loadScope(scratch, HOST)).toMatchObject({ labelPrefix: PREFIX });
-  });
-
-  test("an operator who named no prefix gets no adoption, whatever the control plane names, and the log says what to do", async () => {
-    const { runtime, old, lookalikes } = engine();
-    const lines: string[] = [];
-    const restore = setLogSink((_level, line) => lines.push(line));
-    try {
-      const { scope, scoped } = legacy(runtime, null, null);
-      for (const named of ["com.docker.compose", "com", "a", PREFIX, undefined]) scope.begin(named);
-      await refusedAs(scoped.inspectContainer(old), "not_found");
-      for (const other of lookalikes) await refusedAs(scoped.inspectContainer(other), "not_found");
-      expect(existsSync(join(scratch, SCOPE_FILE))).toBe(false);
-    } finally {
-      restore();
-    }
-    const unadopted = lines.filter((line) => line.includes("agent.scope_unadopted"));
-    expect(unadopted).toHaveLength(5);
-    expect(JSON.parse(unadopted[0] ?? "{}")).toMatchObject({ reported: "com.docker.compose" });
-    expect(unadopted[0]).toContain("AGENT_ADOPT_PREFIX");
-  });
-
-  test("a prefix the control plane names that differs from the operator's is logged, and not used", async () => {
-    const { runtime } = engine();
-    const lines: string[] = [];
-    const restore = setLogSink((_level, line) => lines.push(line));
-    try {
-      const { scope } = legacy(runtime);
-      scope.begin("somebody-else");
-      scope.begin(PREFIX);
-    } finally {
-      restore();
-    }
-    const differs = lines.filter((line) => line.includes("agent.scope_prefix_differs"));
-    expect(differs).toHaveLength(1);
-    expect(JSON.parse(differs[0] ?? "{}")).toMatchObject({ named: PREFIX, reported: "somebody-else" });
-  });
-
-  test("it adopts once: what appears afterwards with the prefix on it is not adopted", async () => {
-    const { runtime, old } = engine();
-    const { scope, scoped } = legacy(runtime);
-    scope.begin(PREFIX);
-    await scoped.inspectContainer(old);
-
-    const later = container(runtime, "mbtest-later", LEGACY);
-    runtime.volumes.set("mbtest-later-volume", { name: "mbtest-later-volume", labels: { "mbtest.volume": "true" } });
-    scope.begin(PREFIX);
-    await refusedAs(scoped.inspectContainer(later), "not_found");
-    await refusedAs(scoped.inspectVolume("mbtest-later-volume"), "not_found");
-    // A welcome that names another prefix changes nothing either.
-    scope.begin("another");
-    await refusedAs(scoped.inspectContainer(later), "not_found");
-    expect((await scoped.inspectContainer(old)).id).toBe(old);
-  });
-
-  test("what it adopted is written down, and a restart reads it back instead of adopting again", async () => {
-    const { runtime, old } = engine();
-    const { scope, scoped } = legacy(runtime);
-    scope.begin(PREFIX);
-    await scoped.inspectContainer(old);
-
-    const kept = JSON.parse(readFileSync(join(scratch, SCOPE_FILE), "utf8")) as ScopeRecord;
-    expect(kept).toMatchObject({ version: 1, hostId: HOST, labelPrefix: PREFIX });
-    expect(kept.adopted.containers).toEqual([old]);
-    expect(kept.adopted.volumes).toEqual(["mbtest-ws-old"]);
-    expect(kept.adopted.networks.toSorted()).toEqual(["mbtest-boxes", "mbtest-egress-abc"]);
-
-    const later = container(runtime, "mbtest-later", LEGACY);
-    const restarted = legacy(runtime, loadScope(scratch, HOST));
-    restarted.scope.begin(PREFIX);
-    expect((await restarted.scoped.inspectContainer(old)).id).toBe(old);
-    await refusedAs(restarted.scoped.inspectContainer(later), "not_found");
-  });
-
-  test("an agent paired by this version adopts nothing, even when its operator names a prefix", async () => {
-    const { runtime, old } = engine();
-    const { scope, scoped } = legacy(runtime, freshScope(HOST, new Date(), PREFIX));
-    scope.begin(PREFIX);
-    await refusedAs(scoped.inspectContainer(old), "not_found");
-    expect(existsSync(join(scratch, SCOPE_FILE))).toBe(false);
-  });
-
-  test("an adoption that fails fails the request, and is tried again by the next one", async () => {
-    const { runtime, old } = engine();
-    const { scope, scoped } = legacy(runtime);
-    scope.begin(PREFIX);
-    runtime.fail("listContainers", new RuntimeError("unavailable", "the engine is busy"));
-    await refusedAs(scoped.inspectContainer(old), "unavailable");
-    expect(existsSync(join(scratch, SCOPE_FILE))).toBe(false);
-    expect((await scoped.inspectContainer(old)).id).toBe(old);
-  });
-
-  test("the agent's own container and its volumes are not adopted, even with the prefix on them", async () => {
-    const { runtime } = engine();
-    const self = container(runtime, "the-agent", LEGACY);
-    runtime.volumes.set("minibox-agent", { name: "minibox-agent", labels: { "mbtest.volume": "true" } });
-    const scope = new AgentScope({
-      hostId: HOST,
-      dataDir: scratch,
-      runtime,
-      record: null,
-      adoptPrefix: PREFIX,
-      findSelf: async () => ({ containerId: self, volumes: new Set(["minibox-agent"]) }),
-    });
-    scope.begin(PREFIX);
-    await scope.ready();
-    const kept = JSON.parse(readFileSync(join(scratch, SCOPE_FILE), "utf8")) as ScopeRecord;
-    expect(kept.adopted.containers).not.toContain(self);
-    expect(kept.adopted.volumes).not.toContain("minibox-agent");
-  });
-
-  test("an agent that cannot yet ask who it is adopts nothing, and finds out the next time the engine answers", async () => {
-    const { runtime, old } = engine();
-    const self = container(runtime, "the-agent", LEGACY);
-    let asked = 0;
-    const scope = new AgentScope({
-      hostId: HOST,
-      dataDir: scratch,
-      runtime,
-      record: null,
-      adoptPrefix: PREFIX,
-      findSelf: async () => {
-        asked += 1;
-        if (asked === 1) throw new RuntimeError("unavailable", "the engine is busy");
-        return { containerId: self, volumes: new Set<string>() };
-      },
-    });
-    const scoped = scopedRuntime(runtime, scope);
-    scope.begin(PREFIX);
-    // The first answer was a failure: it fails the request, and is not kept as "not in a container".
-    await refusedAs(scoped.inspectContainer(old), "unavailable");
-    expect(existsSync(join(scratch, SCOPE_FILE))).toBe(false);
-    // Asked again, the engine says which container the agent is, and that one is not taken with the rest.
-    expect((await scoped.inspectContainer(old)).id).toBe(old);
-    await refusedAs(scoped.inspectContainer(self), "not_found");
-    expect(asked).toBe(2);
-    expect(
-      (JSON.parse(readFileSync(join(scratch, SCOPE_FILE), "utf8")) as ScopeRecord).adopted.containers,
-    ).not.toContain(self);
-  });
-
-  test("two requests at once adopt once", async () => {
-    const { runtime, old } = engine();
-    const { scope, scoped } = legacy(runtime);
-    scope.begin(PREFIX);
-    await Promise.all([scoped.inspectContainer(old), scoped.inspectContainer(old), scoped.listVolumes()]);
-    expect(runtime.callsTo("listContainers")).toHaveLength(1);
-  });
-});
-
 describe("the owner of the host's firewall rule", () => {
   test("it is the MiniBox the agent was paired with, and another install's chain cannot be named", async () => {
-    const { runtime, scoped } = setup({ record: freshScope(HOST, new Date(), PREFIX) });
+    const { runtime, scoped } = setup({ record: freshScope(HOST, PREFIX) });
     runtime.seedNetwork("mbtest-egress-abc", {}, "bridge", MINE);
     await scoped.setHostIngressBlock(PREFIX, []);
     expect(runtime.callsTo("setHostIngressBlock")).toHaveLength(1);
@@ -815,36 +594,57 @@ describe("the owner of the host's firewall rule", () => {
     expect(runtime.callsTo("setHostIngressBlock")).toHaveLength(1);
   });
 
-  test("an adopted agent's owner is the prefix its operator named", async () => {
-    const { runtime } = setup();
-    const { scope, scoped } = legacy(runtime);
+  test("an agent that has no scope file writes one at the welcome, and its owner is then the prefix the welcome named", async () => {
+    const { runtime, scope, scoped } = setup({ record: null });
+    expect(scope.ingressOwner()).toBeNull();
     scope.begin(PREFIX);
-    await scope.ready();
+    expect(loadScope(scratch, HOST)).toEqual(freshScope(HOST, PREFIX));
+    expect(scope.ingressOwner()).toBe(PREFIX);
     await scoped.setHostIngressBlock(PREFIX, []);
+    expect(runtime.callsTo("setHostIngressBlock")).toHaveLength(1);
     await refusedAs(scoped.setHostIngressBlock("another-install", []), "invalid");
+    expect(runtime.callsTo("setHostIngressBlock")).toHaveLength(1);
+  });
+
+  test("a welcome that names another prefix is logged, and changes nothing", async () => {
+    const lines: string[] = [];
+    const restore = setLogSink((_level, line) => lines.push(line));
+    try {
+      const { scope } = setup({ record: freshScope(HOST, PREFIX) });
+      scope.begin("somebody-else");
+      scope.begin(PREFIX);
+    } finally {
+      restore();
+    }
+    const differs = lines.filter((line) => line.includes("agent.scope_prefix_differs"));
+    expect(differs).toHaveLength(1);
+    expect(JSON.parse(differs[0] ?? "{}")).toMatchObject({ kept: PREFIX, reported: "somebody-else" });
   });
 });
 
 describe("the scope file", () => {
-  test("an empty one is an error, not an agent that never had a scope, which would adopt again", () => {
+  test("an empty one is an error, not an agent that never had a scope and would have one written over it", () => {
     writeFileSync(join(scratch, SCOPE_FILE), "", { mode: 0o600 });
     expect(() => loadScope(scratch, HOST)).toThrow("is empty");
   });
 
-  test("it is written and read back, and a fresh scope adopts nothing", () => {
-    const record = freshScope(HOST, new Date("2026-10-30T00:00:00Z"));
+  test("it is written and read back, and holds the host and the prefix its MiniBox uses", () => {
+    const record = freshScope(HOST, PREFIX);
     saveScope(scratch, record);
     expect(loadScope(scratch, HOST)).toEqual(record);
-    expect(record.labelPrefix).toBeNull();
-    expect(record.adopted).toEqual({ containers: [], volumes: [], networks: [] });
+    expect(loadScope(scratch, HOST)).toEqual({ version: 1, hostId: HOST, labelPrefix: PREFIX });
   });
 
-  test("an agent that has none reads null, which is the one that adopts", () => {
+  test("an agent that has none reads null, and a welcome then writes one", () => {
+    const { scope } = setup({ record: null });
     expect(loadScope(scratch, HOST)).toBeNull();
+    scope.begin(PREFIX);
+    expect(existsSync(join(scratch, SCOPE_FILE))).toBe(true);
+    expect(loadScope(scratch, HOST)).toEqual(freshScope(HOST, PREFIX));
   });
 
   test("a file written for another host is an error that says what to do, not a scope to trust", () => {
-    saveScope(scratch, freshScope("another-host", new Date()));
+    saveScope(scratch, freshScope("another-host"));
     expect(() => loadScope(scratch, HOST)).toThrow("Remove the data volume and pair again");
   });
 

@@ -20,7 +20,7 @@ import { AgentClient } from "../src/agent/client";
 import { generateKeyPairPem, loadIdentity, type StoredIdentity, saveIdentity } from "../src/agent/identity";
 import { pairWith } from "../src/agent/main";
 import { AGENT_PROTOCOL } from "../src/agent/protocol";
-import { AgentScope, freshScope, loadScope, OWNER_LABEL } from "../src/agent/scope";
+import { AgentScope, freshScope, OWNER_LABEL } from "../src/agent/scope";
 import { type ServedRuntime, scopedRuntime } from "../src/agent/scoped-runtime";
 import { findSelf } from "../src/agent/self";
 import { type App, createApp } from "../src/app";
@@ -182,15 +182,15 @@ describe.skipIf(!enabled)("an agent host, against a real engine", () => {
       if (!stored) throw new Error("the identity was not saved");
 
       // What `minibox-agent` does: the control plane is served through the agent's scope. This agent was paired by a
-      // version that labels what it creates, so its scope is a fresh one with nothing from before to adopt. The test
-      // process is not in a container, so there is no container of the agent's own to keep out of reach.
+      // version that labels what it creates, so its scope is a fresh one. The test process is not in a container, so
+      // there is no container of the agent's own to keep out of reach.
       const engine = recording(createDockerRuntime(SOCKET), agentCalls);
       const scope = new AgentScope({
         hostId: stored.identity.hostId,
         dataDir: dir,
         runtime: engine,
         // What the pairing answer would have recorded: the control plane's prefix, which is whose firewall rule it may touch.
-        record: freshScope(stored.identity.hostId, new Date(), prefix),
+        record: freshScope(stored.identity.hostId, prefix),
         findSelf: async () => null,
       });
       scoped = scopedRuntime(engine, scope);
@@ -442,65 +442,6 @@ describe.skipIf(!enabled)("an agent host, against a real engine", () => {
       } finally {
         abort.abort();
         await foreign.remove({ force: true }).catch(() => {});
-      }
-    },
-    LONG,
-  );
-
-  test(
-    "an agent paired before containers carried the label adopts what MiniBox made until then, once, and nothing else",
-    async () => {
-      const dir = mkdtempSync(join(tmpdir(), "minibox-agent-adopt-"));
-      dirs.push(dir);
-      const engine = createDockerRuntime(SOCKET);
-      const network = `${prefix}-egress-legacy`;
-      const create = (name: string, labels: Record<string, string>) =>
-        docker.createContainer({ Image: IMAGE, name, Cmd: ["sleep", "300"], Labels: labels });
-      // What an older MiniBox made on this host: the install's labels and no label of the agent's.
-      const legacy = await create(`${prefix}-agent-legacy`, { [prefix]: "true", [keys.box]: "true" });
-      // Somebody else's container, which carries nothing of MiniBox's.
-      const stranger = await create(`${prefix}-agent-stranger`, {});
-      const created: Docker.Container[] = [legacy, stranger];
-      await docker.createNetwork({ Name: network });
-      try {
-        const scope = new AgentScope({
-          hostId: "edge",
-          dataDir: dir,
-          runtime: engine,
-          record: null,
-          // The operator of this agent named the prefix, as `AGENT_ADOPT_PREFIX` does.
-          adoptPrefix: prefix,
-          findSelf: async () => null,
-        });
-        const agent = scopedRuntime(engine, scope);
-        const ids = async () => (await agent.listContainers({ labels: {} })).map((info) => info.id);
-
-        // Until the control plane welcomes the agent and names its prefix, nothing that was there before is its own.
-        expect(await ids()).not.toContain(legacy.id);
-
-        scope.begin(prefix);
-        expect(await ids()).toContain(legacy.id);
-        expect(await ids()).not.toContain(stranger.id);
-        // A network made before networks were labelled is known by its name.
-        expect((await agent.listNetworks()).map((listed) => listed.name)).toContain(network);
-        expect(loadScope(dir, "edge")?.adopted.containers).toContain(legacy.id);
-
-        // It adopts once: what carries the prefix after that is nobody's.
-        const newer = await create(`${prefix}-agent-later`, { [prefix]: "true" });
-        created.push(newer);
-        expect(await ids()).not.toContain(newer.id);
-
-        // What it adopted it can manage, and what it did not adopt it cannot.
-        await agent.removeContainer(legacy.id, { force: true });
-        expect(await docker.listContainers({ all: true, filters: { id: [legacy.id] } })).toEqual([]);
-        expect((await refusal(() => agent.removeContainer(stranger.id, { force: true }))).kind).toBe("not_found");
-        expect(await docker.listContainers({ all: true, filters: { id: [stranger.id] } })).toHaveLength(1);
-      } finally {
-        for (const container of created) await container.remove({ force: true }).catch(() => {});
-        await docker
-          .getNetwork(network)
-          .remove()
-          .catch(() => {});
       }
     },
     LONG,

@@ -131,9 +131,9 @@ export const ServerFrameSchema = z.discriminatedUnion("type", [
     hostId: ID,
     protocol: z.number().int(),
     /**
-     * The control plane's `LABEL_PREFIX`. An agent paired before it labelled what it creates only compares it with the
-     * prefix its operator named for adoption, and says in its log when they differ or when none was named: the control
-     * plane does not get to say what the agent takes as its own. Absent from a control plane that predates the field.
+     * The control plane's `LABEL_PREFIX`. It pins nothing by itself: what the agent takes as its own is the label on the
+     * resource. An agent whose record names a prefix only compares it and logs a difference; an agent with no record at
+     * all (paired before scopes existed) writes it down. Absent from a control plane that predates the field.
      */
     labelPrefix: z.string().max(64).optional(),
   }),

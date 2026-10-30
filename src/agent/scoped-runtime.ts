@@ -81,7 +81,6 @@ export function scopedRuntime(runtime: Runtime, scope: AgentScope, options: Scop
     info: () => runtime.info(),
 
     async listContainers(filter, opts) {
-      await scope.ready();
       const self = await scope.selfOf();
       return (await runtime.listContainers(filter, opts)).filter(
         (info) => scope.ownsContainer(info) && info.id !== self?.containerId,
@@ -93,7 +92,6 @@ export function scopedRuntime(runtime: Runtime, scope: AgentScope, options: Scop
     },
 
     async createContainer(spec) {
-      await scope.ready();
       const requested = spec.hardening?.runtime;
       if (requested !== undefined && !allowed.has(requested)) {
         throw new RuntimeError(
@@ -157,7 +155,6 @@ export function scopedRuntime(runtime: Runtime, scope: AgentScope, options: Scop
       yield* runtime.followLogs(info.id, opts);
     },
     async *events(filter, signal) {
-      await scope.ready();
       const self = await scope.selfOf();
       for await (const event of runtime.events(filter, signal)) {
         if (scope.ownsEvent(event) && event.id !== self?.containerId) yield event;
@@ -172,12 +169,10 @@ export function scopedRuntime(runtime: Runtime, scope: AgentScope, options: Scop
 
     inspectVolume: async (name) => scope.volume(name),
     async listVolumes() {
-      await scope.ready();
       const self = await scope.selfOf();
       return (await runtime.listVolumes()).filter((info) => scope.ownsVolume(info) && !self?.volumes.has(info.name));
     },
     async createVolume(name, labels, opts) {
-      await scope.ready();
       // Creating a volume that exists keeps it as it is, so a name that is somebody else's volume would come back as
       // success and then be mounted. It is refused here.
       const existing = await runtime.inspectVolume(name).catch((e: unknown) => {
@@ -201,7 +196,6 @@ export function scopedRuntime(runtime: Runtime, scope: AgentScope, options: Scop
     },
 
     async ensureBridgeNetwork(name, opts) {
-      await scope.ready();
       const existing = (await runtime.listNetworks()).find((candidate) => candidate.name === name);
       if (existing && !scope.ownsNetwork(existing)) {
         throw new RuntimeError(
@@ -223,7 +217,6 @@ export function scopedRuntime(runtime: Runtime, scope: AgentScope, options: Scop
       return runtime.connectNetwork(info.id, name, opts);
     },
     async listNetworks() {
-      await scope.ready();
       return (await runtime.listNetworks()).filter((info) => scope.ownsNetwork(info));
     },
     async reattachNetwork(containerId, name) {
@@ -233,7 +226,7 @@ export function scopedRuntime(runtime: Runtime, scope: AgentScope, options: Scop
     },
     async setHostIngressBlock(owner, sources) {
       // The owner names the chain, so another install's chain on this host could be replaced or removed by naming it. It
-      // is the MiniBox the agent was paired with, or adopted for, and nobody else.
+      // is the MiniBox the agent was paired with, and nobody else.
       const own = scope.ingressOwner();
       if (own !== null && owner !== own) {
         throw new RuntimeError(
