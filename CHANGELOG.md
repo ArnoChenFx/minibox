@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-31
+
 ### 安全
 
 - **Agent 只处理 MiniBox 自己的容器、卷和网络**（[#129](https://github.com/ArnoChenFx/minibox/issues/129)）：此前 Agent 对 Docker 套接字上的一切都听控制面的，被攻破的控制面可以停掉、读取、挂载或删除同一台机器上的任何容器和卷。现在 Agent 只认带 `minibox-agent.host=<宿主机 id>` 标签的资源（创建时由 Agent 自己写入，并覆盖请求里的同名标签），其余一律按「不存在」回答且不做任何操作；列表与事件只含自己的资源，Agent 自己的容器和它挂载的卷永远不碰。创建容器只允许 `runc` 与 `AGENT_ALLOWED_RUNTIMES` 列出的运行时，且只能放在 MiniBox 自己的网络上（不再允许默认 bridge 或不指定网络）；用 `RUNTIME=runsc` 的 Agent 宿主机要给 Agent 设 `AGENT_ALLOWED_RUNTIMES=runsc`，否则新 Box 会被拒绝。宿主机 ingress 规则的 owner 固定为配对时记下、存在数据卷 `scope.json` 里的 `LABEL_PREFIX`。镜像不在范围内（仍可读任意镜像的元数据并让 Agent 拉取镜像）。详见 `docs/reference/agent.md`。
