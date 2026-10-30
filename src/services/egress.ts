@@ -1,7 +1,7 @@
 import { hardeningFor } from "../box-profile";
 import { type BoxEgress, type EgressPolicy } from "../egress/policy";
 import { allocateBoxSubnet, UPLINK_SUBNET } from "../egress/pool";
-import { boxProxyEnv, PROXY_ALIAS, PROXY_PROGRAM, proxyEnv } from "../egress/proxy";
+import { boxProxyEnv, PROXY_ALIAS, PROXY_PROGRAM, proxyEnv, proxyEnvMatches } from "../egress/proxy";
 import type { HostCtx } from "../host/registry";
 import { egressNetworkName, egressProxyName, egressUplinkName } from "../labels";
 import { type Ipv4Network, parseIpv4Cidr } from "../lib/cidr";
@@ -100,8 +100,9 @@ function proxiesOf(host: HostCtx, boxId: string): Promise<ContainerInfo[]> {
 
 /**
  * Makes sure a proxy-only box has a running proxy. The proxy sits on the shared uplink, which reaches the internet, and it
- * joins the box's private network under the alias the box's proxy settings name. A proxy that serves another allowlist
- * is replaced. Box, proxy and uplink are the only things that network can reach.
+ * joins the box's private network under the alias the box's proxy settings name. A proxy that serves another allowlist,
+ * or another set of allowed private ranges, is replaced. Box, proxy and uplink are the only things that network can
+ * reach.
  */
 export async function ensureEgressProxy(host: HostCtx, box: EgressBox, egress: BoxEgress): Promise<void> {
   if (egress.mode !== "proxy-only") return;
@@ -120,10 +121,11 @@ export async function ensureEgressProxy(host: HostCtx, box: EgressBox, egress: B
 }
 
 async function proxyFor(host: HostCtx, boxId: string, egress: BoxEgress): Promise<string> {
+  const wanted = proxyEnv(egress.allow, host.security.egressAllowRanges);
   const existing = await proxiesOf(host, boxId);
   for (const proxy of existing) {
     const env = await host.runtime.inspectEnv(proxy.id);
-    if (proxyEnv(egress.allow).every((entry) => env.includes(entry))) return proxy.id;
+    if (proxyEnvMatches(env, wanted)) return proxy.id;
   }
   for (const proxy of existing) await removeProxy(host, proxy.id);
   // The proxy runs the base template, which carries Node. A host without it builds it first.
@@ -132,7 +134,7 @@ async function proxyFor(host: HostCtx, boxId: string, egress: BoxEgress): Promis
     name: egressProxyName(host.prefix, boxId),
     image: host.baseTemplateTag,
     cmd: ["node", "-e", PROXY_PROGRAM],
-    env: proxyEnv(egress.allow),
+    env: wanted,
     labels: { [host.keys.egressProxy]: boxId },
     network: egressUplinkName(host.prefix),
     restart: "unless-stopped",

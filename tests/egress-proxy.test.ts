@@ -12,7 +12,12 @@ afterEach(() => {
 const runtime = Bun.which("node") ?? process.execPath;
 
 /** Starts the program and resolves once it logs `listening`. Its stdout is read for as long as the process lives. */
-async function startProxy(allow: string[]): Promise<{ port: number; lines: string[] }> {
+async function startProxy(
+  allow: string[],
+  ranges?: readonly string[] | string,
+): Promise<{ port: number; lines: string[] }> {
+  const rangesEnv =
+    ranges === undefined ? {} : { MINIBOX_EGRESS_RANGES: typeof ranges === "string" ? ranges : JSON.stringify(ranges) };
   for (let attempt = 0; attempt < 20; attempt++) {
     const port = 20000 + Math.floor(Math.random() * 20000);
     const proc = Bun.spawn([runtime, "-e", PROXY_PROGRAM], {
@@ -20,6 +25,7 @@ async function startProxy(allow: string[]): Promise<{ port: number; lines: strin
         ...process.env,
         MINIBOX_EGRESS_PORT: String(port),
         MINIBOX_EGRESS_ALLOW: JSON.stringify(allow),
+        ...rangesEnv,
       },
       stdout: "pipe",
       stderr: "pipe",
@@ -87,6 +93,47 @@ describe("proxy program", () => {
     await Bun.sleep(100);
     const denied = lines.map(parseProxyLine).find((event) => event?.kind === "denied");
     expect(denied).toEqual({ kind: "denied", host: "localhost", port: 443, reason: "private_address" });
+  });
+
+  test("a private address inside an allowed range is let through to the upstream attempt", async () => {
+    // localhost resolves to a loopback address, which the proxy refuses unless the range that holds it is allowed.
+    const { port, lines } = await startProxy(["localhost"], ["127.0.0.0/8"]);
+    const response = await request(port, "CONNECT localhost:443 HTTP/1.1\r\nHost: localhost:443\r\n\r\n");
+    // Nothing listens on 443, so the attempt fails upstream; a refusal would be a 403.
+    expect(response.split("\r\n")[0]).not.toBe("HTTP/1.1 403 Forbidden");
+    await Bun.sleep(100);
+    const events = lines.map(parseProxyLine).filter((event) => event !== null);
+    expect(events.some((event) => event.kind === "denied" && event.reason === "private_address")).toBe(false);
+    expect(events.some((event) => event.kind === "failed" && event.reason === "upstream")).toBe(true);
+  });
+
+  test("a private address outside the allowed ranges is still refused", async () => {
+    const { port, lines } = await startProxy(["localhost"], ["198.18.0.0/15"]);
+    const response = await request(port, "CONNECT localhost:443 HTTP/1.1\r\nHost: localhost:443\r\n\r\n");
+    expect(response.split("\r\n")[0]).toBe("HTTP/1.1 403 Forbidden");
+    await Bun.sleep(100);
+    const denied = lines.map(parseProxyLine).find((event) => event?.kind === "denied");
+    expect(denied).toEqual({ kind: "denied", host: "localhost", port: 443, reason: "private_address" });
+  });
+
+  test("an empty ranges variable keeps the refusal exactly as it was", async () => {
+    const { port, lines } = await startProxy(["localhost"], "[]");
+    const response = await request(port, "CONNECT localhost:443 HTTP/1.1\r\nHost: localhost:443\r\n\r\n");
+    expect(response.split("\r\n")[0]).toBe("HTTP/1.1 403 Forbidden");
+    await Bun.sleep(100);
+    const denied = lines.map(parseProxyLine).find((event) => event?.kind === "denied");
+    expect(denied).toEqual({ kind: "denied", host: "localhost", port: 443, reason: "private_address" });
+  });
+
+  test("a malformed ranges variable does not stop the proxy", async () => {
+    for (const ranges of ["not json", '{"range":"127.0.0.0/8"}', '["127.0.0.0",42,null,"nope"]']) {
+      const { port, lines } = await startProxy(["localhost"], ranges);
+      const response = await request(port, "CONNECT localhost:443 HTTP/1.1\r\nHost: localhost:443\r\n\r\n");
+      expect(response.split("\r\n")[0]).toBe("HTTP/1.1 403 Forbidden");
+      await Bun.sleep(100);
+      const denied = lines.map(parseProxyLine).find((event) => event?.kind === "denied");
+      expect(denied).toEqual({ kind: "denied", host: "localhost", port: 443, reason: "private_address" });
+    }
   });
 
   test("a plain HTTP request is refused without its path reaching the log", async () => {
