@@ -137,11 +137,12 @@ export default {
   "tp.forkTitle": "派生「{name}」",
   "tp.forkDesc": "把 <code>{ref}</code> 的镜像与构建记录复制成一个新模板，原模板保持不变。",
   "tp.forkWhat":
-    "副本保留构建来源与设置命令，可以改名称和描述，然后按同一来源重新构建。从 Box 保存的模板没有构建来源，因此它的副本不能重新构建。",
+    "副本保留构建来源与设置命令，可以改名称和描述，然后按同一来源重新构建。从 Box 保存的模板没有构建来源，因此它的副本不能重新构建。派生官方模板得到的是一份 MiniBox 自带 Dockerfile 的副本，因此副本会变成可以修改、可以重新构建的自定义模板。",
   "tp.forkConfirm": "派生模板",
   "tp.forking": "正在派生…",
   "tp.forked": "已派生模板",
   "tp.forkFailed": "无法派生模板",
+  "tp.forkUnbuilt": "尚未在任何宿主机上构建。请先构建：派生复制的是已构建的镜像，而不是构建来源。",
   "tp.hosts": "宿主机",
   "tp.present": "已有",
   "tp.absent": "缺失",

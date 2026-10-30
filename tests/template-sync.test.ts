@@ -1,14 +1,19 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 
 import type { Server } from "bun";
 
 import { type App, createApp } from "../src/app";
+import { ROOT } from "../src/config";
 import type { LabelKeys } from "../src/labels";
 import { type ExecSpec, RuntimeError } from "../src/runtime";
 import { startServer } from "../src/server";
 import { createDeclaredTemplate, readRecipe, removeRecipe, templateSetupOf } from "../src/services/template-builds";
 import type { SocketData } from "../src/ws/socket";
 import { silenceLogs, TEST_KEY, testConfig } from "./support/app";
+import { bootCluster, type Cluster } from "./support/cluster";
 import { FakeRuntime } from "./support/fake-runtime";
 import { FakeCheckpointEngine } from "./support/fake-snapshots";
 import { DEVCONTAINER_WITH_SETUP, serveRepository } from "./support/repository";
@@ -290,5 +295,65 @@ describe("a declared template keeps its setup on the hosts it is copied to", () 
 
     expect(readRecipe(app.hosts.get("edge"), "gold")).toBeNull();
     expect(await templateSetupOf(app.hosts.get("edge"), GOLD)).toBeNull();
+  });
+});
+
+/** The source as a host stores it, rather than as a read interprets an official source. */
+function storedSourceOf(host: { specs: { dir(): string }; host: { id: string } }, name: string): unknown {
+  const path = join(dirname(host.specs.dir()), "template-recipes", host.host.id, `${name}.json`);
+  return (JSON.parse(readFileSync(path, "utf8")) as { source: unknown }).source;
+}
+
+describe("a copy of an old fork keeps the source the source host stores", () => {
+  let cluster: Cluster | undefined;
+  let templates = "";
+
+  beforeEach(() => {
+    // A templates directory of its own, so a test can change the official Dockerfile without touching the repository.
+    templates = mkdtempSync(join(tmpdir(), "minibox-templates-"));
+    cpSync(join(ROOT, "templates"), templates, { recursive: true });
+  });
+
+  afterEach(() => {
+    cluster?.close();
+    cluster = undefined;
+    rmSync(templates, { recursive: true, force: true });
+  });
+
+  test("the target keeps the official source, so an upgrade gives both hosts the same text", async () => {
+    cluster = await bootCluster({ templatesDir: templates }, ["local", "small"]);
+    const localHost = cluster.app.hosts.get();
+    const smallHost = cluster.app.hosts.get("small");
+
+    // The official `node` template, and a fork of it written the way an earlier version did: the fork's own image, still
+    // naming the official source.
+    await createDeclaredTemplate(
+      localHost,
+      { name: "node", source: { kind: "official", name: "node" }, createdBy: "owner" },
+      {},
+    );
+    expect((await cluster.post("/api/templates/mbtest-template:node/fork", { name: "node-copy" })).status).toBe(201);
+    const recipeFile = join(dirname(localHost.specs.dir()), "template-recipes", localHost.host.id, "node-copy.json");
+    const forked = JSON.parse(readFileSync(recipeFile, "utf8")) as Record<string, unknown>;
+    writeFileSync(recipeFile, JSON.stringify({ ...forked, source: { kind: "official", name: "node" } }));
+
+    // Copy it to the other host, as a create there, a sync or a move does.
+    const started = await cluster.post("/api/templates/mbtest-template:node-copy/sync", { host: "small" });
+    expect(started.status).toBe(202);
+    const { taskId } = (await started.json()) as { taskId: string };
+    await cluster.app.tasks.drain();
+    expect(cluster.app.tasks.get(taskId, { output: false })).toMatchObject({ status: "succeeded" });
+    // The copy carries the record as stored, not as the source host read it.
+    expect(storedSourceOf(smallHost, "node-copy")).toEqual({ kind: "official", name: "node" });
+
+    // A MiniBox upgrade changes the Dockerfile both hosts ship.
+    const shipped = readFileSync(join(templates, "official", "node", "Dockerfile"), "utf8");
+    writeFileSync(join(templates, "official", "node", "Dockerfile"), `${shipped}RUN echo upgraded\n`);
+
+    expect(readRecipe(smallHost, "node-copy")?.source).toEqual({
+      kind: "dockerfile",
+      text: `${shipped}RUN echo upgraded\n`,
+    });
+    expect(readRecipe(smallHost, "node-copy")?.source).toEqual(readRecipe(localHost, "node-copy")?.source);
   });
 });
