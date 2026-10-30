@@ -12,6 +12,7 @@ import {
   resolveBackupDir,
   resolveDataDir,
 } from "./data-dir";
+import { MIN_EGRESS_ALLOW_PREFIX } from "./egress/proxy";
 import { hostLabelsProblem } from "./host/store";
 import { formatIpv4Cidr, ipv4Overlaps, type Ipv4Network, parseIpv4Cidr } from "./lib/cidr";
 import { log } from "./lib/logger";
@@ -306,9 +307,6 @@ function parseHostLabels(value: string | undefined): Record<string, string> {
  * link-local, which holds the cloud metadata address, and `224.0.0.0/3` is multicast and reserved.
  */
 const REFUSED_EGRESS_RANGES = ["0.0.0.0/8", "127.0.0.0/8", "169.254.0.0/16", "224.0.0.0/3"] as const;
-
-/** A shorter prefix would open more than 16 million addresses with one entry, which no fake-IP range needs. */
-const MIN_EGRESS_ALLOW_PREFIX = 8;
 
 /**
  * The private networks an egress proxy may reach, from `EGRESS_ALLOW_RANGES`, as `198.18.0.1/16` or `198.18.0.0/15`

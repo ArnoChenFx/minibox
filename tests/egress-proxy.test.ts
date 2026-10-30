@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
 import { connect } from "node:net";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
+import { loadConfig } from "../src/config";
 import { PROXY_PROGRAM, parseProxyLine } from "../src/egress/proxy";
 
 const procs: Bun.Subprocess[] = [];
@@ -16,17 +20,19 @@ async function startProxy(
   allow: string[],
   ranges?: readonly string[] | string,
 ): Promise<{ port: number; lines: string[] }> {
-  const rangesEnv =
-    ranges === undefined ? {} : { MINIBOX_EGRESS_RANGES: typeof ranges === "string" ? ranges : JSON.stringify(ranges) };
+  const env: Record<string, string | undefined> = {
+    ...process.env,
+    MINIBOX_EGRESS_ALLOW: JSON.stringify(allow),
+  };
+  // An exported variable on the machine running the tests must not leak into a case that means "unset".
+  delete env.MINIBOX_EGRESS_RANGES;
+  if (ranges !== undefined) {
+    env.MINIBOX_EGRESS_RANGES = typeof ranges === "string" ? ranges : JSON.stringify(ranges);
+  }
   for (let attempt = 0; attempt < 20; attempt++) {
     const port = 20000 + Math.floor(Math.random() * 20000);
     const proc = Bun.spawn([runtime, "-e", PROXY_PROGRAM], {
-      env: {
-        ...process.env,
-        MINIBOX_EGRESS_PORT: String(port),
-        MINIBOX_EGRESS_ALLOW: JSON.stringify(allow),
-        ...rangesEnv,
-      },
+      env: { ...env, MINIBOX_EGRESS_PORT: String(port) },
       stdout: "pipe",
       stderr: "pipe",
     });
@@ -59,7 +65,7 @@ async function collect(proc: Bun.Subprocess, lines: string[], onLine: (line: str
 }
 
 /** Sends one raw request and returns the first response line, plus the whole response once the socket closes. */
-function request(port: number, payload: string): Promise<string> {
+function request(port: number, payload: string, timeoutMs = 5000): Promise<string> {
   return new Promise((resolve, reject) => {
     const socket = connect({ host: "127.0.0.1", port });
     let response = "";
@@ -69,7 +75,7 @@ function request(port: number, payload: string): Promise<string> {
     socket.on("error", reject);
     socket.on("close", () => resolve(response));
     socket.on("connect", () => socket.end(payload));
-    setTimeout(() => socket.destroy(), 5000);
+    setTimeout(() => socket.destroy(), timeoutMs);
   });
 }
 
@@ -126,13 +132,43 @@ describe("proxy program", () => {
   });
 
   test("a malformed ranges variable does not stop the proxy", async () => {
-    for (const ranges of ["not json", '{"range":"127.0.0.0/8"}', '["127.0.0.0",42,null,"nope"]']) {
-      const { port, lines } = await startProxy(["localhost"], ranges);
-      const response = await request(port, "CONNECT localhost:443 HTTP/1.1\r\nHost: localhost:443\r\n\r\n");
+    // The last two would each pass a looser parser and then let a private address through: an octet above 255 wraps
+    // into the range, and /0 would hold every address. A host written as an address is resolved by the program itself,
+    // without DNS, so the answer these cases see is exactly the one named.
+    const cases = [
+      { ranges: "not json", host: "localhost" },
+      { ranges: '{"range":"127.0.0.0/8"}', host: "localhost" },
+      { ranges: '["127.0.0.0",42,null,"nope"]', host: "localhost" },
+      { ranges: '["198.18.0.300/16"]', host: "198.18.0.5" },
+      { ranges: '["0.0.0.0/0"]', host: "10.1.2.3" },
+    ];
+    for (const { ranges, host } of cases) {
+      const { port, lines } = await startProxy([host], ranges);
+      const response = await request(port, `CONNECT ${host}:443 HTTP/1.1\r\nHost: ${host}:443\r\n\r\n`);
       expect(response.split("\r\n")[0]).toBe("HTTP/1.1 403 Forbidden");
       await Bun.sleep(100);
       const denied = lines.map(parseProxyLine).find((event) => event?.kind === "denied");
-      expect(denied).toEqual({ kind: "denied", host: "localhost", port: 443, reason: "private_address" });
+      expect(denied).toEqual({ kind: "denied", host, port: 443, reason: "private_address" });
+    }
+  });
+
+  test("a range loadConfig produces lets a fake-IP answer through", async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), "minibox-egress-proxy-"));
+    try {
+      const cfg = loadConfig(
+        { ACCESS_KEY: "k".repeat(64), DATA_DIR: dataDir, EGRESS_ALLOW_RANGES: "198.18.0.1/16" },
+        { envFile: join(dataDir, "absent.env") },
+      );
+      expect(cfg.egressAllowRanges).toEqual(["198.18.0.0/16"]);
+      const { port, lines } = await startProxy(["198.18.0.5"], cfg.egressAllowRanges);
+      const response = await request(port, "CONNECT 198.18.0.5:443 HTTP/1.1\r\nHost: 198.18.0.5:443\r\n\r\n", 1500);
+      // Nothing routes to the fake address here, so the attempt may time out; what it must not be is the refusal.
+      expect(response.split("\r\n")[0]).not.toBe("HTTP/1.1 403 Forbidden");
+      await Bun.sleep(100);
+      const events = lines.map(parseProxyLine).filter((event) => event !== null);
+      expect(events.some((event) => event.kind === "denied" && event.reason === "private_address")).toBe(false);
+    } finally {
+      rmSync(dataDir, { recursive: true, force: true });
     }
   });
 

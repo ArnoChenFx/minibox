@@ -2,6 +2,12 @@
 const PROXY_PORT = 3128;
 export const PROXY_ALIAS = "minibox-proxy";
 
+/**
+ * The shortest prefix `EGRESS_ALLOW_RANGES` accepts, shared with `config`, so the proxy program can never accept a range
+ * the setting would refuse. A shorter prefix would open more than 16 million addresses with one entry.
+ */
+export const MIN_EGRESS_ALLOW_PREFIX = 8;
+
 /** Entry point for `node -e`. A proxy run never writes a request path or body, only the host and the byte counts. */
 const PROXY_LINES = [
   '"use strict";',
@@ -18,14 +24,19 @@ const PROXY_LINES = [
   "];",
   "const maskOf = (bits) => (bits === 0 ? 0 : (0xffffffff << (32 - bits)) >>> 0);",
   "const ipInt = (text) => { const p = text.split('.').map(Number); return ((p[0] << 24) | (p[1] << 16) | (p[2] << 8) | p[3]) >>> 0; };",
-  // A range the operator allowed is a private address the proxy reaches anyway. A malformed entry is dropped rather than
-  // stopping the proxy: EGRESS_ALLOW_RANGES is checked at startup, and a proxy must still run with what it was given.
+  // A range the operator allowed is a private address the proxy reaches anyway. An entry this program cannot trust is
+  // dropped rather than stopping the proxy: EGRESS_ALLOW_RANGES is checked at startup, and a proxy must still run with
+  // what it was given. The prefix floor is config's, so the loosest range the proxy would accept is the loosest config
+  // accepts.
+  `const MIN_RANGE_PREFIX = ${MIN_EGRESS_ALLOW_PREFIX};`,
   "const rangeOf = (text) => {",
   "  if (typeof text !== 'string') return null;",
   "  const at = text.lastIndexOf('/');",
   "  if (at < 0 || !/^\\d{1,3}(\\.\\d{1,3}){3}$/.test(text.slice(0, at))) return null;",
+  "  const octets = text.slice(0, at).split('.').map(Number);",
   "  const bits = Number(text.slice(at + 1));",
-  "  return Number.isInteger(bits) && bits >= 0 && bits <= 32 ? [ipInt(text.slice(0, at)), bits] : null;",
+  "  if (octets.some((n) => n > 255)) return null;",
+  "  return Number.isInteger(bits) && bits >= MIN_RANGE_PREFIX && bits <= 32 ? [ipInt(text.slice(0, at)), bits] : null;",
   "};",
   "const RANGES = (() => {",
   "  try {",
