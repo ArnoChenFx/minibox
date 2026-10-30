@@ -34,6 +34,9 @@ interface ActionLayout {
   actions: Rect;
   remove: Rect;
   force: Rect;
+  /** Whether each button's label fits inside it, so neither is clipped with an ellipsis. */
+  removeFits: boolean;
+  forceFits: boolean;
 }
 
 /** Where the hosts table's two row actions sit, and how much the table overflows sideways. */
@@ -72,12 +75,15 @@ const measure = (page: Page): Promise<ActionLayout | null> =>
         height: rect.height,
       };
     };
+    const fits = (el: El): boolean => el.scrollWidth <= el.clientWidth + 1;
     return {
       overflow: wrap.scrollWidth - wrap.clientWidth,
       viewport: view.innerWidth,
       actions: box(actions),
       remove: box(remove),
       force: box(force),
+      removeFits: fits(remove),
+      forceFits: fits(force),
     };
   });
 
@@ -160,6 +166,9 @@ describe.skipIf(!executablePath)("the host force-removal button fits the hosts t
           expect(layout.overflow).toBe(0);
           expect(layout.remove.width).toBeGreaterThan(0);
           expect(layout.force.width).toBeGreaterThan(0);
+          // Neither label is clipped: the force action wraps rather than being cut off.
+          expect(layout.removeFits).toBe(true);
+          expect(layout.forceFits).toBe(true);
           expect(overlaps(layout.remove, layout.force)).toBe(false);
           for (const box of [layout.remove, layout.force]) {
             expect(box.left).toBeGreaterThanOrEqual(0);
