@@ -1,9 +1,13 @@
 import { describe, expect, test } from "bun:test";
 
+import en from "../web/js/i18n/en.js";
+import zh from "../web/js/i18n/zh-CN.js";
 import {
+  forkAction,
   isUnbuilt,
   needsSync,
   syncSizeMb,
+  templateBadge,
   templateCards,
   templateDetailRows,
   templateSearchFields,
@@ -11,6 +15,7 @@ import {
 } from "../web/js/lib/template-list.js";
 
 const MB = 1024 * 1024;
+const BASE = "minibox-template:base";
 
 function copy(hostId: string, overrides: Record<string, unknown> = {}) {
   return {
@@ -111,6 +116,38 @@ describe("copying a template to a host before a box is created there", () => {
   test("a template no host holds is never copied, because there is no host to copy from", () => {
     const [card] = withOfficialCards([], OFFICIAL.slice(0, 1));
     expect(needsSync(card, "lab")).toBe(false);
+  });
+});
+
+describe("the label a template card shows", () => {
+  test("the base template is built-in, an official template is official, and everything else is custom", () => {
+    expect(templateBadge({ ref: BASE }, BASE)).toBe("tp.builtin");
+    expect(templateBadge({ ref: "minibox-template:node", buildKind: "official" }, BASE)).toBe("tp.official");
+    expect(templateBadge({ ref: "minibox-template:tool", buildKind: "dockerfile" }, BASE)).toBe("tp.custom");
+    // A template the host does not hold has no build kind, and is still custom when it is not the base or an official one.
+    expect(templateBadge({ ref: "minibox-template:gold" }, BASE)).toBe("tp.custom");
+  });
+
+  test("a fork of an official template is custom, because its source is its own copy of the Dockerfile", () => {
+    // The API reports the fork as built from a Dockerfile, as a read of its old recipe does too.
+    expect(templateBadge({ ref: "minibox-template:node-copy", buildKind: "dockerfile" }, BASE)).toBe("tp.custom");
+  });
+});
+
+describe("the fork action a card offers", () => {
+  test("a built card, official or not, offers the fork", () => {
+    const [node] = withOfficialCards(builtNode(), OFFICIAL);
+    expect(node && forkAction(node)).toEqual({ enabled: true, reason: null });
+    const [tool] = templateCards([copy("local", { ref: "minibox-template:tool", name: "tool" })]);
+    expect(tool && forkAction(tool)).toEqual({ enabled: true, reason: null });
+  });
+
+  test("a card no host holds shows the button off, with the reason the dictionaries both carry", () => {
+    const [, python] = withOfficialCards(builtNode(), OFFICIAL);
+    expect(python && forkAction(python)).toEqual({ enabled: false, reason: "tp.forkUnbuilt" });
+    expect(en["tp.forkUnbuilt"]).toContain("Build it first");
+    expect(zh["tp.forkUnbuilt"]).toContain("请先构建");
+    expect(zh["tp.forkUnbuilt"]).not.toBe(en["tp.forkUnbuilt"]);
   });
 });
 

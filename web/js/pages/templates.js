@@ -15,7 +15,9 @@ import { icon } from "../lib/icons.js";
 import { filterBySearch, searchTerms } from "../lib/search.js";
 import { invalidateTemplates } from "../lib/store.js";
 import {
+  forkAction,
   isUnbuilt,
+  templateBadge,
   templateCards,
   templateDetailRows,
   templateSearchFields,
@@ -85,6 +87,18 @@ function detailsHtml(tp) {
     .join("");
 }
 
+/**
+ * The fork button of a card. A card no host holds yet shows it off, with the reason as its tooltip: a fork copies the
+ * built image, so there is nothing to copy until the template is built on a host.
+ */
+function forkHtml(tp) {
+  const fork = forkAction(tp);
+  const label = `${icon("copy")}${t("tp.fork")}`;
+  return fork.enabled
+    ? `<button class="btn btn-sm" data-action="fork" data-ref="${esc(tp.ref)}" title="${esc(t("tp.fork"))}">${label}</button>`
+    : `<button class="btn btn-sm" disabled title="${esc(t(fork.reason))}">${label}</button>`;
+}
+
 export function render(view, focusName = "") {
   let base = "";
   let templates = null;
@@ -121,8 +135,7 @@ export function render(view, focusName = "") {
   const legacyBox = view.querySelector("#tpLegacy");
   const legacyBody = view.querySelector("#tpLegacyBody");
 
-  const badge = (tp) =>
-    tp.ref === base ? t("tp.builtin") : tp.buildKind === "official" ? t("tp.official") : t("tp.custom");
+  const badge = (tp) => t(templateBadge(tp, base));
 
   const draw = () => {
     if (loadError) {
@@ -176,7 +189,7 @@ export function render(view, focusName = "") {
           ${unbuilt ? "<span></span>" : `<button class="icon-btn danger" data-action="delete" data-ref="${esc(tp.ref)}" title="${t("tp.delete")}" aria-label="${t("tp.delete")}">${icon("trash")}</button>`}
           <div class="actions">
             ${unbuilt && !multiHost() ? `<button class="btn btn-sm" data-action="build-official" data-name="${esc(tp.name)}">${icon("hammer")}${t("tp.buildOfficial")}</button>` : ""}
-            ${!unbuilt ? `<button class="btn btn-sm" data-action="fork" data-ref="${esc(tp.ref)}" title="${esc(t("tp.fork"))}">${icon("copy")}${t("tp.fork")}</button>` : ""}
+            ${forkHtml(tp)}
             ${tp.buildKind && !unbuilt ? `<button class="btn btn-sm" data-action="edit" data-ref="${esc(tp.ref)}" title="${esc(t("tp.edit"))}">${icon("pencil")}${t("tp.edit")}</button>` : ""}
             ${tp.buildKind && !unbuilt ? `<button class="btn btn-sm" data-action="rebuild" data-ref="${esc(tp.ref)}" data-host="${esc(tp.holders[0])}">${icon("refresh")}${t("tp.rebuild")}</button>` : ""}
             <button class="btn btn-sm btn-primary" data-action="use" data-ref="${esc(tp.ref)}">${icon("plus")}${t("tp.use")}</button>

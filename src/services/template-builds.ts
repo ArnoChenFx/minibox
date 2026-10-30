@@ -97,6 +97,32 @@ function isInit(value: unknown): value is TemplateInit {
   return commandOk && portsOk;
 }
 
+/**
+ * The Dockerfile an official template ships with, as text, or null when this MiniBox has none for that name. The directory
+ * holds that one file and no `COPY`, so the Dockerfile is the whole build context a copy of it needs.
+ */
+function shippedDockerfile(host: HostCtx, name: OfficialName): string | null {
+  try {
+    return readFileSync(join(officialContextDir(host, name), "Dockerfile"), "utf8");
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The source a recipe is read as. An official template's recipe names the template itself, so an official source under
+ * another name is a fork that was written before a fork kept its own copy of the Dockerfile: it reads as the copy a fork
+ * writes now, taken from the Dockerfile this MiniBox ships, so the fork can be edited and rebuilt from it without being
+ * forked again. A template whose name is the official one stays official, and so does a fork whose Dockerfile this
+ * MiniBox does not ship: the source it has is better than none.
+ */
+function sourceAsRead(host: HostCtx, name: string, source: TemplateSource): TemplateSource {
+  if (source.kind !== "official" || source.name === name) return source;
+  const text = shippedDockerfile(host, source.name);
+  if (text === null || dockerfileProblem(text) !== null) return source;
+  return { kind: "dockerfile", text };
+}
+
 /** The recipe a declared template was built from, or null for a template made some other way. */
 export function readRecipe(host: HostCtx, name: string): TemplateRecipe | null {
   let parsed: unknown;
@@ -109,7 +135,8 @@ export function readRecipe(host: HostCtx, name: string): TemplateRecipe | null {
   const recipe = parsed as Partial<TemplateRecipe>;
   if (recipe.version !== 1 || typeof recipe.imageId !== "string" || !isSource(recipe.source)) return null;
   if (recipe.init !== undefined && !isInit(recipe.init)) return null;
-  return recipe as TemplateRecipe;
+  const source = recipe.source as TemplateSource;
+  return { ...(recipe as TemplateRecipe), source: sourceAsRead(host, name, source) };
 }
 
 function writeRecipe(host: HostCtx, name: string, recipe: TemplateRecipe): void {
@@ -188,7 +215,9 @@ export function copyRecipe(from: HostCtx, to: HostCtx, ref: string, imageId: str
 
 /**
  * Gives `to` the recipe captured with the source image, pointed at the fork's image. A source rebuilt while the fork
- * runs cannot replace this recipe. The fork's description and creator belong to the fork and survive its rebuilds.
+ * runs cannot replace this recipe. The fork's description and creator belong to the fork and survive its rebuilds. A fork
+ * of an official template writes the copy of the Dockerfile it kept, as a recipe read from disk reads it, so the fork is
+ * a custom template from the moment it exists.
  */
 export function forkRecipe(
   host: HostCtx,
@@ -198,7 +227,14 @@ export function forkRecipe(
   description: string,
   createdBy: string,
 ): void {
-  writeRecipe(host, to, { ...recipe, imageId, description, createdBy, created: new Date().toISOString() });
+  writeRecipe(host, to, {
+    ...recipe,
+    imageId,
+    description,
+    createdBy,
+    created: new Date().toISOString(),
+    source: sourceAsRead(host, to, recipe.source),
+  });
 }
 
 /** How a template was built, when its image still matches the recipe that built it. */
