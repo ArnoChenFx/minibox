@@ -1,4 +1,13 @@
-import { type CliIo, fail, labelEntries, OUTPUT_SWITCHES, parseOptions, repeatedValues, request } from "./shared";
+import {
+  type CliIo,
+  fail,
+  labelEntries,
+  OUTPUT_SWITCHES,
+  parseOptions,
+  printJson,
+  repeatedValues,
+  request,
+} from "./shared";
 
 /** `host labels get <id>` prints the labels the host carries, as JSON, so a script can read them. */
 async function hostLabelsGet(argv: string[], env: Record<string, string | undefined>, io: CliIo): Promise<number> {
@@ -37,10 +46,77 @@ async function hostLabelsSet(argv: string[], env: Record<string, string | undefi
   return 0;
 }
 
+/** The preview an unconfirmed force removal is answered with, under `error.details`. */
+interface HostForceRemovePreview {
+  host: { id: string; name: string };
+  counts: { boxes: number; volumes: number; checkpoints: number };
+  boxes: { id: string; name: string }[];
+  volumes: { name: string; engineName: string }[];
+  checkpoints: { id: string; label: string }[];
+}
+
+function forceRemovePreview(json: unknown): HostForceRemovePreview | null {
+  const preview = (json as { error?: { details?: { preview?: HostForceRemovePreview } } } | null)?.error?.details
+    ?.preview;
+  return preview && Array.isArray(preview.boxes) ? preview : null;
+}
+
+function forceRemoveLine(cells: (string | number)[]): string {
+  return `${cells.join("  ")}\n`;
+}
+
+/**
+ * `host force-remove <id>`: discards MiniBox's records of a lost, offline host. Without `--yes` it prints the preview and
+ * changes nothing. The machine is never contacted, and nothing on it is deleted, which the preview says in as many words.
+ */
+async function hostForceRemoveCommand(
+  argv: string[],
+  env: Record<string, string | undefined>,
+  io: CliIo,
+): Promise<number> {
+  const options = parseOptions(argv, [], ["--json", "--yes"]);
+  const [id, ...more] = options.positional;
+  if (!id || more.length > 0) throw new Error("minibox host force-remove needs one host id");
+  const json = options.switches.has("--json");
+  const path = `/api/hosts/${encodeURIComponent(id)}/force-remove`;
+  // Without --yes the call is the preview alone: nothing changes, and the machine is never contacted either way.
+  if (!options.switches.has("--yes")) {
+    const asked = await request(env, "POST", path, { confirm: false });
+    const preview = forceRemovePreview(asked.json);
+    if (asked.status !== 409 || !preview) return fail(io, asked.status, asked.json, asked.text);
+    if (json) return printJson(io, asked.json);
+    io.stdout(forceRemoveLine(["KIND", "ID", "NAME"]));
+    for (const box of preview.boxes) io.stdout(forceRemoveLine(["box", box.id, box.name]));
+    for (const volume of preview.volumes) io.stdout(forceRemoveLine(["volume", volume.engineName, volume.name]));
+    for (const checkpoint of preview.checkpoints)
+      io.stdout(forceRemoveLine(["checkpoint", checkpoint.id, checkpoint.label]));
+    io.stdout(
+      `${preview.counts.boxes} boxes, ${preview.counts.volumes} volumes and ${preview.counts.checkpoints} checkpoints would be forgotten.\n`,
+    );
+    io.stdout(
+      "Nothing was removed. The machine is not contacted, so its containers are not deleted and become orphans MiniBox no longer manages. Add --yes to discard only these records.\n",
+    );
+    return 0;
+  }
+  const res = await request(env, "POST", path, { confirm: true });
+  if (res.status >= 400) return fail(io, res.status, res.json, res.text);
+  const removed = res.json as { host?: { id: string; name: string }; discarded: HostForceRemovePreview };
+  if (json) return printJson(io, res.json);
+  const discarded = removed.discarded;
+  io.stdout(
+    `Removed host ${removed.host?.name ?? id} from MiniBox: ${discarded.boxes.length} boxes, ${discarded.volumes.length} volumes and ${discarded.checkpoints.length} checkpoints forgotten.\n`,
+  );
+  return 0;
+}
+
 /** The `host` commands the CLI serves. Reading a host's labels is the owner-only host list filtered to one host. */
 export async function hostCommand(argv: string[], env: Record<string, string | undefined>, io: CliIo): Promise<number> {
   const [sub, action, ...rest] = argv;
   if (sub === "labels" && action === "get") return await hostLabelsGet(rest, env, io);
   if (sub === "labels" && action === "set") return await hostLabelsSet(rest, env, io);
-  throw new Error("minibox host needs: labels get <id>, or labels set <id> [--label KEY=VALUE]...");
+  if (sub === "force-remove")
+    return await hostForceRemoveCommand(action === undefined ? [] : [action, ...rest], env, io);
+  throw new Error(
+    "minibox host needs: labels get <id>, labels set <id> [--label KEY=VALUE]..., or force-remove <id> [--yes]",
+  );
 }

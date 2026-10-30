@@ -938,6 +938,58 @@ describe("CLI box create and startup command", () => {
     }
   });
 
+  test("host force-remove previews without --yes and only then sends confirm, saying the machine is not contacted", async () => {
+    const env = { MINIBOX_URL: "http://127.0.0.1:9", MINIBOX_ACCESS_KEY: TEST_KEY };
+    const calls: { method: string; path: string; body: unknown }[] = [];
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      const url = new URL(String(input));
+      const body = JSON.parse(String(init?.body ?? "{}")) as { confirm?: boolean };
+      calls.push({ method: init?.method ?? "GET", path: url.pathname, body });
+      const payload = body.confirm
+        ? {
+            host: { id: "edge", name: "Edge" },
+            discarded: { boxes: [{ id: "bx_1", name: "alpha" }], volumes: [], checkpoints: [] },
+          }
+        : {
+            error: {
+              code: "confirmation_required",
+              key: "host_force_remove_confirm",
+              message: "Nothing was removed.",
+              retryable: false,
+              details: {
+                preview: {
+                  host: { id: "edge", name: "Edge" },
+                  counts: { boxes: 1, volumes: 0, checkpoints: 0 },
+                  boxes: [{ id: "bx_1", name: "alpha" }],
+                  volumes: [],
+                  checkpoints: [],
+                },
+              },
+            },
+          };
+      return new Response(JSON.stringify(payload), {
+        status: body.confirm ? 200 : 409,
+        headers: { "content-type": "application/json" },
+      });
+    }) as typeof fetch;
+    try {
+      const preview = io();
+      expect(await runCli(["host", "force-remove", "edge"], env, preview, lines([]))).toBe(0);
+      expect(calls.map((call) => call.body)).toEqual([{ confirm: false }]);
+      expect(preview.out).toContain("bx_1");
+      expect(preview.out).toContain("alpha");
+      expect(preview.out).toContain("Nothing was removed. The machine is not contacted");
+
+      const forced = io();
+      expect(await runCli(["host", "force-remove", "edge", "--yes"], env, forced, lines([]))).toBe(0);
+      expect(calls.map((call) => call.body)).toEqual([{ confirm: false }, { confirm: true }]);
+      expect(forced.out).toContain("Removed host Edge from MiniBox");
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  });
+
   test("box create and startup-command usage errors exit 2 before any request is sent", async () => {
     const env = { MINIBOX_URL: "http://127.0.0.1:9", MINIBOX_ACCESS_KEY: TEST_KEY };
     const cases: [string[], string][] = [
@@ -960,7 +1012,10 @@ describe("CLI box create and startup command", () => {
         "minibox box create takes --host-label only with --host auto",
       ],
       [["box", "create", "alpha", "--host", "local", "--host-label"], "--host-label needs a value"],
-      [["host", "labels"], "minibox host needs: labels get <id>, or labels set <id> [--label KEY=VALUE]..."],
+      [
+        ["host", "labels"],
+        "minibox host needs: labels get <id>, labels set <id> [--label KEY=VALUE]..., or force-remove <id> [--yes]",
+      ],
       [["host", "labels", "get"], "minibox host labels get needs one host id"],
       [["host", "labels", "set", "local", "--label"], "--label needs a value"],
       [["box", "startup-command"], "minibox box startup-command needs one of get, set, rm, run"],

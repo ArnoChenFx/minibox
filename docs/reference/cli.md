@@ -318,12 +318,13 @@ See [Access, sessions and tokens](../user-guide/access-and-tokens.md) for the pr
 
 ## Hosts
 
-Only labels are reachable from the command line. Adding, removing and revoking a host is done in the console or through the [REST API](api.md).
+Labels and the force removal of a lost host are reachable from the command line. Adding a host, removing one the ordinary way and revoking one is done in the console or through the [REST API](api.md).
 
 | Command | Meaning |
 |---|---|
 | `minibox host labels get <id> [--json]` | Prints the labels of one host, as a JSON object. `--json` prints the same. |
 | `minibox host labels set <id> [--label KEY=VALUE]...` | Replaces the labels of one host, the local host included, so an `auto` box create can select it with `--host-label`. With no `--label`, the host carries none afterwards. Prints the id and the labels as JSON, or the response with `--json`. |
+| `minibox host force-remove <id> [--yes] [--json]` | Discards MiniBox's records of a lost, offline host: its boxes, its volume records (the shared tools volume too) and its checkpoint records. The machine is never contacted. Without `--yes` it prints the preview and changes nothing; yes discards exactly that. Owner only. See [Force-remove a lost machine](../user-guide/hosts.md#force-remove-a-lost-machine). |
 
 See [Choose a host by labels](../user-guide/hosts.md#choose-a-host-by-labels).
 
