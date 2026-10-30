@@ -767,9 +767,8 @@ describe("a create that holds a removed registration stops at its next step", ()
     const creating = post("/api/boxes", { name: "finishing", cpus: 1, memoryMb: 256, host: "edge" });
     await until(() => entered, "the create to reach its last step");
     expect(edge.containers.size).toBe(1);
-    // The id is not added again: a host that comes back adopts the engine volumes this create made, and that is not what is checked.
-    app.hosts.get("edge").host.status = "offline";
-    expect((await post("/api/hosts/edge/force-remove", { confirm: true })).status).toBe(200);
+    // The id is added again, and the new registration takes in the engine volumes this create made.
+    await removeAndReadd();
     release();
 
     const late = await creating;

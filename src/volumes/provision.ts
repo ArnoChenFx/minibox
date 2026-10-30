@@ -71,6 +71,10 @@ async function undoCreated(host: HostCtx, record: VolumeRecord): Promise<void> {
   const outcome = await removeEngine(host, record.engineName);
   if (outcome.status === "failed") throw new Error(outcome.detail);
   host.volumes.remove(record.id);
+  // A host removed and added again while this attempt ran took the engine volume in under a record of its own, and that
+  // record now describes a volume that is gone.
+  const adopted = host.volumes.findByEngine(host.host.id, record.engineName);
+  if (adopted) host.volumes.remove(adopted.id);
 }
 
 /**
