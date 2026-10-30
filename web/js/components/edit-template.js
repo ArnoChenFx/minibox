@@ -94,6 +94,7 @@ function bodyHtml(names, recipe) {
       </div>
     </div>`;
   return `
+    <div class="stack form-stack">
     <div class="grid grid-2 form-grid">
       <div class="field"><label class="label" for="teDesc">${t("tp.newDescription")}</label>
         <input class="input" id="teDesc" maxlength="200" autocomplete="off" value="${esc(recipe?.description ?? "")}" /></div>
@@ -106,6 +107,7 @@ function bodyHtml(names, recipe) {
       <div class="help">${t("tp.editPostCreateHelp")}</div></div>
     ${sourceHtml}
     <div class="callout info">${icon("info")}<span>${esc(t("tp.editWhat"))}</span></div>
+    </div>
     <div class="error-text" id="teErr"></div>`;
 }
 

@@ -132,7 +132,7 @@ export default {
   "tp.editTitle": "修改「{name}」",
   "tp.editDesc":
     "修改 <code>{ref}</code> 重新构建时使用的来源。当前镜像保持不变，因此在下次重新构建之前创建的 Box 不受影响。",
-  "tp.editWhat": "保存只会修改构建记录。点击卡片上的 **重新构建**，才会按新来源构建出新镜像。",
+  "tp.editWhat": "保存只会修改构建记录。点击卡片上的「重新构建」，才会按新来源构建出新镜像。",
   "tp.editOfficial": "该模板由 MiniBox 自带的 Dockerfile 构建，其来源不能在这里修改。派生一份即可得到可修改的模板。",
   "tp.editConfirm": "保存修改",
   "tp.editing": "正在保存…",

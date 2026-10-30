@@ -5,8 +5,8 @@ import { isLong, LIST_LIMIT, shownItems } from "../lib/list-limit.js";
 
 /**
  * Which lists and groups are toggled, per scope: a page's view or a dialog's overlay. A list is toggled when it is
- * expanded and a group when it is folded. The state lives with the scope, so a redraw keeps it, and a new route or
- * dialog starts collapsed.
+ * expanded and a group when it is folded, unless the list opens expanded (`defaultExpanded`), where toggled means
+ * collapsed. The state lives with the scope, so a redraw keeps it, and a new route or dialog starts at the default.
  */
 const toggled = new WeakMap();
 
@@ -31,10 +31,16 @@ export function listToggleHtml(key, { expanded, total }) {
 /**
  * What a list draws: the items to show and the toggle to draw under them. Searching shows every match and no toggle, so
  * clearing the search returns the list to the state the user left it in. `keep` marks items that stay visible while the
- * list is collapsed. `limit` is how many items a collapsed list shows, five by default.
+ * list is collapsed. `limit` is how many items a collapsed list shows, five by default. `defaultExpanded` makes the list
+ * open showing every item, with the toggle still there to collapse it.
  */
-export function limitList(scope, key, items, { keep, searching = false, limit = LIST_LIMIT } = {}) {
-  const expanded = searching || isToggled(scope, key);
+export function limitList(
+  scope,
+  key,
+  items,
+  { keep, searching = false, limit = LIST_LIMIT, defaultExpanded = false } = {},
+) {
+  const expanded = searching || isToggled(scope, key) !== defaultExpanded;
   const shown = shownItems(items, { expanded, keep, limit });
   const toggle =
     !searching && isLong(items.length, limit) ? listToggleHtml(key, { expanded, total: items.length }) : "";

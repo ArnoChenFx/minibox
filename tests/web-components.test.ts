@@ -204,6 +204,22 @@ describe("list toggle", () => {
     expect(out.kept).toEqual([0, 1, 2, 3, 4, 6]);
   });
 
+  test("a list that opens expanded shows every item, and a press collapses it", () => {
+    const out = listToggle<{ open: { shown: number; toggle: string }; pressed: { shown: number; toggle: string } }>(`
+      const scope = {};
+      const open = limitList(scope, "k", ${SEVEN}, { defaultExpanded: true });
+      flip(scope, "k");
+      const pressed = limitList(scope, "k", ${SEVEN}, { defaultExpanded: true });
+      return {
+        open: { shown: open.shown.length, toggle: open.toggle },
+        pressed: { shown: pressed.shown.length, toggle: pressed.toggle },
+      };`);
+    expect(out.open.shown).toBe(7);
+    expect(out.open.toggle).toContain("Show less");
+    expect(out.pressed.shown).toBe(5);
+    expect(out.pressed.toggle).toContain("Show all (7)");
+  });
+
   test("a toggle's key is escaped in its attribute", () => {
     const html = listToggle<string>(`return listToggleHtml('a"b', { expanded: false, total: 3 });`);
     expect(html).toContain('data-toggle="a&quot;b"');

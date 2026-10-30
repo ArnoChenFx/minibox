@@ -145,6 +145,21 @@ describe.skipIf(!executablePath)("forking a template from the Templates page (re
   const dialog = () => page.getByRole("dialog");
 
   test(
+    "the library opens with every template listed, past the five a collapsed list shows, and the toggle collapses it",
+    async () => {
+      // base, tool, tool-copy and the four official templates: seven cards.
+      await webExpect(page.locator("#tpGrid > [data-name]")).toHaveCount(7);
+      const toggle = page.locator("#tpMore .list-toggle");
+      await webExpect(toggle).toHaveAttribute("aria-expanded", "true");
+      await toggle.click();
+      await webExpect(page.locator("#tpGrid > [data-name]")).toHaveCount(5);
+      await page.locator("#tpMore .list-toggle").click();
+      await webExpect(page.locator("#tpGrid > [data-name]")).toHaveCount(7);
+    },
+    TIMEOUT_MS,
+  );
+
+  test(
     "the Fork button opens a dialog with the copy's name and the source description filled in",
     async () => {
       await webExpect(card("tool")).toBeVisible();
