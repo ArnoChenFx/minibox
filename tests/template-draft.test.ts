@@ -404,4 +404,27 @@ describe("a draft and a built template under one name on different hosts", () =>
       text: FROM_ALPINE_21,
     });
   });
+
+  test("a box is not moved to a host that holds a draft of its template's name", async () => {
+    await built("shared");
+    await draftOn("small", "shared");
+    const made = await cluster.post("/api/boxes", {
+      name: "follower",
+      template: "mbtest-template:shared",
+      cpus: 1,
+      memoryMb: 256,
+    });
+    expect(made.status).toBe(201);
+    const { box } = (await made.json()) as { box: { boxId: string; revision: number } };
+
+    // `needsImage` is asked while the move is planned, so even the preview is refused and nothing was sent.
+    const moved = await cluster.api(`/api/boxes/${box.boxId}/move`, {
+      method: "POST",
+      headers: { "if-match": String(box.revision) },
+      body: JSON.stringify({ host: "small", confirm: true }),
+    });
+    expect(moved.status).toBe(409);
+    expect(((await moved.json()) as { error: { key: string } }).error.key).toBe("template_name_taken");
+    expect(await heldImage(cluster.app.hosts.get("small"), "mbtest-template:shared")).toBeNull();
+  });
 });

@@ -312,8 +312,8 @@ export function copyRecipe(from: HostCtx, to: HostCtx, ref: string, imageId: str
   if (!NAME_RE.test(name)) return;
   const recipe = readStoredRecipe(from, name);
   if (!recipe || recipe.imageId !== imageId || readStoredRecipe(to, name)?.imageId === imageId) return;
-  // A draft on the target holds the name, so a copy never replaces the source it saved. `copyTemplate` refuses the copy
-  // before the image is sent; this is the narrow guard for any other caller of a recipe copy.
+  // A draft on the target holds the name, so a copy never replaces the source it saved. `needsImage` refuses the copy and
+  // the moves before the image is sent; this is the narrow guard for any other caller of a recipe copy.
   if (isDraftRecipe(to, name)) return;
   writeRecipe(to, name, recipe);
 }

@@ -5,14 +5,21 @@ import { AppError, conflict } from "../lib/errors";
 import { msg } from "../lib/messages";
 import { type ByteProgress, countingChunks } from "../lib/transfer";
 import { type ImageDetails, isRuntimeError } from "../runtime";
+import { isDraftRecipe } from "./template-builds";
 
 /**
  * True when `host` must load the image. Loading an archive moves every tag it carries, so each tag the image has on the
- * source is checked. A tag the host holds for a different image is refused rather than moved away from it.
+ * source is checked. A tag the host holds for a different image is refused rather than moved away from it, and so is a
+ * template name the host holds a saved draft for: the draft holds the name, and an image loaded under it would leave both
+ * there. A template copy and both ways of moving a box ask this before they send anything.
  */
 export async function needsImage(host: HostCtx, ref: string, image: ImageDetails): Promise<boolean> {
   let transfer = false;
+  const templates = `${host.prefix}-template:`;
   for (const tag of new Set([ref, ...image.tags])) {
+    if (tag.startsWith(templates) && isDraftRecipe(host, tag.slice(templates.length))) {
+      throw conflict(msg("template_name_taken", { name: tag.slice(templates.length) }));
+    }
     let held: ImageDetails;
     try {
       held = await host.runtime.inspectImage(tag);
