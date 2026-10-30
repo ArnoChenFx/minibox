@@ -26,8 +26,8 @@ const PROXY_LINES = [
   "const ipInt = (text) => { const p = text.split('.').map(Number); return ((p[0] << 24) | (p[1] << 16) | (p[2] << 8) | p[3]) >>> 0; };",
   // A range the operator allowed is a private address the proxy reaches anyway. An entry this program cannot trust is
   // dropped rather than stopping the proxy: EGRESS_ALLOW_RANGES is checked at startup, and a proxy must still run with
-  // what it was given. The prefix floor is config's, so the loosest range the proxy would accept is the loosest config
-  // accepts.
+  // what it was given. The prefix floor is the constant config validates with, so the proxy cannot accept a looser range
+  // than the setting does.
   `const MIN_RANGE_PREFIX = ${MIN_EGRESS_ALLOW_PREFIX};`,
   "const rangeOf = (text) => {",
   "  if (typeof text !== 'string') return null;",
