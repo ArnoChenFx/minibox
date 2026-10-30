@@ -166,7 +166,7 @@ All paths are jailed inside the volume. `{id}` is a `vol_…` or a volume name; 
 | `GET` | `/api/overview` | owner | What agents are doing and what needs attention |
 | `GET` | `/api/hosts`, `/api/hosts/usage`, `/api/hosts/{id}/disk` | owner | Hosts, with the labels each one carries, and what a host's engine holds (`docker system df`). A host is addressed by `id` everywhere; `name` is only the label the console shows, and no two hosts may share one |
 | `POST` | `/api/hosts/{id}/forward` | owner | Adds the `FORWARD` rule the overview's "proxy-only boxes have no internet" item offers, after the owner confirms it. Returns the reading taken right after |
-| `POST` | `/api/hosts/{id}/force-remove` | owner | `confirm`. Forgets a lost, offline host's records: its boxes, its volume records (the shared tools volume too) and its checkpoint records. No engine is contacted. Without `confirm: true` nothing changes and a `409` `confirmation_required` preview lists them |
+| `POST` | `/api/hosts/{id}/force-remove` | owner | `confirm`, optional `digest`. Forgets a lost, offline host's records: its boxes, its volume records (the shared tools volume too) and its checkpoint records. No engine is contacted. Without `confirm: true` nothing changes and a `409` `confirmation_required` preview lists them and names their digest. A stale digest answers `409` `host_records_changed` and discards nothing |
 | `PATCH` | `/api/hosts/{id}` | owner | `labels`. The local host included |
 | `GET` | `/api/secrets` | owner | Secret names, never values |
 | `GET` | `/api/trash` | owner | The recycle bin |

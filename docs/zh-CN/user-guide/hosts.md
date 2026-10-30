@@ -189,7 +189,7 @@ Agent 宿主机只有 **移除** 按钮。移除时会先吊销它的 Agent：Ag
 
 它绝不连接那台机器。MiniBox 不会 ping、不会删除容器，也不会删除那里的任何卷，所以如果机器只是暂时连不上或关着机，上面的容器会继续运行，并变成 MiniBox 不再管理的孤儿。检查点数据同样不在控制面磁盘上：每台宿主机的 restic 仓库位于那台机器上的 Docker 卷里，已经随机器一起丢失。丢失之前导出或上传的包是控制面磁盘上 `DATA_DIR/packages` 下的文件，会按自己的有效期处理，不会被删除，仍可导入到别处。
 
-确认框会先列出将被丢弃的内容。`POST /api/hosts/{id}/force-remove` 也是如此：不带 `confirm: true` 时不做任何改动，返回 `409` 与 `details.preview`。只有离线的宿主机可以强制移除——在线或尚未检查的宿主机返回 `409 host_not_offline`，有应答的宿主机请走普通移除——并且只有所有者可以操作：任何 Agent 令牌都到不了这里，无论持有哪些权限。Agent 宿主机被强制移除时，它的 Agent 一并被遗忘，立即断开且无法再次连接。`minibox host force-remove <id>` 会打印预览，加 `--yes` 才真正丢弃。
+确认框会先列出将被丢弃的内容。`POST /api/hosts/{id}/force-remove` 也是如此：不带 `confirm: true` 时不做任何改动，返回 `409` 与 `details.preview`，其中带有这份清单的 `digest`。确认时把这个 `digest` 一并送回，记录会在丢弃前重新读取；如果预览之后有记录新增或迁移到别处，则什么都不丢弃，并返回 `409 host_records_changed` 与新的预览。不带 `digest` 的调用会丢弃运行那一刻宿主机上的全部记录，并如实报告。只有离线的宿主机可以强制移除——在线或尚未检查的宿主机返回 `409 host_not_offline`，有应答的宿主机请走普通移除——并且只有所有者可以操作：任何 Agent 令牌都到不了这里，无论持有哪些权限。Agent 宿主机被强制移除时，它的 Agent 一并被遗忘，立即断开且无法再次连接。`minibox host force-remove <id>` 会打印预览，加 `--yes` 才真正丢弃。
 
 ## 限制
 

@@ -6,7 +6,7 @@
 
 ### 新增
 
-- **机器永久丢失后可以强制移除宿主机**：`POST /api/hosts/{id}/force-remove`（操作 `host.remove.force`，MCP 工具 `force_remove_host`，CLI `minibox host force-remove <id> [--yes]`）只丢弃 MiniBox 自己的记录——该宿主机的 Box 规格及其随盒清理的随附记录、全部卷记录（含共享工具卷）与检查点记录——然后走与普通移除相同的收尾：Agent 宿主机遗忘并吊销 Agent、写回 hosts 文件、删除凭据。它绝不连接那台机器，也不调用 `liftTools`/`release`；机器若其实还在，上面的容器会变成 MiniBox 不再管理的孤儿，检查点数据仍在机器的 restic 卷里，控制面磁盘上的导出包不受影响。仅所有者可用；宿主机必须离线（在线或状态未知返回 `409 host_not_offline`）。不带 `confirm: true` 时不做任何改动，返回 `409` 预览，列出将被丢弃的 Box、卷与检查点。见[宿主机](docs/user-guide/hosts.md#force-remove-a-lost-machine)。
+- **机器永久丢失后可以强制移除宿主机**：`POST /api/hosts/{id}/force-remove`（操作 `host.remove.force`，MCP 工具 `force_remove_host`，CLI `minibox host force-remove <id> [--yes]`）只丢弃 MiniBox 自己的记录——该宿主机的 Box 规格及其随盒清理的随附记录、全部卷记录（含共享工具卷）与检查点记录——然后走与普通移除相同的收尾：Agent 宿主机遗忘并吊销 Agent、写回 hosts 文件、删除凭据。它绝不连接那台机器，也不调用 `liftTools`/`release`；机器若其实还在，上面的容器会变成 MiniBox 不再管理的孤儿，检查点数据仍在机器的 restic 卷里，控制面磁盘上的导出包不受影响。仅所有者可用；宿主机必须离线（在线或状态未知返回 `409 host_not_offline`）。不带 `confirm: true` 时不做任何改动，返回 `409` 预览，列出将被丢弃的 Box、卷与检查点并给出这份清单的 `digest`；确认时带上 `digest`，若预览之后记录有变则返回 `409 host_records_changed` 与新的预览、什么都不丢弃；不带 `digest` 的调用仍丢弃当时全部记录并如实列出。删除 Box 时现在也同时清掉它的检查点计划与待确认回滚（此前计划要等下一次调度扫描才被清理）。见[宿主机](docs/user-guide/hosts.md#force-remove-a-lost-machine)。
 
 ### 工程化
 

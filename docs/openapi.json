@@ -44107,6 +44107,12 @@
                   "confirm": {
                     "description": "Without it nothing changes and the call answers 409 with details.preview, listing the boxes, volumes and checkpoints whose records would be discarded. Send true to discard them.",
                     "type": "boolean"
+                  },
+                  "digest": {
+                    "description": "The preview digest this call confirms. When given, the records are read again under their locks and a set that changed answers 409 host_records_changed with a fresh preview, discarding nothing. Omit it to discard whatever the host holds when the call runs.",
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
                   }
                 }
               }
