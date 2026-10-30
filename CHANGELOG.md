@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### 新增
+
+- **`proxy-only` 的出站代理可以放行运营者自己填的私有 IP 段**（[#192](https://github.com/ArnoChenFx/minibox/issues/192)）：宿主机的 Clash、Surge、sing-box 等开着 fake-IP DNS 时，每个域名都被解析到它自己保留的假地址段（Clash 默认 `198.18.0.1/16`，也常见 `198.18.0.0/15`），而代理会把落在私有/保留段的解析结果一律以 `private_address` 拒绝，白名单里的域名反而上不了网。新增实例级环境变量 `EGRESS_ALLOW_RANGES`：逗号分隔的 IPv4 地址或网段，默认空（行为与之前逐字相同），写在 `.env`，对所有宿主机（包括远程宿主机上的代理）生效。不带 `/n` 按 `/32`，主机位归一（Clash 的 `198.18.0.1/16` 归一成 `198.18.0.0/16`），前缀只收 8 到 32，重复条目去掉并按地址排序；`0.0.0.0/8`、`127.0.0.0/8`、`169.254.0.0/16`、`224.0.0.0/3` 以及与它们有任何重叠的条目在启动时被拒绝，错误信息点名变量和那一条。10/8、172.16/12、192.168/16、100.64/10 允许填，文档写明这等于让代理能碰到局域网、Tailnet，或落在该段里的云厂商元数据地址。代理容器新增第三个环境变量 `MINIBOX_EGRESS_RANGES`，**为空时不加**，因此没设置的现有安装里的代理不会被无谓替换；复用判断改为比较 `MINIBOX_EGRESS_ALLOW`、`MINIBOX_EGRESS_PORT`、`MINIBOX_EGRESS_RANGES` 三个键，运营者删掉设置后旧代理会被替换，不会继续带着放行。运行中的代理不会被打断，新设置在下次 `ensureEgressProxy`（创建、启动、重启或重建 Box）时生效；重启 MiniBox 不会替换已在运行的 Box 的代理，对运行中的 Box 再发一次 `POST /api/boxes/{id}/start` 即可换上。拒绝原因不变（仍是 `private_address`），没有新增界面、API、MCP 或 CLI。说明见[网络出站](docs/admin/network-egress.md#fake-ip-dns-proxies)。
+
 ### 修复
 
 - **创建 Box 的「自定义卷」在 Box 名称还没填时也显示将要新建的卷名**：角色卷以 Box 名命名，名称为空时此前下拉里只写「新建 workspace 卷」一类措辞，看不出会建成什么名字，说明行也只说「新建 cache 卷（预览）」。现在按命名规则显示占位名 `<Box 名称>-workspace`、`<Box 名称>-home`、`<Box 名称>-cache`（英文 `<box name>-workspace` 等），选项与说明行都带「（预览）」，说明行写明名字取决于之后填写的 Box 名称；填上名称后照旧变成 `alpha-workspace`。占位名只是展示：`roleVolumeNames()` 仍返回 `name: null`、另带 `placeholder`，它不参与 `exact`/重名后缀判断，也不会被提交或写进任何请求（角色行仍只发 `{ role, pool }`）。共享 tools 卷与 `auto` 宿主机两种情形不变。新增 `cb.previewBoxNamePlaceholder`、`cb.previewUnnamedName`、`cb.previewUnnamedNamePool` 中英文案。测试：`tests/web-lib.test.ts` 覆盖空名称的占位与填入名称后的真名（占位只放在 `placeholder`，`name` 保持 `null`，说明行走 `cb.previewUnnamedName`），`tests/web-components.test.ts` 钉住下拉选项的占位文案，`tests/i18n.test.ts` 钉住新词条；`tests/web-create-box-mount-preview-browser.test.ts` 用真机浏览器钉住接线与提交：不填名称时选项与说明行显示占位、填 `alpha` 后变真名、清空后回到占位、选池且名称为空时用 `cb.previewUnnamedNamePool`，并且真提交的 `POST /api/boxes` 请求体与建出的卷名都不含占位。
