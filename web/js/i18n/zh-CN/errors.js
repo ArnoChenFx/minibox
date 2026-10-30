@@ -308,6 +308,8 @@ export default {
   "err.host_not_found": "找不到宿主机「{host}」。",
   "err.host_is_local": "不能移除本机宿主机。",
   "err.host_in_use": "宿主机「{host}」仍有 {count} 个 Box、卷或检查点。请先移除它们。",
+  "err.host_gone": "宿主机「{host}」已在此操作运行期间从 MiniBox 移除，因此没有再为它写入任何内容。",
+  "err.host_records_changed": "预览之后记录发生了变化，未移除任何内容。请查看新的预览并再次确认。",
   "err.host_not_offline":
     "宿主机「{host}」并非离线。强制移除只用于已经丢失的机器：请使用普通移除，或先删除上面的 Box。",
   "err.host_force_remove_confirm":

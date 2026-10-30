@@ -310,6 +310,7 @@ export default {
   "st.hostForceRemoveCheckpoints": "检查点（{count}）",
   "st.hostForceRemoveNoPreview": "服务器没有返回将被丢弃内容的预览。",
   "st.hostForceRemoved": "已强制移除宿主机",
+  "st.hostForceRemoveChanged": "确认期间记录发生了变化，未移除任何内容。请查看更新后的预览并再次确认。",
   "st.hostForceRemoveFailed": "无法强制移除宿主机",
   "st.hostLocal": "本机",
   "st.disk.title": "引擎存储（docker system df）",

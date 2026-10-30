@@ -330,6 +330,8 @@ export default {
   "st.hostForceRemoveCheckpoints": "Checkpoints ({count})",
   "st.hostForceRemoveNoPreview": "The server did not return a preview of what would be discarded.",
   "st.hostForceRemoved": "Host force-removed",
+  "st.hostForceRemoveChanged":
+    "The records changed while you were confirming, so nothing was removed. Check the updated preview and confirm again.",
   "st.hostForceRemoveFailed": "Could not force-remove the host",
   "st.hostLocal": "This machine",
   "st.disk.title": "Engine storage (docker system df)",

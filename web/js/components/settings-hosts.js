@@ -115,7 +115,7 @@ function hostRow(host, hosts) {
     <td class="${host.agent ? "" : "nowrap"}"><span class="badge ${HOST_BADGE[host.status] ?? ""}"><span class="dot"></span>${esc(t(`st.hostStatus.${host.status}`))}</span>${latency}${error}${agent}</td>
     <td class="hide-sm nowrap">${capacity}</td>
     <td class="hide-sm">${host.boxes}</td>
-    <td class="nowrap"><div class="actions">${hostActions(host, hosts)}</div></td>
+    <td><div class="actions">${hostActions(host, hosts)}</div></td>
   </tr>
   <tr class="host-disk-row">
     <td colspan="6" data-disk-host="${esc(host.id)}">${diskLines(null)}</td>
@@ -422,19 +422,31 @@ async function forceRemoveHost(view, id, name, agent) {
     return;
   }
   const message = `${t("st.hostForceRemoveMessage", { name })}${agent ? ` ${t("st.hostForceRemoveAgent")}` : ""}`;
-  const ok = await confirmDialog({
-    title: t("st.hostForceRemoveTitle"),
-    message: esc(message),
-    body: forceRemoveBody(preview),
-    confirmText: t("st.hostForceRemove"),
-    danger: true,
-  });
-  if (!ok) return;
-  try {
-    await api(`/api/hosts/${enc(id)}/force-remove`, { method: "POST", body: { confirm: true } });
-  } catch (e) {
-    toastError(t("st.hostForceRemoveFailed"), e);
-    return;
+  for (;;) {
+    const ok = await confirmDialog({
+      title: t("st.hostForceRemoveTitle"),
+      message: esc(message),
+      body: forceRemoveBody(preview),
+      confirmText: t("st.hostForceRemove"),
+      danger: true,
+    });
+    if (!ok) return;
+    try {
+      await api(`/api/hosts/${enc(id)}/force-remove`, {
+        method: "POST",
+        body: { confirm: true, digest: preview.digest },
+      });
+      break;
+    } catch (e) {
+      // A record was written or moved since the preview. Nothing was discarded; show the fresh set and ask again.
+      if (e.key === "host_records_changed" && e.details?.preview) {
+        preview = e.details.preview;
+        toast(t("st.hostForceRemoveChanged"), { type: "info" });
+        continue;
+      }
+      toastError(t("st.hostForceRemoveFailed"), e);
+      return;
+    }
   }
   toast(t("st.hostForceRemoved"), { message: name });
   await refreshHosts();

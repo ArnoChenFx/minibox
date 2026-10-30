@@ -368,6 +368,10 @@ export default {
   "err.host_not_found": "Host “{host}” was not found.",
   "err.host_is_local": "The local host cannot be removed.",
   "err.host_in_use": "Host “{host}” still holds {count} boxes, volumes or checkpoints. Remove them first.",
+  "err.host_gone":
+    "Host “{host}” was removed from MiniBox while this change was running, so nothing more was written for it.",
+  "err.host_records_changed":
+    "The records changed after the preview, so nothing was removed. Review the new preview and confirm it again.",
   "err.host_not_offline":
     "Host “{host}” is not offline. Force removal is for a machine that is gone: use the ordinary removal, or delete the boxes on it first.",
   "err.host_force_remove_confirm":
