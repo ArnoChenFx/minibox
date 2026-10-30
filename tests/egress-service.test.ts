@@ -327,6 +327,13 @@ describe("allowed private ranges", () => {
 
     expect(started.id).toBe(box.id);
     expect(runtime.containers.get(box.id)?.running).toBe(true);
+    // A restart or stop of the box would show up here; replacing the proxy only touches the proxy's container.
+    const touched = runtime.calls.filter(
+      (call) =>
+        (call.op === "restartContainer" || call.op === "stopContainer" || call.op === "removeContainer") &&
+        call.args[0] === box.id,
+    );
+    expect(touched).toEqual([]);
     const after = proxiesOf(box.boxId);
     expect(after).toHaveLength(1);
     expect(after[0]?.id).not.toBe(before?.id);
