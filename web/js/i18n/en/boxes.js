@@ -306,10 +306,17 @@ export default {
   "rb.doneText":
     "{name} is running from the new container. Its id changed; volumes, the stable id and the name were kept.",
   "rb.failed": "Rebuild failed",
+  "mv.via.checkpointOption": "checkpoint: restore volume data from a checkpoint",
+  "mv.viaLabel": "How the box travels",
+  "mv.via": "Path: {via}",
+  "mv.via.direct": "direct: the template image is sent and the volumes are copied as archives",
+  "mv.via.checkpoint": "checkpoint: a checkpoint carries the box's data, and the box is made from it on {to}",
+  "mv.action.checkpoint": "Carried in the checkpoint and restored on {to}",
+  "mv.action.empty": "Made again on {to}, empty",
   "mv.title": "Move box",
   "mv.desc": "Copy the box to another host, then remove it from this one.",
   "mv.help":
-    "Preview first. Nothing changes until you apply. The box keeps its id, name, volumes, env and history. Checkpoints stay on the source host.",
+    "Preview first; nothing changes until you apply. The box keeps its id, name, volumes, env and history. Its checkpoints stay on the source host on either path; the checkpoint path also takes one of its own for the transfer and removes it afterwards.",
   "mv.host": "Target host",
   "mv.noHosts": "There is no other online host to move this box to. Add a host first.",
   "mv.preview": "Preview",
@@ -326,6 +333,8 @@ export default {
   "mv.imageHave": "already on {to}",
   "mv.starts": "Starts on {to}, because it runs now",
   "mv.staysStopped": "Stays stopped",
+  "mv.pauses":
+    "While it moves, the running box on {from} is paused, and it stays paused until the move commits. A move that fails resumes it.",
   "mv.checkpoint": "{count} checkpoint stays on the source host, {from}, and is not restored on {to}.",
   "mv.checkpoints": "{count} checkpoints stay on the source host, {from}, and are not restored on {to}.",
   "mv.keeps": "Kept",

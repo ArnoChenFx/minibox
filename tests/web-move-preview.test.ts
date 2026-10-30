@@ -58,7 +58,33 @@ describe("the move preview's checkpoint line", () => {
     );
   });
 
+  test("a running box is told it stays paused until the move commits, and a stopped one is not", () => {
+    expect(movePreviewHtml({ ...preview(0), running: true, starts: true })).toContain(
+      "While it moves, the running box on local is paused, and it stays paused until the move commits.",
+    );
+    expect(movePreviewHtml(preview(0))).not.toContain("paused");
+  });
+
   test("a box with no checkpoints has no checkpoint line", () => {
     expect(movePreviewHtml(preview(0))).not.toContain("source host");
+  });
+
+  test("a checkpoint move names its path, its restored volumes, and has no leftover-checkpoint line", () => {
+    const html = movePreviewHtml({
+      ...preview(2),
+      via: "checkpoint",
+      volumes: [
+        { path: "/workspace", role: "workspace", name: "web-workspace", action: "checkpoint", target: "web-workspace" },
+        { path: "/home/dev/.cache", role: "cache", name: "web-cache", action: "empty", target: "web-cache" },
+      ],
+    });
+    expect(html).toContain(
+      "Path: checkpoint: a checkpoint carries the box&#39;s data, and the box is made from it on lab",
+    );
+    expect(html).toContain("Carried in the checkpoint and restored on lab");
+    expect(html).toContain("Made again on lab, empty");
+    // The box's own checkpoints stay on the source host on this path too. The move's own is taken for the transfer and
+    // removed afterwards, and is not among them.
+    expect(html).toContain("2 checkpoints stay on the source host, local, and are not restored on lab.");
   });
 });

@@ -5,6 +5,10 @@
  * already present. To see the image cross as an archive, the second host is shown without the template until an archive
  * is loaded, which runs the real `docker save` and `docker load` pair.
  *
+ * The checkpoint path runs restic in helper containers, so it needs the restic image pulled on both hosts and the
+ * base template, which a fork and a restore use to set a volume's owner. Both hosts share one engine here, so the
+ * source's volumes still exist while the target restores its own copies of them.
+ *
  *   bun run test:docker
  *
  * That script (scripts/docker-integration.ts) picks the label prefix and sweeps what the run left behind. To run this
@@ -72,6 +76,7 @@ interface ErrorBody {
 }
 
 interface MovePreview {
+  via?: string;
   from: string;
   to: string;
   starts: boolean;
@@ -264,6 +269,74 @@ describe.skipIf(!enabled)("moving a box to a second host, against a real engine"
       expect(second.loads).toBe(loadsBefore + 1);
       expect((await viewOf(box.boxId)).hostId).toBe("lab");
       expect((await containersOf(box.boxId)).map((container) => container.State)).toEqual(["running"]);
+    },
+    LONG,
+  );
+
+  test(
+    "a checkpoint move carries the box's data through a checkpoint, restores it on the second host and leaves no checkpoint",
+    async () => {
+      const box = await createBox("carried");
+      expect(
+        (
+          await post(`/api/boxes/${box.boxId}/exec`, {
+            cmd: "echo carried > /workspace/notes.txt && mkdir -p /home/dev/kept && echo home > /home/dev/kept/f.txt",
+            user: "root",
+            cwd: "/",
+          })
+        ).status,
+      ).toBe(200);
+      const before = await viewOf(box.boxId);
+      const copied = before.mounts.filter((mount) => mount.volumeId !== null && mount.path !== TOOLS_PATH);
+      // Read while their records exist: once the move has removed the source volumes there is nothing left to ask.
+      const oldEngineNames = await Promise.all(
+        copied.map(async (mount) => {
+          const found = (await (await api(`/api/volumes/${mount.volumeId}`)).json()) as { volume: VolumeJson };
+          return found.volume.engineName;
+        }),
+      );
+      expect(oldEngineNames).toHaveLength(3);
+
+      const preview = await moveRequest(box.boxId, before.revision, { host: "lab", via: "checkpoint" });
+      expect(preview.status).toBe(409);
+      const previewed = (await errorOf(preview)).details?.preview;
+      expect(previewed).toMatchObject({ via: "checkpoint", from: "local", to: "lab", starts: true });
+      expect(previewed?.volumes.map((volume) => volume.action).toSorted()).toEqual(
+        ["checkpoint", "checkpoint", "empty", "tools"].toSorted(),
+      );
+      expect((await viewOf(box.boxId)).hostId).toBe("local");
+
+      const started = await moveRequest(box.boxId, before.revision, { host: "lab", via: "checkpoint", confirm: true });
+      expect(started.status).toBe(202);
+      const done = await finishedTask(base, ((await started.json()) as { taskId: string }).taskId);
+      expect(done).toMatchObject({
+        status: "succeeded",
+        result: { from: "local", to: "lab", via: "checkpoint", checkpoints: 0, leftovers: [] },
+      });
+
+      const after = await viewOf(box.boxId);
+      expect(after).toMatchObject({ hostId: "lab", running: true, revision: before.revision + 1 });
+      expect((await containersOf(box.boxId)).map((container) => container.State)).toEqual(["running"]);
+
+      // The data the checkpoint carried, read inside the box on its new host.
+      const cat = await post(`/api/boxes/${box.boxId}/exec`, {
+        cmd: "cat /workspace/notes.txt /home/dev/kept/f.txt",
+        user: "root",
+        cwd: "/",
+      });
+      expect(await cat.json()).toMatchObject({ exitCode: 0, stdout: "carried\nhome\n" });
+
+      // The move's own checkpoints are removed on both hosts, so neither the source nor the target keeps one.
+      const listed = ((await (await api("/api/checkpoints")).json()) as { checkpoints: { boxId: string | null }[] })
+        .checkpoints;
+      expect(listed.filter((checkpoint) => checkpoint.boxId === box.boxId)).toEqual([]);
+
+      // The source's volumes went with the box.
+      const volumes = ((await (await api("/api/volumes")).json()) as { volumes: VolumeJson[] }).volumes;
+      for (const engineName of oldEngineNames) {
+        expect(volumes.filter((volume) => volume.engineName === engineName)).toEqual([]);
+        await expect(runtime.inspectVolume(engineName)).rejects.toMatchObject({ kind: "not_found" });
+      }
     },
     LONG,
   );

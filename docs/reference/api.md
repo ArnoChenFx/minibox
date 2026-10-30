@@ -145,7 +145,7 @@ The tables below list every operation in [`openapi.json`](../openapi.json), grou
 | `POST` | `/api/boxes/{id}/restart` | Restart a box |
 | `PATCH` | `/api/boxes/{id}/resources` | Change the CPU, memory or process limit of a box |
 | `POST` | `/api/boxes/{id}/rebuild` | Rebuild a box from its spec. Takes a safety checkpoint first, unless `safetyCheckpoint` is `false`. A `mounts` entry naming a volume with no record yet (such as `{ "volume": "brand-new-vol", "path": "/data", "mode": "rw" }`) creates an independent volume, which needs the owner or an unmodified admin token; other tokens get `403 storage_admin_required` |
-| `POST` | `/api/boxes/{id}/move` | Move a box to another host. Needs `If-Match`. Without `confirm: true` it returns `409 confirmation_required` with a preview |
+| `POST` | `/api/boxes/{id}/move` | Move a box to another host. Needs `If-Match`. Without `confirm: true` it returns `409 confirmation_required` with a preview. `via` picks the path: `direct` (the default) sends the template image and copies the volumes as archives; `checkpoint` takes a checkpoint of the box, copies it to the target, makes the box there from the copy and removes it from the old host, so no image is sent. The answer's `via` names the path taken and `leftovers` lists what stayed behind |
 | `GET` | `/api/boxes/{id}/logs` | Read the recent log output of a box |
 | `GET` | `/api/boxes/{id}/stats` | Read the current resource usage of a box |
 | `GET` | `/api/boxes/{id}/startup-command` | Read a box's startup command and its status. Needs `secret:use` |

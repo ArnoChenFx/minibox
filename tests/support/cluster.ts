@@ -21,6 +21,8 @@ export interface Cluster {
   readonly base: string;
   /** The engine behind each host. Tests seed images and read calls from these. */
   readonly engines: Record<HostName, FakeRuntime>;
+  /** The snapshot engine every host shares. Tests hold and fail its backups, restores and packs. */
+  checkpointEngine(): FakeCheckpointEngine;
   api(path: string, init?: RequestInit): Promise<Response>;
   post(path: string, body: unknown): Promise<Response>;
   close(): void;
@@ -73,10 +75,11 @@ export async function bootCluster(
   const large = new FakeRuntime();
   large.engine = { cpus: 8, memoryBytes: 16 * GIB };
   const engines: Record<HostName, FakeRuntime> = { local, small, large };
+  const snapshots = new FakeCheckpointEngine();
   const app = createApp(testConfig({ labelPrefix: "mbtest", ...overrides }), "0.0.0-test", {
     runtime: local,
     connect: (target: EngineTarget) => ("socketPath" in target && target.socketPath === LARGE_SOCKET ? large : small),
-    checkpointEngine: new FakeCheckpointEngine(),
+    checkpointEngine: snapshots,
     eventsPath: ":memory:",
   });
   for (const host of templates) {
@@ -108,6 +111,7 @@ export async function bootCluster(
     app,
     base,
     engines,
+    checkpointEngine: () => snapshots,
     api,
     post,
     close() {

@@ -9,6 +9,7 @@
 
 ### 新增
 
+- 迁移 Box 新增 `via: "checkpoint"`：用检查点把 Box 的数据带到目标宿主机，在那里恢复出卷（保留原存储池）并创建 Box，成功后才从原宿主机移除。运行中的源 Box 暂停到迁移提交，失败时恢复。默认仍是直接迁移，见[宿主机](docs/user-guide/hosts.md#move-a-box-to-another-host)。
 - 本地备份支持 `BACKUP_DIR` 与 `BACKUP_KEEP`：指定归档目录并保留最新的 N 份，符号链接按实际路径排除。新目录为 700，已有自定义目录保留权限，归档和记录为 600。
 - MiniBox 可以按计划备份自己（[#154](https://github.com/ArnoChenFx/minibox/issues/154)）：每隔 1 到 720 小时一次，或每天在某个时区的固定时间一次，默认关闭。到点用 `BACKUP_PASSPHRASE` 做一份备份并应用 `BACKUP_KEEP`；服务器没有设口令时，设置页会提前说明，保存也会被拒绝（409）。REST、MCP、CLI（`minibox backup schedule`）和设置页都可用，见[备份](docs/admin/backups.md#scheduled-backups)。
 - Agent 配对命令使用当前发布版镜像标签；非 HTTPS 连接显示警告。

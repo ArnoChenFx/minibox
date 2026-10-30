@@ -456,12 +456,18 @@ export const MESSAGES = {
     "A socket that never sends a hello holds a place until it times out. If a real agent is refused, check for a proxy or tunnel in front of MiniBox: with TRUST_PROXY off, every client shares one address and one limit.",
   runtime_unsupported: "This host cannot run that operation: {detail}",
   move_agent_unsupported:
-    "A box cannot move to or from an agent host yet, because an agent copies neither images nor volumes. Create the box on the host you want it on instead.",
+    "A box cannot move to or from an agent host, by either path. An agent does not copy images, volumes or archives, and the helpers both paths run are refused there. Create the box on the agent host instead.",
   preview_agent_unsupported: "Port preview is not supported on agent hosts yet.",
   box_moving: "This box is moving to another host. Try again when the move finishes.",
   box_changing: "This box is being rebuilt or updated. Try the move again when that finishes.",
   move_confirm:
     "Moving copies the box's volumes to {to}, starts it there if it runs now, and removes it from {from} once it runs there. Send confirm: true to continue.",
+  move_confirm_checkpoint:
+    "Moving {box} through a checkpoint takes a checkpoint of it, copies that checkpoint to {to}, makes the box there from it, and removes it from {from} once it runs there. Send confirm: true to continue.",
+  move_checkpoint_template_missing:
+    "Host {host} does not hold template {image}, and no host holds it as a template it could send from, so the box could not be made there. Copy the template to {host} first, or move with via direct.",
+  move_checkpoint_volume_unrepresentable:
+    "Volume {volume}, mounted at {path}, cannot travel in a checkpoint: a checkpoint cannot read it, or the box mounts it more than once. Use via direct, which copies the volume as it is, or change the box's mounts first.",
   move_same_host: "The box already runs on host {host}, so it cannot move there.",
   move_owner_only: "Only the owner or an admin credential may move a box.",
   move_changed: "The box changed while it was moving, so the move was undone. Refresh the box and try again.",
