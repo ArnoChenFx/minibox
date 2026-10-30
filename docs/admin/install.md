@@ -96,6 +96,8 @@ The server listens on `127.0.0.1:3920`. Open <http://127.0.0.1:3920>, and sign i
 
 If no `ACCESS_KEY` is set in the environment or in `.env`, MiniBox writes a generated key to `DATA_DIR/access_key`. The file has mode 600. MiniBox never writes `.env`.
 
+To read the comments in Chinese, copy `.env.zh.example` instead of `.env.example`. The two files set the same options with the same defaults.
+
 `bun run build:template` always tags the image `minibox-template:base`. If you change `LABEL_PREFIX` or `BASE_TEMPLATE`, build the base template from the **Templates** tab of **Library** instead.
 
 ### Run as a service

@@ -6,7 +6,7 @@ MiniBox reads its settings from environment variables. The precedence is:
 2. The `.env` file in the project root. MiniBox reads it, and never writes it.
 3. The defaults in this page.
 
-[`.env.example`](../../.env.example) lists the settings with comments. Every value has a default, so you can run MiniBox without a `.env` file.
+[`.env.example`](../../.env.example) lists the settings with comments, and [`.env.zh.example`](../../.env.zh.example) is the same file with Chinese comments. Every value has a default, so you can run MiniBox without a `.env` file.
 
 ## Access and network
 
