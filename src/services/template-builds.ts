@@ -238,12 +238,6 @@ export interface RecipeEdit {
   description?: string | null;
 }
 
-/**
- * Replaces the parts of a declared template's recipe that `edit` names, so the next rebuild builds the edited source. The
- * creator and the rest of the recipe stay as they are: an edit changes what a rebuild would produce, not the image a box
- * created now starts from. `imageId` is the image the tag names after the edit, which a description change commits anew. The
- * caller has checked that the recipe built that image.
- */
 /** The parts of `recipe` that `edit` names, replaced. The image id and the draft flag are the caller's to set. */
 function withRecipeEdit(recipe: TemplateRecipe, edit: RecipeEdit): TemplateRecipe {
   const init =
@@ -270,6 +264,12 @@ function withRecipeEdit(recipe: TemplateRecipe, edit: RecipeEdit): TemplateRecip
   return next;
 }
 
+/**
+ * Replaces the parts of a declared template's recipe that `edit` names, so the next rebuild builds the edited source. The
+ * creator and the rest of the recipe stay as they are: an edit changes what a rebuild would produce, not the image a box
+ * created now starts from. `imageId` is the image the tag names after the edit, which a description change commits anew. The
+ * caller has checked that the recipe built that image.
+ */
 export function editRecipe(
   host: HostCtx,
   declared: DeclaredTemplate,
