@@ -2,6 +2,7 @@ import { mkdirSync, readdirSync, readFileSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 
 import { DIR_MODE, ensureDataDir, writeFileAtomic } from "../data-dir";
+import { hostGone } from "../host/gone";
 import { log } from "../lib/logger";
 import { isBoxId } from "../specs/revision";
 import { isCheckpointId, newCheckpointId } from "./id";
@@ -84,12 +85,28 @@ export class CheckpointStore {
   readonly packages: PackageStore;
   /** Checkpoints whose package is being written. Retention and deletion leave their snapshots alone meanwhile. */
   readonly exporting = new Set<string>();
+  /** Hosts that were removed, so a write that was already on its way cannot bring one of their records back. */
+  private readonly closed = new Set<string>();
 
   constructor(
     private readonly dataDir: string,
     options: CheckpointStoreOptions = {},
   ) {
     this.packages = new PackageStore(dataDir, options.packageMaxBytes ?? DEFAULT_PACKAGE_MAX_BYTES);
+  }
+
+  /** Refuses later checkpoint writes for a host that was removed. Removals stay allowed, so the caller can clean up. */
+  closeHost(hostId: string): void {
+    this.closed.add(hostId);
+  }
+
+  /** Puts a host id back into service, when a host with it is added again. */
+  openHost(hostId: string): void {
+    this.closed.delete(hostId);
+  }
+
+  isClosed(hostId: string): boolean {
+    return this.closed.has(hostId);
   }
 
   dir(): string {
@@ -148,6 +165,7 @@ export class CheckpointStore {
   }
 
   writeSchedule(schedule: BoxSchedule): void {
+    if (this.closed.has(schedule.hostId)) throw hostGone(schedule.hostId);
     ensureDataDir(this.dataDir);
     mkdirSync(this.scheduleDir(), { recursive: true, mode: DIR_MODE });
     writeFileAtomic(this.schedulePath(schedule.boxId), `${JSON.stringify(schedule, null, 2)}\n`);
@@ -192,6 +210,7 @@ export class CheckpointStore {
   }
 
   writePendingRollback(record: PendingRollback): void {
+    if (this.closed.has(record.hostId)) throw hostGone(record.hostId);
     ensureDataDir(this.dataDir);
     mkdirSync(this.rollbackDir(), { recursive: true, mode: DIR_MODE });
     writeFileAtomic(this.pendingPath(record.boxId), `${JSON.stringify(record, null, 2)}\n`);
@@ -251,6 +270,7 @@ export class CheckpointStore {
   }
 
   write(record: CheckpointRecord): void {
+    if (this.closed.has(record.hostId)) throw hostGone(record.hostId);
     ensureDataDir(this.dataDir);
     writeFileAtomic(this.pathFor(record.id), `${JSON.stringify(record, null, 2)}\n`);
   }

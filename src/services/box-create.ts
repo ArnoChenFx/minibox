@@ -2,6 +2,7 @@ import { dirname } from "node:path";
 
 import { hardeningFor } from "../box-profile";
 import { OPEN_EGRESS } from "../egress/policy";
+import { hostGone } from "../host/gone";
 import type { HostCtx } from "../host/registry";
 import { containerName } from "../labels";
 import { badRequest, notFound, conflict } from "../lib/errors";
@@ -238,6 +239,7 @@ async function buildBox(
   record?: RecordNote,
 ): Promise<string> {
   const { runtime, keys, prefix, security } = host;
+  if (host.specs.isClosed(host.host.id)) throw hostGone(host.host.id);
   if (host.specs.findByName(input.name)) throw conflict(msg("box_exists", { name: input.name }));
   if (input.selfToken) assertSelfTokenHost(host);
   const awaitsSetup = input.awaitsSetup === true && input.startupCommand !== undefined;
@@ -253,6 +255,7 @@ async function buildBox(
   const id = boxIdFor(host, input.id);
   attempt.boxId = id;
   const reserved = await host.specs.exclusive(async () => {
+    if (host.specs.isClosed(host.host.id)) throw hostGone(host.host.id);
     const planned = await planEgress(host, policy);
     if (!planned) return null;
     attempt.egress = true;
@@ -270,6 +273,8 @@ async function buildBox(
   await assertPoolsReachable(host, poolsUsed(host, mounts));
 
   const containerId = await host.specs.exclusive(async () => {
+    // The host may have been removed while this create was preparing its volumes, so nothing more is made for it.
+    if (host.specs.isClosed(host.host.id)) throw hostGone(host.host.id);
     if (host.specs.findByName(input.name)) throw conflict(msg("box_exists", { name: input.name }));
     const now = new Date().toISOString();
     const memoryBytes = input.memoryMb * MB;

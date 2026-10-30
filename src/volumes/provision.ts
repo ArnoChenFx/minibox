@@ -106,7 +106,13 @@ export async function provisionRoleMounts(
 ): Promise<BoxMount[]> {
   const own = changes ?? new VolumeChanges();
   try {
-    return await host.volumes.exclusive(() => provisionRoleMountsLocked(host, box, roles, known, own, restored, pools));
+    const planned = await host.volumes.exclusive(() =>
+      provisionRoleMountsLocked(host, box, roles, known, own, restored, pools),
+    );
+    // The chown runs in a helper container, which may take minutes. It is done after the record lock is released, so a
+    // host that is being removed (or any other writer) is not held up behind it; a late record write is refused there.
+    await chownEngines(host, planned.chown, known);
+    return planned.mounts;
   } catch (e) {
     if (!changes) await own.rollback();
     throw e;
@@ -121,7 +127,7 @@ async function provisionRoleMountsLocked(
   changes: VolumeChanges,
   restored: ReadonlyMap<VolumeRole, VolumeRecord>,
   pools: ReadonlyMap<VolumeRole, string>,
-): Promise<BoxMount[]> {
+): Promise<{ mounts: BoxMount[]; chown: string[] }> {
   const wanted = new Set(roles);
   const plans = defaultRolePlans(host, box, pools).filter((plan) => wanted.has(plan.role));
   const mounts: BoxMount[] = [];
@@ -153,8 +159,7 @@ async function provisionRoleMountsLocked(
     if (created.chown) chown.push(created.record.engineName);
     mounts.push(mountFor(plan.role, created.record.engineName));
   }
-  await chownEngines(host, chown, known);
-  return mounts;
+  return { mounts, chown };
 }
 
 /**

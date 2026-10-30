@@ -11,6 +11,7 @@ import {
   forceRemoveConfirmation,
   type HostRecords,
   hostRecords,
+  recordsChanged,
 } from "../services/host-force-remove";
 import type { AgentEvent, AgentHub, AgentStatus } from "./agent/hub";
 import { type Endpoint, endpointLabel, parseEndpoint } from "./endpoint";
@@ -511,22 +512,26 @@ export class HostManager {
    * the machine is deleted, so a machine that is only unreachable keeps its containers as orphans. Without `confirm`
    * nothing changes and the refusal lists every record a confirmed call would discard.
    */
-  forceRemove(id: string, confirm: boolean): Promise<HostForceRemove> {
+  forceRemove(id: string, confirm: boolean, digest?: string): Promise<HostForceRemove> {
     return this.exclusive(async () => {
       if (id === LOCAL_HOST_ID) throw conflict(msg("host_is_local"));
       if (!this.options.registry.has(id)) throw notFound(msg("host_not_found", { host: id }));
       const ctx = this.options.registry.get(id);
       if (ctx.host.status !== "offline") throw conflict(msg("host_not_offline", { host: id }));
       if (!confirm) throw forceRemoveConfirmation(hostRecords(ctx));
-      const discarded = await discardHostRecords(ctx);
-      const view = this.forgetHost(id, ctx);
+      // The view is taken before the records go, so it still says how many boxes the host held.
+      const view = this.view(ctx);
+      const outcome = discardHostRecords(ctx, digest);
+      if (outcome.changed) throw recordsChanged(outcome.records);
+      const forgotten = this.forgetHost(id, ctx, view);
+      const discarded = outcome.records;
       log.warn("host.force_removed", {
         host: id,
         boxes: discarded.boxes,
         volumes: discarded.volumes.map((volume) => volume.name),
         checkpoints: discarded.checkpoints.map((checkpoint) => checkpoint.id),
       });
-      return { host: view, discarded };
+      return { host: forgotten, discarded };
     });
   }
 
@@ -536,8 +541,11 @@ export class HostManager {
    * backoff state, and the credential files are deleted. The view is taken before any of it, so a caller can report the
    * host as it was. `remove` and `forceRemove` both end here.
    */
-  private forgetHost(id: string, ctx: HostCtx): HostView {
-    const view = this.view(ctx);
+  private forgetHost(id: string, ctx: HostCtx, view: HostView = this.view(ctx)): HostView {
+    // A write that is already on its way must not bring a record of this host back after it is forgotten.
+    ctx.specs.closeHost(id);
+    ctx.volumes.closeHost(id);
+    ctx.checkpoints.closeHost(id);
     const stored = this.stored.get(id);
     const agentId = stored ? agentIdOf(stored) : null;
     if (agentId !== null) this.options.agents.forget(agentId);
@@ -867,6 +875,10 @@ export class HostManager {
 
   /** Builds the host's context and attaches it. A host whose credentials are missing is still registered, and every call fails. */
   private register(stored: StoredHost): void {
+    // A host id that was removed can be added again, and the stores must accept its records once it is back.
+    this.options.shared.specs.openHost(stored.id);
+    this.options.shared.volumes.openHost(stored.id);
+    this.options.shared.checkpoints.openHost(stored.id);
     const endpoint = parseEndpoint(stored.endpoint);
     const identity: HostIdentity = {
       id: stored.id,

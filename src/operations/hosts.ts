@@ -444,6 +444,10 @@ const hostForceRemove = defineOperation({
       description:
         "Without it nothing changes and the call answers 409 with details.preview, listing the boxes, volumes and checkpoints whose records would be discarded. Send true to discard them.",
     }),
+    digest: z.string().min(1).max(64).optional().meta({
+      description:
+        "The preview digest this call confirms. When given, the records are read again under their locks and a set that changed answers 409 host_records_changed with a fresh preview, discarding nothing. Omit it to discard whatever the host holds when the call runs.",
+    }),
   }),
   output: z.object({
     host: HostViewSchema,
@@ -472,7 +476,7 @@ const hostForceRemove = defineOperation({
     }),
   },
   run: async (ctx, input) => {
-    const removed = await hostsOf(ctx).forceRemove(input.id, input.confirm === true);
+    const removed = await hostsOf(ctx).forceRemove(input.id, input.confirm === true, input.digest);
     return {
       host: removed.host,
       discarded: {

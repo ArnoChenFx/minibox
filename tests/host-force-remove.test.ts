@@ -8,9 +8,13 @@ import type { Server } from "bun";
 import { generateKeyPairPem } from "../src/agent/identity";
 import { AGENT_PAIR_PATH, AGENT_PROTOCOL } from "../src/agent/protocol";
 import { type App, createApp } from "../src/app";
+import { newCheckpointId } from "../src/checkpoints/id";
+import { SCHEDULE_VERSION } from "../src/checkpoints/schedule";
+import { ROLLBACK_VERSION } from "../src/checkpoints/types";
 import { hostsPath } from "../src/data-dir";
 import { setLogSink } from "../src/lib/logger";
 import { startServer } from "../src/server";
+import { newBoxId } from "../src/specs/revision";
 import { requiredScopes, scopeAllowed } from "../src/tokens/model";
 import type { SocketData } from "../src/ws/socket";
 import { silenceLogs, TEST_KEY, testConfig } from "./support/app";
@@ -53,6 +57,7 @@ type ErrorBody = {
       boxes: { id: string; name: string }[];
       volumes: { name: string; engineName: string }[];
       checkpoints: { id: string; label: string }[];
+      digest: string;
     };
   };
 };
@@ -84,6 +89,69 @@ async function takeCheckpoint(boxId: string) {
     result: { checkpoint: { id: string; label: string; hostId: string } };
   };
   return done.result.checkpoint;
+}
+
+/** Waits until `condition` holds, so a test can be sure an engine call it held has been reached. */
+async function until(condition: () => boolean, what: string): Promise<void> {
+  const deadline = Date.now() + 5_000;
+  while (!condition()) {
+    if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}`);
+    await Bun.sleep(5);
+  }
+}
+
+/** A spec of one host to clone, so a test can write a record the preview did not see. */
+function straySpec(hostId: string, name: string) {
+  const host = app.hosts.get(hostId);
+  const source = host.specs.list().find((spec) => spec.hostId === hostId);
+  if (!source) throw new Error(`no spec on ${hostId} to clone`);
+  return {
+    ...source,
+    id: newBoxId(),
+    name,
+    createdName: name,
+    containerName: `mbfrc-${name}`,
+    containerId: "a".repeat(64),
+    revision: 1,
+    history: [],
+  };
+}
+
+/** A checkpoint schedule on one box, written directly so a test can set one up without the scheduler. */
+function writeSchedule(hostId: string, boxId: string): void {
+  const now = new Date().toISOString();
+  app.hosts.get(hostId).checkpoints.writeSchedule({
+    version: SCHEDULE_VERSION,
+    hostId,
+    boxId,
+    mode: "interval",
+    everyHours: 6,
+    at: null,
+    timezone: null,
+    createdBy: "owner",
+    createdAt: now,
+    updatedAt: now,
+    nextRunAt: now,
+    lastRun: null,
+  });
+}
+
+/** A rollback waiting for its confirm or undo, written directly, with no volumes to replace. */
+function writePendingRollback(hostId: string, boxId: string): void {
+  const checkpointId = newCheckpointId();
+  app.hosts.get(hostId).checkpoints.writePendingRollback({
+    version: ROLLBACK_VERSION,
+    hostId,
+    boxId,
+    boxName: "pending",
+    checkpointId,
+    checkpointLabel: "before-loss",
+    safetyCheckpointId: checkpointId,
+    createdBy: "owner",
+    createdAt: new Date().toISOString(),
+    replaced: [],
+    restored: [],
+  });
 }
 
 /** What the shared stores still record for one host, read without any host context. */
@@ -251,7 +319,7 @@ describe("a forced removal previews, then discards only that host's records", ()
     const lines: string[] = [];
     const restore = setLogSink((_level, line) => lines.push(line));
     let body: {
-      host: { id: string; name: string; status: string };
+      host: { id: string; name: string; status: string; boxes: number };
       discarded: {
         boxes: { id: string; name: string }[];
         volumes: { name: string; engineName: string }[];
@@ -270,6 +338,8 @@ describe("a forced removal previews, then discards only that host's records", ()
     expect(edge.calls.length).toBe(callsBefore);
     expect(app.hosts.has("edge")).toBe(false);
     expect(body.host).toMatchObject({ id: "edge", status: "offline" });
+    // The view is taken before the records go, so it still counts the box the discard then forgets.
+    expect(body.host.boxes).toBe(body.discarded.boxes.length);
     expect(body.discarded.boxes).toEqual([{ id: lost.boxId, name: "alpha" }]);
     expect(body.discarded.volumes.map((volume) => volume.engineName).toSorted()).toEqual(
       lostVolumes.map((volume) => volume.engineName).toSorted(),
@@ -347,5 +417,149 @@ describe("a forced removal previews, then discards only that host's records", ()
     // Forgotten, not merely revoked: there is no record left to authenticate with.
     expect(app.agents.record(agentId)).toBeUndefined();
     expect(app.agents.status(agentId)).toBeNull();
+  });
+});
+
+describe("a record written while the removal runs cannot come back", () => {
+  test("a create held before its spec writes nothing after the host is removed", async () => {
+    const gate = edge.hold("runHelper");
+    const creating = post("/api/boxes", { name: "late", cpus: 1, memoryMb: 256, host: "edge" });
+    // The create has written its volume records and is held in a helper, before its spec lock.
+    await until(() => edge.callsTo("runHelper").length > 0, "the create to reach its helper");
+    app.hosts.get("edge").host.status = "offline";
+
+    const forced = await post("/api/hosts/edge/force-remove", { confirm: true });
+    expect(forced.status).toBe(200);
+    gate.release();
+
+    const late = await creating;
+    expect(late.status).toBe(409);
+    expect(await errorOf(late)).toMatchObject({ key: "host_gone" });
+    expect(recordsOf("edge")).toEqual({ specs: [], volumes: [], checkpoints: [] });
+
+    // Adding the id again lists no ghost of the box the held create would have made.
+    const readded = await post("/api/hosts", { id: "edge", endpoint: `unix://${EDGE_SOCKET}` });
+    expect(readded.status).toBe(201);
+    const listed = (await (await api("/api/boxes")).json()) as { boxes: { name: string }[] };
+    expect(listed.boxes.map((box) => box.name)).not.toContain("late");
+  });
+
+  test("a spec that moved to another host before the discard is left alone", async () => {
+    const box = await boxOn("edge", "alpha");
+    edge.down = true;
+    await app.hostAdmin.refresh();
+    const host = app.hosts.get("edge");
+    const spec = host.specs.read(box.boxId);
+    if (!spec) throw new Error("the box spec is missing");
+    // commitMove writes the spec with the target's hostId, between the preview and the locked discard.
+    host.specs.write({ ...spec, hostId: "local" });
+
+    const res = await post("/api/hosts/edge/force-remove", { confirm: true });
+    expect(res.status).toBe(200);
+    // The spec is not this host's record any more, so it stays: only edge's other records go.
+    expect(host.specs.read(box.boxId)?.hostId).toBe("local");
+    expect(recordsOf("edge")).toEqual({ specs: [], volumes: [], checkpoints: [] });
+  });
+});
+
+describe("a confirmation names the set of records its preview saw", () => {
+  test("a changed digest answers 409 host_records_changed and discards nothing", async () => {
+    await boxOn("edge", "alpha");
+    edge.down = true;
+    await app.hostAdmin.refresh();
+    const previewed = await errorOf(await post("/api/hosts/edge/force-remove", {}));
+    const digest = previewed.details?.preview?.digest ?? "";
+    expect(digest).toMatch(/^[0-9a-f]{16}$/);
+
+    const host = app.hosts.get("edge");
+    const sneaked = straySpec("edge", "sneaked");
+    host.specs.write(sneaked);
+    const before = recordsOf("edge");
+
+    const changed = await post("/api/hosts/edge/force-remove", { confirm: true, digest });
+    expect(changed.status).toBe(409);
+    const refused = await errorOf(changed);
+    expect(refused).toMatchObject({ code: "conflict", key: "host_records_changed" });
+    expect(refused.details?.preview?.digest).not.toBe(digest);
+    expect(refused.details?.preview?.boxes.map((box) => box.name).toSorted()).toEqual(["alpha", "sneaked"]);
+    // Nothing was removed, the host is still listed and its stores accept writes again.
+    expect(recordsOf("edge")).toEqual(before);
+    expect(app.hosts.has("edge")).toBe(true);
+    expect(host.specs.isClosed("edge")).toBe(false);
+
+    // The fresh preview's digest confirms, and both records go.
+    const fresh = await errorOf(await post("/api/hosts/edge/force-remove", {}));
+    const done = await post("/api/hosts/edge/force-remove", {
+      confirm: true,
+      digest: fresh.details?.preview?.digest,
+    });
+    expect(done.status).toBe(200);
+    const body = (await done.json()) as { discarded: { boxes: { name: string }[] } };
+    expect(body.discarded.boxes.map((box) => box.name).toSorted()).toEqual(["alpha", "sneaked"]);
+    expect(recordsOf("edge")).toEqual({ specs: [], volumes: [], checkpoints: [] });
+  });
+
+  test("without a digest the call still discards whatever the host holds, and reports it", async () => {
+    await boxOn("edge", "alpha");
+    edge.down = true;
+    await app.hostAdmin.refresh();
+    expect((await post("/api/hosts/edge/force-remove", {})).status).toBe(409);
+
+    app.hosts.get("edge").specs.write(straySpec("edge", "sneaked"));
+    const done = await post("/api/hosts/edge/force-remove", { confirm: true });
+    expect(done.status).toBe(200);
+    const body = (await done.json()) as { host: { boxes: number }; discarded: { boxes: { name: string }[] } };
+    expect(body.discarded.boxes.map((box) => box.name).toSorted()).toEqual(["alpha", "sneaked"]);
+    expect(body.host.boxes).toBe(2);
+    expect(recordsOf("edge")).toEqual({ specs: [], volumes: [], checkpoints: [] });
+  });
+});
+
+describe("the linked records a forced removal and a box delete clear", () => {
+  test("a forced removal clears the box's checkpoint schedule and pending rollback", async () => {
+    const box = await boxOn("edge", "scheduled");
+    await takeCheckpoint(box.boxId);
+    const host = app.hosts.get("edge");
+    writeSchedule("edge", box.boxId);
+    writePendingRollback("edge", box.boxId);
+    expect(host.checkpoints.readSchedule(box.boxId)).not.toBeNull();
+    expect(host.checkpoints.pendingRollback(box.boxId)).not.toBeNull();
+
+    edge.down = true;
+    await app.hostAdmin.refresh();
+    expect((await post("/api/hosts/edge/force-remove", { confirm: true })).status).toBe(200);
+    expect(host.checkpoints.readSchedule(box.boxId)).toBeNull();
+    expect(host.checkpoints.pendingRollback(box.boxId)).toBeNull();
+    expect(host.checkpoints.schedules().filter((item) => item.hostId === "edge")).toEqual([]);
+    expect(host.checkpoints.pendingRollbacks().filter((item) => item.hostId === "edge")).toEqual([]);
+  });
+
+  test("stale schedules and rollbacks that name the host go too when their box is already gone", async () => {
+    const ghost = newBoxId();
+    writeSchedule("edge", ghost);
+    writePendingRollback("edge", ghost);
+    // The box itself is not in the specs store: only the host id ties these two records to it.
+    expect(app.hosts.get("edge").specs.read(ghost)).toBeNull();
+    edge.down = true;
+    await app.hostAdmin.refresh();
+
+    expect((await post("/api/hosts/edge/force-remove", { confirm: true })).status).toBe(200);
+    expect(app.hosts.get().checkpoints.schedules()).toEqual([]);
+    expect(app.hosts.get().checkpoints.pendingRollbacks()).toEqual([]);
+  });
+
+  test("deleting a box clears its checkpoint schedule and pending rollback", async () => {
+    const box = await boxOn("local", "planned");
+    await takeCheckpoint(box.boxId);
+    writeSchedule("local", box.boxId);
+    writePendingRollback("local", box.boxId);
+    const host = app.hosts.get();
+    expect(host.checkpoints.readSchedule(box.boxId)).not.toBeNull();
+    expect(host.checkpoints.pendingRollback(box.boxId)).not.toBeNull();
+
+    const deleted = await api(`/api/boxes/${box.boxId}?skipTrash=true`, { method: "DELETE" });
+    expect(deleted.status).toBe(200);
+    expect(host.checkpoints.readSchedule(box.boxId)).toBeNull();
+    expect(host.checkpoints.pendingRollback(box.boxId)).toBeNull();
   });
 });
