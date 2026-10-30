@@ -91,7 +91,8 @@ function dialogBody(names) {
 
 /**
  * The new-template dialog. It builds a template from one of four sources, and the build runs as a task whose log opens
- * in the task panel. `onCreated(response)` runs once the build has been accepted.
+ * in the task panel. **Save** keeps the source without building it, so a template can be built later from the Templates
+ * page. `onCreated(response)` runs once the source is saved or the build has been accepted.
  */
 export async function openNewTemplate({ onCreated } = {}) {
   const names = await secretNames();
@@ -102,7 +103,7 @@ export async function openNewTemplate({ onCreated } = {}) {
     iconName: "layers",
     wide: true,
     body: dialogBody(names),
-    footer: `<button class="btn" data-close>${t("common.cancel")}</button><button class="btn btn-primary" id="tnSubmit">${icon("hammer")}${t("tp.submitBuild")}</button>`,
+    footer: `<button class="btn" data-close>${t("common.cancel")}</button><button class="btn" id="tnSave">${icon("check")}${t("tp.saveDraft")}</button><button class="btn btn-primary" id="tnSubmit">${icon("hammer")}${t("tp.submitBuild")}</button>`,
   });
   const q = (selector) => root.querySelector(selector);
 
@@ -142,7 +143,7 @@ export async function openNewTemplate({ onCreated } = {}) {
   q("#tnName").addEventListener("input", () => showNameError(""));
   showKind(state.kind);
 
-  const submit = async () => {
+  const submit = async (mode) => {
     const name = q("#tnName").value.trim();
     const problem = nameError(name, "templateName");
     if (problem) {
@@ -158,21 +159,33 @@ export async function openNewTemplate({ onCreated } = {}) {
     const body = { name, source: built.source };
     const description = q("#tnDesc").value.trim();
     if (description) body.description = description;
-    const btn = q("#tnSubmit");
-    btn.disabled = true;
-    btn.innerHTML = `<span class="spinner"></span>${t("tp.starting")}`;
+    const save = q("#tnSave");
+    const build = q("#tnSubmit");
+    const draft = mode === "draft";
+    const pressed = draft ? save : build;
+    for (const button of [save, build]) button.disabled = true;
+    pressed.innerHTML = `<span class="spinner"></span>${t(draft ? "tp.saving" : "tp.starting")}`;
     try {
-      const res = await api("/api/templates", { method: "POST", body });
-      close();
-      toast(t("tp.createStarted"), { type: "info", message: t("tp.createStartedText") });
-      trackTask(res.taskId);
-      onCreated?.(res);
+      if (draft) {
+        await api("/api/templates/drafts", { method: "POST", body });
+        close();
+        toast(t("tp.draftSaved"), { type: "info", message: t("tp.draftSavedText") });
+        onCreated?.();
+      } else {
+        const res = await api("/api/templates", { method: "POST", body });
+        close();
+        toast(t("tp.createStarted"), { type: "info", message: t("tp.createStartedText") });
+        trackTask(res.taskId);
+        onCreated?.(res);
+      }
     } catch (e) {
-      btn.disabled = false;
-      btn.innerHTML = `${icon("hammer")}${t("tp.submitBuild")}`;
+      for (const button of [save, build]) button.disabled = false;
+      save.innerHTML = `${icon("check")}${t("tp.saveDraft")}`;
+      build.innerHTML = `${icon("hammer")}${t("tp.submitBuild")}`;
       if (e.details?.field === "name" || e.code === "conflict") showNameError(e.message);
       else q("#tnErr").textContent = `${e.message}${e.hint ? ` ${e.hint}` : ""}`;
     }
   };
-  q("#tnSubmit").addEventListener("click", submit);
+  q("#tnSubmit").addEventListener("click", () => void submit("build"));
+  q("#tnSave").addEventListener("click", () => void submit("draft"));
 }

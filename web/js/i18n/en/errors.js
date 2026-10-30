@@ -137,6 +137,7 @@ export default {
   "err.snapshot_not_found": "Snapshot not found.",
   "err.template_not_found": "Template not found.",
   "err.template_name_taken": "A template named “{name}” already exists.",
+  "err.template_name_reserved": "{name} is a name MiniBox keeps for a template it builds itself. Choose another name.",
   "err.template_edit_empty":
     "Nothing to change: send a source, a setup (init) or a description. A template that was not built from a declared source has no source to edit.",
   "err.template_source_builtin":
@@ -148,6 +149,8 @@ export default {
     "Choose where the template comes from: a Dockerfile, a Git repository, a build context URL or a devcontainer.json.",
   "err.template_not_declared":
     "Template {name} was not built from a declared source, so it cannot be rebuilt. Build a template from a Dockerfile, a repository, a build context or a devcontainer.json instead.",
+  "err.template_not_built":
+    "Template {name} is saved but not built yet. Build it on the Templates page, or with template rebuild, before creating a box from it.",
   "err.dockerfile_invalid":
     "The Dockerfile must be at most 64 KB, contain no NUL bytes, and include a FROM instruction.",
   "err.dockerfile_not_found": "There is no Dockerfile at {path} in the build context.",

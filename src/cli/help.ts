@@ -30,8 +30,9 @@ Commands:
   minibox box startup-command run <box> [--json]
                                        Run the command again now. The box must be running and have a command
   minibox template create <name> (--dockerfile FILE | --repo URL | --context URL | --devcontainer URL)
-                       [--description TEXT] [--host ID] [source options] [--no-wait] [--json]
-                                       Build a template in the background, and print its ref. --host builds it on that host
+                       [--draft] [--description TEXT] [--host ID] [source options] [--no-wait] [--json]
+                                       Build a template in the background, and print its ref. --host builds it on that host.
+                                       --draft saves the source without building it; build it later with template rebuild
   minibox template get <ref> [--host ID] [--json]
                                        Print the source a template rebuilds from, so you can see what an edit changes
   minibox template edit <ref> [source options] [--description TEXT] [--forward-port N,...] [--post-create TEXT]

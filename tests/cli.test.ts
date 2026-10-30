@@ -1197,6 +1197,40 @@ describe("CLI templates, images and box clones", () => {
     }
   });
 
+  test("template create --draft saves the source without building, and template rebuild builds it later", async () => {
+    const env = serve();
+    try {
+      const file = join(mkdtempSync(join(tmpdir(), "mb-cli-draft-")), "Dockerfile");
+      writeFileSync(file, "FROM alpine:3.20\n");
+      const saved = io();
+      expect(
+        await runCli(["template", "create", "draft-tool", "--dockerfile", file, "--draft"], env.env, saved, lines([])),
+      ).toBe(0);
+      expect(saved.out).toBe("mbtest-template:draft-tool\n");
+      expect(saved.err).toContain("Saved the template draft. It is not built");
+      expect(saved.err).toContain("minibox template rebuild draft-tool");
+      // Nothing was built, and the saved source is what a later build would use.
+      expect(env.runtime.builds).toHaveLength(0);
+      const read = io();
+      expect(await runCli(["template", "get", "draft-tool", "--json"], env.env, read, lines([]))).toBe(0);
+      expect(JSON.parse(read.out).recipe.source).toEqual({ kind: "dockerfile", text: "FROM alpine:3.20\n" });
+
+      // The draft holds its name, so a second save is refused, and rebuild builds it for the first time.
+      const again = io();
+      expect(
+        await runCli(["template", "create", "draft-tool", "--dockerfile", file, "--draft"], env.env, again, lines([])),
+      ).toBe(1);
+      expect(again.err).toContain("A template named “draft-tool” already exists.");
+
+      const rebuilt = io();
+      expect(await runCli(["template", "rebuild", "draft-tool"], env.env, rebuilt, lines([]))).toBe(0);
+      expect(rebuilt.out).toBe("mbtest-template:draft-tool\n");
+      expect(env.runtime.builds.at(-1)?.tag).toBe("mbtest-template:draft-tool");
+    } finally {
+      env.stop();
+    }
+  });
+
   test("template rebuild and image pull follow their tasks; a pull the registry refuses exits 1 with its message", async () => {
     const env = serve();
     try {

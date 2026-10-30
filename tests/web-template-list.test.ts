@@ -14,6 +14,7 @@ import {
   templateCards,
   templateDetailRows,
   templateSearchFields,
+  withDraftCards,
   withOfficialCards,
 } from "../web/js/lib/template-list.js";
 
@@ -152,6 +153,32 @@ describe("the fork action a card offers", () => {
     const page = readFileSync(join(ROOT, "web", "js", "pages", "templates.js"), "utf8");
     expect(page).toContain("forkAction(tp)");
     expect(page).toMatch(/disabled title="\$\{esc\(t\(fork\.reason\)\)\}"/);
+  });
+});
+
+describe("draft cards", () => {
+  test("a draft of a name built on another host stays a card of its own, with the host that saved it", () => {
+    const built = templateCards([copy("local")]);
+    const cards = withDraftCards(built, [
+      {
+        name: "python",
+        ref: "minibox-template:python",
+        description: "Saved for later",
+        buildKind: "dockerfile",
+        hostId: "lab",
+      },
+    ]);
+
+    // The built card and the draft keep the same reference, which the card's host tells apart.
+    expect(cards.map((card) => [card.ref, card.draft === true, card.hostId])).toEqual([
+      ["minibox-template:python", false, "local"],
+      ["minibox-template:python", true, "lab"],
+    ]);
+    expect(cards[1]?.holders).toEqual([]);
+  });
+
+  test("a draft is labelled not built even when its reference is the base template's", () => {
+    expect(templateBadge({ ref: BASE, draft: true }, BASE)).toBe("tp.draft");
   });
 });
 

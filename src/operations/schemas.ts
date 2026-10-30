@@ -364,6 +364,18 @@ export const OfficialTemplateSchema = z.object({
   base: z.string(),
 });
 
+/**
+ * A template saved as a draft: the source it will be built from, with no image yet. `hostId` is the host that keeps the
+ * saved recipe, and `buildKind` is the kind of source it holds.
+ */
+export const TemplateDraftSchema = z.object({
+  name: z.string(),
+  ref: z.string(),
+  description: z.string().nullable(),
+  buildKind: z.enum(BUILD_KINDS),
+  hostId: z.string(),
+});
+
 export const ImagePulledSchema = z.object({
   ref: z.string(),
   id: z.string(),

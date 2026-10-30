@@ -192,15 +192,15 @@ minibox cp mybox:/workspace/report.txt ./report.txt
 
 ## Templates and images
 
-Building a template, editing one, forking one, rebuilding one and pulling an image are for the owner only. A build, a rebuild and a pull run as a task. The command waits for the task, prints the task log to standard error, and exits with `1` if the task fails. `--no-wait` prints the task ID and returns at once. An edit and a fork answer with the reference at once and take no `--no-wait`, because neither builds anything. See [Templates](../user-guide/templates.md).
+Building a template, editing one, forking one, rebuilding one and pulling an image are for the owner only. A build, a rebuild and a pull run as a task. The command waits for the task, prints the task log to standard error, and exits with `1` if the task fails. `--no-wait` prints the task ID and returns at once. An edit and a fork answer with the reference at once and take no `--no-wait`, because neither builds anything. `--draft` saves a source without building it, so it answers at once too. See [Templates](../user-guide/templates.md).
 
 | Command | Meaning |
 |---|---|
-| `minibox template create <name> (--dockerfile FILE \| --repo URL \| --context URL \| --devcontainer URL) [options]` | Builds a template from one source, and prints its reference, such as `minibox-template:node-tools` |
+| `minibox template create <name> (--dockerfile FILE \| --repo URL \| --context URL \| --devcontainer URL) [options]` | Builds a template from one source, and prints its reference, such as `minibox-template:node-tools`. With `--draft`, saves the source without building it |
 | `minibox template get <ref> [--host ID] [--json]` | Prints the source the template rebuilds from: the Dockerfile's text, or the URL of a repository or archive. `--json` prints the whole recipe. A template saved from a box has no source, so it is refused |
 | `minibox template edit <ref> [source options] [--description TEXT] [--forward-port N,...] [--post-create TEXT] [--clear-setup] [--host ID] [--json]` | Changes what the template rebuilds from without building it. The source options are the ones `template create` takes; `--forward-port` and `--post-create` set the ports and the `postCreateCommand` a box created from the template gets, and each keeps the one it does not name; `--clear-setup` drops both. The template keeps its image until `minibox template rebuild` runs |
 | `minibox template fork <ref> <new-name> [--description TEXT] [--host ID] [--json]` | Copies a template's image and build recipe under `new-name`, and prints the new reference. The copy can be rebuilt from the same source; a template saved from a box has no recipe, so its copy cannot. Without `--host`, the first host that holds the template. A name the host already holds is refused |
-| `minibox template rebuild <ref> [--host ID]` | Rebuilds a template from the source it was built from. The tag moves only when the build succeeds. Without `--host`, the first host that holds the template. |
+| `minibox template rebuild <ref> [--host ID]` | Rebuilds a template from the source it was built from. A reference that names a saved draft builds it for the first time, and a failed build keeps the draft. The tag moves only when the build succeeds. Without `--host`, the first host that holds the template. |
 | `minibox template sync <ref> --host ID` | Copies a template from a host that holds it to host `ID`, so a box can start there |
 | `minibox template build-official <name> [--host ID] [--no-wait] [--json]` | Builds an official template (`node`, `python`, `go` or `minimal`) on a host, and prints its reference. Without `--host`, the local host. A name the host already holds is refused |
 | `minibox image pull <ref> [--host ID]` | Pulls an image from its registry, unless the engine already has it. Default: `local` |
@@ -220,9 +220,12 @@ The options of `template create`:
 | `--devcontainer-path PATH` | With `--devcontainer`: the `devcontainer.json` inside the repository |
 | `--description TEXT` | A description of up to 200 characters |
 | `--host ID` | Builds on host `ID`. Default: `local` |
+| `--draft` | Saves the source without building it, and prints the draft's reference. The name stays taken, and `minibox template rebuild` builds it later; a failed build keeps the draft |
 
 ```bash
 minibox template create node-tools --dockerfile ./Dockerfile
+minibox template create node-tools --dockerfile ./Dockerfile --draft
+minibox template rebuild node-tools
 minibox template create node-tools --repo https://github.com/example/app.git --branch main --subdir services/api --secret DEPLOY_TOKEN
 minibox template get node-tools
 minibox template edit node-tools --dockerfile ./Dockerfile --description "Our own toolchain"
