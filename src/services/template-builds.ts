@@ -27,7 +27,9 @@ const REPO_FILE_MAX_BYTES = 256 * 1024;
  * Where a declared template's files come from. A Dockerfile is pasted in and kept in the recipe. The other kinds are
  * fetched on every build, so a rebuild picks up the newest commit or archive. Credentials are never stored here:
  * `secretRef` names a secret the clone reads when it runs. An official template's Dockerfile ships with MiniBox, so its
- * recipe keeps only the name, and a rebuild uses the Dockerfile of the running version.
+ * recipe keeps only the name, and a rebuild uses the Dockerfile of the running version. A fork of an official template
+ * carries a `dockerfile` source instead, the Dockerfile's text at the moment it was forked, so the fork no longer follows
+ * MiniBox upgrades.
  */
 export type TemplateSource =
   | { kind: "dockerfile"; text: string }
@@ -123,8 +125,11 @@ function sourceAsRead(host: HostCtx, name: string, source: TemplateSource): Temp
   return { kind: "dockerfile", text };
 }
 
-/** The recipe a declared template was built from, or null for a template made some other way. */
-export function readRecipe(host: HostCtx, name: string): TemplateRecipe | null {
+/**
+ * The recipe as the host stores it, validated but not interpreted: `copyRecipe` writes this, so a copy holds the source
+ * the source host holds, and a fork written before the copy existed stays official on the target as it is on the origin.
+ */
+function readStoredRecipe(host: HostCtx, name: string): TemplateRecipe | null {
   let parsed: unknown;
   try {
     parsed = JSON.parse(readFileSync(recipePath(host, name), "utf8"));
@@ -135,8 +140,17 @@ export function readRecipe(host: HostCtx, name: string): TemplateRecipe | null {
   const recipe = parsed as Partial<TemplateRecipe>;
   if (recipe.version !== 1 || typeof recipe.imageId !== "string" || !isSource(recipe.source)) return null;
   if (recipe.init !== undefined && !isInit(recipe.init)) return null;
-  const source = recipe.source as TemplateSource;
-  return { ...(recipe as TemplateRecipe), source: sourceAsRead(host, name, source) };
+  return recipe as TemplateRecipe;
+}
+
+/**
+ * The recipe a declared template was built from, or null for a template made some other way. The source is the one a
+ * read, an edit and a rebuild use: see `sourceAsRead`.
+ */
+export function readRecipe(host: HostCtx, name: string): TemplateRecipe | null {
+  const recipe = readStoredRecipe(host, name);
+  if (recipe === null) return null;
+  return { ...recipe, source: sourceAsRead(host, name, recipe.source) };
 }
 
 function writeRecipe(host: HostCtx, name: string, recipe: TemplateRecipe): void {
@@ -201,15 +215,18 @@ export function removeRecipe(host: HostCtx, name: string): void {
 
 /**
  * Gives `to` the recipe that built the template `ref` on `from`, when that recipe names `imageId`. A copy of a declared
- * template keeps its setup and can be rebuilt on `to`; a saved or rebuilt image matches no recipe, so it copies none.
+ * template keeps its setup and can be rebuilt on `to`; a saved or rebuilt image matches no recipe, so it copies none. The
+ * source is copied as the source host stores it, not as a read interprets it: a fork written before it kept its own copy
+ * of an official Dockerfile stays official on the target too, so both hosts rebuild from the Dockerfile of the MiniBox
+ * each runs instead of the target freezing the text the source happened to read at copy time.
  */
 export function copyRecipe(from: HostCtx, to: HostCtx, ref: string, imageId: string): void {
   const prefix = `${from.prefix}-template:`;
   if (!ref.startsWith(prefix)) return;
   const name = ref.slice(prefix.length);
   if (!NAME_RE.test(name)) return;
-  const recipe = readRecipe(from, name);
-  if (!recipe || recipe.imageId !== imageId || readRecipe(to, name)?.imageId === imageId) return;
+  const recipe = readStoredRecipe(from, name);
+  if (!recipe || recipe.imageId !== imageId || readStoredRecipe(to, name)?.imageId === imageId) return;
   writeRecipe(to, name, recipe);
 }
 
