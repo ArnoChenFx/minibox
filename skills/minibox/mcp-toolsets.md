@@ -45,9 +45,9 @@ A URL with several toolsets: `http://127.0.0.1:3920/mcp?toolsets=core,meta,sessi
 
 | Tool | Needs | What it does |
 |---|---|---|
-| `list_hosts`, `get_host_usage`, `get_host_disk`, `repair_host_forward`, `add_host`, `test_host`, `remove_host` | owner | Host management. No token scope reaches it |
+| `list_hosts`, `get_host_usage`, `get_host_disk`, `repair_host_forward`, `add_host`, `test_host`, `remove_host`, `force_remove_host` | owner | Host management. No token scope reaches it |
 
-| `list_hosts`, `get_host_usage`, `add_host`, `test_host`, `set_host_labels`, `remove_host` | owner | Host management and host labels. No token scope reaches it |
+| `list_hosts`, `get_host_usage`, `add_host`, `test_host`, `set_host_labels`, `remove_host`, `force_remove_host` | owner | Host management and host labels. No token scope reaches it |
 | `list_notify_channels`, `set_notify_channel`, `delete_notify_channel`, `test_notify_channel`, `list_notify_deliveries` | owner | Notification channels. No token scope reaches it |
 
 ## session

@@ -2,6 +2,7 @@ import { readdirSync, readFileSync, statSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 
 import { ensureDataDir, writeFileAtomic } from "../data-dir";
+import { hostGone } from "../host/gone";
 import { log } from "../lib/logger";
 import { isVolumeId, newVolumeId } from "./id";
 import { normalizeLimits } from "./limits";
@@ -72,6 +73,8 @@ export class VolumeStore {
   private readonly health = new Map<string, PoolHealth>();
   private readonly usage = new Map<string, { points: UsagePoint[]; lastError: string | null }>();
   private readonly disks = new Map<string, HostDisk>();
+  /** Hosts that were removed, so a write that was already on its way cannot bring one of their volumes back. */
+  private readonly closed = new Set<string>();
   private snapshot: RecordSnapshot | null = null;
 
   constructor(private readonly dataDir: string) {}
@@ -100,6 +103,20 @@ export class VolumeStore {
       () => undefined,
     );
     return run;
+  }
+
+  /** Refuses later record writes for a host that was removed. Removals stay allowed, so the caller can clean up. */
+  closeHost(hostId: string): void {
+    this.closed.add(hostId);
+  }
+
+  /** Puts a host id back into service, when a host with it is added again. */
+  openHost(hostId: string): void {
+    this.closed.delete(hostId);
+  }
+
+  isClosed(hostId: string): boolean {
+    return this.closed.has(hostId);
   }
 
   allocateId(): string {
@@ -139,6 +156,7 @@ export class VolumeStore {
   }
 
   write(record: VolumeRecord): void {
+    if (this.closed.has(record.hostId)) throw hostGone(record.hostId);
     ensureDataDir(this.dataDir);
     try {
       writeFileAtomic(this.pathFor(record.id), `${JSON.stringify(record, null, 2)}\n`);

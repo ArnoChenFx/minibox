@@ -87,6 +87,7 @@ export default {
   "act.host.labels.set": "Set host labels",
   "act.host.revoke": "Revoked host agent",
   "act.host.remove": "Removed host",
+  "act.host.remove.force": "Force-removed lost host",
   "act.host.forward.repair": "Allowed the egress uplink through FORWARD",
   "act.notify.channel.set": "Saved notification channel",
   "act.notify.channel.test": "Sent test notification",

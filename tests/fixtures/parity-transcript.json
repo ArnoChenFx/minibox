@@ -2168,6 +2168,22 @@
     "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Host “nowhere” was not found.\",\"retryable\":false,\"key\":\"host_not_found\",\"params\":{\"host\":\"nowhere\"}}}"
   },
   {
+    "step": "force-remove the local host",
+    "method": "POST",
+    "path": "/api/hosts/local/force-remove",
+    "status": 409,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"conflict\",\"message\":\"The local host cannot be removed.\",\"retryable\":false,\"key\":\"host_is_local\"}}"
+  },
+  {
+    "step": "force-remove a missing host",
+    "method": "POST",
+    "path": "/api/hosts/nowhere/force-remove",
+    "status": 404,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Host “nowhere” was not found.\",\"retryable\":false,\"key\":\"host_not_found\",\"params\":{\"host\":\"nowhere\"}}}"
+  },
+  {
     "step": "create a box to export",
     "method": "POST",
     "path": "/api/boxes",

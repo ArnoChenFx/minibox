@@ -318,6 +318,21 @@ export default {
     "{name} is removed from MiniBox and its stored credentials are deleted. A host that still holds boxes, volumes or checkpoints cannot be removed.",
   "st.hostRemoved": "Host removed",
   "st.hostRemoveFailed": "Could not remove the host",
+  "st.hostForceRemove": "Force remove",
+  "st.hostForceRemoveTitle": "Force-remove this lost host?",
+  "st.hostForceRemoveMessage":
+    "{name} is removed from MiniBox, and the boxes, volume records and checkpoint records MiniBox holds for it are dropped. MiniBox does not connect to the machine: if it is actually alive, its containers are not deleted and become orphans MiniBox no longer manages.",
+  "st.hostForceRemoveAgent": "Its agent is forgotten too: it is disconnected at once and cannot reconnect.",
+  "st.hostForceRemoveNothing":
+    "MiniBox holds no boxes, volumes or checkpoints for this host. Only the host entry is removed.",
+  "st.hostForceRemoveBoxes": "Boxes ({count})",
+  "st.hostForceRemoveVolumes": "Volumes ({count})",
+  "st.hostForceRemoveCheckpoints": "Checkpoints ({count})",
+  "st.hostForceRemoveNoPreview": "The server did not return a preview of what would be discarded.",
+  "st.hostForceRemoved": "Host force-removed",
+  "st.hostForceRemoveChanged":
+    "The records changed while you were confirming, so nothing was removed. Check the updated preview and confirm again.",
+  "st.hostForceRemoveFailed": "Could not force-remove the host",
   "st.hostLocal": "This machine",
   "st.disk.title": "Engine storage (docker system df)",
   "st.disk.images": "Images",

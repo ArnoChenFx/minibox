@@ -205,6 +205,22 @@ export async function restartBox(host: HostCtx, ref: string): Promise<Box> {
   });
 }
 
+/**
+ * The records a box leaves behind when it is removed, cleared without an engine call: its spec (and the rebuild changes
+ * staged with it), its self token, the questions its agent asked, its idle heartbeat, the rollback it still waits on and
+ * its checkpoint schedule. A box delete calls this once the container is gone. A lost host's box has no engine left to
+ * remove anything from, so a forced removal calls it with no container id to retire. The caller holds the specs lock.
+ */
+export function forgetBoxRecords(host: HostCtx, boxId: string, containerId?: string): void {
+  if (containerId !== undefined) host.specs.retire(containerId);
+  host.specs.remove(boxId);
+  host.selfTokens.revoke(boxId);
+  host.questions.forget(boxId);
+  host.pulse.clear(boxId);
+  host.checkpoints.removePendingRollback(boxId);
+  host.checkpoints.removeSchedule(boxId);
+}
+
 export async function deleteBox(
   host: HostCtx,
   ref: string,
@@ -224,18 +240,14 @@ export async function deleteBox(
     try {
       await host.specs.exclusive(async () => {
         await host.runtime.removeContainer(box.id, { force: true });
-        host.selfTokens.revoke(box.boxId);
-        host.specs.retire(box.id);
-        host.specs.remove(box.boxId);
+        forgetBoxRecords(host, box.boxId, box.id);
       });
     } catch (e) {
       if (trash !== null && box.running) await restartAfterFailedDelete(host, box);
       throw e;
     }
     if (spec?.egress) await dropEgress(host, box.boxId);
-    host.questions.forget(box.boxId);
     await host.sampler.observe(box.id);
-    host.pulse.clear(box.boxId);
     const result: DeleteBoxResult = { name: box.name, volumeDeleted: false, trash };
     if (deleteVolume) await removeOwnedVolumes(host, box.boxId, [...mounted, ...replaced], result);
     noteUnmounted(
@@ -243,7 +255,6 @@ export async function deleteBox(
       { boxId: box.boxId, name: box.name },
       mounted.map((volume) => volume.engineName),
     );
-    host.checkpoints.removePendingRollback(box.boxId);
     log.info("box.deleted", { name: box.name, volumeDeleted: result.volumeDeleted });
     return result;
   });

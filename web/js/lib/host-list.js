@@ -15,6 +15,14 @@ export function boxesOnHost(boxes, host) {
 /** A box on a host that cannot be reached is listed with the state `unreachable`. */
 export const isUnreachable = (box) => box.state === "unreachable";
 
+/**
+ * Whether a host's row offers force removal. Only a host whose last check failed can have been lost: an online host is
+ * removed the ordinary way, which also takes back what MiniBox put on it, and the server refuses force removal of one.
+ * The list counts boxes (`host.boxes`) but not volumes or checkpoints, so the row cannot tell whether anything is left;
+ * the preview a confirmed call is preceded by lists exactly what would be discarded, and it is what the row leads to.
+ */
+export const forceRemoveShown = (host) => Boolean(host) && host.transport !== "local" && host.status === "offline";
+
 /** Badge class for the status of a host, as /api/hosts reports it. */
 export const HOST_BADGE = { online: "badge-success", offline: "badge-danger", unknown: "" };
 

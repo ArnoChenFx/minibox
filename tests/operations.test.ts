@@ -62,6 +62,7 @@ const CLI_COMMANDS: Record<string, { argv: string[]; stdin?: string }> = {
   "files read": { argv: ["volume-1", "notes.txt"] },
   "files upload": { argv: ["volume-1"], stdin: "hello" },
   "files write": { argv: ["volume-1", "notes.txt", "--content", "hello"] },
+  "host force-remove": { argv: ["edge", "--yes"] },
   "image pull": { argv: ["alpine:3.20"] },
   "session close": { argv: ["alpha", "work"] },
   "session ls": { argv: ["alpha"] },
@@ -346,6 +347,7 @@ const SAMPLES: Record<string, (boxId: string, app: App) => unknown> = {
   "host.test": () => ({ id: "lab", endpoint: "unix:///var/run/lab.sock" }),
   "host.labels.set": () => ({ id: "local", labels: { gpu: "true" } }),
   "host.remove": () => ({ id: "lab" }),
+  "host.remove.force": () => ({ id: "lab", confirm: true }),
   "host.pairing.create": () => ({ id: "edge" }),
   "host.revoke": () => ({ id: "edge" }),
   "notify.channel.list": () => ({}),
@@ -632,8 +634,12 @@ async function preparedInput(
     const body = operation.name === "files.stream.upload" ? rawBodyOf(Buffer.from("streamed\n")) : undefined;
     return { input: { ...input, id: volumeId }, body };
   }
-  if (operation.name === "host.remove" || operation.name === "box.move") {
+  if (operation.name === "host.remove" || operation.name === "host.remove.force" || operation.name === "box.move") {
     await app.operations.run("host.add", ctx, { id: "lab", endpoint: "unix:///var/run/lab.sock" });
+  }
+  if (operation.name === "host.remove.force") {
+    // Force removal is for a machine that is gone, so the sample host has to look gone.
+    app.hosts.get("lab").host.status = "offline";
   }
   if (operation.name === "host.revoke") {
     await pairAgentHost(app, "edge");
@@ -1272,6 +1278,7 @@ describe("projections", () => {
       "test_host",
       "set_host_labels",
       "remove_host",
+      "force_remove_host",
       "list_notify_channels",
       "set_notify_channel",
       "delete_notify_channel",

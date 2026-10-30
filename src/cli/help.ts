@@ -52,6 +52,9 @@ Commands:
                                        Print the labels of one host, as JSON
   minibox host labels set <id> [--label KEY=VALUE]...
                                        Replace a host's labels, local included. No --label clears them
+  minibox host force-remove <id> [--yes] [--json]
+                                       Forget an offline, lost host's records: its boxes, volumes and checkpoints.
+                                       The machine is not contacted. Without --yes, only the preview prints
   minibox checkpoint copy <id> --host ID [--no-wait] [--json]
                                        Copy a checkpoint to host ID, so a box can be forked there. Prints the copy's id
   minibox image pull <ref> [--host ID] [--no-wait] [--json]

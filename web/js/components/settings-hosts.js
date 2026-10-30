@@ -2,7 +2,7 @@ import { api, enc } from "../lib/api.js";
 import { esc, copyText } from "../lib/dom.js";
 import { bytes, cpus, mem, relTime } from "../lib/format.js";
 import { diskReading } from "../lib/host-disk.js";
-import { HOST_BADGE, accessWarningShown, agentState, hostLabel } from "../lib/host-list.js";
+import { HOST_BADGE, accessWarningShown, agentState, forceRemoveShown, hostLabel } from "../lib/host-list.js";
 import { refreshHosts } from "../lib/hosts.js";
 import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
@@ -87,6 +87,11 @@ function drawHosts(view, card, { hosts, readDisk }) {
       removeHost(view, btn.dataset.removeHost, btn.dataset.hostName, btn.dataset.hostAgent === "true"),
     );
   });
+  card.querySelectorAll("[data-force-remove-host]").forEach((btn) => {
+    btn.addEventListener("click", () =>
+      forceRemoveHost(view, btn.dataset.forceRemoveHost, btn.dataset.hostName, btn.dataset.hostAgent === "true"),
+    );
+  });
   bindToggles(view, card, () => drawHosts(view, card, { hosts, readDisk }));
   const lines = shown.map((host) => card.querySelector(`[data-disk-host="${host.id}"]`));
   void loadDisk(lines, shown, readDisk);
@@ -107,10 +112,10 @@ function hostRow(host, hosts) {
   return `<tr>
     <td><strong>${esc(host.name)}</strong> <span class="subtle mono">${esc(host.id)}</span>${labels}</td>
     <td class="hide-sm host-endpoint">${endpoint}</td>
-    <td class="${host.agent ? "" : "nowrap"}"><span class="badge ${HOST_BADGE[host.status] ?? ""}"><span class="dot"></span>${esc(t(`st.hostStatus.${host.status}`))}</span>${latency}${error}${agent}</td>
+    <td><span class="badge ${HOST_BADGE[host.status] ?? ""}"><span class="dot"></span>${esc(t(`st.hostStatus.${host.status}`))}</span>${latency}${error}${agent}</td>
     <td class="hide-sm nowrap">${capacity}</td>
     <td class="hide-sm">${host.boxes}</td>
-    <td class="nowrap"><div class="actions">${hostActions(host, hosts)}</div></td>
+    <td><div class="actions">${hostActions(host, hosts)}</div></td>
   </tr>
   <tr class="host-disk-row">
     <td colspan="6" data-disk-host="${esc(host.id)}">${diskLines(null)}</td>
@@ -156,7 +161,13 @@ function hostLabelsLine(labels) {
 function hostActions(host, hosts) {
   if (host.transport === "local") return `<span class="subtle">${t("st.hostLocal")}</span>`;
   const label = hostLabel(host, hosts);
-  return `<button class="btn btn-sm btn-danger" data-remove-host="${esc(host.id)}" data-host-name="${esc(label)}" data-host-agent="${host.agent ? "true" : "false"}">${icon("x")}${t("st.hostRemove")}</button>`;
+  const remove = `<button class="btn btn-sm btn-danger" data-remove-host="${esc(host.id)}" data-host-name="${esc(label)}" data-host-agent="${host.agent ? "true" : "false"}">${icon("x")}${t("st.hostRemove")}</button>`;
+  // Only an offline host can have been lost. The ordinary removal still answers first: it works when nothing is left,
+  // and its 409 names what holds it, which is the moment the force path is meant for.
+  if (!forceRemoveShown(host)) return remove;
+  // A text-only secondary action: the full label fits beside Remove, wrapping onto a second line where it must.
+  const force = `<button class="btn btn-sm" data-force-remove-host="${esc(host.id)}" data-host-name="${esc(label)}" data-host-agent="${host.agent ? "true" : "false"}">${t("st.hostForceRemove")}</button>`;
+  return `${remove}${force}`;
 }
 
 /** An agent's connection under its status: the version it runs, when it was last seen, and what to do when it is out of date. */
@@ -359,6 +370,86 @@ async function removeHost(view, id, name, agent) {
     return;
   }
   toast(t("st.hostRemoved"), { message: name });
+  await refreshHosts();
+  loadHosts(view);
+}
+
+/** One class of record the force removal discards, with its count and the names the preview lists. */
+function recordsSection(labelKey, names) {
+  if (names.length === 0) return "";
+  return `<p class="help"><strong>${esc(t(labelKey, { count: names.length }))}</strong> ${esc(names.join(", "))}</p>`;
+}
+
+/** The records a force removal would discard, as the confirm dialog lists them. */
+function forceRemoveBody(preview) {
+  const boxes = preview?.boxes ?? [];
+  const volumes = preview?.volumes ?? [];
+  const checkpoints = preview?.checkpoints ?? [];
+  const sections = [
+    recordsSection(
+      "st.hostForceRemoveBoxes",
+      boxes.map((box) => box.name),
+    ),
+    recordsSection(
+      "st.hostForceRemoveVolumes",
+      volumes.map((volume) => volume.name),
+    ),
+    recordsSection(
+      "st.hostForceRemoveCheckpoints",
+      checkpoints.map((checkpoint) => checkpoint.label),
+    ),
+  ].join("");
+  return sections || `<p class="help">${esc(t("st.hostForceRemoveNothing"))}</p>`;
+}
+
+/**
+ * Force-removes a host whose machine is gone. The preview is asked for first, without confirm, so the dialog lists the
+ * records MiniBox would drop; only the confirm sends `confirm: true`. Nothing is sent to the machine, which the dialog
+ * says in as many words: its containers, if it is still there, are left as orphans MiniBox no longer manages.
+ */
+async function forceRemoveHost(view, id, name, agent) {
+  let preview;
+  try {
+    preview = (await api(`/api/hosts/${enc(id)}/force-remove`, { method: "POST", body: { confirm: false } })).preview;
+  } catch (e) {
+    if (e.key !== "host_force_remove_confirm") {
+      toastError(t("st.hostForceRemoveFailed"), e);
+      return;
+    }
+    preview = e.details?.preview;
+  }
+  if (!preview) {
+    toastError(t("st.hostForceRemoveFailed"), { message: t("st.hostForceRemoveNoPreview") });
+    return;
+  }
+  const message = `${t("st.hostForceRemoveMessage", { name })}${agent ? ` ${t("st.hostForceRemoveAgent")}` : ""}`;
+  for (;;) {
+    const ok = await confirmDialog({
+      title: t("st.hostForceRemoveTitle"),
+      message: esc(message),
+      body: forceRemoveBody(preview),
+      confirmText: t("st.hostForceRemove"),
+      danger: true,
+    });
+    if (!ok) return;
+    try {
+      await api(`/api/hosts/${enc(id)}/force-remove`, {
+        method: "POST",
+        body: { confirm: true, digest: preview.digest },
+      });
+      break;
+    } catch (e) {
+      // A record was written or moved since the preview. Nothing was discarded; show the fresh set and ask again.
+      if (e.key === "host_records_changed" && e.details?.preview) {
+        preview = e.details.preview;
+        toast(t("st.hostForceRemoveChanged"), { type: "info" });
+        continue;
+      }
+      toastError(t("st.hostForceRemoveFailed"), e);
+      return;
+    }
+  }
+  toast(t("st.hostForceRemoved"), { message: name });
   await refreshHosts();
   loadHosts(view);
 }

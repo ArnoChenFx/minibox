@@ -143,6 +143,7 @@ describe("OpenAPI document", () => {
       "host.list",
       "host.pairing.create",
       "host.remove",
+      "host.remove.force",
       "host.revoke",
       "host.test",
       "host.usage",

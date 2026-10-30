@@ -66,6 +66,25 @@ table.table {
 .table .actions > .btn + .btn {
   margin-left: 6px;
 }
+/* A host whose machine is gone offers two actions beside each other in a row that has six columns. Stacked, the row
+   stays as wide as its widest button, so the hosts table never scrolls sideways on a narrow screen. */
+.table.host-table .actions:has([data-force-remove-host]) {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+}
+.table.host-table .actions:has([data-force-remove-host]) > .btn + .btn {
+  margin-left: 0;
+}
+.table.host-table [data-force-remove-host] {
+  height: auto;
+  min-height: 28px;
+  max-width: 92px;
+  padding: 4px 6px;
+  gap: 4px;
+  line-height: 1.15;
+  white-space: normal;
+}
 /* The hosts table sits beside the settings menu, so its cells keep a tighter side padding to fit six columns. */
 .table.host-table th,
 .table.host-table td {

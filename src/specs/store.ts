@@ -2,6 +2,7 @@ import { readdirSync, readFileSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 
 import { ensureDataDir, SECRET_FILE_MODE, writeFileAtomic } from "../data-dir";
+import { hostGone } from "../host/gone";
 import { log } from "../lib/logger";
 import { isBoxId } from "./revision";
 import { StagedStore } from "./staged";
@@ -39,12 +40,28 @@ export class SpecStore {
   private tail: Promise<void> = Promise.resolve();
   private readonly listeners = new Set<(change: SpecChange) => void>();
   private readonly retired = new Map<string, number>();
+  /** Hosts that were removed, so a write that was already on its way cannot bring one of their boxes back. */
+  private readonly closed = new Set<string>();
 
   /** Rebuild changes staged per box. A box's staged file goes when its spec does. */
   readonly staged: StagedStore;
 
   constructor(private readonly dataDir: string) {
     this.staged = new StagedStore(dataDir);
+  }
+
+  /** Refuses later spec writes for a host that was removed. Removals stay allowed, so the caller can clean up. */
+  closeHost(hostId: string): void {
+    this.closed.add(hostId);
+  }
+
+  /** Puts a host id back into service, when a host with it is added again. */
+  openHost(hostId: string): void {
+    this.closed.delete(hostId);
+  }
+
+  isClosed(hostId: string): boolean {
+    return this.closed.has(hostId);
   }
 
   /** Returns the function that removes the listener. A listener that throws is logged and the others still hear it. */
@@ -152,6 +169,7 @@ export class SpecStore {
   }
 
   write(spec: BoxSpec): void {
+    if (this.closed.has(spec.hostId)) throw hostGone(spec.hostId);
     ensureDataDir(this.dataDir);
     writeFileAtomic(this.pathFor(spec.id), `${JSON.stringify(spec, null, 2)}\n`, SECRET_FILE_MODE);
     this.notify({ kind: "write", spec });

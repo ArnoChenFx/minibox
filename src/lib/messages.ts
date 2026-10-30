@@ -420,6 +420,14 @@ export const MESSAGES = {
   host_not_found: "Host “{host}” was not found.",
   host_is_local: "The local host cannot be removed.",
   host_in_use: "Host “{host}” still holds {count} boxes, volumes or checkpoints. Remove them first.",
+  host_not_offline:
+    "Host “{host}” is not offline. Force removal is for a machine that is gone: use the ordinary removal, or delete the boxes on it first.",
+  host_gone:
+    "Host “{host}” was removed from MiniBox while this change was running, so nothing more was written for it.",
+  host_records_changed:
+    "The records changed after the preview, so nothing was removed. Review the new preview and confirm it again.",
+  host_force_remove_confirm:
+    "Nothing was removed. Send the same request with confirm set to true to discard MiniBox's records of this host: its boxes, its volume records (the shared tools volume too) and its checkpoint records. The machine is not contacted, so if it is still there its containers are not deleted and become orphans MiniBox no longer manages.",
   host_endpoint_invalid: "The endpoint is not valid: {reason}",
   host_credentials_missing: "The {field} is required for this host.",
   host_credentials_invalid: "The {field} is not a PEM block of the kind this host needs.",

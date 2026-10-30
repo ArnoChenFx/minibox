@@ -177,6 +177,20 @@ An agent host has only **Remove**. Removing it revokes its agent first: the agen
 
 To cut off an agent at once while its host still holds boxes, volumes or checkpoints, call `POST /api/hosts/{id}/revoke`. The endpoint is kept for this and for existing scripts. A revoked host stays listed, marked **Revoked**, until you remove it.
 
+## Force-remove a lost machine
+
+When a machine is gone for good — wiped, scrapped or lost — its boxes, volumes and checkpoints stay recorded in MiniBox, and neither deleting a box nor removing the host can finish, because both need the machine's engine. While the host is offline, its row on the **Settings → Hosts** page also offers **Force remove**.
+
+That button discards **only MiniBox's records** of the host:
+
+- each box's spec, with its revision history, and the records a box delete clears without the engine: its checkpoint schedule, a rollback still waiting for its confirm or undo, its self token, the questions its agent asked, and its idle heartbeat;
+- every volume record that names the host, the shared tools volume included;
+- every checkpoint record that names the host, recycle-bin entries included.
+
+It never connects to the machine. MiniBox sends no ping, removes no container and deletes no volume there, so a machine that is only unreachable or switched off keeps its containers, which become orphans MiniBox no longer manages. The checkpoint data is not on this control plane either: each host's restic repository lives in a Docker volume on that host, so it went with the machine. Packages exported or uploaded before the loss are files on this control plane, under `DATA_DIR/packages`, and are left for their own expiry, so one can still be imported elsewhere.
+
+The confirmation lists what will be discarded before anything happens. `POST /api/hosts/{id}/force-remove` does the same: without `confirm: true` it changes nothing and answers `409` with `details.preview`, which carries a `digest` of the records it listed. Send that `digest` back with `confirm: true` and the records are read again; if anything was added or moved since the preview, nothing is discarded and the call answers `409 host_records_changed` with a fresh preview. A call without a `digest` discards whatever the host holds when it runs, and reports exactly that. Only an offline host can be force-removed — an online or unchecked host is `409 host_not_offline`, and the ordinary removal is the way for a host that answers — and only the owner may do it: no agent token reaches it, whatever scopes it holds. An agent host's agent is forgotten with the host, so it is disconnected at once and cannot reconnect. `minibox host force-remove <id>` prints the preview, and `--yes` discards it.
+
 ## Limits
 
 - A copy or a move needs the target engine to keep image IDs. Docker's classic image store does. The containerd image store changes an image's ID when the image loads, so MiniBox refuses the copy with a `docker_error` that names both IDs. An engine on the containerd image store shows `driver-type io.containerd.snapshotter.v1` in `docker info`.
@@ -184,6 +198,6 @@ To cut off an agent at once while its host still holds boxes, volumes or checkpo
 - **Auto** only considers hosts that already hold the template, unless an owner's official template may be built on one. To say which hosts it may use, give them labels and pass `hostLabels`; without them it considers every online host.
 - A box cannot move to or from an agent host yet, because an agent copies neither images nor volumes. With more than one host, the **Move to host** button of a box on an agent host is off, with the reason as its tooltip, and the API answers `501 move_agent_unsupported`. Create the box on the host you want it on. An agent host does not support templates, snapshots or port preview yet, so **Save as template** is off there too, and a box with a self token cannot be created on one, because an agent cannot write the token file.
 - Host-level CPU and memory use is shown for the local host only. A remote host shows the cores and memory that its engine reports, and the use of its own boxes.
-- The command-line tool's host commands read and set labels only: `minibox host labels get` and `minibox host labels set`. Adding and removing a host is done in the console or through the [REST API](../reference/api.md), and revoking one through the REST API.
-- A host whose machine is gone for good stays listed while it still holds boxes, volumes or checkpoints: deleting a box needs the host's engine to answer, and a host with anything left cannot be removed. A host that holds nothing but its shared tools volumes can be removed while its machine is offline.
+- The command-line tool's host commands read and set labels, and forget a lost host's records: `minibox host labels get`, `minibox host labels set` and `minibox host force-remove <id> [--yes]`. Adding a host is done in the console or through the [REST API](../reference/api.md), the ordinary removal and revoking through the REST API.
+- A host whose machine is gone for good can be [force-removed](#force-remove-a-lost-machine) while it is offline, which discards MiniBox's records of it. Deleting a box still needs the host's engine to answer, so on a machine that answers, the boxes must be deleted there or the host force-removed once it is offline. A host that holds nothing but its shared tools volumes can be removed while its machine is offline.
 - An [agent token](access-and-tokens.md) can be limited to specific hosts.
