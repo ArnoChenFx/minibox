@@ -53,7 +53,7 @@ async function templateCreateCommand(
   env: Record<string, string | undefined>,
   io: CliIo,
 ): Promise<number> {
-  const options = parseOptions(argv, TEMPLATE_CREATE_VALUE_FLAGS, OUTPUT_SWITCHES);
+  const options = parseOptions(argv, TEMPLATE_CREATE_VALUE_FLAGS, [...OUTPUT_SWITCHES, "--draft"]);
   const [name, ...more] = options.positional;
   if (!name || more.length > 0) throw new Error("minibox template create needs one template name");
   const chosen = TEMPLATE_SOURCES.filter((source) => options.values.has(source.flag));
@@ -78,6 +78,17 @@ async function templateCreateCommand(
   if (description !== undefined) body.description = description;
   const host = options.values.get("--host");
   if (host !== undefined) body.host = host;
+
+  // --draft saves the source and answers at once; nothing is pulled, cloned or built, so there is no task to follow.
+  if (options.switches.has("--draft")) {
+    const saved = await request(env, "POST", "/api/templates/drafts", body);
+    if (saved.status >= 400) return fail(io, saved.status, saved.json, saved.text);
+    if (options.switches.has("--json")) return printJson(io, saved.json);
+    const template = (saved.json as { template?: { ref?: string } } | null)?.template;
+    io.stdout(`${template?.ref ?? ""}\n`);
+    io.stderr(`Saved the template draft. It is not built; build it with: minibox template rebuild ${name}\n`);
+    return 0;
+  }
 
   const started = await request(env, "POST", "/api/templates", body);
   if (started.status >= 400) return fail(io, started.status, started.json, started.text);

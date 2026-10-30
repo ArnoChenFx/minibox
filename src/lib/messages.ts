@@ -196,6 +196,8 @@ export const MESSAGES = {
     "Choose where the template comes from: a Dockerfile, a Git repository, a build context URL or a devcontainer.json.",
   template_not_declared:
     "Template {name} was not built from a declared source, so it cannot be rebuilt. Build a template from a Dockerfile, a repository, a build context or a devcontainer.json instead.",
+  template_not_built:
+    "Template {name} is saved but not built yet. Build it on the Templates page, or with template rebuild, before creating a box from it.",
   template_edit_empty:
     "Nothing to change: send a source, a setup (init) or a description. A template that was not built from a declared source has no source to edit.",
   template_source_builtin:

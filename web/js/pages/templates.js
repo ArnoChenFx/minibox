@@ -21,6 +21,7 @@ import {
   templateCards,
   templateDetailRows,
   templateSearchFields,
+  withDraftCards,
   withOfficialCards,
 } from "../lib/template-list.js";
 import { imageRefOk, KIND_LABEL_KEYS } from "../lib/template-source.js";
@@ -103,6 +104,7 @@ export function render(view, focusName = "") {
   let base = "";
   let templates = null;
   let officials = [];
+  let drafts = [];
   let cards = [];
   let loadError = null;
   let legacy = null;
@@ -144,7 +146,7 @@ export function render(view, focusName = "") {
       return;
     }
     if (!templates) return;
-    cards = withOfficialCards(templateCards(templates), officials);
+    cards = withDraftCards(withOfficialCards(templateCards(templates), officials), drafts);
     if (!cards.length) {
       more.innerHTML = "";
       grid.innerHTML = `<div class="card" style="grid-column:1/-1">${emptyState({
@@ -172,7 +174,9 @@ export function render(view, focusName = "") {
     });
     grid.innerHTML = shown
       .map((tp) => {
+        const draft = tp.draft === true;
         const unbuilt = isUnbuilt(tp);
+        const deleteButton = `<button class="icon-btn danger" data-action="delete" data-ref="${esc(tp.ref)}" title="${t("tp.delete")}" aria-label="${t("tp.delete")}">${icon("trash")}</button>`;
         return `<div class="card" style="display:flex;flex-direction:column" data-name="${esc(tp.name)}">
         <div class="card-body" style="flex:1">
           <div class="row between" style="margin-bottom:12px"><span class="avatar" style="width:36px;height:36px;border-radius:10px;display:grid;place-items:center;background:var(--accent-soft);color:var(--accent-text)">${icon("layers")}</span>
@@ -181,18 +185,23 @@ export function render(view, focusName = "") {
           <p class="muted" style="font-size:13px;margin-top:4px;min-height:40px">${esc(tp.description ?? t("tp.noDesc"))}</p>
           ${tp.source ? `<div class="help" style="margin-top:-4px;margin-bottom:8px">${esc(t("tp.fromBox", { name: tp.source }))}</div>` : ""}
           ${tp.buildKind && !unbuilt ? `<div class="help" style="margin-top:-4px;margin-bottom:8px">${esc(t("tp.builtFrom", { kind: t(KIND_LABEL_KEYS[tp.buildKind]) }))}</div>` : ""}
-          ${unbuilt ? `<div class="help" style="margin-top:-4px;margin-bottom:8px">${esc(t("tp.notBuiltHelp"))}</div>` : ""}
+          ${draft ? `<div class="help" style="margin-top:-4px;margin-bottom:8px">${esc(t("tp.draftHelp"))}</div>` : unbuilt ? `<div class="help" style="margin-top:-4px;margin-bottom:8px">${esc(t("tp.notBuiltHelp"))}</div>` : ""}
           <dl class="kv" style="margin-top:14px;font-size:12.5px"><dt>${t("tp.image")}</dt><dd class="mono">${esc(tp.ref)}</dd><dt>${t("tp.size")}</dt><dd>${bytes(tp.size)}</dd><dt>${t("tp.created")}</dt><dd>${dateTime(tp.createdAt)}</dd>${detailsHtml(tp)}</dl>
-          ${multiHost() ? `<div class="stack" style="margin-top:14px;gap:6px"><div class="help">${esc(t("tp.hosts"))}</div>${presenceHtml(tp)}</div>` : ""}
+          ${multiHost() && !draft ? `<div class="stack" style="margin-top:14px;gap:6px"><div class="help">${esc(t("tp.hosts"))}</div>${presenceHtml(tp)}</div>` : ""}
         </div>
         <div class="dialog-foot" style="justify-content:space-between;background:transparent">
-          ${unbuilt ? "<span></span>" : `<button class="icon-btn danger" data-action="delete" data-ref="${esc(tp.ref)}" title="${t("tp.delete")}" aria-label="${t("tp.delete")}">${icon("trash")}</button>`}
+          ${draft || !unbuilt ? deleteButton : "<span></span>"}
           <div class="actions">
-            ${unbuilt && !multiHost() ? `<button class="btn btn-sm" data-action="build-official" data-name="${esc(tp.name)}">${icon("hammer")}${t("tp.buildOfficial")}</button>` : ""}
-            ${forkHtml(tp)}
-            ${tp.buildKind && !unbuilt ? `<button class="btn btn-sm" data-action="edit" data-ref="${esc(tp.ref)}" title="${esc(t("tp.edit"))}">${icon("pencil")}${t("tp.edit")}</button>` : ""}
-            ${tp.buildKind && !unbuilt ? `<button class="btn btn-sm" data-action="rebuild" data-ref="${esc(tp.ref)}" data-host="${esc(tp.holders[0])}">${icon("refresh")}${t("tp.rebuild")}</button>` : ""}
-            <button class="btn btn-sm btn-primary" data-action="use" data-ref="${esc(tp.ref)}">${icon("plus")}${t("tp.use")}</button>
+            ${
+              draft
+                ? `<button class="btn btn-sm" data-action="rebuild" data-draft="true" data-ref="${esc(tp.ref)}" data-host="${esc(tp.hostId)}">${icon("hammer")}${t("tp.buildDraft")}</button>
+                 <button class="btn btn-sm" data-action="edit" data-ref="${esc(tp.ref)}" title="${esc(t("tp.edit"))}">${icon("pencil")}${t("tp.edit")}</button>`
+                : `${unbuilt && !multiHost() ? `<button class="btn btn-sm" data-action="build-official" data-name="${esc(tp.name)}">${icon("hammer")}${t("tp.buildOfficial")}</button>` : ""}
+                 ${forkHtml(tp)}
+                 ${tp.buildKind && !unbuilt ? `<button class="btn btn-sm" data-action="edit" data-ref="${esc(tp.ref)}" title="${esc(t("tp.edit"))}">${icon("pencil")}${t("tp.edit")}</button>` : ""}
+                 ${tp.buildKind && !unbuilt ? `<button class="btn btn-sm" data-action="rebuild" data-ref="${esc(tp.ref)}" data-host="${esc(tp.holders[0])}">${icon("refresh")}${t("tp.rebuild")}</button>` : ""}
+                 <button class="btn btn-sm btn-primary" data-action="use" data-ref="${esc(tp.ref)}">${icon("plus")}${t("tp.use")}</button>`
+            }
           </div>
         </div></div>`;
       })
@@ -226,15 +235,20 @@ export function render(view, focusName = "") {
     try {
       // The official catalog is extra: when it cannot be read, the page still lists the templates the hosts hold, as the
       // create dialog does.
-      const [r, official] = await Promise.all([
+      const [r, official, saved] = await Promise.all([
         api("/api/templates"),
         api("/api/templates/official").then(
+          (body) => body.templates,
+          () => [],
+        ),
+        api("/api/templates/drafts").then(
           (body) => body.templates,
           () => [],
         ),
       ]);
       templates = r.templates;
       officials = official;
+      drafts = saved;
       base = r.baseTemplate;
       loadError = null;
     } catch (e) {
@@ -299,10 +313,14 @@ export function render(view, focusName = "") {
       void openEditTemplate({ card, onEdited: (name) => load(name) });
     },
     rebuild: async (b) => {
+      const draft = b.dataset.draft === "true";
       try {
         const path = `/api/templates/${enc(b.dataset.ref)}/rebuild?host=${enc(b.dataset.host)}`;
         const r = await withBusy(b, () => api(path, { method: "POST" }));
-        toast(t("tp.rebuildStarted"), { type: "info", message: t("tp.rebuildStartedText") });
+        toast(t(draft ? "tp.draftBuildStarted" : "tp.rebuildStarted"), {
+          type: "info",
+          message: t(draft ? "tp.createStartedText" : "tp.rebuildStartedText"),
+        });
         trackTask(r.taskId);
       } catch (e) {
         if (e.details?.taskId) {
@@ -348,12 +366,16 @@ export function render(view, focusName = "") {
       const card = cards.find((tp) => tp.ref === ref);
       if (!card) return;
       const isBase = ref === base;
-      const hostsNote = multiHost()
-        ? t("tp.deleteHostsExtra", { hosts: card.holders.map((id) => esc(hostName(id))).join(", ") })
-        : "";
+      const draft = card.draft === true;
+      // A draft lives on the host that saved it, and has no image to remove there; a built template may be on several.
+      const hosts = draft ? [card.hostId] : card.holders;
+      const hostsNote =
+        multiHost() && !draft
+          ? t("tp.deleteHostsExtra", { hosts: card.holders.map((id) => esc(hostName(id))).join(", ") })
+          : "";
       const ok = await confirmDialog({
         title: t("tp.delete"),
-        message: t("tp.deleteMessage", {
+        message: t(draft ? "tp.deleteDraftMessage" : "tp.deleteMessage", {
           ref: esc(ref),
           extra: `${hostsNote}${isBase ? t("tp.deleteBaseExtra") : t("tp.deleteExtra")}`,
         }),
@@ -362,8 +384,7 @@ export function render(view, focusName = "") {
       });
       if (!ok) return;
       try {
-        for (const host of card.holders)
-          await api(`/api/templates/${enc(ref)}?host=${enc(host)}`, { method: "DELETE" });
+        for (const host of hosts) await api(`/api/templates/${enc(ref)}?host=${enc(host)}`, { method: "DELETE" });
         invalidateTemplates();
         toast(t("tp.deleted"));
         load();

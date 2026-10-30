@@ -63,7 +63,7 @@ import {
   TaskAcceptedSchema,
   TrashRefSchema,
 } from "./schemas";
-import { ensureTemplateOn } from "./templates";
+import { assertTemplateBuilt, ensureTemplateOn } from "./templates";
 import type { OperationContext } from "./types";
 import {
   boxEnv,
@@ -331,6 +331,8 @@ export const boxCreate = defineOperation({
     assertCloneWorkspace(input);
     assertRepoSecretSet(host, input.repo);
     if (input.selfToken) assertSelfTokenHost(host);
+    // A saved draft has no image, so a create from it says it is not built yet rather than that the image is missing.
+    assertTemplateBuilt(host, input.template ?? host.baseTemplateTag);
     await assertNewBox(host, input);
   },
   activity: { action: () => "box.create", target: (input) => input.name },

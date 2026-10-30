@@ -1008,6 +1008,37 @@ async function recordScenario(): Promise<Exchange[]> {
       contentType: JSON_TYPE,
     });
 
+    const draftSource = { kind: "dockerfile", text: "FROM alpine:3.20\n" };
+    await post("save a template draft without building it", "/api/templates/drafts", {
+      name: "draft-tool",
+      description: "Saved for later",
+      source: draftSource,
+    });
+    await send("list the template drafts", "GET", "/api/templates/drafts");
+    await post("build a template under a draft's name", "/api/templates", { name: "draft-tool", source: draftSource });
+    await send("read a draft's source", "GET", "/api/templates/mbtest-template%3Adraft-tool/recipe");
+    await send("edit a draft's description", "PATCH", "/api/templates/mbtest-template%3Adraft-tool", {
+      body: JSON.stringify({ description: "Built later" }),
+      contentType: JSON_TYPE,
+    });
+    await post("create a box from a draft", "/api/boxes", {
+      name: "draft-box",
+      template: "mbtest-template:draft-tool",
+      cpus: 1,
+      memoryMb: 256,
+    });
+    const draftBuilt = await send(
+      "build the saved draft",
+      "POST",
+      "/api/templates/mbtest-template%3Adraft-tool/rebuild",
+    );
+    await waitTask(base, draftBuilt.json);
+    await send("read the draft build task", "GET", `/api/tasks/${String(draftBuilt.json?.taskId ?? "")}`);
+    await send("list the drafts after the build", "GET", "/api/templates/drafts");
+    await send("delete the built draft", "DELETE", "/api/templates/mbtest-template%3Adraft-tool");
+    await post("save a draft to remove", "/api/templates/drafts", { name: "draft-remove", source: draftSource });
+    await send("delete a template draft", "DELETE", "/api/templates/mbtest-template%3Adraft-remove");
+
     const pulled = await post("pull an image", "/api/images/pull", { ref: "alpine:3.20" });
     await waitTask(base, pulled.json);
     await send("read the pull task", "GET", `/api/tasks/${String(pulled.json?.taskId ?? "")}`);

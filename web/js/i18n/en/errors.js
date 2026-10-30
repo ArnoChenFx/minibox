@@ -148,6 +148,8 @@ export default {
     "Choose where the template comes from: a Dockerfile, a Git repository, a build context URL or a devcontainer.json.",
   "err.template_not_declared":
     "Template {name} was not built from a declared source, so it cannot be rebuilt. Build a template from a Dockerfile, a repository, a build context or a devcontainer.json instead.",
+  "err.template_not_built":
+    "Template {name} is saved but not built yet. Build it on the Templates page, or with template rebuild, before creating a box from it.",
   "err.dockerfile_invalid":
     "The Dockerfile must be at most 64 KB, contain no NUL bytes, and include a FROM instruction.",
   "err.dockerfile_not_found": "There is no Dockerfile at {path} in the build context.",

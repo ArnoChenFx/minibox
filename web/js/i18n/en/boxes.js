@@ -55,6 +55,7 @@ export default {
   "act.checkpoint.schedule": "Set checkpoint schedule",
   "act.checkpoint.schedule.clear": "Cleared checkpoint schedule",
   "act.template.create": "Built template",
+  "act.template.draft.create": "Saved template draft",
   "act.template.edit": "Edited template",
   "act.template.fork": "Forked template",
   "act.template.rebuild": "Rebuilt template",

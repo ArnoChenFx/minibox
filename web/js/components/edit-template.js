@@ -117,7 +117,9 @@ function bodyHtml(names, recipe) {
  */
 export async function openEditTemplate({ card, onEdited } = {}) {
   const names = await secretNames();
-  const recipe = await api(`/api/templates/${enc(card.ref)}/recipe`)
+  // A draft has no image, so the host that keeps its recipe is named outright; a built template is found by its image.
+  const query = card.draft ? `?host=${enc(card.hostId)}` : "";
+  const recipe = await api(`/api/templates/${enc(card.ref)}/recipe${query}`)
     .then((body) => body.recipe)
     .catch((e) => {
       toastError(t("tp.editFailed"), e);
@@ -188,7 +190,7 @@ export async function openEditTemplate({ card, onEdited } = {}) {
     ok.disabled = true;
     ok.innerHTML = `<span class="spinner"></span>${esc(t("tp.editing"))}`;
     try {
-      await api(`/api/templates/${enc(card.ref)}`, {
+      await api(`/api/templates/${enc(card.ref)}${query}`, {
         method: "PATCH",
         body: {
           ...(built.source === undefined ? {} : { source: built.source }),

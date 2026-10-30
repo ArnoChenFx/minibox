@@ -1,16 +1,22 @@
 import { z } from "zod";
 
 import type { HostCtx } from "../host/registry";
-import { type ErrorCode, AppError, conflict, notFound } from "../lib/errors";
+import { type ErrorCode, AppError, badRequest, conflict, notFound } from "../lib/errors";
 import { type MessageKey, msg } from "../lib/messages";
 import { NAME_RE } from "../lib/validation";
+import type { ImageDetails } from "../runtime";
 import { assertNoSecretInImage } from "../secrets/env";
 import { getBox } from "../services/boxes";
 import { OFFICIAL_TEMPLATES, officialOfRef } from "../services/official-templates";
 import {
+  buildTemplateDraft,
   createDeclaredTemplate,
-  declaredTemplate,
+  type DeclaredTemplate,
+  draftTemplate,
+  editDraftRecipe,
+  isDraftRecipe,
   rebuildDeclaredTemplate,
+  saveTemplateDraft,
   type TemplateRecipe,
   templateAndRecipe,
 } from "../services/template-builds";
@@ -23,6 +29,7 @@ import {
   forkTemplate,
   holdingTemplate,
   holdingTemplateName,
+  listTemplateDrafts,
   listTemplates,
   promoteSnapshot,
   saveBoxAsTemplate,
@@ -40,6 +47,7 @@ import {
   OkSchema,
   PromotedTemplateSchema,
   TemplateRecipeSchema,
+  TemplateDraftSchema,
   TemplateSchema,
   TemplateSyncedSchema,
 } from "./schemas";
@@ -191,6 +199,89 @@ const templateCreate = defineOperation({
   }),
 });
 
+/**
+ * Saves a template's source without building it. Nothing is pulled, cloned or built, so this answers at once and the
+ * recipe file is all that is written. The name is held through `holdingTemplateName`, so a save, a build or a fork
+ * cannot take it while this runs, and a name an image or a draft already holds is refused.
+ */
+const templateDraftCreate = defineOperation({
+  name: "template.draft.create",
+  tag: "templates",
+  summary: "Save a template's source without building it",
+  kind: "write",
+  scope: "template:build",
+  async: false,
+  conflicts: true,
+  input: z.object({
+    name: templateName(),
+    description: templateDescription(),
+    source: templateSource(),
+    host: hostId().optional().meta({ description: "Host to save the draft on. Omitted, the local host." }),
+  }),
+  output: z.object({ template: PromotedTemplateSchema }),
+  rest: [{ method: "POST", path: "/api/templates/drafts", body: true, status: 201 }],
+  mcp: {
+    toolset: "tools",
+    name: "create_template_draft",
+    description:
+      "Save a template's source without building it: kind dockerfile with text, git with url (and optional branch, subdir, dockerfile, secretRef), context with url of a .tar or .tar.gz (and optional dockerfile), or devcontainer with url of a repository (and optional branch, path, secretRef). Nothing is pulled, cloned or built, so this answers at once. The draft holds its name, and GET /api/templates does not list it until rebuild_template builds it; the saved source, description and setup survive that build, and a failed build keeps the draft. Optional host saves on that host, default local. Owner only. Returns the draft's ref and name.",
+  },
+  hostFor: (ctx, input) => hostNamed(ctx, input.host),
+  precondition: async ({ host }) => refuseAgent(host, "templates"),
+  activity: { action: () => "template.draft.create", target: (input) => input.name },
+  audit: {
+    target: (input) => ({ kind: "template", name: input.name }),
+    detail: (input) => ({ name: input.name, source: sourceDetail(input.source) }),
+  },
+  run: async ({ host, principal }, input) => ({
+    template: await holdingTemplateName(host, input.name, async () =>
+      saveTemplateDraft(host, {
+        name: input.name,
+        description: input.description,
+        source: input.source,
+        createdBy: principal.id,
+      }),
+    ),
+  }),
+});
+
+/**
+ * Lists the templates saved without building them. They are listed apart from `template.list`, which lists images: a
+ * draft has no image, so a box cannot start from it and the create dialog does not offer it until it is built.
+ */
+const templateDraftList = defineOperation({
+  name: "template.draft.list",
+  tag: "templates",
+  summary: "List the templates saved without building them",
+  kind: "read",
+  scope: "template:read",
+  async: false,
+  input: z.object({ host: hostId().optional() }),
+  output: z.object({ templates: z.array(TemplateDraftSchema) }),
+  rest: [{ method: "GET", path: "/api/templates/drafts", query: ["host"] }],
+  mcp: {
+    toolset: "tools",
+    name: "list_template_drafts",
+    description:
+      "List the templates saved without building them, each with its source kind, description and the hostId that keeps the saved recipe. A draft is not a template yet: GET /api/templates does not list it, and a box cannot start from it until rebuild_template builds it. Pass host to list one host.",
+  },
+  run: async (ctx, input) => {
+    const { principal } = ctx;
+    const templates = await fromEveryHost(imageHosts(ctx, input.host), async (on) =>
+      listTemplateDrafts(on)
+        .filter((draft) => templateVisible(principal, { createdBy: draft.createdBy }))
+        .map((draft) => ({
+          name: draft.name,
+          ref: draft.ref,
+          description: draft.description,
+          buildKind: draft.buildKind,
+          hostId: on.host.id,
+        })),
+    );
+    return { templates };
+  },
+});
+
 const templateFork = defineOperation({
   name: "template.fork",
   tag: "templates",
@@ -265,8 +356,39 @@ const templateInitInput = () =>
     });
 
 /**
+ * The host a template reference names: the one the request gives, else the host that holds a saved draft of that name,
+ * else the first host that holds the built image. A draft has no image to find, so it is looked for by its recipe.
+ */
+async function hostOfTemplate(ctx: OperationContext, ref: string, host?: string): Promise<HostCtx> {
+  if (host !== undefined) return hostById(ctx, host);
+  const hosts = [ctx.host, ...(ctx.allHosts?.() ?? []).filter((candidate) => candidate !== ctx.host)];
+  const holder = hosts.find(
+    (candidate) => candidate.host.status !== "offline" && draftTemplate(candidate, ref) !== null,
+  );
+  return holder ?? hostOfImage(ctx, ref);
+}
+
+/**
+ * The template a ref names, built or saved. A built template brings the image the operations already work with; a draft
+ * has no image, so `built` is null and the operations edit or build its recipe alone.
+ */
+interface TemplateTarget {
+  readonly name: string;
+  readonly recipe: TemplateRecipe;
+  readonly built: { readonly declared: DeclaredTemplate; readonly image: ImageDetails } | null;
+}
+
+async function resolveTemplate(host: HostCtx, ref: string): Promise<TemplateTarget> {
+  const draft = draftTemplate(host, ref);
+  if (draft) return { name: draft.name, recipe: draft.recipe, built: null };
+  const [declared, image] = await templateAndRecipe(host, ref);
+  return { name: declared.name, recipe: declared.recipe, built: { declared, image } };
+}
+
+/**
  * The source a template rebuilds from, so the console can prefill its edit dialog. Only a declared template has one; a
- * template saved from a box answers `400 template_not_declared`, as a rebuild does, because there is nothing to edit.
+ * template saved from a box answers `400 template_not_declared`, as a rebuild does, because there is nothing to edit. A
+ * draft answers its saved source, because that is what the edit dialog prefills and what a build would use.
  */
 const templateGet = defineOperation({
   name: "template.get",
@@ -290,13 +412,13 @@ const templateGet = defineOperation({
     description:
       "Read the source a template rebuilds from: its kind, the fields of that source (the Dockerfile text for a dockerfile, the url and optional branch, subdir, path, dockerfile and secretRef for the others), and the setup a box created from it gets. A template saved from a box has no source, so it answers 400 template_not_declared. Optional host names the host that holds the template; without it the first host that holds it. Returns the recipe.",
   },
-  hostFor: (ctx, input) => hostOfImage(ctx, input.ref, input.host),
+  hostFor: (ctx, input) => hostOfTemplate(ctx, input.ref, input.host),
   precondition: async ({ host, principal }, input) => {
     refuseAgent(host, "templates");
     if (principal.type === "token") await assertTemplateAccess(principal, host, input.ref, false);
   },
-  resolve: ({ host }, input) => templateAndRecipe(host, input.ref),
-  run: async (_ctx, _input, [declared]) => ({ recipe: recipeView(declared.recipe) }),
+  resolve: ({ host }, input) => resolveTemplate(host, input.ref),
+  run: async (_ctx, _input, target) => ({ recipe: recipeView(target.recipe) }),
 });
 
 /** The recipe as `template.get` answers it: the source's fields, and the setup the template asks for. */
@@ -354,15 +476,15 @@ const templateEdit = defineOperation({
     description:
       "Change what a template rebuilds from without building it: its source, the setup a box created from it gets, and its description. The template's current image is kept, so boxes created before the next rebuild are unaffected; rebuild_template then builds the edited source. A template built from a Dockerfile, a repository, a build context or a devcontainer.json can be edited, and a template saved from a box cannot, because it has no source to build from. An official template's source cannot be replaced either, because its Dockerfile ships with MiniBox; its setup and description can. A new description re-commits the image under the same tag, so its card shows the new one. Omitted source, init and description fields keep the values the template has; init null clears the setup. Optional host names the host that holds the template; without it the first host that holds it. Editing needs the tool:install scope: the owner may edit any template, and a token only the templates it created, the same ones it may delete. Returns the template's ref, name and build kind.",
   },
-  hostFor: (ctx, input) => hostOfImage(ctx, input.ref, input.host),
+  hostFor: (ctx, input) => hostOfTemplate(ctx, input.ref, input.host),
   precondition: async ({ host, principal }, input) => {
     refuseAgent(host, "templates");
     if (principal.type === "token") await assertTemplateAccess(principal, host, input.ref, true);
   },
-  resolve: ({ host }, input) => templateAndRecipe(host, input.ref),
-  activity: { action: () => "template.edit", target: (_input, resolved) => resolved[0].name },
+  resolve: ({ host }, input) => resolveTemplate(host, input.ref),
+  activity: { action: () => "template.edit", target: (_input, target) => target.name },
   audit: {
-    target: (_input, resolved) => resolved && { kind: "template", name: resolved[0].name },
+    target: (_input, target) => target && { kind: "template", name: target.name },
     // The source's text is a Dockerfile, so only its size is recorded, as a create records it.
     detail: (input) => ({
       name: input.ref,
@@ -371,19 +493,43 @@ const templateEdit = defineOperation({
       init: input.init,
     }),
   },
-  run: async ({ host }, input, [declared, image]) => ({
-    template: await holdingTemplate(host, declared.name, async () => {
-      const [current, currentImage] = await templateAndRecipe(host, `${host.prefix}-template:${declared.name}`);
-      if (currentImage.id !== image.id || JSON.stringify(current.recipe) !== JSON.stringify(declared.recipe)) {
-        throw conflict(msg("template_busy", { name: declared.name }));
-      }
-      return editTemplate(host, current, currentImage, {
-        source: input.source,
-        init: input.init,
-        description: input.description,
+  run: async ({ host }, input, target) => {
+    // A draft has no image to re-commit, so the edit writes its recipe and nothing else.
+    if (target.built === null) {
+      const recipe = await holdingTemplate(host, target.name, async () => {
+        const current = draftTemplate(host, target.name);
+        if (current === null || JSON.stringify(current.recipe) !== JSON.stringify(target.recipe)) {
+          throw conflict(msg("template_busy", { name: target.name }));
+        }
+        return editDraftRecipe(host, current, {
+          source: input.source,
+          init: input.init,
+          description: input.description,
+        });
       });
-    }),
-  }),
+      return {
+        template: {
+          ref: `${host.prefix}-template:${target.name}`,
+          name: target.name,
+          buildKind: recipe.source.kind,
+        },
+      };
+    }
+    const { declared, image } = target.built;
+    return {
+      template: await holdingTemplate(host, declared.name, async () => {
+        const [current, currentImage] = await templateAndRecipe(host, `${host.prefix}-template:${declared.name}`);
+        if (currentImage.id !== image.id || JSON.stringify(current.recipe) !== JSON.stringify(declared.recipe)) {
+          throw conflict(msg("template_busy", { name: declared.name }));
+        }
+        return editTemplate(host, current, currentImage, {
+          source: input.source,
+          init: input.init,
+          description: input.description,
+        });
+      }),
+    };
+  },
 });
 
 const templateRebuild = defineOperation({
@@ -407,20 +553,29 @@ const templateRebuild = defineOperation({
     toolset: "tools",
     name: "rebuild_template",
     description:
-      "Rebuild a template from the source it was built from, so a branch or an archive gives its newest content. The tag moves only when the build succeeds, and a failed rebuild keeps the image the template had. Owner only. Returns a task id.",
+      "Rebuild a template from the source it was built from, so a branch or an archive gives its newest content. A name that holds a saved draft is built for the first time: the draft becomes a normal template with the source, description and setup it saved, and a failed build keeps the draft. The tag moves only when the build succeeds, and a failed rebuild keeps the image the template had. Owner only. Returns a task id.",
   },
-  hostFor: (ctx, input) => hostOfImage(ctx, input.ref, input.host),
+  hostFor: (ctx, input) => hostOfTemplate(ctx, input.ref, input.host),
   precondition: async ({ host }) => refuseAgent(host, "templates"),
-  resolve: ({ host }, input) => declaredTemplate(host, input.ref),
-  exclusive: ({ host }, _input, declared) => `template.name:${host.host.id}:${declared.name}`,
-  subject: (_input, declared) => declared.name,
-  activity: { action: () => "template.rebuild", target: (_input, declared) => declared.name },
-  audit: { target: (_input, declared) => declared && { kind: "template", name: declared.name } },
+  resolve: ({ host }, input) => resolveTemplate(host, input.ref),
+  exclusive: ({ host }, _input, target) => `template.name:${host.host.id}:${target.name}`,
+  subject: (_input, target) => target.name,
+  activity: { action: () => "template.rebuild", target: (_input, target) => target.name },
+  audit: { target: (_input, target) => target && { kind: "template", name: target.name } },
   // A rebuild reads the recipe and writes it back when it ends, so an edit that lands while it runs would be overwritten.
   // Holding the name for the whole build makes such an edit answer `409 template_busy` instead, as it does beside a save.
-  run: async ({ host, task }, _input, declared) => ({
-    template: await holdingTemplate(host, declared.name, () =>
-      rebuildDeclaredTemplate(host, declared, { log: (text) => task?.log(text), signal: task?.signal }),
+  run: async ({ host, task }, _input, target) => ({
+    template: await holdingTemplate(host, target.name, () =>
+      target.built === null
+        ? buildTemplateDraft(
+            host,
+            { name: target.name, recipe: target.recipe, draft: true },
+            { log: (text) => task?.log(text), signal: task?.signal },
+          )
+        : rebuildDeclaredTemplate(host, target.built.declared, {
+            log: (text) => task?.log(text),
+            signal: task?.signal,
+          }),
     ),
   }),
 });
@@ -555,6 +710,18 @@ const templateOfficialBuild = defineOperation({
 });
 
 /**
+ * Refuses a box create from a name that is only a saved draft, with a message that says it is not built yet instead of
+ * the missing-image error a draft would otherwise get. Called before any copy or build is started for the create.
+ */
+export function assertTemplateBuilt(host: HostCtx, ref: string): void {
+  const prefix = `${host.prefix}-template:`;
+  const name = ref.startsWith(prefix) ? ref.slice(prefix.length) : ref;
+  if (NAME_RE.test(name) && isDraftRecipe(host, name)) {
+    throw badRequest(msg("template_not_built", { name }), { field: "template" });
+  }
+}
+
+/**
  * Makes `ref` available on `host` before a box is created there. When `host` lacks it, a copy comes from another host
  * that holds it, and when none does, the base template or an official template is built on `host` from the Dockerfile
  * that ships with MiniBox. Either runs as a task of its own, and the create waits for it, so the box starts from the image it names. A
@@ -633,7 +800,7 @@ const templateDelete = defineOperation({
   }),
   output: OkSchema,
   rest: [{ method: "DELETE", path: "/api/templates/:ref", query: ["host"] }],
-  hostFor: (ctx, input) => hostOfImage(ctx, input.ref, input.host),
+  hostFor: (ctx, input) => hostOfTemplate(ctx, input.ref, input.host),
   precondition: async ({ host }) => refuseAgent(host, "templates"),
   activity: { action: () => "template.delete", target: ({ ref }) => ref },
   audit: { target: ({ ref }) => ({ kind: "template", name: ref }) },
@@ -649,6 +816,9 @@ export const templateOperations = [
   templateSave,
   templateGet,
   templateCreate,
+  // The draft routes are registered before the `:ref` ones, because the router takes the first match.
+  templateDraftCreate,
+  templateDraftList,
   templateFork,
   templateEdit,
   templateRebuild,
