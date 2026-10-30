@@ -259,6 +259,11 @@ export default {
   "cb.previewShared": "Mounts the shared tools volume {name}, which already exists. Nothing is created for it.",
   "cb.previewSharedPool":
     "Mounts the shared tools volume {name} of pool {pool}, which already exists. Nothing is created for it.",
+  "cb.previewUnnamedName":
+    "Will create {name} when the box is created (preview). Its name follows the Box name you type.",
+  "cb.previewUnnamedNamePool":
+    "Will create {name} in pool {pool} when the box is created (preview). Its name follows the Box name you type.",
+  "cb.previewBoxNamePlaceholder": "<box name>",
   "cb.previewUnnamed": "Will create the {role} volume when the box is created (preview).",
   "cb.previewUnnamedPool": "Will create the {role} volume in pool {pool} when the box is created (preview).",
   "cb.previewHostUnknown":

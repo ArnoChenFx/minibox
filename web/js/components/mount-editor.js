@@ -22,7 +22,8 @@ export function roleLabel(role) {
 
 /**
  * The label of the choice that creates a role's volume for a new box, and of the shared tools volume it reuses. With a
- * prediction the label names the volume the create would make, and says it is only a preview: nothing exists yet.
+ * prediction the label names the volume the create would make, and says it is only a preview: nothing exists yet. A box
+ * with no name yet shows the naming rule with the placeholder, `<box name>-workspace (preview)`, which is not a name.
  */
 function roleChoiceLabel(role, shared, noShared, preview) {
   if (shared) return preview?.name ? t("mount.roleSharedExists", { name: preview.name }) : t("mount.roleShared");
@@ -32,6 +33,7 @@ function roleChoiceLabel(role, shared, noShared, preview) {
     return t("mount.roleSharedNone");
   }
   if (!preview) return t("mount.roleCreate", { role: roleLabel(role) });
+  if (preview.placeholder) return t("mount.roleWillCreate", { name: preview.placeholder });
   if (!preview.name) return t("mount.roleCreateUnnamed", { role: roleLabel(role) });
   return t("mount.roleWillCreate", { name: preview.name });
 }

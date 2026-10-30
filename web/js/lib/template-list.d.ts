@@ -39,6 +39,14 @@ export interface UnbuiltCard extends OfficialRow {
 export declare function templateSearchFields(template: TemplateRow | UnbuiltCard, badge: string | undefined): unknown[];
 export declare function templateDetailRows(template: TemplateSetup): TemplateDetailRow[];
 export declare function templateCards(rows: readonly TemplateRow[]): TemplateCard[];
+export declare function templateBadge(
+  card: { ref: string; buildKind?: unknown },
+  base: string,
+): "tp.builtin" | "tp.official" | "tp.custom";
+export declare function forkAction(card: TemplateCard | UnbuiltCard): {
+  enabled: boolean;
+  reason: "tp.forkUnbuilt" | null;
+};
 export declare function withOfficialCards(
   cards: readonly TemplateCard[],
   official: readonly OfficialRow[],

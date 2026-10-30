@@ -64,6 +64,24 @@ export function withOfficialCards(cards, official) {
   return [...cards, ...unbuilt];
 }
 
+/**
+ * The label a card shows: the bundled base template, one of the official templates, or a custom template. Everything
+ * else is custom, including a fork of an official template: the fork keeps its own copy of the Dockerfile, so it reads
+ * as built from a Dockerfile and can be edited, unlike the official template it came from.
+ */
+export function templateBadge(card, base) {
+  if (card.ref === base) return "tp.builtin";
+  return card.buildKind === "official" ? "tp.official" : "tp.custom";
+}
+
+/**
+ * The fork action a card offers. A card no host holds yet is not forked: a fork copies the built image, so there is
+ * nothing to copy until the template is built. The card shows the button off, with `tp.forkUnbuilt` as its reason.
+ */
+export function forkAction(card) {
+  return isUnbuilt(card) ? { enabled: false, reason: "tp.forkUnbuilt" } : { enabled: true, reason: null };
+}
+
 /** Whether no host holds the template yet, so a box can only get it by building it. */
 export const isUnbuilt = (card) => card !== undefined && card.holders.length === 0;
 

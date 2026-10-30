@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { ROOT } from "../src/config";
+import en from "../web/js/i18n/en.js";
 
 const WEB = join(ROOT, "web");
 const BOX_ACTIONS = join(WEB, "js", "components", "box-actions.js");
@@ -60,6 +61,24 @@ function mountRowMarkup(mount: Record<string, string>, options: Record<string, u
   return JSON.parse(run.stdout) as string;
 }
 
+/** The text of a role's preview option: the dialog's label, with the volume name as HTML escapes it. */
+const previewLabel = (name: string) => (en["mount.roleWillCreate"] ?? "").replace("{name}", name);
+
+/** A create's prediction for one role, as `roleVolumeNames` gives it. */
+function rolePreview(name: string | null, placeholder?: string) {
+  return { name, placeholder, exists: false, exact: true, hostKnown: true };
+}
+
+/** The options of a create row whose only choice is the workspace role. */
+function roleRowOptions(prediction: Record<string, unknown>) {
+  return {
+    volumes: [],
+    create: true,
+    pools: [],
+    choices: [{ value: "role:workspace", role: "workspace", shared: false, noShared: false, preview: prediction }],
+  };
+}
+
 describe("mount row", () => {
   test("a row names its volume, path and mode, escapes them, and carries the remove button", () => {
     const html = mountRowMarkup({ volume: "data", path: '/srv/"x"', mode: "ro" });
@@ -90,6 +109,18 @@ describe("mount row", () => {
     expect(html).toMatch(/<option value="vol_1"[^>]* disabled[^>]*>owned<\/option>/);
     expect(html).toMatch(/<option value="vol_2"[^>]* selected[^>]*>shared<\/option>/);
     expect(html).not.toMatch(/<option value="vol_2"[^>]* disabled/);
+  });
+
+  test("a role row with no box name yet shows the placeholder name, and one with a name shows the real one", () => {
+    const row = { volume: "role:workspace", path: "/workspace", mode: "rw" };
+    // The naming rule is shown with the placeholder escaped, and still says it is a preview: the volume has no name yet.
+    const unnamed = mountRowMarkup(row, roleRowOptions(rolePreview(null, "<box name>-workspace")));
+    expect(unnamed).toContain(`>${previewLabel("&lt;box name&gt;-workspace")}</option>`);
+    expect(unnamed).not.toContain("New workspace volume");
+    // A name replaces the placeholder, so nothing of the naming rule is left in the row.
+    const named = mountRowMarkup(row, roleRowOptions(rolePreview("alpha-workspace")));
+    expect(named).toContain(`>${previewLabel("alpha-workspace")}</option>`);
+    expect(named).not.toContain("box name");
   });
 });
 

@@ -49,6 +49,22 @@ describe("i18n dictionaries", () => {
   });
 });
 
+describe("create box volume preview strings", () => {
+  test("the box-name placeholder and the placeholder name line are in both dictionaries", () => {
+    // The line's pool variant is chosen at runtime (`${key}Pool`), so no literal `t(...)` call names it for the scan.
+    for (const key of ["cb.previewBoxNamePlaceholder", "cb.previewUnnamedName", "cb.previewUnnamedNamePool"]) {
+      expect([key, key in en, key in zh]).toEqual([key, true, true]);
+    }
+  });
+
+  test("the placeholder reads as a box-name placeholder in both languages", () => {
+    expect([en["cb.previewBoxNamePlaceholder"], zh["cb.previewBoxNamePlaceholder"]]).toEqual([
+      "<box name>",
+      "<Box 名称>",
+    ]);
+  });
+});
+
 describe("save as template strings", () => {
   const added = [
     "tp.saveAction",
