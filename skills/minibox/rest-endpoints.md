@@ -165,6 +165,7 @@ All paths are jailed inside the volume. `{id}` is a `vol_…` or a volume name; 
 | `GET` | `/api/boxes/{id}/logs/stream` | `box:read` | Server-sent events; `?tail=` |
 | `GET` | `/api/overview` | owner | What agents are doing and what needs attention |
 | `GET` | `/api/hosts`, `/api/hosts/usage`, `/api/hosts/{id}/disk` | owner | Hosts, and what a host's engine holds (`docker system df`) |
+| `POST` | `/api/hosts/{id}/forward` | owner | Adds the `FORWARD` rule the overview's "proxy-only boxes have no internet" item offers, after the owner confirms it. Returns the reading taken right after |
 
 | `GET` | `/api/hosts`, `/api/hosts/usage` | owner | Hosts, with the labels each one carries. A host is addressed by `id` everywhere; `name` is only the label the console shows, and no two hosts may share one |
 | `PATCH` | `/api/hosts/{id}` | owner | `labels`. The local host included |

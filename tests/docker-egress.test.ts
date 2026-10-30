@@ -23,6 +23,7 @@ import { join } from "node:path";
 import type { Readable } from "node:stream";
 
 import { type App, createApp } from "../src/app";
+import { hostForwardChain } from "../src/docker/host-firewall";
 import { createDockerRuntime } from "../src/docker/runtime";
 import { type EgressRequest, normalizeEgress } from "../src/egress/policy";
 import { PROXY_ALIAS } from "../src/egress/proxy";
@@ -52,6 +53,17 @@ const DENIED = "example.org";
 const SERVICE_TEXT = "gateway-ok\n";
 const PREVIEW_PORT = 8080;
 const runtime: Runtime = createDockerRuntime(SOCKET);
+
+/** The interfaces this machine's IPv4 default route leaves through, from its own `ip`. */
+function defaultRouteDevices(): string[] {
+  const out = Bun.spawnSync(["ip", "-4", "route", "show", "default"]).stdout.toString();
+  return [...new Set([...out.matchAll(/\bdev (\S+)/g)].map((found) => found[1] ?? ""))].toSorted();
+}
+
+/** Removes the forward chain this run added, leaving the chains of any other MiniBox on the host alone. */
+async function clearForwardChain(): Promise<void> {
+  await runtime.allowHostForward(prefix, "").catch(() => {});
+}
 
 let app: App;
 let host: HostCtx;
@@ -279,6 +291,8 @@ afterAll(async () => {
     if (volume.labels[prefix] === "true") await runtime.removeVolume(volume.name).catch(() => {});
   }
   await runtime.setHostIngressBlock(prefix, []).catch(() => {});
+  // The forward allowance lives in a chain of the test's own prefix, so the run removes it rather than leaving it behind.
+  await clearForwardChain();
   await runtime.removeImage(BOX_IMAGE, { force: true }).catch(() => {});
   await runtime.removeImage(PROXY_BASE, { force: true }).catch(() => {});
   if (home) rmSync(home, { recursive: true, force: true });
@@ -391,6 +405,80 @@ describe.skipIf(!enabled)("egress tiers on a real engine", () => {
     expect(denial.detail).toMatchObject({ port: 8443, reason: "port" });
 
     expect(netRawOf((await inBox(gated, ["sh", "-c", "cat /proc/self/status"])).out)).toBe(false);
+  }, 180_000);
+
+  test("the forward check reads the host's rules, and the repair it offers makes a dropped uplink work", async () => {
+    // The check reads what FORWARD would do with a new connection from the uplink bridge, and changes nothing.
+    const uplink = (await runtime.listNetworks()).find((network) => network.name === `${prefix}-egress-uplink`);
+    expect(uplink?.bridge).toMatch(/^br-/);
+    const before = await runtime.checkHostForward(prefix, uplink?.bridge ?? "", "240.0.0.0/24");
+    expect(before.forwarding).toBe(true);
+    expect(before.detail).toContain("iptables");
+    // The helper that read the rules runs in an image with iptables built in, made once on the first need. A build that
+    // failed would have fallen back to plain Alpine, installed the packages inside the helper and left no such image.
+    const helperTag = `${prefix}-host-firewall:alpine3.20`;
+    const builtLabel = `${prefix}.helper.built`;
+    const helper = await runtime.inspectImage(helperTag);
+    expect(helper.labels[prefix]).toBe("true");
+    expect(Date.now() - Date.parse(helper.labels[builtLabel] ?? "")).toBeLessThan(10 * 60_000);
+
+    // An image a week old is built again, from a fresh base and without the cache, and the old one is removed. A build
+    // the engine did not understand would fail quietly and fall back to the old image, so what is checked is the new
+    // image itself: another id, and a built time of today.
+    const context = mkdtempSync(join(tmpdir(), "mbit-fwimage-"));
+    try {
+      writeFileSync(join(context, "Dockerfile"), "FROM alpine:3.20\nRUN apk add --no-cache iptables iptables-legacy\n");
+      await runtime.buildImage({
+        contextDir: context,
+        dockerfile: "Dockerfile",
+        tag: helperTag,
+        labels: {
+          [prefix]: "true",
+          [`${prefix}.internal`]: "true",
+          [builtLabel]: new Date(Date.now() - 8 * 24 * 3600 * 1000).toISOString(),
+        },
+      });
+    } finally {
+      rmSync(context, { recursive: true, force: true });
+    }
+    const stale = await runtime.inspectImage(helperTag);
+    expect(stale.id).not.toBe(helper.id);
+    expect((await runtime.checkHostForward(prefix, uplink?.bridge ?? "", "240.0.0.0/24")).forwarding).toBe(true);
+    const rebuilt = await runtime.inspectImage(helperTag);
+    expect(rebuilt.id).not.toBe(stale.id);
+    expect(Date.now() - Date.parse(rebuilt.labels[builtLabel] ?? "")).toBeLessThan(10 * 60_000);
+    expect(
+      await runtime.inspectImage(stale.id).then(
+        () => "still there",
+        () => "removed",
+      ),
+    ).toBe("removed");
+
+    // What the owner's confirmation does: MiniBox's own chain, jumped to from FORWARD, so the uplink is accepted whatever
+    // the policy is. Run twice, since a second confirmation must not add a second rule.
+    await runtime.allowHostForward(prefix, uplink?.bridge ?? "");
+    await runtime.allowHostForward(prefix, uplink?.bridge ?? "");
+    expect(await runtime.checkHostForward(prefix, uplink?.bridge ?? "", "240.0.0.0/24")).toMatchObject({
+      forwarding: true,
+    });
+
+    // The chain accepts the uplink towards the interfaces of the host's default route and no other. The helper finds them
+    // with BusyBox's `ip`, and one that did not filter by `default` would list every route's interface, which would let
+    // a box past Docker's isolation between bridges.
+    const added = await runtime.runHelper({
+      image: helperTag,
+      cmd: ["sh", "-c", `iptables -S ${hostForwardChain(prefix)}`],
+      capAdd: ["NET_ADMIN"],
+      hostNetwork: true,
+      readonlyRoot: false,
+      timeoutSec: 60,
+    });
+    expect(added.exitCode).toBe(0);
+    const allowed = [...added.logs.matchAll(/^-A \S+ -i br-\S+ -o (\S+) -j ACCEPT$/gm)].map((found) => found[1] ?? "");
+    expect(allowed.toSorted()).toEqual(defaultRouteDevices());
+
+    // A proxy-only box still reaches its allowlist through the rule, which proves the rule is what carries the traffic.
+    expect((await curl(gated, ["-o", "/dev/null", "-w", "%{http_code}", `https://${ALLOWED}/`])).out).toBe("200");
   }, 180_000);
 
   test("BLOCK_HOST_GATEWAY keeps a default-network box off a service on the host, and clearing it lets the box through", async () => {

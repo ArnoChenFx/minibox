@@ -427,6 +427,7 @@ async function boot(): Promise<void> {
   app.startups.start();
   app.lifecycle.start();
   app.volumeUsage.start();
+  app.egressForward.start();
   const server = startServer(app);
   log.info("server.started", startupFields(cfg, version));
   await startDirectSsh(app);
@@ -448,6 +449,7 @@ async function boot(): Promise<void> {
     app.startups.stop();
     app.lifecycle.stop();
     app.volumeUsage.stop();
+    app.egressForward.stop();
     app.notify.stop();
     app.throttle.stop();
     app.sessions.stop();

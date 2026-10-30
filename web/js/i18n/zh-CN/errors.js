@@ -242,6 +242,18 @@ export default {
   "err.egress_network_conflict": "出站私有网络 {network} 已存在且设置不同。请删除该网络后重试。",
   "err.egress_host_gateway_failed": "无法更新宿主机防火墙：{detail}",
   "err.egress_needs_network": "出站策略 {mode} 与网络 {network} 不能同时设置。出站策略会决定 Box 的网络。",
+  "err.egress_forward_unsupported": "这台宿主机无法运行转发检查：{reason}",
+  "err.egress_forward_no_boxes": "这台宿主机上没有仅代理的 Box，不需要它的 FORWARD 链。没有改动任何东西。",
+  "err.egress_forward_not_blocked":
+    "上次检查发现这台宿主机的转发规则正常，没有需要添加的规则。检查会按自己的间隔再次运行。",
+  "err.egress_forward_not_repairable_rule":
+    "MiniBox 不会改动这台宿主机的转发规则：宿主机自己的一条 DROP 或 REJECT 规则匹配了来自上行网桥的流量，说明它是在按写好的规则办事，MiniBox 的规则会把那个决定推翻。如果这不是你想要的效果，请手动改掉那条 DROP。",
+  "err.egress_forward_not_repairable_unreachable":
+    "MiniBox 不会改动这台宿主机的转发规则：FORWARD 里有一条规则用 -g 把上行网络的流量永久交给了另一条链，或用 RETURN 结束了遍历，所以 MiniBox 追加在 FORWARD 末尾的规则永远走不到。请手动把放行规则加到那条链里，或加在那条规则之前。",
+  "err.egress_forward_not_repairable_unclear":
+    "MiniBox 不会改动这台宿主机的转发规则：其中有一条规则 MiniBox 读不懂，说不清是什么在丢上行网络的流量。请手动查看规则；如果你确知应当放行，再手动添加。",
+  "err.egress_forward_unchecked":
+    "尚未读取这台宿主机的 FORWARD 规则，MiniBox 无法说该添加哪条规则。请等下一次检查，或手动添加。",
   "err.cpu_over_host": "CPU 核数超出宿主机上限（{cores} 核）。",
   "err.memory_over_host": "内存超出宿主机上限（{gb} GB）。",
   "err.cpu_booked_over_host": "运行中的 Box 将占用该宿主机 {booked} 核，超过其上限 {limit} 核。",

@@ -39362,7 +39362,8 @@
                               "host.offline",
                               "host.disk_low",
                               "host.cpu_overcommit",
-                              "host.memory_overcommit"
+                              "host.memory_overcommit",
+                              "host.forward_blocked"
                             ]
                           },
                           "severity": {
@@ -39422,7 +39423,7 @@
                                 "number"
                               ]
                             },
-                            "description": "Values the console words the condition with. `used` and `limit` are bytes for a volume, `action` is `warn` or `stop`, `fields` lists the drifted settings, `checkpoint` names the rolled-back checkpoint, `free` and `min` are percentages of a host's disk, `booked` and `limit` are CPU cores for a host's overcommitted CPU and bytes for its overcommitted memory, and `detail` is the message the engine or the pool reported."
+                            "description": "Values the console words the condition with. `used` and `limit` are bytes for a volume, `action` is `warn` or `stop`, `fields` lists the drifted settings, `checkpoint` names the rolled-back checkpoint, `free` and `min` are percentages of a host's disk, `booked` and `limit` are CPU cores for a host's overcommitted CPU and bytes for its overcommitted memory, `detail` is the message the engine or the pool reported, and for a host whose forwarding is blocked `bridge` is the uplink interface, `boxes` names the `proxy-only` boxes that lost the internet, `count` is how many there are, `detail` is what the host's iptables backends said, and `cause` is `policy` when a chain fell off its end (the case MiniBox offers to repair), `rule` when a DROP of the host's own decides it, or `unclear` when the reading left a rule unread."
                           }
                         },
                         "required": [
@@ -42865,6 +42866,237 @@
         "x-async": false,
         "x-mcp": {
           "name": "get_host_disk",
+          "toolset": "meta"
+        }
+      }
+    },
+    "/api/hosts/{id}/forward": {
+      "post": {
+        "operationId": "host.forward.repair",
+        "tags": [
+          "hosts"
+        ],
+        "summary": "Allow a host's egress uplink through FORWARD",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 32,
+              "description": "Host id, as host.list reports it. The host must have a proxy-only box, and the check must have read its rules."
+            }
+          },
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {}
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "host": {
+                      "type": "object",
+                      "properties": {
+                        "bridge": {
+                          "type": "string",
+                          "description": "The uplink network's host interface, such as br-1a2b3c4d5e6f."
+                        },
+                        "forwarding": {
+                          "type": "boolean",
+                          "description": "Whether a new connection arriving on that bridge would be forwarded to the internet."
+                        },
+                        "cause": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "policy",
+                                "rule",
+                                "unreachable"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "What drops the uplink when it is dropped. policy is a chain falling off its end, the case MiniBox may repair. rule is a DROP or REJECT the host's own rules make on purpose. unreachable is the policy again, but a RETURN or -g in FORWARD ends the walk first, so a rule appended at the end would never be reached. Null when the reading is not certain, which is the case with nothing to offer."
+                        },
+                        "detail": {
+                          "type": "string",
+                          "description": "One line per iptables backend that answered, naming why it accepts or drops."
+                        },
+                        "boxes": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "description": "The proxy-only boxes on the host that need the forwarding."
+                        },
+                        "at": {
+                          "type": "string",
+                          "description": "When the reading was taken, as ISO time."
+                        },
+                        "repaired": {
+                          "type": "boolean",
+                          "description": "Whether the owner confirmed a repair after this reading. The next pass decides again."
+                        },
+                        "skipped": {
+                          "description": "Why the check cannot run on this host, such as an agent host, or null when it ran.",
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "installed": {
+                          "type": "boolean",
+                          "description": "Whether MiniBox's forward chain is on the host because a repair ran and nothing removed it since. It is removed when the host has no proxy-only box left, and when the host is removed."
+                        }
+                      },
+                      "required": [
+                        "bridge",
+                        "forwarding",
+                        "cause",
+                        "detail",
+                        "boxes",
+                        "at",
+                        "repaired",
+                        "skipped",
+                        "installed"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "host"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The name is already taken, this operation is already running, a volume is in use, an exec is not running, a checkpoint is pinned or cannot change, a change was requested without confirm set to true, or a terminal session is under a person's control (code taken_over). A refusal for a confirmation includes a preview of the change, and a rebuild preview includes the docker diff and the planned changes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request declares a body that is not JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable, or a storage pool backing the request cannot be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "write",
+        "x-scope": "host:manage",
+        "x-async": false,
+        "x-mcp": {
+          "name": "repair_host_forward",
           "toolset": "meta"
         }
       }

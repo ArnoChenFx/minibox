@@ -348,6 +348,18 @@ export const MESSAGES = {
   egress_network_conflict:
     "The private network {network} already exists with other settings. Remove it, then try again.",
   egress_host_gateway_failed: "The host firewall could not be updated: {detail}",
+  egress_forward_unsupported: "The forwarding check cannot run on this host: {reason}",
+  egress_forward_no_boxes: "This host has no proxy-only box, so nothing needs its FORWARD chain. Nothing was changed.",
+  egress_forward_unchecked:
+    "This host's FORWARD rules have not been read yet, so MiniBox cannot say which rule to add. Wait for the next check, or add the rule by hand.",
+  egress_forward_not_blocked:
+    "The last check found this host's forwarding right, so there is nothing to add. It runs again on its own interval.",
+  egress_forward_not_repairable_rule:
+    "MiniBox will not change this host's forwarding: a DROP or REJECT rule of the host's own matches traffic from the uplink bridge, so the host is doing what it was told and MiniBox's rule would undo that. Change the DROP by hand if it is not what you want.",
+  egress_forward_not_repairable_unreachable:
+    "MiniBox will not change this host's forwarding: a rule in FORWARD hands the uplink's traffic to another chain for good (-g) or ends the walk (RETURN), so a rule MiniBox appended to FORWARD would never be reached. Add the allowance in that chain, or above that rule, by hand.",
+  egress_forward_not_repairable_unclear:
+    "MiniBox will not change this host's forwarding: one of the host's rules is one MiniBox cannot evaluate, so it cannot say what is dropping the uplink. Read the rules by hand, or add the allowance if you know it is right.",
   egress_needs_network: "Egress {mode} and network {network} cannot be set together. Egress sets the box network.",
   cpu_over_host: "CPU cores exceed the host limit ({cores} cores).",
   memory_over_host: "Memory exceeds the host limit ({gb} GB).",

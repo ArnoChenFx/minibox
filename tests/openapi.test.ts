@@ -138,7 +138,7 @@ describe("OpenAPI document", () => {
       "files.write",
       "host.add",
       "host.disk",
-
+      "host.forward.repair",
       "host.labels.set",
       "host.list",
       "host.pairing.create",

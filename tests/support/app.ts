@@ -72,6 +72,7 @@ export function testConfig(overrides: Partial<Config> = {}): Config {
     previewBaseDomain: null,
     notifyAllowPrivate: false,
     volumeUsageIntervalSec: 600,
+    egressForwardCheckIntervalSec: 600,
     hostDiskMinFreePercent: 10,
     blockHostGateway: false,
     sshPort: null,

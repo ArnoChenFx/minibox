@@ -87,6 +87,7 @@ export default {
   "act.host.labels.set": "设置宿主机标签",
   "act.host.revoke": "吊销宿主机 Agent",
   "act.host.remove": "移除宿主机",
+  "act.host.forward.repair": "放行出站上行网络的 FORWARD 流量",
   "act.notify.channel.set": "保存通知渠道",
   "act.notify.channel.test": "发送测试通知",
   "act.notify.channel.delete": "删除通知渠道",

@@ -110,6 +110,12 @@ export interface Config {
   /** How often every volume's usage is sampled, in seconds. */
   volumeUsageIntervalSec: number;
   /**
+   * How often MiniBox checks that a `proxy-only` box's traffic is still forwarded by the host, in seconds. A pass runs a
+   * short-lived privileged helper, so it is not free: the default is ten minutes, and the first pass runs soon after
+   * start. A host with no `proxy-only` box is not read at all.
+   */
+  egressForwardCheckIntervalSec: number;
+  /**
    * Keeps boxes on the default network from reaching services on the host through the bridge gateway. Boxes with egress
    * `none` or `proxy-only` are always kept off the host, whatever this is set to.
    */
@@ -396,6 +402,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     previewBaseDomain: parsePreviewBaseDomain(get("PREVIEW_BASE_DOMAIN")),
     notifyAllowPrivate: isTruthy(get("NOTIFY_ALLOW_PRIVATE")),
     volumeUsageIntervalSec: intInRange(get("VOLUME_USAGE_INTERVAL_SEC"), 600, 60, 86400),
+    egressForwardCheckIntervalSec: intInRange(get("EGRESS_FORWARD_CHECK_INTERVAL_SEC"), 600, 60, 86400),
     hostDiskMinFreePercent: intInRange(get("HOST_DISK_MIN_FREE_PERCENT"), 10, 0, 100),
     blockHostGateway: isTruthy(get("BLOCK_HOST_GATEWAY")),
     sshPort,
