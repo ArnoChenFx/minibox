@@ -227,21 +227,31 @@ describe("EGRESS_ALLOW_RANGES", () => {
   });
 
   test.each([
-    "0.0.0.0/0",
-    "0.0.0.0/7",
-    "10.0.0.0/7",
-    "127.0.0.1/8",
-    "169.254.169.254",
-    "169.254.0.0/24",
-    "224.0.0.0/4",
-    "240.0.0.0/4",
-    "::1/128",
-    "2001:db8::/32",
-    "198.18.0.300/16",
-    "198.18.0.0/33",
-    "198.18.0.0/abc",
-    "fake-ip",
-  ])("%s stops startup and names the variable and the entry", (entry) => {
+    // A prefix below 8 is refused before the range is compared with anything.
+    ["0.0.0.0/0", "wider than /8"],
+    ["0.0.0.0/7", "wider than /8"],
+    ["10.0.0.0/7", "wider than /8"],
+    ["224.0.0.0/4", "wider than /8"],
+    ["240.0.0.0/4", "wider than /8"],
+    // Prefix 8 or longer, but equal to or inside a range that stays refused.
+    ["0.0.0.0/8", "overlaps 0.0.0.0/8"],
+    ["0.1.2.3/32", "overlaps 0.0.0.0/8"],
+    ["127.0.0.0/8", "overlaps 127.0.0.0/8"],
+    ["127.0.0.1/32", "overlaps 127.0.0.0/8"],
+    ["169.254.0.0/16", "overlaps 169.254.0.0/16"],
+    ["169.254.169.254", "overlaps 169.254.0.0/16"],
+    ["169.254.0.0/24", "overlaps 169.254.0.0/16"],
+    ["224.0.0.0/8", "overlaps 224.0.0.0/3"],
+    ["240.0.0.1/32", "overlaps 224.0.0.0/3"],
+    ["255.255.255.255", "overlaps 224.0.0.0/3"],
+    // Not an IPv4 address or network at all.
+    ["::1/128", "is not an IPv4"],
+    ["2001:db8::/32", "is not an IPv4"],
+    ["198.18.0.300/16", "is not an IPv4"],
+    ["198.18.0.0/33", "is not an IPv4"],
+    ["198.18.0.0/abc", "is not an IPv4"],
+    ["fake-ip", "is not an IPv4"],
+  ])("%s stops startup with “%s”", (entry, reason) => {
     let message = "";
     try {
       load({ ACCESS_KEY: KEY, EGRESS_ALLOW_RANGES: entry });
