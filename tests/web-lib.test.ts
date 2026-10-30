@@ -873,21 +873,17 @@ describe("mount lists", () => {
   test("the preview lines show the placeholder name, which is never a name, and leave the tools cases as they were", () => {
     const boxNamePlaceholder = "<box name>";
     const rows = [roleValue("workspace"), roleValue("home"), roleValue("cache")].map((volume) => ({ volume }));
-    const unnamed = roleVolumeNames({
-      boxName: "",
-      hostId: "local",
-      labelPrefix: "mbtest",
-      boxNamePlaceholder,
-      // A volume whose display name reads like the placeholder is still not the name the dialog previews.
-      taken: ["<box name>-workspace"],
-    });
-    // The placeholder is not a name: it is never compared with the names the host uses, so nothing takes a suffix.
+    // The placeholder is carried beside the name, not in it. That is what keeps it out of the suffix rule and out of the
+    // "will create <name>" line; the browser test pins that a real create never sends it either.
+    const unnamed = roleVolumeNames({ boxName: "", hostId: "local", labelPrefix: "mbtest", boxNamePlaceholder });
     expect(unnamed.workspace).toMatchObject({ name: null, placeholder: "<box name>-workspace", exact: false });
     expect(previewNoteLines(rows, unnamed)).toEqual([
       { key: "cb.previewUnnamedName", params: { name: "<box name>-workspace" }, role: "workspace" },
       { key: "cb.previewUnnamedName", params: { name: "<box name>-home" }, role: "home" },
       { key: "cb.previewUnnamedName", params: { name: "<box name>-cache" }, role: "cache" },
     ]);
+    // The line is the placeholder one, not the "will create <name>" line a real name would get.
+    expect(previewNoteLines(rows, unnamed).map((line) => line.key)).not.toContain("cb.previewCreate");
 
     // The shared tools volume and automatic placement keep their own lines, name or no name.
     const shared = roleVolumeNames({
