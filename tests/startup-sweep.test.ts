@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 
 import { TREE_SWEEP_SCRIPT } from "../src/startup/command";
@@ -100,6 +100,7 @@ describe.skipIf(process.platform !== "linux")("the run sweep, on real processes"
   }, 15_000);
 });
 
-process.on("exit", () => {
+// `process.on("exit")` never runs when a `bun test` run ends, so a process a failed case left behind would stay.
+afterAll(() => {
   for (const proc of killed) proc.kill();
 });

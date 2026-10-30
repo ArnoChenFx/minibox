@@ -1,5 +1,5 @@
 import { spyOn } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -13,8 +13,10 @@ import { memoizeScryptSync } from "./scrypt";
 
 export const TEST_KEY = "k".repeat(64);
 
-const DATA_ROOT = mkdtempSync(join(tmpdir(), "minibox-test-data-"));
-process.on("exit", () => rmSync(DATA_ROOT, { recursive: true, force: true }));
+// Below the run's own temporary directory (tests/support/preload.ts), which goes when the run does. An `exit` handler
+// could not remove it: Bun does not emit `exit` when a test run ends. Not named `minibox-test-data-*`, which is what
+// the sweep takes for a leftover of the runs that did not have a directory of their own.
+const DATA_ROOT = mkdtempSync(join(tmpdir(), "minibox-app-data-"));
 
 /**
  * Config for tests: no real Docker socket, an ephemeral port, and a label prefix that cannot collide with a real

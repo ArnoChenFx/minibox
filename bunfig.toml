@@ -1,0 +1,3 @@
+[test]
+# Gives each run a temporary directory of its own and removes it when the run ends. See tests/support/preload.ts.
+preload = ["./tests/support/preload.ts"]

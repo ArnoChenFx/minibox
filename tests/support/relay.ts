@@ -1,6 +1,6 @@
 import { spawn, type ChildProcessByStdio } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Readable, Writable } from "node:stream";
@@ -22,11 +22,11 @@ function relayBinary(): string | null {
   }
   const bytes = Buffer.from(entry.base64, "base64");
   if (createHash("sha256").update(bytes).digest("hex") !== entry.sha256) throw new Error("embedded relay is corrupt");
+  // Below the run's own temporary directory (tests/support/preload.ts), which goes when the run does.
   const dir = mkdtempSync(join(tmpdir(), "mb-relay-"));
   const path = join(dir, "minibox-relay");
   writeFileSync(path, bytes, { mode: 0o755 });
   chmodSync(path, 0o755);
-  process.on("exit", () => rmSync(dir, { recursive: true, force: true }));
   relayBin = path;
   return path;
 }
