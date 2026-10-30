@@ -770,6 +770,9 @@ async function recordScenario(): Promise<Exchange[]> {
     // The egress forward check, and the repair the owner confirms from the overview.
     await post("repair forwarding on a host with no proxy-only box", "/api/hosts/local/forward", {});
     await post("repair forwarding on a missing host", "/api/hosts/nowhere/forward", {});
+    // The owner's forced removal of a lost host. The local host and a missing host are the refusals a clean instance gives.
+    await post("force-remove the local host", "/api/hosts/local/force-remove", { confirm: true });
+    await post("force-remove a missing host", "/api/hosts/nowhere/force-remove", { confirm: true });
 
     const portBox = boxId(
       (await post("create a box to export", "/api/boxes", { name: "portbox", cpus: 1, memoryMb: 256 })).json,

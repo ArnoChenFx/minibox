@@ -89,6 +89,7 @@ export const ACTION_ICON = {
   "host.labels.set": "pencil",
   "host.revoke": "x",
   "host.remove": "trash",
+  "host.remove.force": "alert",
   "host.forward.repair": "shield",
   "notify.channel.set": "sliders",
   "notify.channel.test": "zap",
