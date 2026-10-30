@@ -264,10 +264,8 @@ describe("EGRESS_ALLOW_RANGES", () => {
       "198.18.0.0/15",
     ]);
     expect(
-      loadConfig(
-        { ACCESS_KEY: KEY, DATA_DIR: dataDir, EGRESS_ALLOW_RANGES: "100.64.0.0/10" },
-        { envFile },
-      ).egressAllowRanges,
+      loadConfig({ ACCESS_KEY: KEY, DATA_DIR: dataDir, EGRESS_ALLOW_RANGES: "100.64.0.0/10" }, { envFile })
+        .egressAllowRanges,
     ).toEqual(["100.64.0.0/10"]);
   });
 });
