@@ -14,6 +14,7 @@ import {
   agentState,
   boxesOnHost,
   boxOnAgentHost,
+  forceRemoveShown,
   hostFilterShown,
   hostLabel,
   hostOfBox,
@@ -98,6 +99,23 @@ describe("a host's label in the console", () => {
   test("a host the console does not hold falls back to what it was given", () => {
     expect(hostLabel(undefined, [])).toBe("");
     expect(hostLabel({ id: "nowhere" }, [])).toBe("nowhere");
+  });
+});
+
+describe("when a host's row offers force removal", () => {
+  test("an offline host other than this machine does, because its engine cannot be asked to clear anything", () => {
+    expect(forceRemoveShown({ id: "lab", transport: "ssh", status: "offline", boxes: 2 })).toBe(true);
+    expect(forceRemoveShown({ id: "edge", transport: "agent", status: "offline", boxes: 0 })).toBe(true);
+  });
+
+  test("an online host does not: the ordinary removal reaches its engine and takes back what MiniBox put there", () => {
+    expect(forceRemoveShown({ id: "lab", transport: "ssh", status: "online", boxes: 2 })).toBe(false);
+  });
+
+  test("a host that has not been checked yet does not, and neither does the local host", () => {
+    expect(forceRemoveShown({ id: "lab", transport: "tcp", status: "unknown", boxes: 1 })).toBe(false);
+    expect(forceRemoveShown({ id: "local", transport: "local", status: "offline", boxes: 2 })).toBe(false);
+    expect(forceRemoveShown(undefined)).toBe(false);
   });
 });
 

@@ -368,6 +368,10 @@ export default {
   "err.host_not_found": "Host “{host}” was not found.",
   "err.host_is_local": "The local host cannot be removed.",
   "err.host_in_use": "Host “{host}” still holds {count} boxes, volumes or checkpoints. Remove them first.",
+  "err.host_not_offline":
+    "Host “{host}” is not offline. Force removal is for a machine that is gone: use the ordinary removal, or delete the boxes on it first.",
+  "err.host_force_remove_confirm":
+    "Nothing was removed. Send the same request with confirm set to true to discard MiniBox’s records of this host: its boxes, its volume records (the shared tools volume too) and its checkpoint records. The machine is not contacted, so if it is still there its containers are not deleted and become orphans MiniBox no longer manages.",
   "err.host_endpoint_invalid": "The endpoint is not valid: {reason}",
   "err.host_credentials_missing": "The {field} is required for this host.",
   "err.host_credentials_invalid": "The {field} is not a PEM block of the kind this host needs.",
