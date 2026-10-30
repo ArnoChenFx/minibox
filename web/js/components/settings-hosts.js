@@ -112,7 +112,7 @@ function hostRow(host, hosts) {
   return `<tr>
     <td><strong>${esc(host.name)}</strong> <span class="subtle mono">${esc(host.id)}</span>${labels}</td>
     <td class="hide-sm host-endpoint">${endpoint}</td>
-    <td class="${host.agent ? "" : "nowrap"}"><span class="badge ${HOST_BADGE[host.status] ?? ""}"><span class="dot"></span>${esc(t(`st.hostStatus.${host.status}`))}</span>${latency}${error}${agent}</td>
+    <td><span class="badge ${HOST_BADGE[host.status] ?? ""}"><span class="dot"></span>${esc(t(`st.hostStatus.${host.status}`))}</span>${latency}${error}${agent}</td>
     <td class="hide-sm nowrap">${capacity}</td>
     <td class="hide-sm">${host.boxes}</td>
     <td><div class="actions">${hostActions(host, hosts)}</div></td>
