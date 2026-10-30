@@ -725,16 +725,6 @@ export async function createDeclaredTemplate(
 }
 
 /**
- * Builds a declared template again from its recipe, so a branch or an archive URL yields its newest content. The tag
- * moves only when the build succeeds, so a failed rebuild keeps the image the template had. The image it replaced is
- * removed when no box still runs it.
- *
- * The recipe is read again here rather than taken from `declared`: the operation resolves it before the task takes the
- * name, and an edit that lands in that gap would otherwise be overwritten by the recipe this build started from. A
- * recipe that changed in the gap, or an image that is no longer the one the tag names, is refused as `template_busy`
- * instead, so the caller retries against what the template now holds.
- */
-/**
  * Builds a saved draft for the first time. The recipe becomes a normal built one: the image it built, the creator, the
  * description, the source and the setup are kept, and the draft flag is dropped. A failed build throws before the recipe
  * is written, so the draft survives with exactly what it had. The caller holds the name through `holdingTemplate`.
@@ -782,6 +772,16 @@ export async function buildTemplateDraft(
   return { ref: `${host.prefix}-template:${name}`, name };
 }
 
+/**
+ * Builds a declared template again from its recipe, so a branch or an archive URL yields its newest content. The tag
+ * moves only when the build succeeds, so a failed rebuild keeps the image the template had. The image it replaced is
+ * removed when no box still runs it.
+ *
+ * The recipe is read again here rather than taken from `declared`: the operation resolves it before the task takes the
+ * name, and an edit that lands in that gap would otherwise be overwritten by the recipe this build started from. A
+ * recipe that changed in the gap, or an image that is no longer the one the tag names, is refused as `template_busy`
+ * instead, so the caller retries against what the template now holds.
+ */
 export async function rebuildDeclaredTemplate(
   host: HostCtx,
   declared: DeclaredTemplate,
