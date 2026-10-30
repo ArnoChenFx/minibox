@@ -979,14 +979,39 @@ describe("CLI box create and startup command", () => {
       expect(calls.map((call) => call.body)).toEqual([{ confirm: false }]);
       expect(preview.out).toContain("bx_1");
       expect(preview.out).toContain("alpha");
+      expect(preview.out).toContain("1 box, 0 volumes and 0 checkpoints would be forgotten");
+      expect(preview.out).not.toContain("1 boxes");
       expect(preview.out).toContain("Nothing was removed. The machine is not contacted");
+
+      const previewJson = io();
+      expect(await runCli(["host", "force-remove", "edge", "--json"], env, previewJson, lines([]))).toBe(0);
+      expect(JSON.parse(previewJson.out).error.code).toBe("confirmation_required");
 
       const forced = io();
       expect(await runCli(["host", "force-remove", "edge", "--yes"], env, forced, lines([]))).toBe(0);
-      expect(calls.map((call) => call.body)).toEqual([{ confirm: false }, { confirm: true }]);
+      expect(calls.map((call) => call.body)).toEqual([{ confirm: false }, { confirm: false }, { confirm: true }]);
       expect(forced.out).toContain("Removed host Edge from MiniBox");
+      expect(forced.out).toContain("1 box, 0 volumes and 0 checkpoints forgotten");
     } finally {
       globalThis.fetch = realFetch;
+    }
+  });
+
+  test("host force-remove refuses the local host and a missing id before it can discard anything", async () => {
+    const env = serve();
+    try {
+      const atHome = io();
+      expect(await runCli(["host", "force-remove", "local", "--yes"], env.env, atHome, lines([]))).toBe(1);
+      expect(atHome.err).toContain("The local host cannot be removed.");
+      expect(env.app.hosts.has("local")).toBe(true);
+
+      const missing = io();
+      expect(
+        await runCli(["host", "force-remove"], { ...env.env, MINIBOX_URL: "http://127.0.0.1:9" }, missing, lines([])),
+      ).toBe(2);
+      expect(missing.err).toContain("minibox host force-remove needs one host id");
+    } finally {
+      env.stop();
     }
   });
 

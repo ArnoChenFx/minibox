@@ -65,6 +65,11 @@ function forceRemoveLine(cells: (string | number)[]): string {
   return `${cells.join("  ")}\n`;
 }
 
+/** `1 box`, `2 boxes`: the counts a person reads in the preview and the result. */
+function count(n: number, one: string, many: string): string {
+  return `${n} ${n === 1 ? one : many}`;
+}
+
 /**
  * `host force-remove <id>`: discards MiniBox's records of a lost, offline host. Without `--yes` it prints the preview and
  * changes nothing. The machine is never contacted, and nothing on it is deleted, which the preview says in as many words.
@@ -91,7 +96,7 @@ async function hostForceRemoveCommand(
     for (const checkpoint of preview.checkpoints)
       io.stdout(forceRemoveLine(["checkpoint", checkpoint.id, checkpoint.label]));
     io.stdout(
-      `${preview.counts.boxes} boxes, ${preview.counts.volumes} volumes and ${preview.counts.checkpoints} checkpoints would be forgotten.\n`,
+      `${count(preview.counts.boxes, "box", "boxes")}, ${count(preview.counts.volumes, "volume", "volumes")} and ${count(preview.counts.checkpoints, "checkpoint", "checkpoints")} would be forgotten.\n`,
     );
     io.stdout(
       "Nothing was removed. The machine is not contacted, so its containers are not deleted and become orphans MiniBox no longer manages. Add --yes to discard only these records.\n",
@@ -104,7 +109,7 @@ async function hostForceRemoveCommand(
   if (json) return printJson(io, res.json);
   const discarded = removed.discarded;
   io.stdout(
-    `Removed host ${removed.host?.name ?? id} from MiniBox: ${discarded.boxes.length} boxes, ${discarded.volumes.length} volumes and ${discarded.checkpoints.length} checkpoints forgotten.\n`,
+    `Removed host ${removed.host?.name ?? id} from MiniBox: ${count(discarded.boxes.length, "box", "boxes")}, ${count(discarded.volumes.length, "volume", "volumes")} and ${count(discarded.checkpoints.length, "checkpoint", "checkpoints")} forgotten.\n`,
   );
   return 0;
 }
