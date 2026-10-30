@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### 新增
+
+- **机器永久丢失后可以强制移除宿主机**：`POST /api/hosts/{id}/force-remove`（操作 `host.remove.force`，MCP 工具 `force_remove_host`，CLI `minibox host force-remove <id> [--yes]`）只丢弃 MiniBox 自己的记录——该宿主机的 Box 规格及其随盒清理的随附记录、全部卷记录（含共享工具卷）与检查点记录——然后走与普通移除相同的收尾：Agent 宿主机遗忘并吊销 Agent、写回 hosts 文件、删除凭据。它绝不连接那台机器，也不调用 `liftTools`/`release`；机器若其实还在，上面的容器会变成 MiniBox 不再管理的孤儿，检查点数据仍在机器的 restic 卷里，控制面磁盘上的导出包不受影响。仅所有者可用；宿主机必须离线（在线或状态未知返回 `409 host_not_offline`）。不带 `confirm: true` 时不做任何改动，返回 `409` 预览，列出将被丢弃的 Box、卷与检查点。见[宿主机](docs/user-guide/hosts.md#force-remove-a-lost-machine)。
+
 ### 工程化
 
 - 每次 `bun test` 运行使用自己的临时目录 `mbrun-<pid>-…`（`bunfig.toml` 预加载 `tests/support/preload.ts`），由独立会话里的看护进程在运行结束后删除，正常结束、失败、被信号终止或被 SIGKILL 杀掉都一样。此前 Bun 结束测试时不触发 `exit`，夹具里的 `exit` 清理从不执行，每次运行都会在系统临时目录留下 `minibox-test-data-*`，被超时杀掉的运行还会留下其余目录。看护进程也被杀时，下次运行启动时清扫遗留目录：拥有进程已不在、两小时内没有写入、没有进程占用。说明见 `docs/development.md`。
