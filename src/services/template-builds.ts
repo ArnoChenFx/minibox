@@ -112,6 +112,18 @@ function shippedDockerfile(host: HostCtx, name: OfficialName): string | null {
 }
 
 /**
+ * The Dockerfile the bundled base template builds from, as text, or null when this MiniBox has none. Like an official
+ * template's, the directory holds that one file and no `COPY`, so the Dockerfile is the whole build context a copy needs.
+ */
+function shippedBaseDockerfile(host: HostCtx): string | null {
+  try {
+    return readFileSync(join(host.templatesDir, "base", "Dockerfile"), "utf8");
+  } catch {
+    return null;
+  }
+}
+
+/**
  * How a recipe's source is read: the source a caller may rebuild from, and, for an official source under another name
  * whose Dockerfile could not become a fork's own copy, why it kept its official kind.
  */
@@ -219,6 +231,36 @@ export function editRecipe(
   }
   writeRecipe(host, declared.name, next);
   return next;
+}
+
+/**
+ * Writes the recipe of a fork of the bundled base template. MiniBox builds the base template itself and keeps no recipe
+ * for it, so there is none to copy; the fork gets one whose source is the base Dockerfile this MiniBox ships, as a fork of
+ * an official template gets its own copy of the official Dockerfile. It is the Dockerfile as it is when the fork is made,
+ * so later MiniBox releases do not change it, and the fork can be edited and rebuilt from it. A Dockerfile this MiniBox
+ * cannot read, or does not accept as one, leaves the fork without a recipe, which is logged: the fork still works.
+ */
+export function forkBaseRecipe(
+  host: HostCtx,
+  to: string,
+  imageId: string,
+  description: string,
+  createdBy: string,
+): void {
+  const text = shippedBaseDockerfile(host);
+  const problem = text === null ? "the shipped Dockerfile is not readable" : dockerfileProblem(text);
+  if (text === null || problem !== null) {
+    log.warn("template.fork_source_missing", { name: to, source: "base", reason: problem });
+    return;
+  }
+  writeRecipe(host, to, {
+    version: 1,
+    imageId,
+    description,
+    createdBy,
+    created: new Date().toISOString(),
+    source: { kind: "dockerfile", text },
+  });
 }
 
 /** Forgets the recipe of a template name. A recipe whose image was removed by another tool is harmless and is replaced. */

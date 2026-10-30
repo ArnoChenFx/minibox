@@ -215,4 +215,22 @@ describe.skipIf(!executablePath)("forking a template from the Templates page (re
     },
     TIMEOUT_MS,
   );
+
+  test(
+    "the copy of the built-in base template can be edited and rebuilt like any custom template",
+    async () => {
+      await card("base").getByRole("button", { name: "Fork", exact: true }).click();
+      await dialog().locator("#tfName").fill("base-copy");
+      await dialog().getByRole("button", { name: "Fork template" }).click();
+
+      await webExpect(card("base-copy")).toBeVisible();
+      await webExpect(dialog()).toHaveCount(0);
+      await webExpect(card("base-copy")).toContainText("Built from Dockerfile");
+      await webExpect(card("base-copy").getByRole("button", { name: "Edit", exact: true })).toBeVisible();
+      await webExpect(card("base-copy").getByRole("button", { name: "Rebuild" })).toBeVisible();
+      // The base template is built by MiniBox, so it keeps neither button.
+      await webExpect(card("base").getByRole("button", { name: "Edit", exact: true })).toHaveCount(0);
+    },
+    TIMEOUT_MS,
+  );
 });

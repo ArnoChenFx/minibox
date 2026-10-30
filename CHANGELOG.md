@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### 修复
+
+- **派生内置（基础）模板得到的现在是可以修改来源的自定义模板**（[#300](https://github.com/ArnoChenFx/minibox/pull/300) 的后续，用户反馈）：#300 只处理了派生官方模板；基础模板由 MiniBox 自己构建、没有构建记录，派生出来的副本因此没有来源，卡片上没有 **修改** 和 **重新构建**，派生后无法编辑。现在派生基础模板时，副本的来源是派生那一刻 MiniBox 自带的 `templates/base/Dockerfile` 的副本（`dockerfile` 来源），可以像其他自定义模板一样修改并重新构建；之后 MiniBox 升级不会改动这份副本，基础模板本身不变。那份 Dockerfile 读不到或不合法时，副本照常建出，只是没有来源，并记一条 `template.fork_source_missing` 警告。此前派生出的基础模板副本没有记下来源，仍不可修改，需要重新派生一次；从 Box 保存的模板仍没有来源。测试：`tests/template-fork.test.ts` 钉住派生基础模板的副本带有基础 Dockerfile 的原文、列表里显示 `dockerfile`、基础模板本身仍无构建记录、Dockerfile 读不到时仍能派生并告警，以及经 REST 派生后能修改来源并按它重新构建。
+
 ## [0.6.10] - 2026-10-31
 
 ### 新增
