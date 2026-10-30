@@ -36722,7 +36722,7 @@
           }
         },
         "x-kind": "read",
-        "x-scope": "template:read",
+        "x-scope": "template:build",
         "x-async": false,
         "x-mcp": {
           "name": "list_template_drafts",

@@ -280,7 +280,8 @@ const templateDraftList = defineOperation({
   tag: "templates",
   summary: "List the templates saved without building them",
   kind: "read",
-  scope: "template:read",
+  // Owner only, like every other draft operation: a draft has no image, so no token's access rules can name it.
+  scope: "template:build",
   async: false,
   input: z.object({ host: hostId().optional() }),
   output: z.object({ templates: z.array(TemplateDraftSchema) }),
@@ -289,7 +290,7 @@ const templateDraftList = defineOperation({
     toolset: "tools",
     name: "list_template_drafts",
     description:
-      "List the templates saved without building them, each with its source kind, description and the hostId that keeps the saved recipe. A draft is not a template yet: GET /api/templates does not list it, and a box cannot start from it until rebuild_template builds it. Pass host to list one host.",
+      "List the templates saved without building them, each with its source kind, description and the hostId that keeps the saved recipe. A draft is not a template yet: GET /api/templates does not list it, and a box cannot start from it until rebuild_template builds it. Owner only. Pass host to list one host.",
   },
   run: async (ctx, input) => {
     const templates = await fromEveryHost(imageHosts(ctx, input.host), async (on) =>
