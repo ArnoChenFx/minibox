@@ -132,15 +132,15 @@ async function volumePruneCommand(argv: string[], env: Record<string, string | u
 }
 
 /**
- * `volume snapshot <id|name> [--label TEXT] [--pin]`: snapshots one volume on its own, without a box. The task it starts
- * prints the checkpoint's id once the backup has finished.
+ * `volume snapshot <id|name> [--label TEXT] [--pin] [--no-wait]`: snapshots one volume on its own, without a box. The task
+ * it starts prints the checkpoint's id once the backup has finished; `--no-wait` prints the task's id and returns.
  */
 async function volumeSnapshotCommand(
   argv: string[],
   env: Record<string, string | undefined>,
   io: CliIo,
 ): Promise<number> {
-  const options = parseOptions(argv, ["--label"], ["--json", "--pin"]);
+  const options = parseOptions(argv, ["--label"], ["--json", "--pin", "--no-wait"]);
   const [id, ...more] = options.positional;
   const label = options.values.get("--label");
   if (!id || more.length > 0) throw new Error("minibox volume snapshot needs one volume id or name");

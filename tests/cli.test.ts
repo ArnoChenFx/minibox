@@ -2131,6 +2131,23 @@ describe("CLI volume prune and delete", () => {
     }
   });
 
+  test("volume snapshot --no-wait prints the task it started and returns, as the help says it may", async () => {
+    const env = serve();
+    try {
+      await createVolume(env.app.hosts.get(), { name: "notes", role: null, createdBy: null });
+
+      const plain = io();
+      expect(await runCli(["volume", "snapshot", "notes", "--no-wait"], env.env, plain, lines([]))).toBe(0);
+      expect(plain.out.trim()).toMatch(/^[0-9A-HJKMNP-TV-Z]{26}$/);
+
+      const json = io();
+      expect(await runCli(["volume", "snapshot", "notes", "--no-wait", "--json"], env.env, json, lines([]))).toBe(0);
+      expect(JSON.parse(json.out)).toMatchObject({ taskId: expect.stringMatching(/^[0-9A-HJKMNP-TV-Z]{26}$/) });
+    } finally {
+      env.stop();
+    }
+  });
+
   test("volume usage errors exit 2 without calling the server", async () => {
     const env = { MINIBOX_URL: "http://127.0.0.1:9", MINIBOX_ACCESS_KEY: TEST_KEY };
     const cases: [string[], string][] = [

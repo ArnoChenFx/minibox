@@ -177,8 +177,14 @@ describe("client address for rate limiting", () => {
     expect(rateLimitKey("fe80::1%eth0")).toBe("fe80:0:0:0::/64");
   });
 
-  test("IPv4-mapped IPv6 addresses collapse to IPv4", () => {
+  test("IPv4-mapped IPv6 addresses collapse to IPv4, written in dots or in hex", () => {
     expect(rateLimitKey("::ffff:203.0.113.7")).toBe("203.0.113.7");
+    expect(rateLimitKey("::FFFF:203.0.113.7")).toBe("203.0.113.7");
+    expect(rateLimitKey("::ffff:cb00:714d")).toBe("203.0.113.77");
+    expect(rateLimitKey("0:0:0:0:0:ffff:cb00:714d")).toBe("203.0.113.77");
+    // Only the mapped range collapses: the same low bits in another prefix are an ordinary IPv6 address.
+    expect(rateLimitKey("::fffe:cb00:714d")).toBe("0:0:0:0::/64");
+    expect(rateLimitKey("1::ffff:cb00:714d")).toBe("1:0:0:0::/64");
   });
 
   test("malformed IPv6 is kept verbatim rather than mis-grouped", () => {

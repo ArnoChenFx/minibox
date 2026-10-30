@@ -106,13 +106,15 @@ export class PairingBook {
   /**
    * The waiting code that holds `name`, or null when none does. A waiting code holds its name the way a host does: it
    * names the host that is about to exist, so another host cannot take the name in the meantime. A code for `forHost`
-   * is not counted, since a new code for that host replaces it and an added host of that id makes it unusable.
+   * is not counted, since a new code for that host replaces it. A code for a host that `exists` is not counted either:
+   * that host was added another way, the code can only be refused as `host_exists`, and it must not keep a name for the
+   * ten minutes it has left.
    */
-  waitingName(name: string, forHost: string): WaitingName | null {
+  waitingName(name: string, forHost: string, exists: (hostId: string) => boolean = () => false): WaitingName | null {
     const now = this.now();
     const folded = foldName(name);
     for (const entry of this.entries.values()) {
-      if (entry.hostId === forHost || !this.waiting(entry, now)) continue;
+      if (entry.hostId === forHost || exists(entry.hostId) || !this.waiting(entry, now)) continue;
       if (foldName(entry.name) === folded) return { hostId: entry.hostId, name: entry.name };
     }
     return null;

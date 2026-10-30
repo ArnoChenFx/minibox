@@ -1,6 +1,6 @@
 import { api, enc } from "../lib/api.js";
 import { esc } from "../lib/dom.js";
-import { hostLabel } from "../lib/host-list.js";
+import { hostLabel, hostOfBox } from "../lib/host-list.js";
 import { hostName, hostsNow, refreshHosts } from "../lib/hosts.js";
 import { t } from "../lib/i18n.js";
 import { movedBoxHash } from "../lib/routes.js";
@@ -63,11 +63,30 @@ export function movePreviewHtml(preview) {
     <div class="help">${esc(t("mv.revision", { from: String(preview.revision?.current ?? ""), to: String(preview.revision?.next ?? "") }))}</div></div>`;
 }
 
-function hostOptions(box) {
-  return hostsNow()
-    .filter((host) => host.id !== box.hostId && host.status === "online")
-    .map((host) => `<option value="${esc(host.id)}">${esc(hostLabel(host, hostsNow()))}</option>`)
+const isAgent = (host) => host.transport === "agent";
+
+/**
+ * The target choices of the move dialog, and whether any of them can be picked. A box cannot move to an agent host, which
+ * copies neither images nor volumes, so such a host is listed with the reason and cannot be picked: the server would
+ * refuse it only after the preview. `agentsOnly` is set when every other host is an agent host, online or not: a host
+ * that is only offline is one the sentence "add a host that is not an agent" would be wrong about.
+ */
+export function moveTargets(box, hosts) {
+  const others = hosts.filter((host) => host.id !== hostOfBox(box));
+  const online = others.filter((host) => host.status === "online");
+  const options = online
+    .map((host) => {
+      const label = hostLabel(host, hosts);
+      return isAgent(host)
+        ? `<option value="${esc(host.id)}" disabled>${esc(`${label} — ${t("mv.agentTarget")}`)}</option>`
+        : `<option value="${esc(host.id)}">${esc(label)}</option>`;
+    })
     .join("");
+  return {
+    options,
+    usable: online.some((host) => !isAgent(host)),
+    agentsOnly: others.length > 0 && others.every(isAgent),
+  };
 }
 
 /**
@@ -76,13 +95,13 @@ function hostOptions(box) {
  */
 export async function openMove(box) {
   await refreshHosts();
-  const options = hostOptions(box);
+  const { options, usable, agentsOnly } = moveTargets(box, hostsNow());
   const { root, close } = openDialog({
     title: t("mv.title"),
     description: t("mv.desc"),
     iconName: "move",
     wide: true,
-    body: options
+    body: usable
       ? `<p class="help">${esc(t("mv.help"))}</p>
         <div class="field"><label class="label" for="mvHost">${esc(t("mv.host"))}</label>
           <select class="select" id="mvHost">${options}</select></div>
@@ -93,12 +112,12 @@ export async function openMove(box) {
           </select></div>
         <div class="error-text" id="mvErr"></div>
         <div class="move-preview" id="mvPreview" hidden></div>`
-      : `<p class="help">${esc(t("mv.noHosts"))}</p>`,
+      : `<p class="help">${esc(t(agentsOnly ? "mv.agentsOnly" : "mv.noHosts"))}</p>`,
     footer: `<button class="btn" data-close>${esc(t("common.cancel"))}</button>
-      ${options ? `<button class="btn btn-primary" id="mvPreviewBtn">${esc(t("mv.preview"))}</button>` : ""}
+      ${usable ? `<button class="btn btn-primary" id="mvPreviewBtn">${esc(t("mv.preview"))}</button>` : ""}
       <button class="btn btn-danger" id="mvApply" hidden>${esc(t("mv.apply"))}</button>`,
   });
-  if (!options) return;
+  if (!usable) return;
 
   const ref = box.boxId ?? box.id;
   const send = (body) =>

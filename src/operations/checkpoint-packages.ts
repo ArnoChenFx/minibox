@@ -107,6 +107,10 @@ const checkpointImport = defineOperation({
   },
   hostFor: (ctx, input) => hostById(ctx, input.host ?? LOCAL_HOST_ID),
   beforeTask: async ({ host }) => {
+    // Restoring the package runs restic in a helper container, which an agent host cannot run. The refusal names the
+    // feature, as copy does, instead of failing the task later. It sits here, as `checkpoint.create`'s does, so that the
+    // OpenAPI document does not promise a 422 this operation never answers with.
+    refuseAgent(host, "checkpoints");
     await assertHostDiskRoom(host);
   },
   // Checkpoint records are shared by every host, so two imports of one checkpoint must not run on two hosts at once.

@@ -178,7 +178,7 @@ describe("a host's display name is unique", () => {
     }
   });
 
-  test("the local host keeps its name, and the first host added under a free name takes it", async () => {
+  test("a name that a host holds is refused to the next one, whatever its case, and the conflict names that host", async () => {
     const app = boot();
     await app.hostAdmin.add({ id: "edge", endpoint: "unix:///run/edge.sock", name: "Edge" });
     const again = await refusalOf(app.hostAdmin.add({ id: "edge2", endpoint: "unix:///run/edge2.sock", name: "edge" }));
@@ -248,6 +248,26 @@ describe("a pairing code carries a unique name", () => {
     const error = await refusalOf(pairWith(app, waiting.code));
     expect(error.key).toBe("host_exists");
   });
+
+  test("the name a code carried is free again once that code's host is added another way", async () => {
+    const app = boot();
+    await app.hostAdmin.createPairing({ id: "edge", name: "Waiting name" });
+    // While the code can still pair, it holds the name against everybody else.
+    expect((await refusalOf(app.hostAdmin.createPairing({ id: "other", name: "waiting name" }))).key).toBe(
+      "host_name_pending",
+    );
+    await app.hostAdmin.add({ id: "edge", endpoint: "unix:///run/edge.sock", name: "Edge" });
+    // The host exists under another name, so the code is dead and keeps nothing: the name can be taken, by a new code
+    // and by a host alike.
+    await app.hostAdmin.createPairing({ id: "other", name: "waiting name" });
+    await app.hostAdmin.add({ id: "third", endpoint: "unix:///run/third.sock", name: "Third" });
+    const taken = await refusalOf(
+      app.hostAdmin.add({ id: "fourth", endpoint: "unix:///run/fourth.sock", name: "Waiting Name" }),
+    );
+    // The new code for `other` holds it now, which is the rule working as it should.
+    expect(taken.key).toBe("host_name_pending");
+    expect(taken.params).toEqual({ name: "Waiting Name", host: "other" });
+  });
 });
 
 describe("a hosts file that already holds duplicate names still loads", () => {
@@ -269,8 +289,20 @@ describe("a hosts file that already holds duplicate names still loads", () => {
       ["lab", "Lab"],
       ["edge", "Lab"],
     ]);
-    // Every listing names the host by its id beside its name, so two hosts of one name never look identical.
-    expect(new Set(listed.map((host) => host.id)).size).toBe(listed.length);
+  });
+
+  test("names that differ only by case, or by the space around them in the file, count as one name, as they do when a host is added", () => {
+    const dir = tempDir();
+    const created = "2026-10-22T00:00:00.000Z";
+    const hosts: StoredHost[] = [
+      { id: "lab", name: "Lab", endpoint: "unix:///run/lab.sock", hostKeyFingerprint: null, createdAt: created },
+      { id: "edge", name: " lab ", endpoint: "unix:///run/edge.sock", hostKeyFingerprint: null, createdAt: created },
+    ];
+    writeFileSync(hostsPath(dir), `${JSON.stringify({ version: 1, hosts }, null, 2)}\n`);
+    const app = boot(dir);
+    expect(labelOf(app.hosts.get("lab").host)).toBe("Lab · lab");
+    // The registered name has lost the space around it, and still compares equal to the other's.
+    expect(labelOf(app.hosts.get("edge").host)).toBe("lab · edge");
   });
 
   test("a message about one of them quotes its name with its id, and a unique name alone", async () => {
@@ -285,9 +317,11 @@ describe("a hosts file that already holds duplicate names still loads", () => {
     expect(labelOf(app.hosts.get("lab").host)).toBe("Lab · lab");
     expect(labelOf(app.hosts.get("edge").host)).toBe("Lab · edge");
     expect(labelOf(app.hosts.get().host)).toBe("Local");
-    // Once one of the pair is gone, the other's name is unique again and is quoted alone.
+    // Once one of the pair is gone, the other's name is unique again and is quoted alone, and so is the one that went.
+    const edge = app.hosts.get("edge").host;
     await app.hostAdmin.remove("edge");
     expect(labelOf(app.hosts.get("lab").host)).toBe("Lab");
+    expect(labelOf(edge)).toBe("Lab");
   });
 
   test("a host added later under a name the file already repeats is still refused", async () => {

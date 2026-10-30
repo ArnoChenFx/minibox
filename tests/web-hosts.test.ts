@@ -62,6 +62,9 @@ describe("a host's label in the console", () => {
     ];
     expect(hostLabel(hosts[1], hosts)).toBe("Lab");
     expect(hostLabel(hosts[0], hosts)).toBe("Local");
+    // A host the list does not name yet has no label, rather than failing the page that asks.
+    expect(hostLabel(undefined, hosts)).toBe("");
+    expect(hostLabel(undefined, [{ id: "a", name: "" }])).toBe("");
   });
 
   test("two hosts of one name are told apart by their ids, so a screen never draws them identically", () => {

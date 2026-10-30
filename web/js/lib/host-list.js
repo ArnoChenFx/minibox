@@ -29,9 +29,10 @@ const foldName = (name) => String(name).normalize("NFC").trim().toLowerCase();
  * as the server compares it when a host is added.
  */
 export function hostLabel(host, hosts) {
-  const name = host?.name ?? host?.id ?? "";
+  if (!host) return "";
+  const name = host.name ?? host.id ?? "";
   const folded = foldName(name);
-  const shared = hosts.some((other) => other.id !== host?.id && foldName(other.name ?? "") === folded);
+  const shared = hosts.some((other) => other.id !== host.id && foldName(other.name ?? "") === folded);
   return shared ? `${name} · ${host.id}` : name;
 }
 

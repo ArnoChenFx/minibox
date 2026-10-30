@@ -19,7 +19,7 @@ import { StartupLaunches } from "../services/startup";
 import { SpecStore } from "../specs/store";
 import { SelfTokenStore } from "../tokens/self-store";
 import { VolumeStore } from "../volumes/store";
-import { relabel } from "./label";
+import { relabel, unlabel } from "./label";
 import { type LiveSink, NO_LIVE } from "./live";
 import { HostMonitor } from "./metrics";
 import { HostSampler } from "./sampler";
@@ -347,6 +347,7 @@ export class HostRegistry {
     if (hostId === LOCAL_HOST_ID) throw new Error("the local host cannot be removed");
     const ctx = this.hosts.get(hostId);
     this.hosts.delete(hostId);
+    if (ctx) unlabel(ctx.host);
     relabel(this.list().map((item) => item.host));
     return ctx;
   }

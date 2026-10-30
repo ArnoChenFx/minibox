@@ -186,8 +186,8 @@ export class AgentHub implements AgentLink {
   }
 
   /** The waiting pairing code, for a host other than `forHost`, that holds `name`, or null when none does. */
-  waitingName(name: string, forHost: string): WaitingName | null {
-    return this.options.pairing.waitingName(name, forHost);
+  waitingName(name: string, forHost: string, exists?: (hostId: string) => boolean): WaitingName | null {
+    return this.options.pairing.waitingName(name, forHost, exists);
   }
 
   /** Records a paired agent. The id is generated here, so no caller picks one. */
@@ -254,12 +254,26 @@ export class AgentHub implements AgentLink {
     }
     const session: Session = { socket, address, nonce: newId(), agentId: null, done: false, timer: undefined };
     this.all.add(session);
-    this.send(session, {
-      type: "challenge",
-      nonce: session.nonce,
-      protocol: AGENT_PROTOCOL,
-      serverVersion: this.options.serverVersion,
-    });
+    try {
+      this.send(session, {
+        type: "challenge",
+        nonce: session.nonce,
+        protocol: AGENT_PROTOCOL,
+        serverVersion: this.options.serverVersion,
+      });
+    } catch (e) {
+      // A socket that cannot be written to is not waiting for a hello, so it holds no place. Nothing else would ever
+      // give it back: the caller never gets a session to detach, and no timer has been set. Nothing would close it
+      // either, so that is done here, as far as it can still be.
+      session.done = true;
+      this.all.delete(session);
+      try {
+        socket.close(1011, "the challenge could not be sent");
+      } catch {
+        // It is gone already, which is likely why the send failed. The failure to report is the send's.
+      }
+      throw e;
+    }
     session.timer = setTimeout(() => this.end(session, AGENT_CLOSE.helloTimeout, "no hello"), AGENT_HELLO_TIMEOUT_MS);
     return {
       receive: (text) => this.receive(session, text),
