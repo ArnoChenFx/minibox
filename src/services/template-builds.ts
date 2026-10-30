@@ -112,17 +112,30 @@ function shippedDockerfile(host: HostCtx, name: OfficialName): string | null {
 }
 
 /**
+ * How a recipe's source is read: the source a caller may rebuild from, and, for an official source under another name
+ * whose Dockerfile could not become a fork's own copy, why it kept its official kind.
+ */
+interface ReadSource {
+  source: TemplateSource;
+  /** Why the fork kept the official source, which `forkRecipe` logs; `readRecipe` ignores it. */
+  kept?: string;
+}
+
+/**
  * The source a recipe is read as. An official template's recipe names the template itself, so an official source under
  * another name is a fork that was written before a fork kept its own copy of the Dockerfile: it reads as the copy a fork
  * writes now, taken from the Dockerfile this MiniBox ships, so the fork can be edited and rebuilt from it without being
  * forked again. A template whose name is the official one stays official, and so does a fork whose Dockerfile this
- * MiniBox does not ship: the source it has is better than none.
+ * MiniBox cannot read or does not accept as a Dockerfile: the source it has is better than none, and `forkRecipe` logs
+ * that case so a fork written now is not silently left official.
  */
-function sourceAsRead(host: HostCtx, name: string, source: TemplateSource): TemplateSource {
-  if (source.kind !== "official" || source.name === name) return source;
+function sourceAsRead(host: HostCtx, name: string, source: TemplateSource): ReadSource {
+  if (source.kind !== "official" || source.name === name) return { source };
   const text = shippedDockerfile(host, source.name);
-  if (text === null || dockerfileProblem(text) !== null) return source;
-  return { kind: "dockerfile", text };
+  if (text === null) return { source, kept: "the shipped Dockerfile is not readable" };
+  const problem = dockerfileProblem(text);
+  if (problem !== null) return { source, kept: `the shipped Dockerfile is ${problem}` };
+  return { source: { kind: "dockerfile", text } };
 }
 
 /**
@@ -150,7 +163,7 @@ function readStoredRecipe(host: HostCtx, name: string): TemplateRecipe | null {
 export function readRecipe(host: HostCtx, name: string): TemplateRecipe | null {
   const recipe = readStoredRecipe(host, name);
   if (recipe === null) return null;
-  return { ...recipe, source: sourceAsRead(host, name, recipe.source) };
+  return { ...recipe, source: sourceAsRead(host, name, recipe.source).source };
 }
 
 function writeRecipe(host: HostCtx, name: string, recipe: TemplateRecipe): void {
@@ -234,7 +247,9 @@ export function copyRecipe(from: HostCtx, to: HostCtx, ref: string, imageId: str
  * Gives `to` the recipe captured with the source image, pointed at the fork's image. A source rebuilt while the fork
  * runs cannot replace this recipe. The fork's description and creator belong to the fork and survive its rebuilds. A fork
  * of an official template writes the copy of the Dockerfile it kept, as a recipe read from disk reads it, so the fork is
- * a custom template from the moment it exists.
+ * a custom template from the moment it exists. When that Dockerfile cannot be read or is not a Dockerfile, the fork keeps
+ * the official source instead, and a warning names the template and why: the image is already committed by then, so the
+ * fork is kept rather than thrown away.
  */
 export function forkRecipe(
   host: HostCtx,
@@ -244,13 +259,17 @@ export function forkRecipe(
   description: string,
   createdBy: string,
 ): void {
+  const read = sourceAsRead(host, to, recipe.source);
+  if (read.kept !== undefined && recipe.source.kind === "official") {
+    log.warn("template.fork_source_kept", { name: to, source: recipe.source.name, reason: read.kept });
+  }
   writeRecipe(host, to, {
     ...recipe,
     imageId,
     description,
     createdBy,
     created: new Date().toISOString(),
-    source: sourceAsRead(host, to, recipe.source),
+    source: read.source,
   });
 }
 

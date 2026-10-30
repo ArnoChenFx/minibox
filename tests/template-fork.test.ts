@@ -1,10 +1,12 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { readFileSync, writeFileSync } from "node:fs";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
 import type { App } from "../src/app";
 import type { HostCtx } from "../src/host/registry";
 import type { LabelKeys } from "../src/labels";
+import { log } from "../src/lib/logger";
 import { RuntimeError } from "../src/runtime";
 import * as boxes from "../src/services/boxes";
 import {
@@ -358,6 +360,35 @@ describe("forking an official template", () => {
 
     expect(recipeOnDisk(l, "node-copy").source).toEqual({ kind: "dockerfile", text: SHIPPED_NODE });
     expect(readRecipe(l.host, "node-copy")?.imageId).toBe(imageId);
+  });
+
+  test("a Dockerfile that cannot become the copy keeps the official source, warns, and keeps the fork", async () => {
+    // A MiniBox whose shipped Dockerfile is not a Dockerfile: the copy cannot be made from it.
+    const dir = mkdtempSync(join(tmpdir(), "minibox-templates-"));
+    mkdirSync(join(dir, "official", "node"), { recursive: true });
+    writeFileSync(join(dir, "official", "node", "Dockerfile"), "RUN true\n");
+    const { app, runtime } = createTestApp({ templatesDir: dir });
+    const host = app.hosts.get();
+    const l: Lab = { app, runtime, host, keys: host.keys, progress: [] };
+    const warnings = spyOn(log, "warn").mockImplementation(() => {});
+    try {
+      await officialNode(l);
+      await forkNode(l);
+
+      expect(readRecipe(l.host, "node-copy")?.source).toEqual({ kind: "official", name: "node" });
+      const kept = warnings.mock.calls.filter(([event]) => event === "template.fork_source_kept");
+      expect(kept).toHaveLength(1);
+      expect(kept[0]?.[1]).toMatchObject({
+        name: "node-copy",
+        source: "node",
+        reason: "the shipped Dockerfile is not a Dockerfile",
+      });
+      // The image was committed before the recipe was written, so the fork is kept rather than thrown away.
+      expect((await l.runtime.inspectImage("mbtest-template:node-copy")).labels[l.keys.templateName]).toBe("node-copy");
+    } finally {
+      warnings.mockRestore();
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 
