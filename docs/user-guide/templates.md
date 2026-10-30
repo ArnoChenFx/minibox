@@ -136,7 +136,7 @@ You can also click **Create from this** on a template's card in the **Templates*
 Forking copies a template into a new one that you can change on its own. The template you fork from stays as it is: it keeps its image, its name, its description and the boxes already created from it.
 
 1. Click **Library** in the sidebar, then **Templates**.
-2. On the card of the template, click **Fork**. A template no host holds yet has no fork button: build it first.
+2. On the card of the template, click **Fork**. The button is off on a template no host holds yet, with the reason in its tooltip: build it first, because a fork copies the built image.
 3. The dialog fills in a name, `<name>-copy`, or `<name>-copy-2` when that one is taken, and the description of the template you are copying. Change either one.
 4. Click **Fork template**.
 
@@ -145,6 +145,7 @@ A fork is a quick image commit, not a build, so it finishes at once and does not
 A fork copies the template's build recipe too, so it behaves like the template it came from:
 
 - **Built from a Dockerfile, a repository, a build context or a `devcontainer.json`.** The fork keeps the same source, and `postCreateCommand` and `forwardPorts` come along, so a box created from the fork runs the same setup. **Rebuild** builds the fork from that same source, into the fork's own image, so a newer commit of a branch reaches the fork and leaves the original alone.
+- **Official.** A fork of an official template is a custom template whose source is a copy of the official Dockerfile as it is at that moment. You can edit that Dockerfile and rebuild the fork from it; later MiniBox releases do not change the copy, and rebuilding the fork leaves the official template as it is.
 - **Saved from a box.** A saved template has no source to build from, so its fork has none either: the fork works and its boxes start from it, but it has no **Rebuild** button. Build a template from a source instead when you want one you can rebuild.
 
 Deleting the template you forked from does not affect the fork. Each copy keeps its own recipe on the host, so a rebuild reads the fork's, not the original's.
@@ -166,7 +167,7 @@ Saving changes the recipe only. The template keeps the image it has, so boxes cr
 - **The setup.** **Setup command** runs once in each box created from the template, as `/bin/sh -c`, and **Forwarded ports** are the TCP ports such a box opens. Leave both empty to remove the setup. They are not part of the image, so changing them takes effect for the next box created, with no rebuild.
 - **The description.** A new description is written onto the template's image, so its card shows it at once. MiniBox commits the same image under the same tag with the new label; the system layer is unchanged.
 
-A template write needs the `tool:install` scope, and an edit belongs to whoever the template belongs to: the owner can edit any template, and a token only the templates it created, the same ones it can delete. A sandboxed agent token, which has no `tool:install`, cannot edit at all. A template saved from a box has no source to edit; the base template is rebuilt from `templates/base`, and an official template from the Dockerfile that ships with MiniBox, so an official template's dialog shows its setup and description only and answers `template_source_builtin` if a client sends a source.
+A template write needs the `tool:install` scope, and an edit belongs to whoever the template belongs to: the owner can edit any template, and a token only the templates it created, the same ones it can delete. A sandboxed agent token, which has no `tool:install`, cannot edit at all. A template saved from a box has no source to edit; the base template is rebuilt from `templates/base`, and an official template from the Dockerfile that ships with MiniBox, so an official template's dialog shows its setup and description only and answers `template_source_builtin` if a client sends a source. A fork of an official template is not official: its source is its own copy of that Dockerfile, so its dialog shows the Dockerfile and its source can be replaced like any other custom template's.
 
 On the command line, the same change is:
 
@@ -197,7 +198,7 @@ The **Templates** tab shows these labels:
 - **Custom** templates are the ones that you saved from a box.
 - **Built from** names the source of a template that you built from a Dockerfile, a repository, a build context or a `devcontainer.json`.
 
-A fork shows the label of the template it came from: a fork of a built template is **Built from** its source, and a fork of a saved template is **Custom**.
+A fork shows the label of the template it came from: a fork of a built template is **Built from** its source, a fork of an official template is **Custom** with the Dockerfile copy as its source, and a fork of a saved template is **Custom**.
 
 Deleting a template does not affect the boxes that you created from it. A template that you built in the console can be built again on the same tab.
 
@@ -206,7 +207,7 @@ Deleting a template does not affect the boxes that you created from it. A templa
 Building a template, forking one, rebuilding one and pulling an image are for the owner only. No token can do them, even a token with every scope.
 
 - **Secrets.** A private repository's token or deploy key is used only for its clone. MiniBox removes its value from the clone output before the task log shows it. The value is never written into the image, and the recipe keeps only the secret's name. Do not paste a secret into a Dockerfile, `containerEnv`, `remoteEnv` or `build.args`: those values go into the image or the build log.
-- **Recipes.** The pasted Dockerfile and the source fields are kept on each host that holds the template, in `DATA_DIR/template-recipes/`, so that a rebuild can run them again. A copy to another host carries them too, and a fork writes its own copy under the new name.
+- **Recipes.** The pasted Dockerfile and the source fields are kept on each host that holds the template, in `DATA_DIR/template-recipes/`, so that a rebuild can run them again. A copy to another host carries them too, and a fork writes its own copy under the new name. A fork of an official template keeps the text of the Dockerfile that shipped when it was forked, and a fork written by an earlier version reads as the text of the Dockerfile of the running version, so it no longer follows MiniBox upgrades, while the official template itself still rebuilds from that Dockerfile.
 - **Build contexts.** MiniBox refuses an archive entry or repository file whose path leaves the build context, is absolute, or is a hard link, a device or another special file. It also refuses a symbolic link that points outside the context, or a write that would pass through one.
 - **URLs come from the server.** MiniBox downloads a build context URL itself, and clones a repository from a helper container on the Docker network. Both follow redirects to any address. MiniBox does not block private or loopback addresses, or cloud metadata addresses, so a build can reach any service that the host can reach. Give owner access only to people who should have that reach.
 - **SSH host keys.** An SSH clone accepts the server's host key the first time it connects, because each clone starts with an empty known-hosts file. An attacker on the network could answer that first connection. HTTPS with a token checks the server's certificate instead.
