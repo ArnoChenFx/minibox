@@ -15,7 +15,10 @@ import {
   buildKindOf,
   type DeclaredTemplate,
   editRecipe,
+  forkBaseRecipe,
   forkRecipe,
+  isDraftRecipe,
+  listDraftRecipes,
   readRecipe,
   type RecipeEdit,
   removeRecipe,
@@ -53,7 +56,9 @@ export async function listTemplates(host: HostCtx): Promise<TemplateItem[]> {
 
 /**
  * Refuses a template name that is already taken. A commit to a tag that exists moves the tag without a word, so the
- * name is checked before the task starts, and again under the name hold just before the commit.
+ * name is checked before the task starts, and again under the name hold just before the commit. A saved draft holds its
+ * name too: building it is what turns the draft into the template, so a save, a build or a fork under that name would
+ * overwrite the saved source.
  */
 export async function assertTemplateNameAvailable(host: HostCtx, name: string): Promise<void> {
   const taken = await host.runtime.inspectImage(`${host.prefix}-template:${name}`).then(
@@ -63,7 +68,25 @@ export async function assertTemplateNameAvailable(host: HostCtx, name: string): 
       throw e;
     },
   );
-  if (taken) throw conflict(msg("template_name_taken", { name }));
+  if (taken || isDraftRecipe(host, name)) throw conflict(msg("template_name_taken", { name }));
+}
+
+/** A template saved as a draft, as the draft list shows it: its source kind and description, and no image yet. */
+export interface TemplateDraftItem {
+  name: string;
+  ref: string;
+  description: string | null;
+  buildKind: BuildKind;
+}
+
+/** The templates saved on this host that are not built yet. They are listed apart from `listTemplates`, which lists images. */
+export function listTemplateDrafts(host: HostCtx): TemplateDraftItem[] {
+  return listDraftRecipes(host).map((draft) => ({
+    name: draft.name,
+    ref: `${host.prefix}-template:${draft.name}`,
+    description: draft.recipe.description,
+    buildKind: draft.recipe.source.kind,
+  }));
 }
 
 /** Template names a save, a promotion, a declared build or an edit is writing right now, as `<host id>:<name>`. */
@@ -244,6 +267,11 @@ export async function templateSourceImage(host: HostCtx, ref: string): Promise<T
   };
 }
 
+/** Whether `source` is the bundled base template, which MiniBox builds itself and keeps no recipe for. */
+function isBaseTemplate(host: HostCtx, source: TemplateSourceImage): boolean {
+  return source.ref === host.baseTemplateTag || source.image.tags.includes(host.baseTemplateTag);
+}
+
 /**
  * Forks a template: a new template image under `name` that holds the same system layer, so its description and its
  * recipe can change without touching the template it came from. The image is a fresh commit of a throwaway container of
@@ -252,8 +280,10 @@ export async function templateSourceImage(host: HostCtx, ref: string): Promise<T
  * fork is its own template, not a save of a box. The caller holds the new name through `holdingTemplateName`.
  *
  * A template built from a declared source brings its recipe along, pointed at the new image, so `template.rebuild`
- * rebuilds the fork from the source of the template it came from. A template with no recipe, such as one saved from a
- * box, forks too, and its fork has no recipe, so it cannot be rebuilt, exactly as the template it came from.
+ * rebuilds the fork from the source of the template it came from. The bundled base template has no recipe, and its fork
+ * gets one that holds the Dockerfile MiniBox ships for it, so the fork can be edited and rebuilt. A template with no
+ * recipe otherwise, such as one saved from a box, forks too, and its fork has no recipe, so it cannot be rebuilt, exactly
+ * as the template it came from.
  */
 export async function forkTemplate(
   host: HostCtx,
@@ -288,6 +318,7 @@ export async function forkTemplate(
   const forked = await runtime.inspectImage(`${repo}:${input.name}`);
   try {
     if (source.recipe) forkRecipe(host, input.name, source.recipe, forked.id, description, input.createdBy);
+    else if (isBaseTemplate(host, source)) forkBaseRecipe(host, input.name, forked.id, description, input.createdBy);
   } catch (e) {
     await runtime.removeImage(forked.id, { force: true }).catch(() => {});
     throw e;
@@ -366,8 +397,17 @@ export async function deleteTemplate(host: HostCtx, ref: string): Promise<void> 
     // Allowed, but it can be rebuilt from templates/base.
     log.warn("template.base_deleted", { ref });
   }
-  await removeLabeledImage(host, ref, host.keys.template, "template_not_found");
   const prefix = `${host.prefix}-template:`;
-  const name = ref.startsWith(prefix) ? ref.slice(prefix.length) : "";
-  if (NAME_RE.test(name)) removeRecipe(host, name);
+  const tagged = ref.startsWith(prefix);
+  const name = tagged ? ref.slice(prefix.length) : NAME_RE.test(ref) ? ref : "";
+  // A draft has no image: its recipe is the whole template, so that is what a delete removes. A built template keeps the
+  // path it always had, and only its template reference removes the recipe beside the image. The name is held for the
+  // removal, so a build that is already running makes the delete answer `409 template_busy` instead of letting the build
+  // put the template back after the delete has said it succeeded.
+  if (NAME_RE.test(name) && isDraftRecipe(host, name)) {
+    await holdingTemplate(host, name, async () => removeRecipe(host, name));
+    return;
+  }
+  await removeLabeledImage(host, ref, host.keys.template, "template_not_found");
+  if (tagged && NAME_RE.test(name)) removeRecipe(host, name);
 }

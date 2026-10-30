@@ -113,6 +113,7 @@ export default {
   "err.snapshot_not_found": "找不到该快照。",
   "err.template_not_found": "找不到该模板。",
   "err.template_name_taken": "名为「{name}」的模板已存在。",
+  "err.template_name_reserved": "「{name}」是 MiniBox 为自己构建的模板保留的名称，请换一个名字。",
   "err.template_edit_empty":
     "没有要改的内容：请给出构建来源（source）、设置（init）或描述（description）。从 Box 保存的模板没有可改的构建来源。",
   "err.template_source_builtin":
@@ -122,6 +123,8 @@ export default {
   "err.template_source_required": "请选择模板的来源：Dockerfile、Git 代码仓库、构建上下文 URL 或 devcontainer.json。",
   "err.template_not_declared":
     "模板 {name} 不是由声明的来源构建的，因此无法重建。请改用 Dockerfile、代码仓库、构建上下文或 devcontainer.json 构建模板。",
+  "err.template_not_built":
+    "模板「{name}」只保存了配置，还没有构建。请先在「模板」页构建，或运行 template rebuild，再用它创建 Box。",
   "err.dockerfile_invalid": "Dockerfile 不能超过 64 KB，不能包含 NUL 字节，且必须包含 FROM 指令。",
   "err.dockerfile_not_found": "构建上下文中没有位于 {path} 的 Dockerfile。",
   "err.context_url_invalid": "构建上下文 URL 必须以 http:// 或 https:// 开头，不能包含空格，也不能包含用户名或密码。",

@@ -189,6 +189,7 @@ export const MESSAGES = {
   snapshot_not_found: "Snapshot not found.",
   template_not_found: "Template not found.",
   template_name_taken: "A template named “{name}” already exists.",
+  template_name_reserved: "{name} is a name MiniBox keeps for a template it builds itself. Choose another name.",
   template_busy: "Another change to the template “{name}” is still running. Try again when it ends.",
   template_image_missing:
     "Template image {image} does not exist. Build it on the Templates page or choose another template.",
@@ -196,6 +197,8 @@ export const MESSAGES = {
     "Choose where the template comes from: a Dockerfile, a Git repository, a build context URL or a devcontainer.json.",
   template_not_declared:
     "Template {name} was not built from a declared source, so it cannot be rebuilt. Build a template from a Dockerfile, a repository, a build context or a devcontainer.json instead.",
+  template_not_built:
+    "Template {name} is saved but not built yet. Build it on the Templates page, or with template rebuild, before creating a box from it.",
   template_edit_empty:
     "Nothing to change: send a source, a setup (init) or a description. A template that was not built from a declared source has no source to edit.",
   template_source_builtin:

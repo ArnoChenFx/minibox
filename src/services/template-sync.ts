@@ -45,6 +45,10 @@ export async function findTemplateSource(hosts: readonly HostCtx[], ref: string)
  * recipe that built it, so a declared template keeps its setup there. The move that carries a box uses the same transfer,
  * so a template copy and a box move agree on what a host may hold. Returns whether an image was sent. `progress` carries
  * the stop signal and the task log that the transfer writes its bytes to.
+ *
+ * A target that holds a draft of the same name is refused before any image is sent (`needsImage` asks): the draft holds
+ * that name, and a copy would leave both an image and a draft there, or overwrite the saved source with the source's built
+ * recipe.
  */
 export async function copyTemplate(
   source: TemplateSource,

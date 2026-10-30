@@ -49,8 +49,11 @@ export interface TemplateInit {
 
 export interface TemplateRecipe {
   version: 1;
-  /** The image the recipe last built. A rebuild refuses an image that the recipe did not build, such as a saved one. */
-  imageId: string;
+  /**
+   * The image the recipe last built. A rebuild refuses an image that the recipe did not build, such as a saved one. A
+   * draft has none, so it is null and no image ever matches it.
+   */
+  imageId: string | null;
   /** The description the caller gave, or null for the default. */
   description: string | null;
   createdBy: string;
@@ -59,6 +62,8 @@ export interface TemplateRecipe {
   source: TemplateSource;
   /** Set when the devcontainer.json the template was built from asks for a postCreateCommand or forwarded ports. */
   init?: TemplateInit;
+  /** True for a draft: the source is saved, but no image was built from it yet. */
+  draft?: true;
 }
 
 export interface DeclaredTemplate {
@@ -112,6 +117,18 @@ function shippedDockerfile(host: HostCtx, name: OfficialName): string | null {
 }
 
 /**
+ * The Dockerfile the bundled base template builds from, as text, or null when this MiniBox has none. Like an official
+ * template's, the directory holds that one file and no `COPY`, so the Dockerfile is the whole build context a copy needs.
+ */
+function shippedBaseDockerfile(host: HostCtx): string | null {
+  try {
+    return readFileSync(join(host.templatesDir, "base", "Dockerfile"), "utf8");
+  } catch {
+    return null;
+  }
+}
+
+/**
  * How a recipe's source is read: the source a caller may rebuild from, and, for an official source under another name
  * whose Dockerfile could not become a fork's own copy, why it kept its official kind.
  */
@@ -151,9 +168,58 @@ function readStoredRecipe(host: HostCtx, name: string): TemplateRecipe | null {
   }
   if (typeof parsed !== "object" || parsed === null) return null;
   const recipe = parsed as Partial<TemplateRecipe>;
-  if (recipe.version !== 1 || typeof recipe.imageId !== "string" || !isSource(recipe.source)) return null;
+  if (recipe.version !== 1 || !isSource(recipe.source)) return null;
+  if (recipe.draft === true) {
+    // A draft is a saved source with no image. It reads with a null image id, so no image id ever matches it, and a
+    // recipe that names an image beside the draft flag is contradictory and is not read at all.
+    if (recipe.imageId !== undefined && recipe.imageId !== null) return null;
+    recipe.imageId = null;
+  } else {
+    // A recipe written before drafts existed has no draft field, and reads exactly as it always did.
+    if (recipe.draft !== undefined || typeof recipe.imageId !== "string" || recipe.imageId === "") return null;
+  }
   if (recipe.init !== undefined && !isInit(recipe.init)) return null;
   return recipe as TemplateRecipe;
+}
+
+/** Whether `name` holds a saved draft: a recipe with no image built from it. */
+export function isDraftRecipe(host: HostCtx, name: string): boolean {
+  if (!NAME_RE.test(name)) return false;
+  return readStoredRecipe(host, name)?.draft === true;
+}
+
+/** A template saved as a draft: its recipe, and the name it is built under once it is built. It has no image yet. */
+export interface DraftTemplate {
+  readonly name: string;
+  readonly recipe: TemplateRecipe;
+  readonly draft: true;
+}
+
+/**
+ * The draft `ref` names, as its bare name or its template reference, or null when no draft is saved there. A built
+ * template's recipe is not a draft, so a ref that names one answers null and the caller reads the image instead.
+ */
+export function draftTemplate(host: HostCtx, ref: string): DraftTemplate | null {
+  const prefix = `${host.prefix}-template:`;
+  const name = ref.startsWith(prefix) ? ref.slice(prefix.length) : ref;
+  if (!NAME_RE.test(name)) return null;
+  const recipe = readStoredRecipe(host, name);
+  return recipe?.draft === true ? { name, recipe, draft: true } : null;
+}
+
+/** Every draft this host holds, oldest name first, for the template list that shows what is saved but not built. */
+export function listDraftRecipes(host: HostCtx): DraftTemplate[] {
+  let files: string[];
+  try {
+    files = readdirSync(recipesDir(host));
+  } catch {
+    return [];
+  }
+  return files
+    .filter((file) => file.endsWith(".json"))
+    .map((file) => draftTemplate(host, file.slice(0, -".json".length)))
+    .filter((draft): draft is DraftTemplate => draft !== null)
+    .toSorted((a, b) => a.name.localeCompare(b.name));
 }
 
 /**
@@ -184,6 +250,32 @@ export interface RecipeEdit {
   description?: string | null;
 }
 
+/** The parts of `recipe` that `edit` names, replaced. The image id and the draft flag are the caller's to set. */
+function withRecipeEdit(recipe: TemplateRecipe, edit: RecipeEdit): TemplateRecipe {
+  const init =
+    edit.init === null || (edit.init !== undefined && Object.keys(edit.init).length === 0) ? null : edit.init;
+  const next: TemplateRecipe = { ...recipe };
+  // A field the caller left out keeps the value the recipe has, so only the ones it named are written.
+  if (edit.source !== undefined) next.source = edit.source;
+  if (edit.description !== undefined) next.description = edit.description;
+  // An empty setup asks for nothing, which is the same as dropping it. A setup that names one field keeps the other, so
+  // `--forward-port 8080` alone does not throw away the command the template runs.
+  if (init === null) delete next.init;
+  else if (init !== undefined) {
+    const merged = {
+      ...(recipe.init?.postCreate === undefined ? {} : { postCreate: recipe.init.postCreate }),
+      ...(init.postCreate === undefined ? {} : { postCreate: init.postCreate }),
+      ...(recipe.init?.forwardPorts === undefined ? {} : { forwardPorts: recipe.init.forwardPorts }),
+      ...(init.forwardPorts === undefined ? {} : { forwardPorts: init.forwardPorts }),
+    };
+    if (merged.postCreate?.length === 0) delete merged.postCreate;
+    if (merged.forwardPorts?.length === 0) delete merged.forwardPorts;
+    if (Object.keys(merged).length === 0) delete next.init;
+    else next.init = merged;
+  }
+  return next;
+}
+
 /**
  * Replaces the parts of a declared template's recipe that `edit` names, so the next rebuild builds the edited source. The
  * creator and the rest of the recipe stay as they are: an edit changes what a rebuild would produce, not the image a box
@@ -196,29 +288,51 @@ export function editRecipe(
   edit: RecipeEdit,
   imageId = declared.imageId,
 ): TemplateRecipe {
-  const init =
-    edit.init === null || (edit.init !== undefined && Object.keys(edit.init).length === 0) ? null : edit.init;
-  const next: TemplateRecipe = { ...declared.recipe, imageId };
-  // A field the caller left out keeps the value the recipe has, so only the ones it named are written.
-  if (edit.source !== undefined) next.source = edit.source;
-  if (edit.description !== undefined) next.description = edit.description;
-  // An empty setup asks for nothing, which is the same as dropping it. A setup that names one field keeps the other, so
-  // `--forward-port 8080` alone does not throw away the command the template runs.
-  if (init === null) delete next.init;
-  else if (init !== undefined) {
-    const merged = {
-      ...(declared.recipe.init?.postCreate === undefined ? {} : { postCreate: declared.recipe.init.postCreate }),
-      ...(init.postCreate === undefined ? {} : { postCreate: init.postCreate }),
-      ...(declared.recipe.init?.forwardPorts === undefined ? {} : { forwardPorts: declared.recipe.init.forwardPorts }),
-      ...(init.forwardPorts === undefined ? {} : { forwardPorts: init.forwardPorts }),
-    };
-    if (merged.postCreate?.length === 0) delete merged.postCreate;
-    if (merged.forwardPorts?.length === 0) delete merged.forwardPorts;
-    if (Object.keys(merged).length === 0) delete next.init;
-    else next.init = merged;
-  }
+  const next: TemplateRecipe = { ...withRecipeEdit(declared.recipe, edit), imageId };
   writeRecipe(host, declared.name, next);
   return next;
+}
+
+/**
+ * Changes what a draft would build next. There is no image to re-commit, so only the recipe file changes: the draft
+ * stays a draft until `buildTemplateDraft` builds it. The caller holds the name through `holdingTemplate`.
+ */
+export function editDraftRecipe(host: HostCtx, draft: DraftTemplate, edit: RecipeEdit): TemplateRecipe {
+  // A draft can only be saved from a source `templateSource()` accepts, which never names an official template, so there
+  // is no built-in source to protect here as there is in `editTemplate`.
+  const next: TemplateRecipe = { ...withRecipeEdit(draft.recipe, edit), imageId: null, draft: true };
+  writeRecipe(host, draft.name, next);
+  return next;
+}
+
+/**
+ * Writes the recipe of a fork of the bundled base template. MiniBox builds the base template itself and keeps no recipe
+ * for it, so there is none to copy; the fork gets one whose source is the base Dockerfile this MiniBox ships, as a fork of
+ * an official template gets its own copy of the official Dockerfile. It is the Dockerfile as it is when the fork is made,
+ * so later MiniBox releases do not change it, and the fork can be edited and rebuilt from it. A Dockerfile this MiniBox
+ * cannot read, or does not accept as one, leaves the fork without a recipe, which is logged: the fork still works.
+ */
+export function forkBaseRecipe(
+  host: HostCtx,
+  to: string,
+  imageId: string,
+  description: string,
+  createdBy: string,
+): void {
+  const text = shippedBaseDockerfile(host);
+  const problem = text === null ? "the shipped Dockerfile is not readable" : dockerfileProblem(text);
+  if (text === null || problem !== null) {
+    log.warn("template.fork_source_missing", { name: to, source: "base", reason: problem });
+    return;
+  }
+  writeRecipe(host, to, {
+    version: 1,
+    imageId,
+    description,
+    createdBy,
+    created: new Date().toISOString(),
+    source: { kind: "dockerfile", text },
+  });
 }
 
 /** Forgets the recipe of a template name. A recipe whose image was removed by another tool is harmless and is replaced. */
@@ -240,6 +354,9 @@ export function copyRecipe(from: HostCtx, to: HostCtx, ref: string, imageId: str
   if (!NAME_RE.test(name)) return;
   const recipe = readStoredRecipe(from, name);
   if (!recipe || recipe.imageId !== imageId || readStoredRecipe(to, name)?.imageId === imageId) return;
+  // A draft on the target holds the name, so a copy never replaces the source it saved. `needsImage` refuses the copy and
+  // the moves before the image is sent; this is the narrow guard for any other caller of a recipe copy.
+  if (isDraftRecipe(to, name)) return;
   writeRecipe(to, name, recipe);
 }
 
@@ -314,7 +431,7 @@ export async function templateAndRecipe(host: HostCtx, ref: string): Promise<[De
   if (!recipe || recipe.imageId !== image.id) throw badRequest(msg("template_not_declared", { name }));
   // Older forks copied the source's creator into the recipe. The image's label is the ownership authority.
   const createdBy = image.labels[host.keys.createdBy] || recipe.createdBy;
-  return [{ name, imageId: image.id, recipe: { ...recipe, createdBy } }, image];
+  return [{ name, imageId: image.id, recipe: { ...recipe, imageId: image.id, createdBy } }, image];
 }
 
 /**
@@ -594,6 +711,24 @@ export interface NewTemplate {
 }
 
 /**
+ * Saves a template's source as a draft, without building it: no engine call, no network, only the recipe file. The
+ * caller holds the name through `holdingTemplateName`, so a save, a build or a fork cannot take it meanwhile.
+ */
+export function saveTemplateDraft(host: HostCtx, input: NewTemplate): { ref: string; name: string } {
+  writeRecipe(host, input.name, {
+    version: 1,
+    imageId: null,
+    draft: true,
+    description: input.description ?? null,
+    createdBy: input.createdBy,
+    created: new Date().toISOString(),
+    source: input.source,
+  });
+  log.info("template.draft_saved", { name: input.name, kind: input.source.kind });
+  return { ref: `${host.prefix}-template:${input.name}`, name: input.name };
+}
+
+/**
  * Builds a new declared template. The caller holds the name through `holdingTemplateName`, so no save or promotion
  * takes it while this runs. A build that fails leaves no image and no recipe.
  */
@@ -631,6 +766,54 @@ export async function createDeclaredTemplate(
   }
   log.info("template.created", { name: input.name, kind: input.source.kind });
   return { ref: `${host.prefix}-template:${input.name}`, name: input.name };
+}
+
+/**
+ * Builds a saved draft for the first time. The recipe becomes a normal built one: the image it built, the creator, the
+ * description, the source and the setup are kept, and the draft flag is dropped. A failed build throws before the recipe
+ * is written, so the draft survives with exactly what it had. The caller holds the name through `holdingTemplate`.
+ *
+ * The draft is read again here for the same reason `rebuildDeclaredTemplate` reads its recipe again: an edit that lands
+ * between the operation's resolve and this build would otherwise be overwritten by the recipe the build started from.
+ */
+export async function buildTemplateDraft(
+  host: HostCtx,
+  draft: DraftTemplate,
+  progress: BuildProgress,
+): Promise<{ ref: string; name: string }> {
+  const { name } = draft;
+  const current = draftTemplate(host, name);
+  if (current === null || JSON.stringify(current.recipe) !== JSON.stringify(draft.recipe)) {
+    throw conflict(msg("template_busy", { name }));
+  }
+  const { recipe } = current;
+  const created = new Date().toISOString();
+  const built = await buildImageFrom(
+    host,
+    {
+      name,
+      source: recipe.source,
+      description: recipe.description ?? defaultDescription(recipe.source),
+      createdBy: recipe.createdBy,
+      created,
+    },
+    progress,
+  );
+  const next: TemplateRecipe = { ...recipe, imageId: built.image.id, created };
+  delete next.draft;
+  // The same rule a rebuild follows: a devcontainer.json names its own setup, and every other source keeps the setup the
+  // recipe has, so a setup an edit wrote before the first build survives it.
+  const init = recipe.source.kind === "devcontainer" ? built.init : (built.init ?? recipe.init);
+  if (init === undefined) delete next.init;
+  else next.init = init;
+  try {
+    writeRecipe(host, name, next);
+  } catch (e) {
+    await host.runtime.removeImage(built.image.id, { force: true }).catch(() => {});
+    throw e;
+  }
+  log.info("template.draft_built", { name, kind: recipe.source.kind });
+  return { ref: `${host.prefix}-template:${name}`, name };
 }
 
 /**

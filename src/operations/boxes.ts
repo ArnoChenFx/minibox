@@ -63,7 +63,7 @@ import {
   TaskAcceptedSchema,
   TrashRefSchema,
 } from "./schemas";
-import { ensureTemplateOn } from "./templates";
+import { assertTemplateBuilt, ensureTemplateOn } from "./templates";
 import type { OperationContext } from "./types";
 import {
   boxEnv,
@@ -352,6 +352,9 @@ export const boxCreate = defineOperation({
     // Checked before any copy, so a create that createBox would refuse does not first move a template across.
     if (host.specs.findByName(input.name)) throw conflict(msg("box_exists", { name: input.name }));
     assertSecretsSet(host.secrets, input.env ?? []);
+    // After the access check, so a token learns nothing about a name it may not use: it gets the same refusal for a
+    // draft as for a missing template. A saved draft has no image, so a create from it says it is not built yet.
+    assertTemplateBuilt(host, input.template ?? host.baseTemplateTag);
     const sync = await ensureTemplateOn(ctx, host, input.template ?? host.baseTemplateTag);
     const init = input.template === undefined ? null : await templateSetupOf(host, input.template);
     await assertTemplateSetupAllowed(ctx, init);

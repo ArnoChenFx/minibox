@@ -82,7 +82,7 @@ You can also build a template from a Dockerfile, a Git repository, a build conte
    | **Build context URL** | An `http://` or `https://` link to a `.tar` or `.tar.gz` archive, and an optional **Dockerfile path**. |
    | **devcontainer.json** | **Repository URL**, then optional **Branch**, **devcontainer.json path** and **Secret for a private repository**. See [devcontainer.json](#devcontainerjson). |
 
-4. Click **Build template**.
+4. Click **Build template**, or click **Save** to keep the source without building it. See [Save a template for later](#save-a-template-for-later).
 
 The build runs in the background. Follow its log in the **Tasks** panel, where the task is listed as **Build template**. When the build succeeds, the template appears in the list. A build that fails leaves no template, and the task shows why. The name stays free, so you can try again.
 
@@ -100,6 +100,28 @@ On the command line, the same builds are:
 minibox template create node-tools --repo https://github.com/example/app.git --branch main --subdir services/api --secret DEPLOY_TOKEN
 minibox template create node-tools --dockerfile ./Dockerfile
 ```
+
+## Save a template for later
+
+The **New template** dialog has two actions. **Build template** builds the source into an image at once, as described above. **Save** keeps the source without building it, so you can prepare a template now and build it when you need it.
+
+- The name stays taken while the draft exists: saving, building, forking or promoting another template under the same name is refused with `409 template_name_taken`.
+- A saved draft appears in the **Templates** list with the **Not built** label, and its card offers **Build**, **Edit** and **Delete**. A box cannot start from it until it is built: a create that names it is refused with `400 template_not_built`.
+- **Edit** changes the draft's source, description and setup, as it does for a built template. Nothing is built, and the draft keeps the image it does not have yet.
+- **Build** builds the draft for the first time. The source, description and setup it saved are kept, and the card becomes a normal template. If that build fails, the draft is kept exactly as it was, so a failed build never loses the configuration.
+- **Delete** removes the saved source. No image exists yet, so nothing else is removed.
+
+The drafts are read apart from the templates, so a host whose drafts cannot be read still lists the templates it holds. A draft is listed on the host that saved it.
+
+On the command line:
+
+```bash
+minibox template create node-tools --dockerfile ./Dockerfile --draft
+minibox template get node-tools
+minibox template rebuild node-tools
+```
+
+`--draft` prints the draft's reference and says that it is not built. `minibox template get` reads the saved source, and `minibox template rebuild` builds it for the first time. There is no separate command for listing drafts.
 
 ## Rebuild a template
 
@@ -146,6 +168,7 @@ A fork copies the template's build recipe too, so it behaves like the template i
 
 - **Built from a Dockerfile, a repository, a build context or a `devcontainer.json`.** The fork keeps the same source, and `postCreateCommand` and `forwardPorts` come along, so a box created from the fork runs the same setup. **Rebuild** builds the fork from that same source, into the fork's own image, so a newer commit of a branch reaches the fork and leaves the original alone.
 - **Official.** A fork of an official template is a custom template whose source is a copy of the official Dockerfile as it is at that moment; a fork written by an earlier version takes the copy the first time its recipe is written. You can edit that Dockerfile and rebuild the fork from it; later MiniBox releases do not change the copy, and rebuilding the fork leaves the official template as it is.
+- **The built-in base template.** MiniBox builds the base template itself and keeps no recipe for it, so a fork of it gets one: a custom template whose source is a copy of the base Dockerfile as it is at that moment. You can edit that Dockerfile and rebuild the fork from it; later MiniBox releases do not change the copy, and the base template stays as it is. A fork of the base template made by an earlier version has no source; fork the base template again to get one.
 - **Saved from a box.** A saved template has no source to build from, so its fork has none either: the fork works and its boxes start from it, but it has no **Rebuild** button. Build a template from a source instead when you want one you can rebuild.
 
 Deleting the template you forked from does not affect the fork. Each copy keeps its own recipe on the host, so a rebuild reads the fork's, not the original's.
@@ -196,6 +219,7 @@ The **Templates** tab shows these labels:
 - **Built-in** marks the bundled base template.
 - **Official** marks one of the four official templates. An official template that no host has built yet shows **Not built on any host yet** and a **Build** button.
 - **Custom** templates are every other template: the ones you saved from a box, the ones you built from a Dockerfile, a repository, a build context or a `devcontainer.json`, and the ones you forked, including a fork of an official template.
+- **Not built** marks a template that was saved without building it. Its card offers **Build**, **Edit** and **Delete**, and a box cannot start from it until it is built. See [Save a template for later](#save-a-template-for-later).
 - **Built from** names the source of a template that you built from a Dockerfile, a repository, a build context or a `devcontainer.json`.
 
 A fork shows the label of the template it came from: a fork of a built template is **Built from** its source, a fork of an official template is **Custom** with the Dockerfile copy as its source, and a fork of a saved template is **Custom**.

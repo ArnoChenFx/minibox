@@ -65,11 +65,23 @@ export function withOfficialCards(cards, official) {
 }
 
 /**
+ * The templates saved as drafts, as cards with no holder, after the built and official ones. A draft has no image, so it
+ * keeps the name it will be built under and the host that saved it, and the card offers building it instead of using it.
+ * `drafts` is the server's list from GET /api/templates/drafts. A draft is kept even when a card of the same reference
+ * exists: a name is free on each host, so one host may have built `x` while another saved a draft `x`, and the draft is
+ * then a different thing that the card's `data-host` still tells apart.
+ */
+export function withDraftCards(cards, drafts) {
+  return [...cards, ...drafts.map((draft) => ({ ...draft, draft: true, tags: [], size: null, holders: [] }))];
+}
+
+/**
  * The label a card shows: the bundled base template, one of the official templates, or a custom template. Everything
  * else is custom, including a fork of an official template: the fork keeps its own copy of the Dockerfile, so it reads
  * as built from a Dockerfile and can be edited, unlike the official template it came from.
  */
 export function templateBadge(card, base) {
+  if (card.draft) return "tp.draft";
   if (card.ref === base) return "tp.builtin";
   return card.buildKind === "official" ? "tp.official" : "tp.custom";
 }
