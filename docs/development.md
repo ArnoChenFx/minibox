@@ -57,6 +57,10 @@ For a quicker local run, `bun run check:quick` runs the same three static checks
 
 A machine with any of those runs the browser tests by default; nothing has to be set. When none is found, the browser suites are skipped locally, and in CI the run fails with an error that names the test file and says how to install a browser. So a layout regression the browser tests cover shows up in `bun test` before it reaches CI.
 
+Each `bun test` run keeps its temporary files in one directory of its own. `bunfig.toml` preloads `tests/support/preload.ts`, which creates `$TMPDIR/mbrun-<pid>-…` and points `TMPDIR` at it, so every `mkdtemp(join(tmpdir(), …))` in the suite lands there, and which starts a small process that removes the directory once the run is gone, however it went: finished, failed, stopped by a signal or killed. An `exit` handler cannot do this, because Bun does not emit `exit` when a test run ends. A test can still remove what it made; the run's directory is the safety net. A subprocess started with `Bun.spawn` and no `env` does not see the changed `TMPDIR`; pass `env: process.env` (or spread it) when it should use the run's directory.
+
+If that process was killed too, or `sh` is missing, the next run removes what was left: `mbrun-*` directories whose process is gone, that nothing has written to for two hours and that no process has open, and the `minibox-test-data-*` directories that earlier versions of the suite left in the temporary directory. It touches nothing else. `tests/tmp-cleanup.test.ts` starts real `bun test` runs and ends them with real signals to check this.
+
 `bun run test:docker` runs the real-engine test files listed in `scripts/docker-integration.ts`, one process each. Every run uses its own label prefix, which starts with `mbit`, and removes the containers, images, volumes and networks it created, even when a test fails. `DOCKER_SOCKET` selects another Docker socket. `MINIBOX_TEST_IMAGE` replaces the default test image, `alpine:3.20`.
 
 To run one real-engine test file by itself, set `MINIBOX_TEST_DOCKER=1` and a `MINIBOX_TEST_PREFIX` that matches `mbit` followed by 3 to 40 lowercase letters, digits or hyphens:
