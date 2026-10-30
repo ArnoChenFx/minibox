@@ -498,7 +498,7 @@ describe("template.get and template.edit over REST", () => {
     });
 
     expect(refused(edited)).toMatchObject({ status: 400 });
-    expect(readRecipeOnDisk(harness, "tool")).toEqual({ kind: "dockerfile", text: FROM_ALPINE });
+    expect(readRecipeSource(harness, "tool")).toEqual({ kind: "dockerfile", text: FROM_ALPINE });
   });
 
   test("a token edits the template it created, and neither the owner's nor another token's", async () => {
@@ -518,7 +518,7 @@ describe("template.get and template.edit over REST", () => {
       body: { source: { kind: "dockerfile", text: FROM_ALPINE_21 } },
     });
     expect(mine.status).toBe(200);
-    expect(readRecipeOnDisk(harness, "makers")).toEqual({ kind: "dockerfile", text: FROM_ALPINE_21 });
+    expect(readRecipeSource(harness, "makers")).toEqual({ kind: "dockerfile", text: FROM_ALPINE_21 });
 
     // An edit decides what the owner's next build produces and what every box created from it runs, so a token may not
     // change a template it merely may use.
@@ -531,7 +531,7 @@ describe("template.get and template.edit over REST", () => {
         }),
       ),
     ).toEqual({ status: 403, key: "template_out_of_scope" });
-    expect(readRecipeOnDisk(harness, "shared")).toEqual({ kind: "dockerfile", text: FROM_ALPINE });
+    expect(readRecipeSource(harness, "shared")).toEqual({ kind: "dockerfile", text: FROM_ALPINE });
 
     const stolen = await call(harness.base, editPath("mbtest-template:makers"), {
       token: other.secret,
@@ -544,7 +544,7 @@ describe("template.get and template.edit over REST", () => {
       status: 403,
       key: "template_out_of_scope",
     });
-    expect(readRecipeOnDisk(harness, "makers")).toEqual({ kind: "dockerfile", text: FROM_ALPINE_21 });
+    expect(readRecipeSource(harness, "makers")).toEqual({ kind: "dockerfile", text: FROM_ALPINE_21 });
   });
 
   test("a sandboxed agent may read the recipe of a template it may use, and may not edit it", async () => {
@@ -586,7 +586,7 @@ describe("template.get and template.edit over REST", () => {
         }),
       ),
     ).toEqual({ status: 400, key: "template_source_builtin" });
-    expect(readRecipeOnDisk(harness, "node")).toEqual({ kind: "official", name: "node" });
+    expect(storedSourceOf(harness, "node")).toEqual({ kind: "official", name: "node" });
 
     // The setup and the description belong to the template itself, so they stay editable.
     const setup = await call(harness.base, editPath("mbtest-template:node"), {
@@ -631,9 +631,9 @@ describe("template.get and template.edit over REST", () => {
       name: "node-copy",
       buildKind: "dockerfile",
     });
-    expect(readRecipeOnDisk(harness, "node-copy")).toEqual({ kind: "dockerfile", text: FROM_ALPINE_21 });
+    expect(storedSourceOf(harness, "node-copy")).toEqual({ kind: "dockerfile", text: FROM_ALPINE_21 });
     // The template the fork came from is still official, with the source a rebuild uses.
-    expect(readRecipeOnDisk(harness, "node")).toEqual({ kind: "official", name: "node" });
+    expect(storedSourceOf(harness, "node")).toEqual({ kind: "official", name: "node" });
   });
 
   test("a bare template name still names the template when a plain image has that name too", async () => {
@@ -648,7 +648,14 @@ describe("template.get and template.edit over REST", () => {
   });
 });
 
-/** The source on disk of a template's recipe, as a test can compare it. */
-function readRecipeOnDisk(harness: Harness, name: string): unknown {
+/** The source a read of the recipe gives: an old fork's official source reads as the copy of the shipped Dockerfile. */
+function readRecipeSource(harness: Harness, name: string): unknown {
   return readRecipe(harness.app.hosts.get(), name)?.source;
+}
+
+/** The source as the host stores it, without that interpretation, for a test that checks what an edit wrote. */
+function storedSourceOf(harness: Harness, name: string): unknown {
+  const host = harness.app.hosts.get();
+  const path = join(dirname(host.specs.dir()), "template-recipes", host.host.id, `${name}.json`);
+  return (JSON.parse(readFileSync(path, "utf8")) as { source: unknown }).source;
 }

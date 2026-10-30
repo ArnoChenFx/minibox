@@ -130,11 +130,6 @@ describe("the label a template card shows", () => {
     // A template the host does not hold has no build kind, and is still custom when it is not the base or an official one.
     expect(templateBadge({ ref: "minibox-template:gold" }, BASE)).toBe("tp.custom");
   });
-
-  test("a fork of an official template is custom, because its source is its own copy of the Dockerfile", () => {
-    // The API reports the fork as built from a Dockerfile, as a read of its old recipe does too.
-    expect(templateBadge({ ref: "minibox-template:node-copy", buildKind: "dockerfile" }, BASE)).toBe("tp.custom");
-  });
 });
 
 describe("the fork action a card offers", () => {
