@@ -833,6 +833,95 @@ describe("mount lists", () => {
     });
   });
 
+  test("an empty box name shows the naming rule with the box-name placeholder, and a filled one shows the real name", () => {
+    // The dialog passes its own i18n text for a Box name it does not have yet. Nothing here is a real name.
+    const boxNamePlaceholder = "<box name>";
+    const unnamed = roleVolumeNames({
+      boxName: "   ",
+      hostId: "local",
+      labelPrefix: "mbtest",
+      boxNamePlaceholder,
+    });
+    expect(unnamed.workspace).toEqual({
+      name: null,
+      placeholder: "<box name>-workspace",
+      exists: false,
+      exact: false,
+      hostKnown: true,
+    });
+    expect([unnamed.home?.placeholder, unnamed.cache?.placeholder]).toEqual(["<box name>-home", "<box name>-cache"]);
+    // The tools volume is not named after the box, so the placeholder leaves it alone.
+    expect(unnamed.tools).toEqual({ name: "mbtest-tools-local", exists: false, exact: true, hostKnown: true });
+
+    // The role choices carry the placeholder, so the row's option reads `<box name>-workspace (preview)`.
+    const choices = createMountChoices([], false, unnamed);
+    expect(
+      choices.filter((choice) => choice.role).map((choice) => choice.preview?.placeholder ?? choice.preview?.name),
+    ).toEqual(["<box name>-workspace", "<box name>-home", "mbtest-tools-local", "<box name>-cache"]);
+
+    // Once the box is named, the placeholder is gone and the choices carry the names the create would make.
+    const named = roleVolumeNames({ boxName: "alpha", hostId: "local", labelPrefix: "mbtest", boxNamePlaceholder });
+    expect(named.workspace).toEqual({ name: "alpha-workspace", exists: false, exact: true, hostKnown: true });
+    expect(named.workspace?.placeholder).toBeUndefined();
+    expect(
+      createMountChoices([], false, named)
+        .filter((choice) => choice.role)
+        .map((choice) => choice.preview?.name),
+    ).toEqual(["alpha-workspace", "alpha-home", "mbtest-tools-local", "alpha-cache"]);
+  });
+
+  test("the preview lines show the placeholder name, which is never a name, and leave the tools cases as they were", () => {
+    const boxNamePlaceholder = "<box name>";
+    const rows = [roleValue("workspace"), roleValue("home"), roleValue("cache")].map((volume) => ({ volume }));
+    const unnamed = roleVolumeNames({
+      boxName: "",
+      hostId: "local",
+      labelPrefix: "mbtest",
+      boxNamePlaceholder,
+      // A volume whose display name reads like the placeholder is still not the name the dialog previews.
+      taken: ["<box name>-workspace"],
+    });
+    // The placeholder is not a name: it is never compared with the names the host uses, so nothing takes a suffix.
+    expect(unnamed.workspace).toMatchObject({ name: null, placeholder: "<box name>-workspace", exact: false });
+    expect(previewNoteLines(rows, unnamed)).toEqual([
+      { key: "cb.previewUnnamedName", params: { name: "<box name>-workspace" }, role: "workspace" },
+      { key: "cb.previewUnnamedName", params: { name: "<box name>-home" }, role: "home" },
+      { key: "cb.previewUnnamedName", params: { name: "<box name>-cache" }, role: "cache" },
+    ]);
+
+    // The shared tools volume and automatic placement keep their own lines, name or no name.
+    const shared = roleVolumeNames({
+      boxName: "",
+      hostId: "local",
+      labelPrefix: "mbtest",
+      sharedTools: { name: "mbtest-tools-local" },
+      boxNamePlaceholder,
+    });
+    expect(previewNoteLines([{ volume: roleValue("tools") }], shared)).toEqual([
+      { key: "cb.previewShared", params: { name: "mbtest-tools-local" }, role: "tools" },
+    ]);
+    const auto = roleVolumeNames({
+      boxName: "",
+      hostId: "",
+      labelPrefix: "mbtest",
+      hostKnown: false,
+      boxNamePlaceholder,
+    });
+    expect(auto.tools).toEqual({ name: null, exists: false, exact: false, hostKnown: false });
+    expect(previewNoteLines([{ volume: roleValue("tools") }], auto)).toEqual([
+      { key: "cb.previewHostUnknown", params: { role: "tools" }, role: "tools" },
+    ]);
+    // Only the box can name workspace, home and cache, so automatic placement still shows their naming rule.
+    expect(previewNoteLines([{ volume: roleValue("workspace") }], auto)).toEqual([
+      { key: "cb.previewUnnamedName", params: { name: "<box name>-workspace" }, role: "workspace" },
+    ]);
+
+    // A role row is still sent as `{ role }` (with its pool when it picked one): the placeholder is display only.
+    expect(checkMountRows([{ volume: roleValue("workspace"), path: "/workspace", mode: "rw" }])).toEqual({
+      mounts: [{ role: "workspace" }],
+    });
+  });
+
   test("the preview lines name only the roles a row still names, and never promise a name that may change", () => {
     const names = roleVolumeNames({ boxName: "alpha", hostId: "local", labelPrefix: "mbtest" });
     // A row that mounts a volume that exists creates nothing, so it contributes no line.
