@@ -1,0 +1,52 @@
+# Throwaway probe for #155 PR 2 design. Not for merge. Runs only on the probe branch.
+name: probe-155
+on:
+  push:
+    branches: [lorca/155-probe]
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: P1 helper env visibility (docker inspect)
+        run: |
+          docker run -d --name envprobe -e AWS_ACCESS_KEY_ID=AKTESTKEY -e AWS_SECRET_ACCESS_KEY=SKTESTSECRET --entrypoint sleep restic/restic:0.18.1 300
+          docker inspect envprobe --format '{{json .Config.Env}}'
+          docker rm -f envprobe
+
+      - name: P2 restic copy snapshot ids and original field (local repos)
+        run: |
+          set -u
+          D=$(mktemp -d); chmod 777 "$D"; echo probe-pass > "$D/pw"; chmod 644 "$D/pw"
+          for v in probe-src probe-a probe-b; do docker volume create "$v" >/dev/null; done
+          I=restic/restic:0.18.1
+          docker run --rm -v probe-src:/src --entrypoint sh $I -c 'echo hello > /src/f.txt'
+          R="docker run --rm -v $D:/k -e RESTIC_PASSWORD_FILE=/k/pw -v probe-src:/src -v probe-a:/a -v probe-b:/b"
+          $R -e RESTIC_REPOSITORY=/a $I init
+          $R -e RESTIC_REPOSITORY=/a $I backup /src --tag probe
+          $R -e RESTIC_REPOSITORY=/b $I init
+          $R -e RESTIC_REPOSITORY=/b $I copy --from-repo /a --from-password-file /k/pw
+          echo "--- source repo A snapshots"
+          $R -e RESTIC_REPOSITORY=/a $I snapshots --json | jq -c '.[] | {id: .id, original: .original, tags: .tags}'
+          echo "--- copy repo B snapshots"
+          $R -e RESTIC_REPOSITORY=/b $I snapshots --json | jq -c '.[] | {id: .id, original: .original, tags: .tags}'
+          echo "--- second copy of the same snapshot (expect refusal or duplicate)"
+          $R -e RESTIC_REPOSITORY=/b $I copy --from-repo /a --from-password-file /k/pw; echo "exit=$?"
+          $R -e RESTIC_REPOSITORY=/b $I snapshots --json | jq -c 'length'
+
+      - name: P3 S3 path-style against MinIO (default vs -o s3.bucket-lookup=path)
+        run: |
+          set -u
+          D=$(mktemp -d); chmod 777 "$D"; echo probe-pass > "$D/pw"; chmod 644 "$D/pw"
+          docker run -d --name minio --network host -e MINIO_ROOT_USER=probeuser -e MINIO_ROOT_PASSWORD=probepass1234 minio/minio:latest server /data --address :9000
+          for i in $(seq 1 30); do curl -sf http://127.0.0.1:9000/minio/health/live && break; sleep 2; done
+          docker run --rm --network host --entrypoint sh minio/mc:latest -c 'mc alias set p http://127.0.0.1:9000 probeuser probepass1234 && mc mb p/probe-bucket' ; echo "mc exit=$?"
+          S="docker run --rm --network host -v $D:/k -e RESTIC_PASSWORD_FILE=/k/pw -e AWS_ACCESS_KEY_ID=probeuser -e AWS_SECRET_ACCESS_KEY=probepass1234 restic/restic:0.18.1"
+          echo "--- default lookup"
+          $S -r s3:http://127.0.0.1:9000/probe-bucket/default init; echo "exit=$?"
+          echo "--- explicit path"
+          $S -o s3.bucket-lookup=path -r s3:http://127.0.0.1:9000/probe-bucket/path init; echo "exit=$?"
+          $S -o s3.bucket-lookup=path -r s3:http://127.0.0.1:9000/probe-bucket/path snapshots --json; echo "exit=$?"
+          echo "--- env inside helper is visible to docker inspect? (P1 already showed)"
