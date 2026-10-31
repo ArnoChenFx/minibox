@@ -18,6 +18,7 @@ import {
   editRecipe,
   readRecipe,
   rebuildDeclaredTemplate,
+  type TemplateSource,
   templateSetupOf,
 } from "../src/services/template-builds";
 import {
@@ -166,6 +167,28 @@ describe("duplicating a template that was built from a source", () => {
       source: { kind: "dockerfile", text: FROM_ALPINE },
     });
     expect(readRecipe(l.host, "tool")).not.toHaveProperty("draft");
+  });
+
+  test("every field of the source is copied as it is, the credential name included", async () => {
+    const l = lab();
+    await declared(l);
+    const git: TemplateSource = {
+      kind: "git",
+      url: "https://github.com/org/app.git",
+      branch: "main",
+      subdir: "services/api",
+      dockerfile: "Dockerfile",
+      secretRef: "DEPLOY_TOKEN",
+    };
+    editRecipe(l.host, await declaredTemplate(l.host, "mbtest-template:tool"), { source: git });
+
+    await forkTemplate(l.host, await templateSourceImage(l.host, "mbtest-template:tool"), {
+      name: "tool-copy",
+      createdBy: "owner",
+    });
+
+    expect(readRecipe(l.host, "tool-copy")?.source).toEqual(git);
+    expect(recipeOnDisk(l, "tool-copy").source).toEqual(git);
   });
 
   test("a copy with no description copies the source's into the draft", async () => {
