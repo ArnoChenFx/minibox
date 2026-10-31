@@ -469,7 +469,7 @@ export default {
   "st.backupScheduleFailed": "Backup schedule change failed",
   "st.targets": "Off-site targets",
   "st.targetsHelp":
-    "Copy checkpoint packages and backups to an S3-compatible bucket or an SFTP folder, and pull them back when this host needs them. Credentials are stored as secrets and never shown again.",
+    "Copy checkpoint packages and backups to an S3-compatible bucket, an SFTP folder or a WebDAV collection, and pull them back when this host needs them. Credentials are stored as secrets and never shown again.",
   "st.targetAdd": "Add target",
   "st.targetNone": "No targets yet. Add one to keep copies of checkpoints and backups off this host.",
   "st.targetColAddress": "Address",
@@ -477,6 +477,7 @@ export default {
   "st.targetColSize": "Size",
   "st.targetKind.s3": "S3-compatible",
   "st.targetKind.sftp": "SFTP",
+  "st.targetKind.webdav": "WebDAV",
   "st.targetTypeLabel": "Type",
   "st.targetDirection.push": "Pushed",
   "st.targetDirection.pull": "Pulled",
@@ -496,13 +497,15 @@ export default {
   "st.targetRemoveFailed": "Could not remove the target",
   "st.targetAddTitle": "Add a target",
   "st.targetDialogHelp":
-    "Checkpoint packages and backups are copied as they are. A pull keeps an object only when it matches its record on the target.",
+    "Checkpoint packages and backups are copied as they are to an S3-compatible bucket, an SFTP folder or a WebDAV collection. A pull keeps an object only when it matches its record on the target.",
   "st.targetPath": "Folder",
   "st.targetPathHelp":
-    "Optional. Relative to the bucket or the login folder. Objects go in its root when this is empty.",
+    "Optional. Relative to the bucket, the login folder or the WebDAV collection. Objects go in its root when this is empty.",
   "st.targetEndpointHelp":
     "The https address of the service. Plain http is accepted only for localhost, 127.0.0.1 and [::1].",
   "st.targetSecretHelp": "Stored as a secret. It is never shown again after you save.",
+  "st.targetWebdavUrlHelp":
+    "The https address of the folder on the server, such as https://host/remote.php/dav/files/USER on Nextcloud. Use an app password when your provider offers one.",
   "st.targetTest": "Test",
   "st.targetTesting": "Reaching the target…",
   "st.targetTestOk": "Reached the target. Nothing was stored.",

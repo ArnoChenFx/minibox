@@ -4,7 +4,7 @@ MiniBox can back up its data while it runs. A backup is one file, sealed with a 
 
 A backup does not hold Docker volumes. Box files live in volumes, and checkpoint data lives in the checkpoint repository volume, so back those up separately. See [Back up a volume](#back-up-a-volume).
 
-To keep copies off this host, add an [off-site target](#off-site-targets): an S3-compatible bucket or an SFTP server.
+To keep copies off this host, add an [off-site target](#off-site-targets): an S3-compatible bucket, an SFTP server or a WebDAV collection.
 
 Code belongs in git. Push your code to a remote repository, so you do not depend on the box volumes.
 
@@ -118,21 +118,22 @@ The volume must be empty before you extract into it.
 
 ## Off-site targets
 
-A target is a place outside this host that holds copies of checkpoint packages and backups. There are two kinds:
+A target is a place outside this host that holds copies of checkpoint packages and backups. There are three kinds:
 
 | Kind | Address | Credentials |
 |---|---|---|
 | S3-compatible | An `https` endpoint, a region and a bucket. Plain `http` is accepted only for `localhost`, `127.0.0.1` and `[::1]`. | An access key ID and a secret access key |
 | SFTP | A host, a port and a user. The port defaults to 22. | A private key without a passphrase, and the server's host key |
+| WebDAV | The `https` address of a collection, which may carry a path. Plain `http` is accepted only for `localhost`, `127.0.0.1` and `[::1]`. | A user, and a password or app password |
 
 Add a target in **Settings**, under **Off-site targets**:
 
-1. Click **Add target**, and choose the **Type**, S3-compatible or SFTP.
-2. Fill in the **Target name** and the fields for that type. The **Folder** is optional. It is relative to the bucket or to the login folder, and objects go in its root when it is empty.
+1. Click **Add target**, and choose the **Type**, S3-compatible, SFTP or WebDAV.
+2. Fill in the **Target name** and the fields for that type. The **Folder** is optional. It is relative to the bucket, to the login folder or to the WebDAV collection, and objects go in its root when it is empty.
 3. Click **Test** to reach the target without saving it. For an SFTP server, MiniBox shows the host key the server presents, as `SHA256:…`. Compare it with the key on the server, for example with `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub` run on the server. If it matches, click **Trust and test** in the dialog.
 4. Click **Save target**. For SFTP, saving first runs the same check if you have not confirmed the key. The target is stored with the confirmed key, and nothing is sent to a server that presents another key.
 
-Credentials are stored as secrets named `target.<id>.access-key`, `target.<id>.secret-key` or `target.<id>.private-key`. MiniBox never shows their values again. Names that start with `target.` are reserved: no one can create a secret with that prefix, and a box cannot use one. These secrets do not appear in the **Secrets** list.
+Credentials are stored as secrets named `target.<id>.access-key`, `target.<id>.secret-key`, `target.<id>.private-key` or `target.<id>.password`. MiniBox never shows their values again. Names that start with `target.` are reserved: no one can create a secret with that prefix, and a box cannot use one. These secrets do not appear in the **Secrets** list.
 
 The card lists each target with its address and folder, its last sync (when it ran, its direction, the object, and any error), and the size of that sync. **Check** reaches the target with its stored credentials and reports whether it answers. **Remove** deletes the target and its credentials from this host. Objects already on the target are not deleted.
 
@@ -162,8 +163,33 @@ The credentials need these permissions:
 
 - S3-compatible: list, read, write and delete objects in the bucket or folder. MiniBox deletes a partial upload that fails.
 - SFTP: create folders, and write, rename and delete files in the folder. MiniBox removes a partial upload that fails.
+- WebDAV: create collections with `MKCOL`, and read, write and delete files in them. MiniBox deletes a partial upload that fails.
 
 MiniBox does not delete a complete object on a target. It replaces a file that an interrupted upload left under the name it writes. Remove old objects with the tools of the bucket or the server.
+
+### WebDAV
+
+A WebDAV target is one collection, reached with HTTP Basic over `https`. The address may carry a path, since providers put the collection under one:
+
+- Nextcloud: `https://cloud.example.com/remote.php/dav/files/USER`
+- Nutstore (坚果云): `https://dav.jianguoyun.com/dav/`
+- Synology, with the WebDAV Server package: `https://nas.example.com:5006/`
+
+These are examples, not a promise: use the address your provider documents, and copy it exactly, because a wrong path shows up as a `404` from **Test**.
+
+Most providers issue an app password for a client instead of accepting the account password. Create one, and enter it as the target's password.
+
+Plain `http` is refused for anything but `localhost`, `127.0.0.1` and `[::1]`. The credentials go with every request, so a server on the local network needs `https` too: give it a certificate your host trusts, or put it behind a proxy that presents one. A server whose certificate is self-signed or otherwise untrusted gets a `502` that says the certificate is not trusted; there is no option to skip the check.
+
+The WebDAV target is checked against an in-process test server in MiniBox's own test suite. It has not been run against a real Nutstore, Nextcloud or Synology deployment, so start with **Test** and a small object.
+
+What it does not do:
+
+- Only HTTP Basic. Digest and OAuth are not supported.
+- No resume and no multipart upload: an archive is one `PUT` with its length. A server that limits the size of a request body, such as nginx's `client_max_body_size`, must allow the size of your largest backup or checkpoint package.
+- One `PUT` per object under its final name, without a temporary name and a `MOVE`. If the connection drops and the cleanup that follows also fails, a partial file may stay under the object's name. It is never listed as an object, because a target lists an object only once its record is there, and the next push of that object replaces it. Delete it with your provider's tools if you prefer.
+- A same-origin redirect is followed, up to three. A redirect to another origin is refused before anything is sent there, and a redirected upload is refused rather than sent twice. The cleanup of a failed upload never follows one either, so a server cannot make it delete an object of its own choosing.
+- A transfer has no total time, since an archive may take minutes, but a transfer that moves no data for 60 seconds is stopped and reported as an unreachable target. That is what a proxy that stopped reading, or a connection a firewall dropped silently, looks like. The archive is pushed again from the start.
 
 ## Retention and schedules
 
@@ -178,7 +204,7 @@ BACKUP_KEEP=7
 What counts, and what does not:
 
 - The backups are the archives in the server's backup folder, `DATA_DIR/backups/` or `BACKUP_DIR`. Only the ones MiniBox wrote count: a `<id>.mbbak` with its `<id>.json` record beside it, whose size matches the record. A record whose archive is missing or short, a partial archive left by a crash, and any other file in the folder are left alone, so a folder that holds other things keeps them.
-- Off-site targets are not touched. MiniBox never deletes a complete object on an S3-compatible bucket or an SFTP server, whatever `BACKUP_KEEP` says. Remove old objects with the tools of the bucket or the server, or with `DELETE /api/backups/{id}` before pushing fewer.
+- Off-site targets are not touched. MiniBox never deletes a complete object on an S3-compatible bucket, an SFTP server or a WebDAV collection, whatever `BACKUP_KEEP` says. Remove old objects with the tools of the bucket or the server, or with `DELETE /api/backups/{id}` before pushing fewer.
 - Archives downloaded with `minibox backup --out` are on your machine, not in this folder, so they are yours to delete.
 
 Order and timing:

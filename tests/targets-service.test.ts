@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -16,10 +17,13 @@ import { rejectionOf, silenceLogs } from "./support/app";
 import { type S3Double, startS3Double } from "./support/s3-double";
 import { type SftpDouble, startSftpDouble } from "./support/sftp-double";
 import { type TarEntry, tarBytes } from "./support/tar";
+import { type WebdavDouble, startWebdavDouble } from "./support/webdav-double";
 
 const PASSPHRASE = "correct horse battery staple";
 const ACCESS_KEY = "AKIATESTONLY0001";
 const SECRET_KEY = "test-only-secret-key-0001";
+const WEBDAV_USER = "minibox@example.com";
+const WEBDAV_PASSWORD = "{{SECRET_l8kwv2ra}}";
 const PACK = `ab${"0".repeat(62)}`;
 const SNAPSHOT = "c".repeat(64);
 const KEY = "d".repeat(64);
@@ -99,6 +103,8 @@ async function packageIn(instance: Instance, fill = 7): Promise<PackageMeta> {
     packages.end(id);
   }
 }
+
+const sha256Of = (file: string): string => createHash("sha256").update(readFileSync(file)).digest("hex");
 
 describe("off-site targets", () => {
   let double: S3Double;
@@ -525,6 +531,122 @@ describe("off-site targets", () => {
         ].toSorted(),
       );
       expect(objects.find((object) => object.id === meta.id)).toMatchObject({ sha256: meta.sha256 });
+    });
+  });
+
+  describe("a WebDAV target", () => {
+    let dav: WebdavDouble;
+
+    beforeEach(() => {
+      dav = startWebdavDouble({ user: WEBDAV_USER, password: WEBDAV_PASSWORD, prefix: "remote.php/dav/files/u" });
+    });
+
+    afterEach(() => {
+      dav.stop();
+    });
+
+    const webdav = (path = "minibox"): TargetDraft => ({
+      kind: "webdav",
+      path,
+      url: dav.url,
+      user: WEBDAV_USER,
+      password: WEBDAV_PASSWORD,
+    });
+
+    test("a package and a backup are pushed, listed and pulled back with the same bytes", async () => {
+      const source = instanceOf();
+      const sourceView = source.service.add("dav", webdav());
+      const meta = await packageIn(source);
+      const backup = await source.backups.create(PASSPHRASE, "owner");
+      await source.service.push(sourceView.id, meta.id);
+      await source.service.push(sourceView.id, backup.id);
+
+      expect([...dav.files.keys()].toSorted()).toEqual([
+        `minibox/backups/${backup.id}.json`,
+        `minibox/backups/${backup.id}.mbbak`,
+        `minibox/packages/${meta.id}.json`,
+        `minibox/packages/${meta.id}.mbckpt`,
+      ]);
+      expect(dav.files.get(`minibox/packages/${meta.id}.mbckpt`)?.byteLength).toBe(meta.bytes);
+
+      const local = instanceOf();
+      const view = local.service.add("dav", webdav());
+      expect(view).toMatchObject({
+        kind: "webdav",
+        address: dav.url,
+        path: "minibox",
+        hostKeyFingerprint: null,
+        credentials: true,
+      });
+      expect((await local.service.objects(view.id)).map((object) => [object.kind, object.id]).toSorted()).toEqual([
+        ["backup", backup.id],
+        ["package", meta.id],
+      ]);
+
+      expect(await local.service.pull(view.id, meta.id)).toMatchObject({
+        object: meta.id,
+        kind: "package",
+        bytes: meta.bytes,
+        skipped: false,
+      });
+      expect(sha256Of(local.checkpoints.packages.pathFor(meta.id))).toBe(meta.sha256);
+      expect(await local.service.pull(view.id, backup.id)).toMatchObject({
+        object: backup.id,
+        kind: "backup",
+        bytes: backup.bytes,
+        skipped: false,
+      });
+      const pulled = local.backups.stored(backup.id);
+      expect(pulled).toMatchObject({ origin: "target", targetId: view.id, sha256: backup.sha256 });
+      expect(sha256Of(local.backups.store.pathFor(backup.id))).toBe(backup.sha256);
+    });
+
+    test("a record the server under-reports is read only up to the size a record can be", async () => {
+      const source = instanceOf();
+      const view = source.service.add("dav", webdav());
+      const meta = await packageIn(source);
+      await source.service.push(view.id, meta.id);
+      // The record grows far beyond a real one while staying valid, and the server still reports it as tiny.
+      const record = `minibox/packages/${meta.id}.json`;
+      const stored = new TextDecoder().decode(dav.files.get(record));
+      dav.files.set(record, new TextEncoder().encode(`${stored}${" ".repeat(200 * 1024)}`));
+      dav.sizes.set(record, 100);
+
+      expect(await source.service.objects(view.id)).toEqual([]);
+      expect(dav.files.has(record)).toBe(true);
+    });
+
+    test("the password is kept as a secret and never written to targets.json", () => {
+      const inst = instanceOf();
+      const view = inst.service.add("dav", webdav());
+
+      expect(inst.secrets.list().map((meta) => meta.name)).toEqual([`target.${view.id}.password`]);
+      expect(inst.known).toContain(WEBDAV_PASSWORD);
+      expect(inst.service.get(view.id).credentials).toBe(true);
+      const stored = readFileSync(targetsPath(inst.dataDir), "utf8");
+      expect(stored).toContain(dav.url);
+      expect(stored).not.toContain(WEBDAV_PASSWORD);
+    });
+
+    test("removing the target removes its password", () => {
+      const inst = instanceOf();
+      const view = inst.service.add("dav", webdav());
+      inst.service.remove(view.id);
+
+      expect(inst.service.list()).toEqual([]);
+      expect(inst.secrets.list()).toEqual([]);
+    });
+
+    test("a target whose password is gone is refused before anything is sent", async () => {
+      const inst = instanceOf();
+      const view = inst.service.add("dav", webdav());
+      inst.secrets.remove(`target.${view.id}.password`);
+
+      expect(await rejectionOf(inst.service.check(view.id))).toMatchObject({
+        status: 409,
+        key: "target_credentials_missing",
+      });
+      expect(dav.requests).toEqual([]);
     });
   });
 

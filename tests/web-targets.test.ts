@@ -33,6 +33,23 @@ const sftpForm = {
   privateKey: KEY,
 };
 
+const webdavForm = {
+  kind: "webdav",
+  name: "  dav  ",
+  path: " minibox ",
+  url: " https://dav.example.com/remote.php/dav/files/u ",
+  user: " minibox@example.com ",
+  password: "app-password ",
+  endpoint: "https://left.from.s3",
+  region: "eu-west-1",
+  bucket: "left-from-s3",
+  accessKeyId: "left",
+  secretAccessKey: "left",
+  host: "left.from.sftp",
+  port: "22",
+  privateKey: "left",
+};
+
 describe("target kinds", () => {
   test("the console offers the kinds the server keeps, in its order", () => {
     expect([...TARGET_KINDS]).toEqual([...SERVER_KINDS]);
@@ -44,6 +61,29 @@ describe("target kinds", () => {
 });
 
 describe("target body", () => {
+  test("a WebDAV target sends its url, user and password, and nothing left from another kind", () => {
+    expect(targetBody(webdavForm)).toEqual({
+      kind: "webdav",
+      name: "dav",
+      path: "minibox",
+      url: "https://dav.example.com/remote.php/dav/files/u",
+      user: "minibox@example.com",
+      password: "app-password ",
+    });
+  });
+
+  test("a WebDAV test sends no name and no host key", () => {
+    const body = targetBody(webdavForm, { named: false, fingerprint: FINGERPRINT });
+    expect(body).toEqual({
+      kind: "webdav",
+      path: "minibox",
+      url: "https://dav.example.com/remote.php/dav/files/u",
+      user: "minibox@example.com",
+      password: "app-password ",
+    });
+    expect(body).not.toHaveProperty("hostKeyFingerprint");
+  });
+
   test("an S3 target sends its name and its own settings, trimmed, and none of the SFTP fields", () => {
     expect(targetBody(s3Form)).toEqual({
       kind: "s3",
