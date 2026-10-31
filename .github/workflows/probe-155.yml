@@ -12,7 +12,7 @@ jobs:
     steps:
       - name: P4 S3 credentials from a shared-credentials file instead of env
         run: |
-          set -u
+          set +e
           D=$(mktemp -d); chmod 777 "$D"; echo probe-pass > "$D/pw"; chmod 644 "$D/pw"
           docker run -d --name s3auth --network host -e S3PROXY_AUTHORIZATION=aws-v2-or-v4 -e S3PROXY_ENDPOINT=http://127.0.0.1:9001 -e S3PROXY_IDENTITY=probe-key -e S3PROXY_CREDENTIAL=probe-secret -e JCLOUDS_PROVIDER=transient -e JCLOUDS_IDENTITY=local-identity -e JCLOUDS_CREDENTIAL=local-credential andrewgaul/s3proxy:latest
           for i in $(seq 1 30); do curl -s -o /dev/null http://127.0.0.1:9001/ && break; sleep 2; done
@@ -29,7 +29,7 @@ jobs:
 
       - name: P5 SFTP key auth with pinned host key (atmoz/sftp)
         run: |
-          set -u
+          set +e
           D=$(mktemp -d); chmod 777 "$D"; echo probe-pass > "$D/pw"; chmod 644 "$D/pw"
           docker run --rm -v "$D:/k" --entrypoint sh restic/restic:0.18.1 -c 'ssh-keygen -q -t ed25519 -N "" -f /k/key && chmod 644 /k/key.pub'; echo "keygen exit=$?"
           mkdir -p "$D/keys"; cp "$D/key.pub" "$D/keys/key.pub"
