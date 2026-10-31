@@ -1257,7 +1257,7 @@ describe("CLI templates, images and box clones", () => {
     }
   });
 
-  test("template fork copies a template under a new name and prints its ref; a taken name exits 1 with the message", async () => {
+  test("template fork saves a template's build source as a draft and prints its ref; a taken name exits 1 with the message", async () => {
     const env = serve();
     try {
       const file = join(mkdtempSync(join(tmpdir(), "mb-cli-fork-")), "Dockerfile");
@@ -1274,9 +1274,25 @@ describe("CLI templates, images and box clones", () => {
         ),
       ).toBe(0);
       expect(forked.out).toBe("mbtest-template:tool-copy\n");
-      expect((await env.runtime.inspectImage("mbtest-template:tool-copy")).labels["mbtest.template.description"]).toBe(
-        "Ours",
-      );
+      // A template built from a source is copied as a draft: no image exists until it is built, and the hint says so.
+      expect(forked.err).toContain("Duplicated the template as a draft. It is not built");
+      expect(forked.err).toContain("minibox template rebuild tool-copy");
+      expect(
+        await env.runtime.inspectImage("mbtest-template:tool-copy").then(
+          () => "held",
+          () => "gone",
+        ),
+      ).toBe("gone");
+      const read = io();
+      expect(await runCli(["template", "get", "tool-copy", "--json"], env.env, read, lines([]))).toBe(0);
+      expect(JSON.parse(read.out).recipe.source).toEqual({ kind: "dockerfile", text: "FROM alpine:3.20\n" });
+
+      // Building the draft for the first time produces the image, with the description and source it saved.
+      const rebuilt = io();
+      expect(await runCli(["template", "rebuild", "tool-copy"], env.env, rebuilt, lines([]))).toBe(0);
+      const image = await env.runtime.inspectImage("mbtest-template:tool-copy");
+      expect(image.labels["mbtest.template.description"]).toBe("Ours");
+      expect(env.runtime.builds.at(-1)?.tag).toBe("mbtest-template:tool-copy");
 
       const asJson = io();
       expect(await runCli(["template", "fork", "tool", "tool-2", "--json"], env.env, asJson, lines([]))).toBe(0);

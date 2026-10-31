@@ -8,8 +8,10 @@ import type { LabelKeys } from "../src/labels";
 import { RuntimeError } from "../src/runtime";
 import * as boxes from "../src/services/boxes";
 import {
+  buildTemplateDraft,
   createDeclaredTemplate,
   declaredTemplate,
+  draftTemplate,
   editRecipe,
   readRecipe,
   rebuildDeclaredTemplate,
@@ -298,6 +300,10 @@ describe("editing a template that has no source", () => {
       name: "tool-copy",
       createdBy: "owner",
     });
+    // A duplicate of a declared template is a draft; its first build makes the image an edit then works on.
+    const draft = draftTemplate(l.host, "tool-copy");
+    if (!draft) throw new Error("the duplicate is a draft");
+    await buildTemplateDraft(l.host, draft, progressOf());
 
     const { declared: source, image } = await editable(l, "mbtest-template:tool-copy");
     await editTemplate(l.host, source, image, { source: { kind: "dockerfile", text: FROM_ALPINE_21 } });
@@ -404,6 +410,7 @@ describe("a rebuild and an edit of one template", () => {
 const forkPath = (ref: string) => `/api/templates/${encodeURIComponent(ref)}/fork`;
 const recipePath = (ref: string) => `/api/templates/${encodeURIComponent(ref)}/recipe`;
 const editPath = (ref: string) => `/api/templates/${encodeURIComponent(ref)}`;
+const rebuildPath = (ref: string) => `/api/templates/${encodeURIComponent(ref)}/rebuild`;
 
 describe("template.get and template.edit over REST", () => {
   let harness: Harness;
@@ -511,6 +518,10 @@ describe("template.get and template.edit over REST", () => {
       body: { name: "makers" },
     });
     expect(forked.status).toBe(201);
+    // A duplicate of a declared template is a draft, which only the owner can build; the edit below is on the built copy.
+    const built = await call(harness.base, rebuildPath("mbtest-template:makers"), { body: {} });
+    expect(built.status).toBe(202);
+    expect((await finishedTask(harness.base, built.json.taskId ?? "")).status).toBe("succeeded");
 
     const mine = await call(harness.base, editPath("mbtest-template:makers"), {
       token: maker.secret,
@@ -606,6 +617,10 @@ describe("template.get and template.edit over REST", () => {
     );
     const forked = await call(harness.base, forkPath("mbtest-template:node"), { body: { name: "node-copy" } });
     expect(forked.status).toBe(201);
+    // A duplicate is a draft; build it for the first time, so the record below has an image id as an old fork's had.
+    const built = await call(harness.base, rebuildPath("mbtest-template:node-copy"), { body: {} });
+    expect(built.status).toBe(202);
+    expect((await finishedTask(harness.base, built.json.taskId ?? "")).status).toBe("succeeded");
     // The record an earlier version wrote: the fork's own image id, still naming the official source.
     const path = join(dirname(host.specs.dir()), "template-recipes", host.host.id, "node-copy.json");
     const legacy = JSON.parse(readFileSync(path, "utf8"));
