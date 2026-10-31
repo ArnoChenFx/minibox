@@ -107,9 +107,9 @@ const valuesOf = (form) => Object.fromEntries(new FormData(form));
 const HOST_FIELDS = new Set(["host", "port"]);
 
 /**
- * Adds a target. An S3 target is saved as typed. An SFTP server is pinned to the host key it presents: a test shows that
- * key, the operator confirms it, and the target is saved with it. Saving an SFTP target runs that test first when no key
- * has been confirmed yet.
+ * Adds a target. An S3 or WebDAV target is saved as typed. An SFTP server is pinned to the host key it presents: a test
+ * shows that key, the operator confirms it, and the target is saved with it. Saving an SFTP target runs that test first
+ * when no key has been confirmed yet.
  */
 function targetDialog(view) {
   const { root, close } = openDialog({
