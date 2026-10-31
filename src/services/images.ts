@@ -1,6 +1,6 @@
 import type { HostCtx } from "../host/registry";
 import { envChange, parseImageLabels } from "../labels";
-import { AppError, badRequest, notFound } from "../lib/errors";
+import { AppError, badRequest, conflict, notFound } from "../lib/errors";
 import { msg } from "../lib/messages";
 import { type ImageDetails, type ImageSummary, isRuntimeError } from "../runtime";
 import type { Box } from "./boxes";
@@ -141,13 +141,21 @@ export async function envScrubChanges(host: HostCtx, box: Box): Promise<string[]
   });
 }
 
-/** Remove an image only if it carries the given MiniBox label (refuse to delete arbitrary images). */
+/**
+ * Remove an image only if it carries the given MiniBox label (refuse to delete arbitrary images). The image is returned
+ * as it was before the removal, so a caller can read the labels and the id it carried.
+ *
+ * With `stillUsedKey`, the image is inspected again once the engine reports it removed. Docker removes only the tag of an
+ * image another image is built on, such as a snapshot, a checkpoint or another template made from it, and reports
+ * success, so that silent no-op becomes a refusal instead of a delete that did nothing.
+ */
 export async function removeLabeledImage(
   host: HostCtx,
   ref: string,
   label: string,
   notFoundKey: "snapshot_not_found" | "template_not_found",
-): Promise<void> {
+  opts: { stillUsedKey?: "template_still_used" } = {},
+): Promise<ImageDetails> {
   let info: ImageDetails;
   try {
     info = await host.runtime.inspectImage(ref);
@@ -157,4 +165,17 @@ export async function removeLabeledImage(
   }
   if (info.labels[label] !== "true") throw notFound(msg(notFoundKey));
   await host.runtime.removeImage(ref, { force: true });
+  if (opts.stillUsedKey !== undefined && (await imageHeld(host, ref))) throw conflict(msg(opts.stillUsedKey));
+  return info;
+}
+
+/** Whether the engine still holds `ref`, as an engine that kept an image reports it. */
+async function imageHeld(host: HostCtx, ref: string): Promise<boolean> {
+  try {
+    await host.runtime.inspectImage(ref);
+    return true;
+  } catch (e) {
+    if (isRuntimeError(e, "not_found")) return false;
+    throw e;
+  }
 }

@@ -191,6 +191,10 @@ export const MESSAGES = {
   template_name_taken: "A template named “{name}” already exists.",
   template_name_reserved: "{name} is a name MiniBox keeps for a template it builds itself. Choose another name.",
   template_busy: "Another change to the template “{name}” is still running. Try again when it ends.",
+  template_builtin:
+    "The built-in base template cannot be deleted. MiniBox runs its helpers, volumes and egress proxy on it.",
+  template_still_used:
+    "The template's image is still used by another image, such as a snapshot, a checkpoint or a template made from it, so it was not deleted. Remove those first.",
   template_image_missing:
     "Template image {image} does not exist. Build it on the Templates page or choose another template.",
   template_source_required:

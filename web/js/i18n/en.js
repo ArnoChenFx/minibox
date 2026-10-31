@@ -74,7 +74,6 @@ export default {
   "tp.deleteMessage": "Delete template <code>{ref}</code>? {extra}Boxes created from it are not affected.",
   "tp.deleteDraftMessage":
     "Delete the saved template <code>{ref}</code>? {extra}It was never built, so no image is removed.",
-  "tp.deleteBaseExtra": "You can rebuild it on this page. ",
   "tp.deleteExtra": "This can't be undone. ",
   "tp.deleted": "Template deleted",
   "tp.new": "New template",

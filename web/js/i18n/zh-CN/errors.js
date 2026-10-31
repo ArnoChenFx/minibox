@@ -121,6 +121,9 @@ export default {
   "err.template_source_unreadable":
     "MiniBox 读不到它为官方模板「{name}」自带的 Dockerfile，或该文件不是 Dockerfile，所以在修好之前无法复制该模板。",
   "err.template_busy": "模板「{name}」的另一次修改还在进行，等它结束再试。",
+  "err.template_builtin": "内置的基础模板不能删除。MiniBox 的辅助工具、卷和出口代理都运行在它上面。",
+  "err.template_still_used":
+    "该模板的镜像仍被其他镜像使用，可能是基于它创建的快照、检查点或模板，因此没有删除。请先删除那些镜像。",
   "err.template_image_missing": "模板镜像 {image} 不存在，请先在「模板」页构建或选择其他模板。",
   "err.template_source_required": "请选择模板的来源：Dockerfile、Git 代码仓库、构建上下文 URL 或 devcontainer.json。",
   "err.template_not_declared":

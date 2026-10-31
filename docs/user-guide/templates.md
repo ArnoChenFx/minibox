@@ -224,7 +224,7 @@ The **Templates** tab shows these labels:
 
 A duplicate shows what it copied: a duplicate of a template built from a source is **Not built** until its first build, and then **Built from** its source; a duplicate of an official template is **Custom** with the Dockerfile copy as its source; and a duplicate of a template saved from a box is **Custom** with no source.
 
-Deleting a template does not affect the boxes that you created from it. A template that you built in the console can be built again on the same tab.
+Deleting a template does not affect the boxes that you created from it. A template that you built in the console can be built again on the same tab. The bundled base template cannot be deleted (`409 template_builtin`): MiniBox runs its helpers, volumes and the egress proxy on it, and rebuilds it from `templates/base` only when it is missing. A delete is refused with `409 template_still_used` when the engine kept the image because another image is built on it, such as a snapshot, a checkpoint or a template duplicated from it; remove those first.
 
 ## Who can build, and what a build can reach
 

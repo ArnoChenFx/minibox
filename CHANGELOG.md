@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### 修复
+
+- **内置 base 模板不能删除，删除模板时会核实镜像真的没了**（用户反馈：删除自定义模板 `arno-base` 后刷新它又出现，卡片的「镜像」只剩 `sha256:…`；用户决定「内置 base 不可删除」）：`template.delete`（`DELETE /api/templates/{ref}`，CLI 与 MCP 共用）现在对内置基础模板直接返回 `409 template_builtin`——按 `BASE_TEMPLATE` 标签、裸名 `base`，以及按镜像 id 删除（该镜像的 tags 含基础模板标签）三条路都拦下，不再只写一条警告就放行；`ensureBaseImage` 在缺少基础镜像时从 `templates/base` 自动构建的行为不变。删除镜像后 `removeLabeledImage` 会再用 `inspectImage(ref)` 复查：Docker 在镜像还有子镜像（基于它提交的快照、检查点或模板）时可能只摘掉标签并报成功，此时返回 `409 template_still_used`，而不是回一个其实没删掉的「成功」，构建记录也原样保留。按 `sha256:` 镜像 id 删除、且复查确认镜像已消失后，用镜像的模板名标签找到同名的构建记录，只有记录的 `imageId` 就是这张镜像时才删除，避免误删同名的其他模板。控制台的基础模板卡片不再显示删除按钮，也不再使用的 `tp.deleteBaseExtra`（中英）已删除；新增 `template_builtin`、`template_still_used` 两条服务端消息与对应的 `err.*` 中英词条。测试：`tests/template-fork.test.ts` 新增四条（标签/裸名/镜像 id 三种删 base 都得到 `409 template_builtin` 且镜像仍在；引擎保留镜像时得到 `409 template_still_used` 且记录仍在；按 id 删干净后同名记录被删；记录的 `imageId` 指向别的镜像时保留），三条守卫各自撤掉后对应用例都变红（负向对照已做）。未验证：真实 Docker 引擎在镜像有子镜像时的具体行为，本机没有 Docker。
+
 ## [0.7.2] - 2026-10-31
 
 ### 变更

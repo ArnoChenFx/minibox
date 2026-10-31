@@ -1100,3 +1100,61 @@ describe("template.fork over REST and tokens", () => {
     expect(refused(reply)).toEqual({ status: 403, key: "operation_forbidden" });
   });
 });
+
+describe("deleting a template", () => {
+  test("the bundled base template is refused by its tag, by its bare name and by its image id", async () => {
+    const l = lab();
+    const base = await l.runtime.inspectImage(l.host.baseTemplateTag);
+
+    for (const ref of [l.host.baseTemplateTag, "base", base.id]) {
+      expect(await rejectionOf(deleteTemplate(l.host, ref))).toMatchObject({ status: 409, key: "template_builtin" });
+    }
+
+    // Nothing was touched: the image the helpers, volumes and egress proxy run on is still there.
+    expect(l.runtime.callsTo("removeImage")).toHaveLength(0);
+    expect((await l.runtime.inspectImage(l.host.baseTemplateTag)).id).toBe(base.id);
+    expect((await listTemplates(l.host)).map((template) => template.ref)).toContain(l.host.baseTemplateTag);
+  });
+
+  test("an image the engine keeps, as one another image is built on, is refused instead of reported deleted", async () => {
+    const l = lab();
+    await declared(l);
+    const image = await l.runtime.inspectImage("mbtest-template:tool");
+    // Docker removes only the tag of an image another image is built on and reports success; the image stays.
+    const removeImage = spyOn(l.runtime, "removeImage").mockImplementation(async () => {});
+
+    expect(await rejectionOf(deleteTemplate(l.host, image.id))).toMatchObject({
+      status: 409,
+      key: "template_still_used",
+    });
+
+    expect(removeImage).toHaveBeenCalled();
+    // The recipe stays too: the template is still there, so its source must not be forgotten.
+    expect(readRecipe(l.host, "tool")?.imageId).toBe(image.id);
+    expect(recipeOnDisk(l, "tool").imageId).toBe(image.id);
+  });
+
+  test("deleting by image id removes the recipe that built that image", async () => {
+    const l = lab();
+    await declared(l);
+    const image = await l.runtime.inspectImage("mbtest-template:tool");
+
+    await deleteTemplate(l.host, image.id);
+
+    expect(await imageGone(l, image.id)).toBe("gone");
+    expect(readRecipe(l.host, "tool")).toBeNull();
+  });
+
+  test("deleting by image id keeps a recipe of the same name that built another image", async () => {
+    const l = lab();
+    await declared(l);
+    const image = await l.runtime.inspectImage("mbtest-template:tool");
+    const recipe = recipeOnDisk(l, "tool");
+    writeFileSync(recipePathOf(l.host, "tool"), JSON.stringify({ ...recipe, imageId: "sha256:another" }));
+
+    await deleteTemplate(l.host, image.id);
+
+    expect(await imageGone(l, image.id)).toBe("gone");
+    expect(recipeOnDisk(l, "tool").imageId).toBe("sha256:another");
+  });
+});

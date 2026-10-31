@@ -72,7 +72,6 @@ export default {
   "tp.buildFailed": "构建失败",
   "tp.deleteMessage": "确定删除模板 <code>{ref}</code>？{extra}已基于它创建的 Box 不受影响。",
   "tp.deleteDraftMessage": "确定删除已保存的模板 <code>{ref}</code>？{extra}它还没有构建，不会删除任何镜像。",
-  "tp.deleteBaseExtra": "删除后可在本页重新构建。",
   "tp.deleteExtra": "此操作无法撤销。",
   "tp.deleted": "模板已删除",
   "tp.new": "新建模板",
