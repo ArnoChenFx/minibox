@@ -53,6 +53,7 @@ export default {
   "bd.setSecurity": "Security",
   "bd.setCheckpoints": "Checkpoints",
   "bd.deleteTitle": "Delete box",
+  "bd.rename": "Rename",
   "bd.notFound": "Box not found",
   "bd.loadFailed": "Couldn't load box",
   "bd.maybeDeleted": "It may have been deleted.",

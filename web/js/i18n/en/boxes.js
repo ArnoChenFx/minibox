@@ -156,6 +156,12 @@ export default {
     "{detail}. The volumes that were not removed are still listed on the Volumes page. Delete them there once nothing uses them.",
   "ba.deleteFailed": "Delete failed",
   "ba.resTitle": "Adjust resource quota",
+  "ba.renameTitle": "Rename “{name}”",
+  "ba.renameDesc":
+    "Renaming changes the container name and the name MiniBox shows, not the box's ID, volumes or checkpoints. Inside the box the host name keeps the old one until the box is rebuilt. In subdomain mode a preview's address can change, so open it again from the Ports tab; anything that refers to the old name, such as SSH or the CLI, needs the new one.",
+  "ba.renamed": "Renamed",
+  "ba.renamedText": "“{old}” is now “{new}”.",
+  "ba.renameFailed": "Couldn't rename the box",
   "ba.resDesc":
     "Change the CPU and memory limits of “{name}”. Takes effect immediately on a running box, no restart needed.",
   "ba.resCpuHint": "current {cur} · max {max} cores",
@@ -183,7 +189,8 @@ export default {
   "cb.desc": "A box is an isolated Docker container; its /workspace lives in a dedicated volume.",
   "cb.name": "Name",
   "cb.namePlaceholder": "e.g. agent-dev",
-  "cb.nameHelp": "Identifies the box and can't be changed later. Letters, digits, dots, underscores and hyphens.",
+  "cb.nameHelp":
+    "Identifies the box. Letters, digits, dots, underscores and hyphens; you can rename it later from its page.",
   "cb.sourceSnapshot": "Legacy snapshot",
   "cb.template": "Template",
   "cb.size": "Size",

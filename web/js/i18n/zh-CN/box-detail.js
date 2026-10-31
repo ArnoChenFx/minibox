@@ -51,6 +51,7 @@ export default {
   "bd.setSecurity": "安全",
   "bd.setCheckpoints": "检查点",
   "bd.deleteTitle": "删除 Box",
+  "bd.rename": "重命名",
   "bd.notFound": "找不到该 Box",
   "bd.loadFailed": "无法加载 Box",
   "bd.maybeDeleted": "它可能已被删除。",
