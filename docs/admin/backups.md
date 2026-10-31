@@ -188,7 +188,8 @@ What it does not do:
 - Only HTTP Basic. Digest and OAuth are not supported.
 - No resume and no multipart upload: an archive is one `PUT` with its length. A server that limits the size of a request body, such as nginx's `client_max_body_size`, must allow the size of your largest backup or checkpoint package.
 - One `PUT` per object under its final name, without a temporary name and a `MOVE`. If the connection drops and the cleanup that follows also fails, a partial file may stay under the object's name. It is never listed as an object, because a target lists an object only once its record is there, and the next push of that object replaces it. Delete it with your provider's tools if you prefer.
-- A same-origin redirect is followed, up to three. A redirect to another origin is refused before anything is sent there, and a redirected upload is refused rather than sent twice.
+- A same-origin redirect is followed, up to three. A redirect to another origin is refused before anything is sent there, and a redirected upload is refused rather than sent twice. The cleanup of a failed upload never follows one either, so a server cannot make it delete an object of its own choosing.
+- A transfer has no total time, since an archive may take minutes, but a transfer that moves no data for 60 seconds is stopped and reported as an unreachable target. That is what a proxy that stopped reading, or a connection a firewall dropped silently, looks like. The archive is pushed again from the start.
 
 ## Retention and schedules
 
