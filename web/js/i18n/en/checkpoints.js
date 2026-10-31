@@ -1,9 +1,9 @@
 export default {
   "ck.title": "Checkpoints",
   "ck.help":
-    "A checkpoint saves this box's workspace and home volumes. Fork one to start a new box from it, or roll the box back to it. A rollback keeps the volumes it replaces until you confirm or undo it.",
+    "A checkpoint saves this box's workspace and home volumes. Duplicate one to start a new box from it, or roll the box back to it. A rollback keeps the volumes it replaces until you confirm or undo it.",
   "ck.empty": "No checkpoints yet",
-  "ck.emptyText": "Take a checkpoint to save this box's data, so you can fork it or roll back to it later.",
+  "ck.emptyText": "Take a checkpoint to save this box's data, so you can duplicate it or roll back to it later.",
   "ck.loadFailed": "Couldn't load checkpoints",
   "ck.colTaken": "Taken",
   "ck.colLabel": "Label",
@@ -47,16 +47,16 @@ export default {
   "ck.takeStarted": "Checkpoint started",
   "ck.takeDone": "Checkpoint created",
   "ck.takeFailed": "Checkpoint failed",
-  "ck.fork": "Fork",
-  "ck.forkTitle": "Fork “{label}”",
+  "ck.fork": "Duplicate",
+  "ck.forkTitle": "Duplicate “{label}”",
   "ck.forkDesc": "Creates a new box from this checkpoint. The box it came from is not changed.",
   "ck.forkName": "New box name",
   "ck.forkHome": "Copy home",
   "ck.forkHomeHelp": "Off by default. The home volume can hold credentials and other sensitive files.",
-  "ck.forkConfirm": "Fork",
-  "ck.forkStarted": "Forking…",
-  "ck.forked": "Box forked",
-  "ck.forkFailed": "Fork failed",
+  "ck.forkConfirm": "Duplicate",
+  "ck.forkStarted": "Duplicating…",
+  "ck.forked": "Box duplicated",
+  "ck.forkFailed": "Couldn't duplicate box",
   "ck.rollback": "Roll back",
   "ck.rollbackTitle": "Roll back to “{label}”?",
   "ck.rollbackConfirm": "Roll back",
@@ -102,7 +102,7 @@ export default {
   "ck.deleted": "Checkpoint deleted",
   "ck.deleteFailed": "Delete failed",
   "ck.reasonLegacy":
-    "A snapshot from before checkpoints can be forked or deleted. It cannot be rolled back, pinned or exported.",
+    "A snapshot from before checkpoints can be duplicated or deleted. It cannot be rolled back, pinned or exported.",
   "ck.reasonVolumeSnapshot":
     "It is a snapshot of one volume, not of a box, so it records no template or size to make a box from and there is no box to roll back. It can be pinned, copied by hand or deleted.",
   "ck.reasonPending": "Confirm or undo the rollback that is waiting first.",
@@ -126,7 +126,7 @@ export default {
   "ck.copy": "Copy to host",
   "ck.copyTitle": "Copy “{label}”",
   "ck.copyDesc":
-    "Makes a copy of this checkpoint on another host, so a box can be forked there. This checkpoint stays where it is.",
+    "Makes a copy of this checkpoint on another host, so a box can be created from it there. This checkpoint stays where it is.",
   "ck.copyHostHelp": "The copy is a new checkpoint on that host, with this box's settings and creation time.",
   "ck.copyHow":
     "The data moves to the host in a sealed package, which is removed once the host holds the copy. A template the host lacks is copied first.",
@@ -149,7 +149,7 @@ export default {
   "ck.agentNote":
     "A box on an agent host cannot take a checkpoint, because an agent runs boxes only, so its camera button is off. Its checkpoints kept on other hosts work as usual.",
   "ck.importHostHelp":
-    "The checkpoint is imported onto this host. Forking it there needs the template it was taken from.",
+    "The checkpoint is imported onto this host. Creating a box from it there needs the template it was taken from.",
   "ck.importChoose": "Choose file",
   "ck.importNoneChosen": "No file chosen",
   "ck.importNoFile": "Choose a package file.",
@@ -226,7 +226,7 @@ export default {
   "ck.pendingLine": "{box} was rolled back to “{label}”",
   "ck.pendingKept": "Old volumes {volumes} are kept since {time}",
   "ck.pendingLineHelp": "Confirm and clean up deletes them; undo the rollback mounts them again.",
-  "ck.reasonBoxDeleted": "The box was deleted; fork the checkpoint to get its data back",
+  "ck.reasonBoxDeleted": "The box was deleted; duplicate the checkpoint to get its data back",
   "ck.boxDeleted": "Box deleted",
   "ck.volumeGroup": "Volume",
   "ck.openBox": "Open the box's checkpoint settings",

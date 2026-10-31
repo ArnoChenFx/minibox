@@ -57,7 +57,7 @@ export default {
   "act.template.create": "Built template",
   "act.template.draft.create": "Saved template draft",
   "act.template.edit": "Edited template",
-  "act.template.fork": "Forked template",
+  "act.template.fork": "Duplicated template",
   "act.template.rebuild": "Rebuilt template",
   "act.template.sync": "Copied template to host",
   "act.template.official.build": "Built official template",

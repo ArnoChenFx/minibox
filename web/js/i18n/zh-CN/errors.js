@@ -117,7 +117,9 @@ export default {
   "err.template_edit_empty":
     "没有要改的内容：请给出构建来源（source）、设置（init）或描述（description）。从 Box 保存的模板没有可改的构建来源。",
   "err.template_source_builtin":
-    "模板「{name}」由 MiniBox 自带的 Dockerfile 构建，来源不能修改。派生一份属于你自己的模板再改。",
+    "模板「{name}」由 MiniBox 自带的 Dockerfile 构建，来源不能修改。复制一份属于你自己的模板再改。",
+  "err.template_source_unreadable":
+    "MiniBox 读不到它为官方模板「{name}」自带的 Dockerfile，或该文件不是 Dockerfile，所以在修好之前无法复制该模板。",
   "err.template_busy": "模板「{name}」的另一次修改还在进行，等它结束再试。",
   "err.template_image_missing": "模板镜像 {image} 不存在，请先在「模板」页构建或选择其他模板。",
   "err.template_source_required": "请选择模板的来源：Dockerfile、Git 代码仓库、构建上下文 URL 或 devcontainer.json。",
@@ -170,7 +172,7 @@ export default {
   "err.volume_busy": "卷 {volume} 正在创建快照或删除。请等操作完成后再试。",
   "err.checkpoint_other_box": "检查点 {id} 取自另一个 Box。只能把 Box 回滚到它自己的检查点。",
   "err.checkpoint_no_data": "检查点 {id} 不含卷数据，没有可以回滚的内容。",
-  "err.checkpoint_legacy_read_only": "快照 {id} 创建于检查点功能之前，可以派生或删除，但不能修改。",
+  "err.checkpoint_legacy_read_only": "快照 {id} 创建于检查点功能之前，可以复制或删除，但不能修改。",
   "err.checkpoint_path_taken": "路径 {path} 已被新 Box 默认挂载的卷占用。请把副本挂到其它路径，或不复制它。",
   "err.checkpoint_path_not_mounted": "本 Box 当前没有卷挂载在 {path}，无法回滚到该路径。",
   "err.checkpoint_pinned": "检查点 {id} 已置顶。请先取消置顶再删除。",

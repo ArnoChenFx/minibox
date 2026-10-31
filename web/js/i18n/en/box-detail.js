@@ -444,7 +444,7 @@ export default {
     "A preview relays the port through MiniBox, and an agent host opens no address MiniBox can relay to, so the preview is refused even when the port is listed. Reach the service on the machine itself, or use the terminal or SSH. A box cannot be moved off an agent host yet, so create the box on a host MiniBox reaches directly to use the preview.",
   "bd.agentHostHint": "Agent host",
   "bd.agentCheckpoints":
-    "An agent host cannot take a checkpoint: a checkpoint commits a system image and copies the volumes through a helper container, and an agent runs boxes only. Checkpoints kept on other hosts can still be listed, forked, exported, pinned and deleted.",
+    "An agent host cannot take a checkpoint: a checkpoint commits a system image and copies the volumes through a helper container, and an agent runs boxes only. Checkpoints kept on other hosts can still be listed, duplicated, exported, pinned and deleted.",
   "bd.agentTemplate":
     "An agent host cannot save a box as a template: saving commits the container's system layer as an image, and an agent runs boxes only.",
   "bd.agentMove":
