@@ -4,8 +4,8 @@ import { checkSshKey, SshKeyError } from "../host/ssh";
 import { msg } from "../lib/messages";
 import { accept, type Checked, reject } from "../lib/validation";
 import { type TargetDraft, type TargetService } from "../services/targets";
-import { OBJECT_KINDS, objectKindOf, TARGET_KINDS } from "../targets/types";
-import { remotePath, s3Bucket, s3Endpoint, sftpHost, sftpUser } from "../targets/validate";
+import { OBJECT_KINDS, objectKindOf, TARGET_KINDS, type TargetKind } from "../targets/types";
+import { remotePath, s3Bucket, s3Endpoint, sftpHost, sftpUser, webdavUrl, webdavUser } from "../targets/validate";
 import { defineOperation } from "./define";
 import { OkSchema } from "./schemas";
 import { addFailure, field } from "./validation";
@@ -18,6 +18,7 @@ const REGION_RE = /^[A-Za-z0-9-]{1,64}$/;
 const PRINTABLE_RE = /^[\x21-\x7e]+$/;
 const FINGERPRINT_RE = /^SHA256:[A-Za-z0-9+/]{43}$/;
 const CONTROL_RE = /\p{Cc}/u;
+const PASSWORD_MAX = 1024;
 
 const LastSyncSchema = z.object({
   at: z.string(),
@@ -33,13 +34,14 @@ const TargetSchema = z.object({
   name: z.string(),
   kind: z.enum(TARGET_KINDS),
   address: z.string().meta({
-    description: "The endpoint and bucket of an S3 target, or the host and port of an SFTP server.",
+    description:
+      "The endpoint and bucket of an S3 target, the host and port of an SFTP server, or the collection URL of a WebDAV target.",
   }),
   path: z.string().meta({
     description: "The folder on the target the objects live in. Empty is the bucket root or the login folder.",
   }),
   hostKeyFingerprint: z.string().nullable().meta({
-    description: "The SFTP server's host key, pinned when the target was added. Null for an S3 target.",
+    description: "The SFTP server's host key, pinned when the target was added. Null for an S3 or WebDAV target.",
   }),
   credentials: z.boolean().meta({
     description: "Whether the target's credentials are stored. The values are never returned.",
@@ -70,7 +72,9 @@ const SyncResultSchema = z.object({
 });
 
 const TARGET_FIELDS = {
-  kind: z.enum(TARGET_KINDS).meta({ description: "s3 for an S3-compatible bucket, sftp for an SFTP server." }),
+  kind: z
+    .enum(TARGET_KINDS)
+    .meta({ description: "s3 for an S3-compatible bucket, sftp for an SFTP server, webdav for a WebDAV collection." }),
   path: z.string().max(512).optional().meta({
     description: "The folder the objects live in, relative to the target's root. Omitted, they go in the root.",
   }),
@@ -92,7 +96,7 @@ const TARGET_FIELDS = {
   }),
   host: z.string().max(255).optional().meta({ description: "SFTP only. The host name or address of the server." }),
   port: z.number().int().min(1).max(65535).optional().meta({ description: "SFTP only. The port. Defaults to 22." }),
-  user: z.string().max(64).optional().meta({ description: "SFTP only. The user the login is for." }),
+  user: z.string().max(128).optional().meta({ description: "SFTP and WebDAV only. The user the login is for." }),
   privateKey: z.string().max(16384).optional().meta({
     description:
       "SFTP only. The private key that logs in, in OpenSSH or PEM form without a passphrase. It is stored as a secret and never returned.",
@@ -100,6 +104,13 @@ const TARGET_FIELDS = {
   hostKeyFingerprint: z.string().max(128).optional().meta({
     description:
       "SFTP only. The server's host key, SHA256:…, as a test reported it. Adding a target needs it, and nothing is sent to a server that presents another key.",
+  }),
+  url: z.string().max(512).optional().meta({
+    description:
+      "WebDAV only. The https address of the collection the objects live under, such as https://host/remote.php/dav/files/USER. It may carry a path, and is stored without a trailing slash. Plain http is accepted only for localhost, 127.0.0.1 and [::1].",
+  }),
+  password: z.string().max(PASSWORD_MAX).optional().meta({
+    description: "WebDAV only. The password or app password of the login. It is stored as a secret and never returned.",
   }),
 };
 
@@ -159,6 +170,12 @@ function checkS3(input: TargetFields, ctx: z.RefinementCtx): void {
   requireValue(ctx, "secretAccessKey", input.secretAccessKey, (text) => PRINTABLE_RE.test(text));
 }
 
+function checkWebdav(input: TargetFields, ctx: z.RefinementCtx): void {
+  requireValue(ctx, "url", input.url, (text) => webdavUrl(text) !== null, msg("target_url_invalid"));
+  requireValue(ctx, "user", input.user, webdavUser);
+  requireValue(ctx, "password", input.password, (text) => text.length <= PASSWORD_MAX && !CONTROL_RE.test(text));
+}
+
 function checkSftp(input: TargetFields, ctx: z.RefinementCtx, adding: boolean): void {
   requireValue(ctx, "host", input.host, sftpHost);
   requireValue(ctx, "user", input.user, sftpUser);
@@ -173,11 +190,32 @@ function checkSftp(input: TargetFields, ctx: z.RefinementCtx, adding: boolean): 
   }
 }
 
-/** Each kind takes its own fields, and refuses the other kind's, so a field that would be ignored is an error. */
+/** The fields each kind keeps. `user` is shared by SFTP and WebDAV, and `path` by every kind. */
+const FIELDS_OF_KIND: Readonly<Record<TargetKind, readonly (keyof TargetFields)[]>> = {
+  s3: ["endpoint", "region", "bucket", "accessKeyId", "secretAccessKey"],
+  sftp: ["host", "port", "user", "privateKey", "hostKeyFingerprint"],
+  webdav: ["url", "user", "password"],
+};
+const KIND_SPECIFIC = [
+  "endpoint",
+  "region",
+  "bucket",
+  "accessKeyId",
+  "secretAccessKey",
+  "host",
+  "port",
+  "user",
+  "privateKey",
+  "hostKeyFingerprint",
+  "url",
+  "password",
+] as const;
+
+/** Each kind takes its own fields, and refuses the other kinds', so a field that would be ignored is an error. */
 function checkFields(input: TargetFields, ctx: z.RefinementCtx, adding: boolean): void {
-  const s3Keys = ["endpoint", "region", "bucket", "accessKeyId", "secretAccessKey"] as const;
-  const sftpKeys = ["host", "port", "user", "privateKey", "hostKeyFingerprint"] as const;
-  for (const key of input.kind === "s3" ? sftpKeys : s3Keys) {
+  const allowed: ReadonlySet<string> = new Set(FIELDS_OF_KIND[input.kind]);
+  for (const key of KIND_SPECIFIC) {
+    if (allowed.has(key)) continue;
     if (input[key] !== undefined) {
       addFailure(ctx, { message: msg("target_field_not_allowed", { label: key }), field: key });
     }
@@ -186,6 +224,7 @@ function checkFields(input: TargetFields, ctx: z.RefinementCtx, adding: boolean)
     addFailure(ctx, { message: msg("target_path_invalid"), field: "path" });
   }
   if (input.kind === "s3") checkS3(input, ctx);
+  else if (input.kind === "webdav") checkWebdav(input, ctx);
   else checkSftp(input, ctx, adding);
 }
 
@@ -212,6 +251,7 @@ const transferInput = z
 /** The place a target is reached at, with no credential in it. It is the only part of a target the audit log names. */
 function addressOf(input: TargetFields): string {
   if (input.kind === "s3") return `${s3Endpoint(input.endpoint ?? "") ?? ""}/${input.bucket ?? ""}`;
+  if (input.kind === "webdav") return webdavUrl(input.url ?? "") ?? "";
   return `${input.host ?? ""}:${input.port ?? SFTP_PORT}`;
 }
 
@@ -227,6 +267,15 @@ function draftOf(input: TargetFields): TargetDraft {
       bucket: input.bucket ?? "",
       accessKeyId: input.accessKeyId ?? "",
       secretAccessKey: input.secretAccessKey ?? "",
+    };
+  }
+  if (input.kind === "webdav") {
+    return {
+      kind: "webdav",
+      path,
+      url: webdavUrl(input.url ?? "") ?? "",
+      user: input.user ?? "",
+      password: input.password ?? "",
     };
   }
   return {
@@ -259,7 +308,7 @@ const targetList = defineOperation({
     toolset: "storage",
     name: "list_targets",
     description:
-      "List the off-site targets that checkpoint packages and backups are pushed to: S3-compatible buckets and SFTP folders. Each shows its last sync. Credentials are never returned. Owner only.",
+      "List the off-site targets that checkpoint packages and backups are pushed to: S3-compatible buckets, SFTP folders and WebDAV collections. Each shows its last sync. Credentials are never returned. Owner only.",
   },
   run: async ({ targets }) => ({ targets: targetsOf(targets).list() }),
 });
@@ -307,7 +356,7 @@ const targetAdd = defineOperation({
     toolset: "storage",
     name: "add_target",
     description:
-      "Add an off-site target. kind s3 takes endpoint, region, bucket, accessKeyId and secretAccessKey. kind sftp takes host, user, privateKey and hostKeyFingerprint, and the fingerprint comes from a test_target call that reported the server's key. Credentials are stored as secrets and never returned. Owner only.",
+      "Add an off-site target. kind s3 takes endpoint, region, bucket, accessKeyId and secretAccessKey. kind sftp takes host, user, privateKey and hostKeyFingerprint, and the fingerprint comes from a test_target call that reported the server's key. kind webdav takes url, user and password, where url is the https address of the collection the objects live under. Credentials are stored as secrets and never returned. Owner only.",
   },
   activity: { action: () => "target.add", target: (input) => input.name },
   audit: {

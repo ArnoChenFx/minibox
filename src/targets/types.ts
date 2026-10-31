@@ -6,7 +6,7 @@ import { BACKUP_EXTENSION, isBackupId } from "../backup/store";
 import { isPackageId, PACKAGE_EXTENSION } from "../checkpoints/package";
 
 export const TARGET_VERSION = 1;
-export const TARGET_KINDS = ["s3", "sftp"] as const;
+export const TARGET_KINDS = ["s3", "sftp", "webdav"] as const;
 export type TargetKind = (typeof TARGET_KINDS)[number];
 export const OBJECT_KINDS = ["package", "backup"] as const;
 export type ObjectKind = (typeof OBJECT_KINDS)[number];
@@ -17,7 +17,7 @@ export type ObjectKind = (typeof OBJECT_KINDS)[number];
  */
 const TARGET_SECRET_PREFIX = "target.";
 const TARGET_ID_RE = /^tgt_[0-9a-z]{8,32}$/;
-const TARGET_SECRET_RE = /^target\.(tgt_[0-9a-z]{8,32})\.(access-key|secret-key|private-key)$/;
+const TARGET_SECRET_RE = /^target\.(tgt_[0-9a-z]{8,32})\.(access-key|secret-key|private-key|password)$/;
 const ID_ALPHABET = "0123456789abcdefghjkmnpqrstvwxyz";
 
 export function isTargetId(value: string): boolean {
@@ -31,11 +31,12 @@ export function newTargetId(): string {
   return id;
 }
 
-export type TargetSecretField = "access-key" | "secret-key" | "private-key";
+export type TargetSecretField = "access-key" | "secret-key" | "private-key" | "password";
 
 export const SECRET_FIELDS: Readonly<Record<TargetKind, readonly TargetSecretField[]>> = {
   s3: ["access-key", "secret-key"],
   sftp: ["private-key"],
+  webdav: ["password"],
 };
 
 export function targetSecretName(id: string, field: TargetSecretField): string {
@@ -121,11 +122,19 @@ const SftpTargetSchema = z.strictObject({
   hostKeyFingerprint: z.string().min(1).max(128),
 });
 
-const TargetRecordSchema = z.discriminatedUnion("kind", [S3TargetSchema, SftpTargetSchema]);
+const WebdavTargetSchema = z.strictObject({
+  ...TargetBase,
+  kind: z.literal("webdav"),
+  url: z.string().min(1).max(512),
+  user: z.string().min(1).max(128),
+});
+
+const TargetRecordSchema = z.discriminatedUnion("kind", [S3TargetSchema, SftpTargetSchema, WebdavTargetSchema]);
 
 export type TargetRecord = z.infer<typeof TargetRecordSchema>;
 export type S3TargetRecord = z.infer<typeof S3TargetSchema>;
 export type SftpTargetRecord = z.infer<typeof SftpTargetSchema>;
+export type WebdavTargetRecord = z.infer<typeof WebdavTargetSchema>;
 
 export const TargetFileSchema = z.strictObject({
   version: z.literal(TARGET_VERSION),

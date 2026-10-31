@@ -54,8 +54,17 @@ interface SftpDraft {
   readonly hostKeyFingerprint: string | null;
 }
 
+/** A WebDAV collection. The password is kept as a secret, like the other kinds' credentials. */
+interface WebdavDraft {
+  readonly kind: "webdav";
+  readonly path: string;
+  readonly url: string;
+  readonly user: string;
+  readonly password: string;
+}
+
 /** What a target is reached with, before it is stored. Its paths and endpoints are already normalized. */
-export type TargetDraft = S3Draft | SftpDraft;
+export type TargetDraft = S3Draft | SftpDraft | WebdavDraft;
 
 /** A target as the API and the console see it. Credentials are never part of it, only whether they are held. */
 export interface TargetView {
@@ -113,7 +122,11 @@ interface Local extends Held {
 
 function targetView(record: TargetRecord, credentials: boolean): TargetView {
   const address =
-    record.kind === "s3" ? `${record.endpoint}/${record.bucket}` : `${record.user}@${record.host}:${record.port}`;
+    record.kind === "s3"
+      ? `${record.endpoint}/${record.bucket}`
+      : record.kind === "webdav"
+        ? record.url
+        : `${record.user}@${record.host}:${record.port}`;
   return {
     id: record.id,
     name: record.name,
@@ -160,6 +173,7 @@ function credentialsOf(draft: TargetDraft): { field: TargetSecretField; value: s
       { field: "secret-key", value: draft.secretAccessKey },
     ];
   }
+  if (draft.kind === "webdav") return [{ field: "password", value: draft.password }];
   return [{ field: "private-key", value: draft.privateKey }];
 }
 
@@ -174,6 +188,9 @@ function connectionOfDraft(draft: TargetDraft): TargetConnection {
       accessKeyId: draft.accessKeyId,
       secretAccessKey: draft.secretAccessKey,
     };
+  }
+  if (draft.kind === "webdav") {
+    return { kind: "webdav", url: draft.url, user: draft.user, password: draft.password, path: draft.path };
   }
   return {
     kind: "sftp",
@@ -190,6 +207,9 @@ function recordOf(id: string, name: string, draft: TargetDraft, now: string): Ta
   const base = { id, name, path: draft.path, createdAt: now, updatedAt: now, lastSync: null };
   if (draft.kind === "s3") {
     return { ...base, kind: "s3", endpoint: draft.endpoint, region: draft.region, bucket: draft.bucket };
+  }
+  if (draft.kind === "webdav") {
+    return { ...base, kind: "webdav", url: draft.url, user: draft.user };
   }
   return {
     ...base,
@@ -243,8 +263,8 @@ async function* once(bytes: Uint8Array): AsyncGenerator<Uint8Array> {
 }
 
 /**
- * Off-site targets: S3-compatible buckets and SFTP folders that checkpoint packages and backups are pushed to and pulled
- * from. A push writes the archive and then its record, so a target lists an object only when its record is there. A pull
+ * Off-site targets: S3-compatible buckets, SFTP folders and WebDAV collections that checkpoint packages and backups are
+ * pushed to and pulled from. A push writes the archive and then its record, so a target lists an object only when its record is there. A pull
  * stores an archive only once it matches its record. Both are idempotent: an object the other side already holds is
  * skipped, and an object held with other contents is refused rather than replaced.
  */
@@ -381,8 +401,9 @@ export class TargetService {
         if ((await session.stat(names.archive))?.bytes === local.bytes) return { bytes: local.bytes, skipped: true };
       }
       progress?.(`Uploading ${names.archive}\n`);
-      await session.write(names.archive, local.body());
-      await session.write(names.record, once(new TextEncoder().encode(local.record)));
+      await session.write(names.archive, local.body(), local.bytes);
+      const record = new TextEncoder().encode(local.record);
+      await session.write(names.record, once(record), record.byteLength);
       return { bytes: local.bytes, skipped: false };
     });
   }
@@ -510,6 +531,11 @@ export class TargetService {
         accessKeyId,
         secretAccessKey,
       };
+    }
+    if (record.kind === "webdav") {
+      const password = secret("password");
+      if (password === null) throw conflict(msg("target_credentials_missing", { name: record.name }));
+      return { kind: "webdav", url: record.url, user: record.user, password, path: record.path };
     }
     const privateKey = secret("private-key");
     if (privateKey === null) throw conflict(msg("target_credentials_missing", { name: record.name }));

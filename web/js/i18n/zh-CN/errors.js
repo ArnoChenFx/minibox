@@ -616,6 +616,8 @@ export default {
   "err.target_field_not_allowed": "{label} 不适用于此类目标。",
   "err.target_field_invalid": "{label} 无效。",
   "err.target_endpoint_invalid": "端点必须是 https 地址。只有 localhost、127.0.0.1 和 [::1] 允许使用明文 http。",
+  "err.target_url_invalid":
+    "地址必须是 https URL，不能含用户名、查询或片段。可以带路径。只有 localhost、127.0.0.1 和 [::1] 允许使用明文 http。",
   "err.target_path_invalid": "路径必须相对于目标的文件夹，不能包含 . 或 .. 段，也不能包含控制字符。",
   "err.target_key_invalid": "无法使用此私钥：{reason}。",
   "err.target_host_key_required": "保存此目标前，请先确认服务器的主机密钥。",

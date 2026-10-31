@@ -124,6 +124,7 @@ function targetDialog(view) {
           <label class="field">${t("st.targetTypeLabel")}<select class="select" name="kind">
             <option value="s3">${esc(t("st.targetKind.s3"))}</option>
             <option value="sftp">${esc(t("st.targetKind.sftp"))}</option>
+            <option value="webdav">${esc(t("st.targetKind.webdav"))}</option>
           </select></label>
         </div>
         <label class="field">${t("st.targetPath")}<input class="input mono" name="path" maxlength="512" spellcheck="false" /><span class="help">${t("st.targetPathHelp")}</span></label>
@@ -143,6 +144,13 @@ function targetDialog(view) {
             <label class="field">${t("label.user")}<input class="input mono" name="user" autocomplete="off" spellcheck="false" /></label>
           </div>
           <label class="field">${t("label.privateKey")}<textarea class="textarea mono" name="privateKey" rows="4" spellcheck="false"></textarea><span class="help">${t("st.targetSecretHelp")}</span></label>
+        </div>
+        <div class="stack" data-target-kind="webdav" hidden>
+          <label class="field">${t("label.url")}<input class="input mono" name="url" inputmode="url" placeholder="https://dav.example.com/remote.php/dav/files/USER" spellcheck="false" /><span class="help">${t("st.targetWebdavUrlHelp")}</span></label>
+          <div class="grid grid-2 form-grid">
+            <label class="field">${t("label.user")}<input class="input mono" name="user" autocomplete="off" spellcheck="false" /></label>
+            <label class="field">${t("label.password")}<input class="input mono" name="password" type="password" autocomplete="new-password" spellcheck="false" /><span class="help">${t("st.targetSecretHelp")}</span></label>
+          </div>
         </div>
         <div id="stTargetResult"></div>
         <div class="error-text" id="stTargetErr"></div>

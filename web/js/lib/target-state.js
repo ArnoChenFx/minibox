@@ -3,12 +3,13 @@
  * The server checks every value again; these only build the request body from the fields of the chosen kind.
  */
 
-export const TARGET_KINDS = Object.freeze(["s3", "sftp"]);
+export const TARGET_KINDS = Object.freeze(["s3", "sftp", "webdav"]);
 
 /** The settings each kind keeps. A form sends only the ones of its kind, so a field left from the other kind is never sent. */
 export const KIND_FIELDS = Object.freeze({
   s3: Object.freeze(["endpoint", "region", "bucket", "accessKeyId", "secretAccessKey"]),
   sftp: Object.freeze(["host", "port", "user", "privateKey"]),
+  webdav: Object.freeze(["url", "user", "password"]),
 });
 
 /** A private key keeps its line breaks as typed. Every other value is trimmed, since the server would refuse the spaces. */
