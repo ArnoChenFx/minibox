@@ -10,42 +10,41 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
-      - name: P1 helper env visibility (docker inspect)
-        run: |
-          docker run -d --name envprobe -e AWS_ACCESS_KEY_ID=AKTESTKEY -e AWS_SECRET_ACCESS_KEY=SKTESTSECRET --entrypoint sleep restic/restic:0.18.1 300
-          docker inspect envprobe --format '{{json .Config.Env}}'
-          docker rm -f envprobe
-
-      - name: P2 restic copy snapshot ids and original field (local repos)
+      - name: P4 S3 credentials from a shared-credentials file instead of env
         run: |
           set -u
           D=$(mktemp -d); chmod 777 "$D"; echo probe-pass > "$D/pw"; chmod 644 "$D/pw"
-          for v in probe-src probe-a probe-b; do docker volume create "$v" >/dev/null; done
-          I=restic/restic:0.18.1
-          docker run --rm -v probe-src:/src --entrypoint sh $I -c 'echo hello > /src/f.txt'
-          R="docker run --rm -v $D:/k -e RESTIC_PASSWORD_FILE=/k/pw -v probe-src:/src -v probe-a:/a -v probe-b:/b"
-          $R -e RESTIC_REPOSITORY=/a $I init
-          $R -e RESTIC_REPOSITORY=/a $I backup /src --tag probe
-          $R -e RESTIC_REPOSITORY=/b $I init
-          $R -e RESTIC_REPOSITORY=/b $I copy --from-repo /a --from-password-file /k/pw
-          echo "--- source repo A snapshots"
-          $R -e RESTIC_REPOSITORY=/a $I snapshots --json | jq -c '.[] | {id: .id, original: .original, tags: .tags}'
-          echo "--- copy repo B snapshots"
-          $R -e RESTIC_REPOSITORY=/b $I snapshots --json | jq -c '.[] | {id: .id, original: .original, tags: .tags}'
-          echo "--- second copy of the same snapshot"
-          $R -e RESTIC_REPOSITORY=/b $I copy --from-repo /a --from-password-file /k/pw; echo "exit=$?"
-          $R -e RESTIC_REPOSITORY=/b $I snapshots --json | jq -c 'length'
+          docker run -d --name s3auth --network host -e S3PROXY_AUTHORIZATION=aws-v2-or-v4 -e S3PROXY_ENDPOINT=http://127.0.0.1:9001 -e S3PROXY_IDENTITY=probe-key -e S3PROXY_CREDENTIAL=probe-secret -e JCLOUDS_PROVIDER=transient -e JCLOUDS_IDENTITY=local-identity -e JCLOUDS_CREDENTIAL=local-credential andrewgaul/s3proxy:latest
+          for i in $(seq 1 30); do curl -s -o /dev/null http://127.0.0.1:9001/ && break; sleep 2; done
+          docker run --rm --network host --entrypoint sh minio/mc:latest -c 'mc alias set p http://127.0.0.1:9001 probe-key probe-secret && mc mb p/probe-bucket'; echo "mc exit=$?"
+          printf '[default]\naws_access_key_id = probe-key\naws_secret_access_key = probe-secret\n' > "$D/aws"
+          printf '[default]\naws_access_key_id = probe-key\naws_secret_access_key = WRONG-SECRET\n' > "$D/aws-wrong"
+          chmod 644 "$D/aws" "$D/aws-wrong"
+          echo "--- a) file creds, correct secret, no AWS_* env (expect exit 0)"
+          docker run --rm --network host -v "$D:/k" -e RESTIC_PASSWORD_FILE=/k/pw -e AWS_SHARED_CREDENTIALS_FILE=/k/aws restic/restic:0.18.1 -o s3.bucket-lookup=path -r s3:http://127.0.0.1:9001/probe-bucket/filecreds init; echo "exit=$?"
+          echo "--- b) file creds, WRONG secret, no AWS_* env (negative control: expect non-zero)"
+          docker run --rm --network host -v "$D:/k" -e RESTIC_PASSWORD_FILE=/k/pw -e AWS_SHARED_CREDENTIALS_FILE=/k/aws-wrong restic/restic:0.18.1 -o s3.bucket-lookup=path -r s3:http://127.0.0.1:9001/probe-bucket/wrongcreds init; echo "exit=$?"
+          echo "--- c) no creds at all (expect non-zero)"
+          docker run --rm --network host -v "$D:/k" -e RESTIC_PASSWORD_FILE=/k/pw restic/restic:0.18.1 -o s3.bucket-lookup=path -r s3:http://127.0.0.1:9001/probe-bucket/nocreds init; echo "exit=$?"
 
-      - name: P3 S3 path-style against an S3 emulator (default vs -o s3.bucket-lookup=path)
+      - name: P5 SFTP key auth with pinned host key (atmoz/sftp)
         run: |
           set -u
           D=$(mktemp -d); chmod 777 "$D"; echo probe-pass > "$D/pw"; chmod 644 "$D/pw"
-          docker run -d --name s3proxy --network host -e S3PROXY_AUTHORIZATION=none -e S3PROXY_ENDPOINT=http://127.0.0.1:9000 -e JCLOUDS_PROVIDER=transient -e JCLOUDS_IDENTITY=local-identity -e JCLOUDS_CREDENTIAL=local-credential andrewgaul/s3proxy:latest
-          for i in $(seq 1 30); do curl -s -o /dev/null http://127.0.0.1:9000/ && break; sleep 2; done
-          echo "bucket create http=$(curl -s -o /dev/null -w '%{http_code}' -X PUT http://127.0.0.1:9000/probe-bucket)"
-          S="docker run --rm --network host -v $D:/k -e RESTIC_PASSWORD_FILE=/k/pw -e AWS_ACCESS_KEY_ID=probe-key -e AWS_SECRET_ACCESS_KEY=probe-secret restic/restic:0.18.1"
-          echo "--- default lookup"
-          $S -r s3:http://127.0.0.1:9000/probe-bucket/default init; echo "exit=$?"
-          echo "--- explicit path"
-          $S -o s3.bucket-lookup=path -r s3:http://127.0.0.1:9000/probe-bucket/path init; echo "exit=$?"
-          $S -o s3.bucket-lookup=path -r s3:http://127.0.0.1:9000/probe-bucket/path snapshots --json; echo "exit=$?"
+          docker run --rm -v "$D:/k" --entrypoint sh restic/restic:0.18.1 -c 'ssh-keygen -q -t ed25519 -N "" -f /k/key && chmod 644 /k/key.pub'; echo "keygen exit=$?"
+          mkdir -p "$D/keys"; cp "$D/key.pub" "$D/keys/key.pub"
+          docker run -d --name sftpd -p 2222:22 -v "$D/keys/key.pub:/home/probe/.ssh/keys/key.pub:ro" atmoz/sftp:alpine probe::1001:1001:upload
+          for i in $(seq 1 40); do ssh-keyscan -p 2222 127.0.0.1 2>/dev/null | grep -q ssh && break; sleep 2; done
+          ssh-keyscan -p 2222 127.0.0.1 2>/dev/null > "$D/known"
+          cat "$D/known" | cut -c1-60
+          ssh-keygen -lf "$D/known" || true
+          printf '127.0.0.1 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBogusBogusBogusBogusBogusBogusBogusBogusBogus\n' > "$D/known-wrong"
+          SFTP_OK="sftp.args=-p 2222 -i /k/key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/k/known"
+          SFTP_BAD="sftp.args=-p 2222 -i /k/key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/k/known-wrong"
+          echo "--- a) pinned correct key, upload dir (expect exit 0)"
+          docker run --rm --network host -v "$D:/k" -e RESTIC_PASSWORD_FILE=/k/pw restic/restic:0.18.1 -o "$SFTP_OK" -r sftp:probe@127.0.0.1:upload/repo init; echo "exit=$?"
+          echo "--- b) wrong pinned host key (negative control: expect non-zero, host key error)"
+          docker run --rm --network host -v "$D:/k" -e RESTIC_PASSWORD_FILE=/k/pw restic/restic:0.18.1 -o "$SFTP_BAD" -r sftp:probe@127.0.0.1:upload/repo2 init; echo "exit=$?"
+          echo "--- c) snapshots after a) (expect exit 0, []) "
+          docker run --rm --network host -v "$D:/k" -e RESTIC_PASSWORD_FILE=/k/pw restic/restic:0.18.1 -o "$SFTP_OK" -r sftp:probe@127.0.0.1:upload/repo snapshots --json; echo "exit=$?"
+          docker logs sftpd 2>&1 | tail -5
