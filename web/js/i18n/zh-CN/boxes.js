@@ -156,7 +156,7 @@ export default {
   "ba.resTitle": "调整资源配额",
   "ba.renameTitle": "重命名「{name}」",
   "ba.renameDesc":
-    "改名只改容器名和 MiniBox 里显示的名字，Box 的 ID、数据卷和检查点都不变。子域模式下预览地址可能会变，改名后请到「端口」页重新打开；SSH 和 CLI 里按旧名字引用这个 Box 的地方要用新名字。",
+    "改名只改容器名和 MiniBox 里显示的名字，Box 的 ID、数据卷和检查点都不变。Box 内部的主机名要到下次重建才会跟着改。子域模式下预览地址可能会变，改名后请到「端口」页重新打开；SSH 和 CLI 里按旧名字引用这个 Box 的地方要用新名字。",
   "ba.renamed": "已重命名",
   "ba.renamedText": "「{old}」现在叫「{new}」。",
   "ba.renameFailed": "无法重命名",

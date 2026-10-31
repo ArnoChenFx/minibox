@@ -71,7 +71,7 @@ The **Create checkpoint** button in the title bar takes a checkpoint from any ta
 
 ## Rename a box
 
-Click the pencil beside the box's name on its page, type a new name and click **Save**. The name rules are the same as at creation, and a box can be renamed whether it runs or is stopped. The container is renamed with the box; its ID, volumes, checkpoints and address in the console stay the same. In subdomain mode a preview's address can change, so open it again from the **Ports** tab, and anything that referred to the box by its old name, such as SSH or the CLI, needs the new one.
+Click the pencil beside the box's name on its page, type a new name and click **Save**. The name rules are the same as at creation, and a box can be renamed whether it runs or is stopped. The container is renamed with the box; its ID, volumes, checkpoints and address in the console stay the same. The host name inside the box keeps the old one until the box is rebuilt. In subdomain mode a preview's address can change, so open it again from the **Ports** tab, and anything that referred to the box by its old name, such as SSH or the CLI, needs the new one.
 
 ## Overview and the box list
 

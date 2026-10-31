@@ -158,7 +158,7 @@ export default {
   "ba.resTitle": "Adjust resource quota",
   "ba.renameTitle": "Rename “{name}”",
   "ba.renameDesc":
-    "Renaming changes the container name and the name MiniBox shows, not the box's ID, volumes or checkpoints. In subdomain mode a preview's address can change, so open it again from the Ports tab; anything that refers to the old name, such as SSH or the CLI, needs the new one.",
+    "Renaming changes the container name and the name MiniBox shows, not the box's ID, volumes or checkpoints. Inside the box the host name keeps the old one until the box is rebuilt. In subdomain mode a preview's address can change, so open it again from the Ports tab; anything that refers to the old name, such as SSH or the CLI, needs the new one.",
   "ba.renamed": "Renamed",
   "ba.renamedText": "“{old}” is now “{new}”.",
   "ba.renameFailed": "Couldn't rename the box",
