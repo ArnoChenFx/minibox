@@ -601,6 +601,20 @@ describe("off-site targets", () => {
       expect(sha256Of(local.backups.store.pathFor(backup.id))).toBe(backup.sha256);
     });
 
+    test("a record the server under-reports is read only up to the size a record can be", async () => {
+      const source = instanceOf();
+      const view = source.service.add("dav", webdav());
+      const meta = await packageIn(source);
+      await source.service.push(view.id, meta.id);
+      // The record grows far beyond a real one, and the server still reports it as tiny.
+      const record = `minibox/packages/${meta.id}.json`;
+      dav.files.set(record, new Uint8Array(200 * 1024));
+      dav.sizes.set(record, 100);
+
+      expect(await source.service.objects(view.id)).toEqual([]);
+      expect(dav.files.has(record)).toBe(true);
+    });
+
     test("the password is kept as a secret and never written to targets.json", () => {
       const inst = instanceOf();
       const view = inst.service.add("dav", webdav());

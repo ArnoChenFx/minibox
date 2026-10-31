@@ -23,6 +23,13 @@ export interface WebdavDoubleOptions {
   readonly hideHeadSize?: boolean;
   /** An href added to every listing, to see whether a client drops one that is not in the folder. */
   readonly strayHref?: string;
+  /**
+   * The path the server writes its hrefs under, when it differs from the one the client asked for. A proxy in front of the
+   * server that rewrites the path answers this way.
+   */
+  readonly hrefRoot?: string;
+  /** Lengths the server reports for a file that is not that size, by path relative to the collection. */
+  readonly reportSize?: Readonly<Record<string, number>>;
 }
 
 export interface WebdavDouble {
@@ -38,6 +45,8 @@ export interface WebdavDouble {
   readonly requests: string[];
   /** The headers of every request, in order. A test asserts what a PUT sent, such as a content length. */
   readonly requestHeaders: Record<string, string>[];
+  /** Lengths the server reports for a file that is not its real size, by path relative to the collection. */
+  readonly sizes: Map<string, number>;
   /** Makes the next `times` requests that match fail with `status`. */
   failNext(match: (method: string, path: string) => boolean, status: number, times?: number): void;
   /** Makes the next `times` requests that match answer `status` with a `Location` header. */
@@ -124,6 +133,7 @@ export function startWebdavDouble(options: WebdavDoubleOptions): WebdavDouble {
   const requestHeaders: Record<string, string>[] = [];
   const rules: Rule[] = [];
   const hidden = new Set(options.hideSize ?? []);
+  const sizes = new Map(Object.entries(options.reportSize ?? {}));
   const expected = `Basic ${base64(`${options.user}:${options.password}`)}`;
   let origin = "";
 
@@ -139,7 +149,8 @@ export function startWebdavDouble(options: WebdavDoubleOptions): WebdavDouble {
   const hrefOf = (relative: string, collection: boolean): string => {
     const segments = relative === "" ? [] : relative.split("/");
     const encoded = options.rawHref === true ? segments : segments.map((part) => encodeURIComponent(part));
-    const path = `${rootPath}/${encoded.join("/")}`;
+    const root = options.hrefRoot ?? rootPath;
+    const path = `${root}/${encoded.join("/")}`;
     const href = options.absoluteHref === true ? `${origin}${path}` : path;
     return collection && !href.endsWith("/") ? `${href}/` : href;
   };
@@ -148,7 +159,8 @@ export function startWebdavDouble(options: WebdavDoubleOptions): WebdavDouble {
     const type = collection ? `<${p}resourcetype><${p}collection/></${p}resourcetype>` : `<${p}resourcetype/>`;
     if (collection) return type;
     const stored = files.get(relative);
-    const bytes = stored?.byteLength ?? 0;
+    const reported = sizes.get(relative);
+    const bytes = reported ?? stored?.byteLength ?? 0;
     const length = hidden.has(relative) ? "" : `<${p}getcontentlength>${bytes}</${p}getcontentlength>`;
     const modified = `<${p}getlastmodified>${new Date(0).toUTCString()}</${p}getlastmodified>`;
     return `${type}${length}${modified}`;
@@ -278,6 +290,7 @@ export function startWebdavDouble(options: WebdavDoubleOptions): WebdavDouble {
     collections,
     requests,
     requestHeaders,
+    sizes,
     failNext(match, status, times = 1) {
       rules.push({ match, status, location: null, left: times });
     },

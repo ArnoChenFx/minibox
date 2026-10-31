@@ -7,7 +7,7 @@ import { classifyFailure, TargetFailure } from "../src/targets/errors";
 import { openSession } from "../src/targets/open";
 import { openS3Session } from "../src/targets/s3";
 import type { SftpConnection, S3Connection, TargetSession, WebdavConnection } from "../src/targets/session";
-import { entryName, parseMultistatus } from "../src/targets/webdav-xml";
+import { entryName, decodeEntities, parseMultistatus } from "../src/targets/webdav-xml";
 import { silenceLogs } from "./support/app";
 import { type S3Double, startS3Double } from "./support/s3-double";
 import { newEd25519Key, type SftpDouble, startSftpDouble } from "./support/sftp-double";
@@ -356,6 +356,37 @@ describe("WebDAV target adapter", () => {
     expect(double.requests.at(-1)).toBe(`DELETE /minibox/${PACKAGE}`);
   });
 
+  test("a redirect the upload is refused for leaves the object it names alone", async () => {
+    const existing = `packages/pk_bbbbbbbb.mbckpt`;
+    stored(double, `minibox/${existing}`, randomBytes(1000));
+    session = await openSession(connection());
+    // A proxy in front of the server answers the upload with a redirect to an object that is already there.
+    double.redirectNext(
+      (method, path) => method === "PUT" && path === `minibox/${PACKAGE}`,
+      `${double.url}/minibox/${existing}`,
+    );
+
+    const failure = await session.write(PACKAGE, chunked(new Uint8Array([1, 2, 3]), 3), 3).then(
+      () => null,
+      (e: unknown) => e,
+    );
+    expect((failure as TargetFailure).message).toContain("redirected the upload");
+    expect(double.files.has(`minibox/${existing}`)).toBe(true);
+    expect(double.requests.filter((request) => request.startsWith("DELETE "))).toEqual([]);
+  });
+
+  test("a cleanup never follows a redirect to an object of the server's choosing", async () => {
+    const existing = `packages/pk_bbbbbbbb.mbckpt`;
+    stored(double, `minibox/${existing}`, randomBytes(1000));
+    session = await openSession(connection());
+    // The source fails midway, so the write cleans up after itself; the server answers the cleanup with a redirect.
+    double.redirectNext((method) => method === "DELETE", `${double.url}/minibox/${existing}`);
+
+    expect(await reasonOf(() => session!.write(PACKAGE, failingAfter(randomBytes(50_000)), 50_000))).toBe("failed");
+    expect(double.files.has(`minibox/${existing}`)).toBe(true);
+    expect(double.requests.filter((request) => request.startsWith("DELETE "))).toHaveLength(1);
+  });
+
   test("reports a missing object as absent for a stat and as missing for a read", async () => {
     session = await openSession(connection());
     expect(await session.stat("packages/pk_bbbbbbbb.mbckpt")).toBeNull();
@@ -517,6 +548,31 @@ describe("WebDAV target adapter", () => {
     expect((await session.list("packages")).map((object) => object.name)).toEqual([PACKAGE]);
   });
 
+  test("says so when the server lists every object under an address of its own", async () => {
+    // A proxy in front of the server that strips the collection from the path it answers with.
+    double = start({ hrefRoot: "/minibox" });
+    stored(double, `minibox/${PACKAGE}`, randomBytes(100));
+    session = await openSession(connection());
+
+    const failure = await session.list("packages").then(
+      () => null,
+      (e: unknown) => e,
+    );
+    expect((failure as TargetFailure).reason).toBe("failed");
+    expect((failure as TargetFailure).message).toContain("not under /minibox/packages");
+  });
+
+  test("leaves out a folder the server lists beside the objects", async () => {
+    double = start();
+    session = await openSession(connection());
+    await session.write(PACKAGE, chunked(new Uint8Array([1]), 1), 1);
+    // A folder a user made in the collection, as a Nextcloud account may hold one.
+    double.collections.add("minibox/packages/old");
+
+    expect((await session.list("packages")).map((object) => object.name)).toEqual([PACKAGE]);
+    expect(double.requests.some((request) => request.startsWith("HEAD "))).toBe(false);
+  });
+
   test("lists the same objects whatever namespace prefix the server uses", async () => {
     for (const style of ["d", "D", "default"] as const) {
       const server = start({ style, splitProps: true });
@@ -642,6 +698,26 @@ describe("WebDAV multistatus parsing", () => {
     ]);
   });
 
+  test("leaves a numeric reference outside the code points a string holds as it was written", () => {
+    for (const [written, decoded] of [
+      ["&#x4e2d;", "中"],
+      ["&#x10ffff;", "\u{10ffff}"],
+      ["&#x110000;", "&#x110000;"],
+      ["&#99999999999999999999;", "&#99999999999999999999;"],
+      ["&#xD800;", "&#xD800;"],
+      ["&#-5;", "&#-5;"],
+    ] as const) {
+      expect([written, decodeEntities(written)]).toEqual([written, decoded]);
+    }
+  });
+
+  test("reads a listing whose href holds a reference a string cannot hold", () => {
+    const body = `<d:multistatus xmlns:d="DAV:"><d:response><d:href>/dav/a&#x110000;b.mbckpt</d:href><d:propstat><d:prop><d:getcontentlength>3</d:getcontentlength></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response></d:multistatus>`;
+    expect(parseMultistatus(body)).toEqual([
+      { href: "/dav/a&#x110000;b.mbckpt", collection: false, bytes: 3, modifiedAt: null },
+    ]);
+  });
+
   test("ignores a property that only a propstat that failed reports", () => {
     const body = `<d:multistatus xmlns:d="DAV:"><d:response><d:href>/dav/a.mbckpt</d:href><d:propstat><d:prop><d:getcontentlength>7</d:getcontentlength><d:resourcetype><d:collection/></d:resourcetype></d:prop><d:status>HTTP/1.1 404 Not Found</d:status></d:propstat></d:response></d:multistatus>`;
     expect(parseMultistatus(body)).toEqual([
@@ -673,6 +749,69 @@ function withCode(code: string): Error {
   return Object.assign(new Error("the request failed"), { code });
 }
 
+/** A server on a raw socket that answers with a status line and then stops sending, without closing the connection. */
+function stalledServer(head: string, body: string): { url: string; stop: () => void } {
+  const server = Bun.listen({
+    hostname: "127.0.0.1",
+    port: 0,
+    socket: {
+      open(socket) {
+        socket.write(head);
+        socket.write(body);
+      },
+      data() {},
+    },
+  });
+  return { url: `http://127.0.0.1:${server.port}`, stop: () => server.stop(true) };
+}
+
+/** A response head, with a length longer than the body that follows. */
+function respond(status: string, headers: string, body: string): string {
+  return `HTTP/1.1 ${status}\r\n${headers}\r\ncontent-length: 1000\r\n\r\n${body}`;
+}
+
+describe("a transfer that stalls", () => {
+  test("a download the server stops sending is given up on", async () => {
+    const server = stalledServer(respond("200 OK", "content-type: application/octet-stream", "abc"), "x");
+    const session = await openSession(
+      { kind: "webdav", url: server.url, user: "u", password: "p", path: "" },
+      { idleMs: 200 },
+    );
+    const started = Date.now();
+    const failure = await drain(await session.read("packages/x.mbckpt")).then(
+      () => null,
+      (e: unknown) => e,
+    );
+    await session.close();
+    server.stop();
+
+    expect((failure as TargetFailure).reason).toBe("unreachable");
+    expect((failure as TargetFailure).message).toContain("moved no data");
+    expect(Date.now() - started).toBeLessThan(5_000);
+  });
+
+  test("an upload the server never reads is given up on", async () => {
+    // The server answers at once and never reads the body, which is what a proxy that stops reading looks like.
+    const server = stalledServer(respond("500 Server Error", "content-type: text/plain", ""), "");
+    const session = await openSession(
+      { kind: "webdav", url: server.url, user: "u", password: "p", path: "" },
+      { idleMs: 200 },
+    );
+    const started = Date.now();
+    const failure = await session
+      .write("packages/x.mbckpt", chunked(randomBytes(4 * 1024 * 1024), 64 * 1024), 4 * 1024 * 1024)
+      .then(
+        () => null,
+        (e: unknown) => e,
+      );
+    await session.close();
+    server.stop();
+
+    expect(failure).toBeInstanceOf(TargetFailure);
+    expect(Date.now() - started).toBeLessThan(5_000);
+  });
+});
+
 describe("certificate failures", () => {
   test("a certificate the client refuses is a failure of the target, not an unreachable server", () => {
     for (const code of [
@@ -692,6 +831,19 @@ describe("certificate failures", () => {
     const failure = classifyFailure(new TypeError("self signed certificate"));
     expect(failure.reason).toBe("failed");
     expect(failure.message).toContain("certificate is not trusted");
+  });
+
+  test("a server's own error text about a certificate is not read as a certificate failure", () => {
+    // The server's message is about its own trouble, not about the certificate the client refused.
+    expect(classifyFailure(new Error("write failed: certificate on the server expired")).message).not.toContain(
+      "is not trusted",
+    );
+    expect(classifyFailure(new Error("certificate problem while reading the response")).message).not.toContain(
+      "is not trusted",
+    );
+    const s3 = withCode("InternalError");
+    s3.message = "tls certificate problem";
+    expect(classifyFailure(s3).message).toBe("tls certificate problem");
   });
 
   test("a server that cannot be reached stays unreachable", () => {

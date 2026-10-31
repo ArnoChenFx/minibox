@@ -4,6 +4,12 @@ import { entryName, parseMultistatus } from "./webdav-xml";
 
 /** A property request or a folder creation gets a total time. A transfer has none: an archive may take minutes. */
 const SMALL_TIMEOUT_MS = 30_000;
+/**
+ * A transfer that moves no byte for this long is a dead connection: a server that never reads the body, or one that stops
+ * sending in the middle of a download. A transfer has no total time, since an archive may take minutes, but silence is not
+ * slowness. Without this a stalled server would hold the target's lock until the process restarts.
+ */
+const TRANSFER_IDLE_MS = 60_000;
 const MAX_REDIRECTS = 3;
 const REDIRECT_STATUSES: ReadonlySet<number> = new Set([301, 302, 307, 308]);
 /** The properties a listing needs. Asking for them by name keeps a server from sending everything it knows. */
@@ -18,6 +24,24 @@ interface SendOptions {
   readonly streamed?: boolean;
   /** The call is small enough for a total time. */
   readonly small?: boolean;
+  /**
+   * Whether a redirect is followed. Every call follows one except the cleanup of a failed write: that one deletes nothing
+   * rather than let the server send it to an object of its choosing.
+   */
+  readonly follow?: boolean;
+  /** Aborts the request, which is how a stalled transfer is stopped. */
+  readonly signal?: AbortSignal;
+}
+
+/**
+ * The server answered an upload with a redirect. Nothing was written, so there is nothing to clean up, and the failure says
+ * which address to use instead.
+ */
+class RedirectedUpload extends TargetFailure {
+  constructor(detail: string) {
+    super("failed", detail);
+    this.name = "RedirectedUpload";
+  }
 }
 
 function authorization(conn: WebdavConnection): string {
@@ -74,12 +98,13 @@ async function send(conn: WebdavConnection, method: string, url: URL, options: S
         headers,
         body: options.body,
         redirect: "manual",
-        signal: options.small === true ? AbortSignal.timeout(SMALL_TIMEOUT_MS) : undefined,
+        signal: signalOf(options),
       });
     } catch (e) {
       throw classifyFailure(e);
     }
     if (!REDIRECT_STATUSES.has(response.status)) return response;
+    if (options.follow === false) return response;
     const location = response.headers.get("location");
     if (location === null) return response;
     await discard(response);
@@ -96,8 +121,7 @@ async function send(conn: WebdavConnection, method: string, url: URL, options: S
       );
     }
     if (options.streamed === true) {
-      throw new TargetFailure(
-        "failed",
+      throw new RedirectedUpload(
         `the server redirected the upload to ${next.href}, so it was not sent; use that address instead`,
       );
     }
@@ -105,6 +129,60 @@ async function send(conn: WebdavConnection, method: string, url: URL, options: S
     current = next;
   }
 }
+
+/** The signal of a request: the caller's, the total time of a small call, or both. */
+function signalOf(options: SendOptions): AbortSignal | undefined {
+  const signals = [options.signal, options.small === true ? AbortSignal.timeout(SMALL_TIMEOUT_MS) : undefined].filter(
+    (signal): signal is AbortSignal => signal !== undefined,
+  );
+  if (signals.length === 0) return undefined;
+  return signals.length === 1 ? signals[0] : AbortSignal.any(signals);
+}
+
+/** A transfer that moved nothing for the idle time, which is a dead connection rather than a slow one. */
+function stalledFailure(idleMs: number): TargetFailure {
+  return new TargetFailure(
+    "unreachable",
+    `the target moved no data for ${Math.round(idleMs / 1000)}s, so it was stopped`,
+  );
+}
+
+/** Whatever stopped a transfer, read as a stall when the watchdog is why it stopped. */
+function transferFailure(e: unknown, guard: IdleGuard, idleMs: number): TargetFailure {
+  return guard.stalled() ? stalledFailure(idleMs) : classifyFailure(e);
+}
+
+/**
+ * The watchdog of one transfer: every byte that moves restarts it, and nothing moving for the idle time aborts the
+ * request. A transfer has no total time, because an archive may take minutes. The abort carries no reason of its own, so
+ * the failure is read as a stalled transfer only by this session, and never by another request's abort.
+ */
+function idleGuard(idleMs: number) {
+  const controller = new AbortController();
+  let stalled = false;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const arm = (): void => {
+    if (timer !== null) clearTimeout(timer);
+    timer = setTimeout(() => {
+      stalled = true;
+      controller.abort();
+    }, idleMs);
+    timer.unref?.();
+  };
+  arm();
+  return {
+    signal: controller.signal,
+    beat: arm,
+    /** Whether the request was stopped for moving no data, rather than for any other reason. */
+    stalled: (): boolean => stalled,
+    stop: (): void => {
+      if (timer !== null) clearTimeout(timer);
+      timer = null;
+    },
+  };
+}
+
+type IdleGuard = ReturnType<typeof idleGuard>;
 
 /** The body of a response as text. A read that fails midway is classified, and the body is never shown. */
 async function textOf(response: Response): Promise<string> {
@@ -160,7 +238,8 @@ async function headSize(conn: WebdavConnection, url: URL, name: string): Promise
  * that fails deletes what it left when it can; when that also fails, the partial file stays until the next push of the
  * same object replaces it.
  */
-export function openWebdavSession(conn: WebdavConnection): TargetSession {
+export function openWebdavSession(conn: WebdavConnection, options: { readonly idleMs?: number } = {}): TargetSession {
+  const idleMs = options.idleMs ?? TRANSFER_IDLE_MS;
   /** The collections this session made, by address. A second write to the same folder creates nothing. */
   const made = new Set<string>();
 
@@ -222,13 +301,23 @@ export function openWebdavSession(conn: WebdavConnection): TargetSession {
       const entries = await propfind(conn, collection, "1");
       if (entries === null) return [];
       const found: RemoteObject[] = [];
+      let listed = 0;
       for (const entry of entries) {
         if (entry.collection) continue;
+        listed += 1;
         const child = entryName(entry.href, collection);
         if (child === null) continue;
         const name = folder === "" ? child : `${folder}/${child}`;
         const bytes = entry.bytes ?? (await headSize(conn, childOf(collection, child), name));
         found.push({ name, bytes, modifiedAt: entry.modifiedAt });
+      }
+      // A server that lists objects under addresses of its own naming, such as a proxy that rewrites the path, is a
+      // failure rather than an empty folder: an empty answer would look like a target that holds nothing.
+      if (listed > 0 && found.length === 0) {
+        throw new TargetFailure(
+          "failed",
+          `the server listed ${listed} objects that are not under ${collection.pathname}; check the address and any proxy in front of it`,
+        );
       }
       return found;
     },
@@ -245,18 +334,22 @@ export function openWebdavSession(conn: WebdavConnection): TargetSession {
 
     async read(name) {
       const { url } = objectOf(conn, name);
-      const response = await send(conn, "GET", url);
-      if (response.status === 404) {
-        await discard(response);
-        throw new TargetFailure("missing", name);
-      }
+      const guard = idleGuard(idleMs);
+      const response = await send(conn, "GET", url, { signal: guard.signal }).catch((e: unknown) => {
+        guard.stop();
+        throw e;
+      });
       if (response.status !== 200) {
-        const failure = httpFailure(response.status, response.statusText);
+        const failure = response.status === 404 ? new TargetFailure("missing", name) : null;
+        const status = httpFailure(response.status, response.statusText);
         await discard(response);
-        throw failure;
+        guard.stop();
+        throw failure ?? status;
       }
-      if (response.body === null) return chunksOf(new ReadableStream<Uint8Array>({ start: (at) => at.close() }));
-      return chunksOf(response.body);
+      if (response.body === null) {
+        return chunksOf(new ReadableStream<Uint8Array>({ start: (at) => at.close() }), guard, idleMs);
+      }
+      return chunksOf(response.body, guard, idleMs);
     },
 
     async write(name, body, size) {
@@ -265,34 +358,52 @@ export function openWebdavSession(conn: WebdavConnection): TargetSession {
       const headers: Record<string, string> = { "content-type": "application/octet-stream" };
       // A server such as nginx's DAV module or Nutstore may refuse a chunked upload, so a known length is sent up front.
       if (size !== undefined) headers["content-length"] = String(size);
+      const guard = idleGuard(idleMs);
       try {
-        const response = await send(conn, "PUT", url, { headers, body: streamOf(body), streamed: true });
+        const response = await send(conn, "PUT", url, {
+          headers,
+          body: streamOf(body, guard),
+          streamed: true,
+          signal: guard.signal,
+        });
         const { status, statusText } = response;
         await discard(response);
         if (status !== 200 && status !== 201 && status !== 204) throw httpFailure(status, statusText);
       } catch (e) {
-        await discardRemote(conn, url);
-        throw classifyFailure(e);
+        guard.stop();
+        // A redirected upload wrote nothing, and a cleanup that followed the same redirect could delete an object of the
+        // server's choosing. Any other failure may have left a partial object behind, so it is removed.
+        if (!(e instanceof RedirectedUpload)) await discardRemote(conn, url, idleMs);
+        throw transferFailure(e, guard, idleMs);
       }
+      guard.stop();
     },
 
     async close() {},
   };
 }
 
-/** Deletes what a failed write left, and says nothing when that fails too: the write's own failure is the one reported. */
-async function discardRemote(conn: WebdavConnection, url: URL): Promise<void> {
-  await send(conn, "DELETE", url, { small: true })
+/**
+ * Deletes what a failed write left, and says nothing when that fails too: the write's own failure is the one reported. It
+ * never follows a redirect, since a server that answers a DELETE with one is not deleting the object named here.
+ */
+async function discardRemote(conn: WebdavConnection, url: URL, idleMs: number): Promise<void> {
+  await send(conn, "DELETE", url, { small: true, follow: false, signal: AbortSignal.timeout(idleMs) })
     .then(discard)
     .catch(() => undefined);
 }
 
-/** A request body from a stream of chunks. Nothing is buffered: a package may be larger than memory. */
-function streamOf(body: AsyncIterable<Uint8Array>): ReadableStream<Uint8Array> {
+/**
+ * A request body from a stream of chunks. Nothing is buffered: a package may be larger than memory. Each chunk restarts
+ * the watchdog, so a server that stops reading the body is given up on rather than waited for forever.
+ */
+function streamOf(body: AsyncIterable<Uint8Array>, guard: IdleGuard): ReadableStream<Uint8Array> {
   const chunks = body[Symbol.asyncIterator]();
   return new ReadableStream<Uint8Array>({
     async pull(controller) {
+      guard.beat();
       const { done, value } = await chunks.next();
+      guard.beat();
       if (done) controller.close();
       else controller.enqueue(value);
     },
@@ -307,11 +418,16 @@ function streamOf(body: AsyncIterable<Uint8Array>): ReadableStream<Uint8Array> {
 }
 
 /** The chunks of a web stream. A read that fails midway is classified, and a consumer that stops early cancels it. */
-async function* chunksOf(stream: ReadableStream<Uint8Array>): AsyncGenerator<Uint8Array> {
+async function* chunksOf(
+  stream: ReadableStream<Uint8Array>,
+  guard: IdleGuard,
+  idleMs: number,
+): AsyncGenerator<Uint8Array> {
   const reader = stream.getReader();
   let finished = false;
   try {
     for (;;) {
+      guard.beat();
       const { done, value } = await reader.read();
       if (done) {
         finished = true;
@@ -321,8 +437,9 @@ async function* chunksOf(stream: ReadableStream<Uint8Array>): AsyncGenerator<Uin
     }
   } catch (e) {
     finished = true;
-    throw classifyFailure(e);
+    throw transferFailure(e, guard, idleMs);
   } finally {
+    guard.stop();
     if (!finished) await reader.cancel().catch(() => undefined);
   }
 }

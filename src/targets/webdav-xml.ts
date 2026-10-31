@@ -48,19 +48,28 @@ const ENTITIES: Readonly<Record<string, string>> = {
   apos: "'",
 };
 
-/** Decodes the five entities XML defines and the numeric ones, which is all an href can hold. */
+/**
+ * Decodes the five entities XML defines and the numeric ones, which is all an href can hold. A numeric reference outside
+ * the code points a string can hold is left as written, so a malformed answer never throws.
+ */
 export function decodeEntities(text: string): string {
   return text.replace(/&(#x[0-9a-fA-F]+|#[0-9]+|[a-zA-Z]+);/g, (whole, name: string) => {
     if (name.startsWith("#x") || name.startsWith("#X")) {
       const code = Number.parseInt(name.slice(2), 16);
-      return Number.isFinite(code) ? String.fromCodePoint(code) : whole;
+      return isCodePoint(code) ? String.fromCodePoint(code) : whole;
     }
     if (name.startsWith("#")) {
       const code = Number.parseInt(name.slice(1), 10);
-      return Number.isFinite(code) ? String.fromCodePoint(code) : whole;
+      return isCodePoint(code) ? String.fromCodePoint(code) : whole;
     }
     return ENTITIES[name] ?? whole;
   });
+}
+
+/** Whether a numeric reference names a character a string can hold: not beyond the last code point, and no surrogate. */
+function isCodePoint(code: number): boolean {
+  if (!Number.isInteger(code) || code < 0 || code > 0x10ffff) return false;
+  return !(code >= 0xd800 && code < 0xe000);
 }
 
 interface Token {

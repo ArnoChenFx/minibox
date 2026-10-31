@@ -252,10 +252,19 @@ function parseJson(text: string, object: string): unknown {
   }
 }
 
-async function collect(source: AsyncIterable<Uint8Array>): Promise<Buffer> {
+/**
+ * The text of a small object, read only as far as `limit` bytes. A server that reports a small size and then sends more
+ * cannot make the host read an archive into memory under the name of a record.
+ */
+async function collectLimited(source: AsyncIterable<Uint8Array>, object: string, limit: number): Promise<string> {
   const parts: Uint8Array[] = [];
-  for await (const chunk of source) parts.push(chunk);
-  return Buffer.concat(parts);
+  let read = 0;
+  for await (const chunk of source) {
+    read += chunk.byteLength;
+    if (read > limit) throw invalidObject(object, `the record is larger than ${limit} bytes`);
+    parts.push(chunk);
+  }
+  return Buffer.concat(parts).toString("utf8");
 }
 
 async function* once(bytes: Uint8Array): AsyncGenerator<Uint8Array> {
@@ -635,7 +644,7 @@ export class TargetService {
     const found = await session.stat(name);
     if (found === null) return null;
     if (found.bytes > MAX_RECORD_BYTES) throw invalidObject(object, "the record is too large");
-    return (await collect(await session.read(name))).toString("utf8");
+    return await collectLimited(await session.read(name), object, MAX_RECORD_BYTES);
   }
 
   /**

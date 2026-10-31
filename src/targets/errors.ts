@@ -64,8 +64,12 @@ const CERTIFICATE_CODES: ReadonlySet<string> = new Set([
   "ERR_TLS_CERT_ALTNAME_INVALID",
 ]);
 
-/** The text a certificate refused by a client carries, whichever library reported it. */
-const CERTIFICATE_TEXT = /certificate|self[- ]signed|verify the first/i;
+/**
+ * The text a certificate refused by a client carries, when the client reports no code. It is narrow on purpose: a server's
+ * own error text may mention a certificate for some other reason, and a message about one must not be mistaken for a
+ * failure of the certificate itself.
+ */
+const CERTIFICATE_TEXT = /unable to verify|certificate (has expired|is not trusted|is not yet valid)|self[- ]signed/i;
 
 /** SFTP status codes the protocol defines, as ssh2 reports them: no such file, and permission denied. */
 const SFTP_NO_SUCH_FILE = 2;
@@ -99,7 +103,9 @@ export function classifyFailure(e: unknown): TargetFailure {
   }
   if (code === SFTP_PERMISSION_DENIED) return new TargetFailure("forbidden", "permission denied");
   const text = (e instanceof Error ? e.message : String(e)).slice(0, MAX_DETAIL);
-  if (CERTIFICATE_TEXT.test(text)) return certificateFailure(text);
+  // Only a failure that carries no code of its own is read by its text: a code says what the failure is, and a message a
+  // server wrote may mention a certificate for some other reason.
+  if (code === undefined && CERTIFICATE_TEXT.test(text)) return certificateFailure(text);
   if (/authentication methods failed|all configured authentication/i.test(text)) return new TargetFailure("auth", text);
   if (/timed out|handshake|connect/i.test(text)) return new TargetFailure("unreachable", text);
   return new TargetFailure("failed", text);
