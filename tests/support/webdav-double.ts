@@ -105,6 +105,14 @@ function prefixOf(style: XmlStyle): { p: string; xmlns: string } {
  * answers the six methods a target uses: PROPFIND at depth 0 and 1, MKCOL, GET, PUT, DELETE and HEAD. Only loopback http
  * is served, since the target refuses plain http anywhere else.
  */
+function statusResponse(status: number): Response {
+  const text = STATUS_TEXT[status] ?? "";
+  return new Response(status === 204 || status === 401 ? null : text, {
+    status,
+    headers: status === 401 ? { "www-authenticate": 'Basic realm="dav"' } : undefined,
+  });
+}
+
 export function startWebdavDouble(options: WebdavDoubleOptions): WebdavDouble {
   const style = options.style ?? "d";
   const { p, xmlns } = prefixOf(style);
@@ -178,14 +186,6 @@ export function startWebdavDouble(options: WebdavDoubleOptions): WebdavDouble {
         headers: { "content-type": "application/xml; charset=utf-8" },
       },
     );
-
-  const statusResponse = (status: number): Response => {
-    const text = STATUS_TEXT[status] ?? "";
-    return new Response(status === 204 || status === 401 ? null : text, {
-      status,
-      headers: status === 401 ? { "www-authenticate": 'Basic realm="dav"' } : undefined,
-    });
-  };
 
   const server = Bun.serve({
     hostname: "127.0.0.1",

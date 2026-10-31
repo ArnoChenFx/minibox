@@ -12,8 +12,11 @@ export const KIND_FIELDS = Object.freeze({
   webdav: Object.freeze(["url", "user", "password"]),
 });
 
-/** A private key keeps its line breaks as typed. Every other value is trimmed, since the server would refuse the spaces. */
-const AS_TYPED = new Set(["privateKey"]);
+/**
+ * A private key keeps its line breaks as typed, and so does a password, which may end in a space. Every other value is
+ * trimmed, since the server would refuse the spaces.
+ */
+const AS_TYPED = new Set(["privateKey", "password"]);
 
 function portOf(text) {
   return /^\d+$/.test(text) ? Number(text) : text;

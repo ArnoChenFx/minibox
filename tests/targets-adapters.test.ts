@@ -254,6 +254,13 @@ describe("SFTP target adapter", () => {
   });
 });
 
+/** A file the server already holds, with the folders above it, as a previous push would have left them. */
+function stored(server: WebdavDouble, name: string, bytes: Uint8Array): void {
+  const parts = name.split("/");
+  for (let at = 1; at < parts.length; at += 1) server.collections.add(parts.slice(0, at).join("/"));
+  server.files.set(name, bytes);
+}
+
 describe("WebDAV target adapter", () => {
   let double: WebdavDouble;
   let session: TargetSession | null = null;
@@ -273,13 +280,6 @@ describe("WebDAV target adapter", () => {
     path: "minibox",
     ...overrides,
   });
-
-  /** A file the server already holds, with the folders above it, as a previous push would have left them. */
-  const stored = (server: WebdavDouble, name: string, bytes: Uint8Array): void => {
-    const parts = name.split("/");
-    for (let at = 1; at < parts.length; at += 1) server.collections.add(parts.slice(0, at).join("/"));
-    server.files.set(name, bytes);
-  };
 
   beforeEach(() => {
     silenceLogs();
@@ -374,7 +374,7 @@ describe("WebDAV target adapter", () => {
       `${double.url}/minibox/packages/other.bin`,
     );
 
-    expect(await drain(await session.read(PACKAGE))).toEqual(other);
+    expect(await drain(await session.read(PACKAGE))).toEqual(Buffer.from(other));
     expect(double.requests.filter((request) => request.startsWith("GET "))).toHaveLength(2);
   });
 
@@ -419,7 +419,7 @@ describe("WebDAV target adapter", () => {
     const bytes = new TextEncoder().encode(name);
     await session.write(name, chunked(bytes, 3), bytes.length);
 
-    expect(await drain(await session.read(name))).toEqual(bytes);
+    expect(await drain(await session.read(name))).toEqual(Buffer.from(bytes));
     expect((await session.list("packages")).map((object) => object.name)).toEqual([name]);
   });
 
@@ -515,9 +515,8 @@ describe("WebDAV target adapter", () => {
   });
 });
 
-describe("WebDAV multistatus parsing", () => {
-  const withPrefix = (p: string, xmlns: string): string =>
-    `<?xml version="1.0" encoding="utf-8"?>
+function withPrefix(p: string, xmlns: string): string {
+  return `<?xml version="1.0" encoding="utf-8"?>
 <${p}multistatus ${xmlns}>
   <${p}response>
     <${p}href>/dav/files/u/packages/pk_a%20b.mbckpt</${p}href>
@@ -538,7 +537,9 @@ describe("WebDAV multistatus parsing", () => {
     </${p}propstat>
   </${p}response>
 </${p}multistatus>`;
+}
 
+describe("WebDAV multistatus parsing", () => {
   test("reads a body whatever namespace prefix the server writes", () => {
     for (const [p, xmlns] of [
       ["d:", 'xmlns:d="DAV:"'],
@@ -590,9 +591,11 @@ describe("WebDAV multistatus parsing", () => {
   });
 });
 
-describe("certificate failures", () => {
-  const withCode = (code: string): Error => Object.assign(new Error("the request failed"), { code });
+function withCode(code: string): Error {
+  return Object.assign(new Error("the request failed"), { code });
+}
 
+describe("certificate failures", () => {
   test("a certificate the client refuses is a failure of the target, not an unreachable server", () => {
     for (const code of [
       "UNABLE_TO_VERIFY_LEAF_SIGNATURE",

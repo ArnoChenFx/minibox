@@ -63,6 +63,10 @@ These are the manual steps for changes made in 0.4 and later. Read the ones that
 - **NFS volumes.** Creating a volume on an NFS export fails with `502` (`storage_unwritable` or `storage_permission_denied`) when the export uses `root_squash` with the default anonymous user, `nobody`. Set `all_squash,anonuid=1000,anongid=1000` or `root_squash,anonuid=1000,anongid=1000` on the export. See [NFS](../user-guide/nfs.md).
 - **Notifications to private addresses.** MiniBox refuses to send notifications to loopback, private and other non-public addresses, unless `NOTIFY_ALLOW_PRIVATE=true`. The `198.18.0.0/15` range stays allowed, for DNS proxies that answer with fake IP addresses. Set it only for a channel that must reach your network.
 
+### Off-site targets
+
+- **WebDAV targets.** This release adds a third kind of off-site target, WebDAV. A release from before it refuses a `targets.json` that holds one and stops at startup with a message that names the file. Before you go back to 0.7.1 or earlier, remove every WebDAV target in **Settings → Off-site targets**, or delete the `webdav` entries from `DATA_DIR/targets.json`. Objects already on the collection are not touched.
+
 ### Hosts
 
 - **Agent needs an upgrade.** When a host shows **Agent needs an upgrade**, pull the newer `minibox-agent` image and recreate its container with the same data volume. See the [agent reference](../reference/agent.md).

@@ -134,7 +134,6 @@ const TargetRecordSchema = z.discriminatedUnion("kind", [S3TargetSchema, SftpTar
 export type TargetRecord = z.infer<typeof TargetRecordSchema>;
 export type S3TargetRecord = z.infer<typeof S3TargetSchema>;
 export type SftpTargetRecord = z.infer<typeof SftpTargetSchema>;
-export type WebdavTargetRecord = z.infer<typeof WebdavTargetSchema>;
 
 export const TargetFileSchema = z.strictObject({
   version: z.literal(TARGET_VERSION),

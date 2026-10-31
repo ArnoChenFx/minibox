@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### 新增
+
+- **异地备份支持 WebDAV（坚果云 / Nextcloud / 群晖等）**（[#155](https://github.com/ArnoChenFx/minibox/issues/155)）：异地目标在 `s3`、`sftp` 之外多了第三种 `webdav`，用 Bun 自带的 `fetch` 说 WebDAV（PROPFIND / MKCOL / GET / PUT / DELETE / HEAD），不引入依赖、不经过 rclone，也不碰检查点的 restic 仓库；`target.test` / `target.add` / `target.check` / `target.objects` / `target.push` / `target.pull` 对三种目标完全一致，没有新增 operation。字段是 `url`（集合地址，可以带路径，例如 Nextcloud 的 `https://host/remote.php/dav/files/USER`）、`user` 和 `password`；密码按密钥 `target.<id>.password` 保存，任何响应、`targets.json`、日志、事件和审计里都没有它，审计只记 `url`。地址规则与 S3 相同：必须 `https`，只有 `localhost`、`127.0.0.1`、`[::1]` 允许明文 `http`（所以局域网里的 NAS 也要开 https），不接受 userinfo、查询和片段，末尾斜杠会去掉。认证只做 HTTP Basic，证书照常校验、没有跳过开关，自签或不被信任的证书会得到一条读得懂的证书错误（分类加在 `src/targets/errors.ts`）。写入前逐级 `MKCOL`（每个会话只做一次，`probe` 不创建任何东西），已知长度时带 `Content-Length` 而不分块（nginx dav、坚果云等不一定收 chunked）；每个对象直接 `PUT` 到最终名字，不用临时名加 `MOVE`（各家对 `Destination` 的处理不一致），写失败时尽力 `DELETE` 残留。重定向只跟随同源，最多 3 次，跨源直接失败并给出对方的 origin，上传遇到重定向不会重发。控制台「设置 → 异地目标」的类型下拉多了 WebDAV，面板是 URL / 用户 / 密码三个输入，不需要指纹确认，保存直接走 `POST /api/targets`。文档见[备份](docs/admin/backups.md#webdav)（[中文](docs/zh-CN/admin/backups.md#webdav)）、[安全](docs/admin/security.md#backups-and-off-site-targets)、[数据目录](docs/admin/data-directory.md)、[API](docs/reference/api.md#targets) 与 [MCP](docs/reference/mcp.md#backup-and-target-tools)；降回 0.7.1 或更早前要先删掉 WebDAV 目标，见[升级](docs/admin/upgrades.md#off-site-targets)。测试：`tests/targets-adapters.test.ts`（写入后 stat/list/read 往返、逐级建目录且每个会话一次、来源中途失败后残留被删、缺失对象、401/403/不可达/非 WebDAV 地址、同源与跨源重定向、有 `size` 时不发 chunked 而没有 `size` 时仍分块、空格/中文/`+`/`&` 文件名、越界 href 被丢、三种 XML 前缀与多 propstat、缺 `getcontentlength` 的 HEAD 回退、证书错误分类）、`tests/targets-service.test.ts`（包和备份的推送 → 列出 → 拉取往返并核对 sha256、密码只存在于密钥、删除目标清掉密钥、密码缺失时报 `target_credentials_missing`）、`tests/targets-operations.test.ts`（必填字段、拒绝别的 kind 的字段、非 https、`..` 路径、对测试服务器 `target.test` 成功）、`tests/web-targets.test.ts`（WebDAV 只带自己的三个字段）。未验证：真实的坚果云 / Nextcloud / 群晖、真实的 https 握手与证书，以及超大文件上传。
+
 ## [0.7.1] - 2026-10-31
 
 ### 变更

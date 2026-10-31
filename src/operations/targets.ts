@@ -38,7 +38,8 @@ const TargetSchema = z.object({
       "The endpoint and bucket of an S3 target, the host and port of an SFTP server, or the collection URL of a WebDAV target.",
   }),
   path: z.string().meta({
-    description: "The folder on the target the objects live in. Empty is the bucket root or the login folder.",
+    description:
+      "The folder on the target the objects live in. Empty is the bucket root, the login folder or the collection root.",
   }),
   hostKeyFingerprint: z.string().nullable().meta({
     description: "The SFTP server's host key, pinned when the target was added. Null for an S3 or WebDAV target.",
@@ -76,7 +77,8 @@ const TARGET_FIELDS = {
     .enum(TARGET_KINDS)
     .meta({ description: "s3 for an S3-compatible bucket, sftp for an SFTP server, webdav for a WebDAV collection." }),
   path: z.string().max(512).optional().meta({
-    description: "The folder the objects live in, relative to the target's root. Omitted, they go in the root.",
+    description:
+      "The folder the objects live in, relative to the target's root. Omitted, they go in the bucket root, the login folder or the collection root.",
   }),
   endpoint: z.string().max(512).optional().meta({
     description:
