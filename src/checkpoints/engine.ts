@@ -1,6 +1,7 @@
 import type { HostCtx } from "../host/registry";
 import type { ByteProgress } from "../lib/transfer";
 import type { PackageDigest } from "./package";
+import type { RemoteRepository } from "./remote";
 
 /** What one backup produced: the snapshot id the engine assigned, and the bytes it read from the volume. */
 export interface BackupResult {
@@ -76,6 +77,12 @@ export interface SnapshotEngine {
   usage(host: HostCtx): Promise<EngineUsage>;
   /** The snapshots of this host's repository that carry `tag`. A repository that does not exist has none. */
   tagged(host: HostCtx, tag: string): Promise<SnapshotRef[]>;
+  /**
+   * Copies snapshots into `remote`, adding only the ones it does not hold yet, and creating the remote repository when
+   * it does not exist. A remote repository is never written to in any other way: nothing is removed or changed there, so
+   * a local forget or prune does not reach it. The copy is idempotent, because restic recognizes a snapshot by its origin.
+   */
+  copyToRemote(host: HostCtx, remote: RemoteRepository, snapshotIds: string[]): Promise<void>;
   /**
    * Writes a package for `input` to `file`, which must not exist yet. The stream is checked as it is written, and one
    * that is too long or refused leaves no file behind. `onBytes` reports the bytes written so far.

@@ -26,6 +26,7 @@ import {
   type SnapshotRef,
 } from "./engine";
 import { MANIFEST_FILE, MANIFEST_TAG, PackageRejected, type PackageDigest, writePackageFile } from "./package";
+import type { RemoteRepository, S3RemoteCredentials } from "./remote";
 
 /** Pinned engine image. Its flags below follow restic 0.18. */
 export const RESTIC_IMAGE = "restic/restic:0.18.1";
@@ -42,6 +43,19 @@ const KEY_FILE = "checkpoint-repo.key";
 const HELPER_KEY_NAME = "repo.key";
 /** The passphrase of a package, as a file inside the helper. It is never written anywhere else. */
 const PACKAGE_KEY_NAME = "package.key";
+/** The remote repository's password, and the files its target's credentials are read from. */
+const REMOTE_KEY_NAME = "remote.key";
+const AWS_KEY_NAME = "aws-credentials";
+const SFTP_KEY_NAME = "sftp.key";
+const KNOWN_HOSTS_NAME = "known_hosts";
+/**
+ * How long restic waits for a repository lock before giving up. The engine's queue already serializes this process's
+ * calls, so a lock can only belong to a helper left behind by a killed run (which never releases it) or to another
+ * client of the remote repository. Five minutes lets a helper that is finishing clear its lock without holding a
+ * scheduled pass for long; past that the copy fails, is recorded, and is retried later. An unconditional `unlock` is
+ * never run, since a live holder would then be overridden.
+ */
+const REMOTE_LOCK_WAIT = "5m";
 const SNAPSHOT_ID_RE = /^[0-9a-f]{64}$/;
 
 const HELPER_MEMORY_BYTES = 1024 * 1024 * 1024;
@@ -67,6 +81,8 @@ interface HelperCall {
   capAdd?: string[];
   secrets?: HelperSecret[];
   env?: string[];
+  /** Joins the bridge, so a helper that copies to a remote repository can reach it. */
+  network?: boolean;
 }
 
 /**
@@ -155,6 +171,55 @@ export class ResticEngine implements SnapshotEngine {
         throw e;
       }
       return this.listing(host, ["--tag", tag]);
+    });
+  }
+
+  /**
+   * Copies snapshots into the remote repository, creating it on the first copy. Only `copy` runs against the remote: no
+   * forget, prune or unlock is ever sent there, so a local deletion does not reach it. The helper joins the bridge,
+   * because the remote is elsewhere; its credentials still arrive as secret files, not environment variables, which
+   * `docker inspect` would show.
+   */
+  copyToRemote(host: HostCtx, remote: RemoteRepository, snapshotIds: string[]): Promise<void> {
+    return this.serial(host, async () => {
+      snapshotIds.forEach(assertSnapshotId);
+      if (snapshotIds.length === 0) return;
+      await this.ensureRepo(host, { create: false });
+      const call = remoteHelperCall(remote, []);
+      const common = {
+        mounts: [{ source: repoVolume(host), target: REPO_MOUNT, mode: "rw" as const }],
+        secrets: [{ name: HELPER_KEY_NAME, value: this.password() }, ...call.secrets],
+        env: call.env,
+        network: true,
+      };
+      const probe = await this.helper(host, { ...common, args: [...call.args, "cat", "config"] });
+      if (probe.exitCode === EXIT_WRONG_PASSWORD) {
+        throw failure("the remote checkpoint repository password is wrong", probe);
+      }
+      if (probe.exitCode === EXIT_NO_REPO) {
+        const init = await this.helper(host, {
+          ...common,
+          args: [...call.args, "--retry-lock", REMOTE_LOCK_WAIT, "init"],
+        });
+        if (init.exitCode !== 0) throw failure("restic init of the remote checkpoint repository", init);
+      } else if (probe.exitCode !== 0) {
+        throw failure("could not open the remote checkpoint repository", probe);
+      }
+      const copy = await this.helper(host, {
+        ...common,
+        args: [
+          ...call.args,
+          "--retry-lock",
+          REMOTE_LOCK_WAIT,
+          "copy",
+          "--from-repo",
+          REPO_MOUNT,
+          "--from-password-file",
+          `${HELPER_SECRETS_DIR}/${HELPER_KEY_NAME}`,
+          ...snapshotIds,
+        ],
+      });
+      if (copy.exitCode !== 0) throw failure("restic copy to the remote checkpoint repository", copy);
     });
   }
 
@@ -395,6 +460,7 @@ export class ResticEngine implements SnapshotEngine {
       mounts: call.mounts ?? [],
       secrets: call.secrets ?? [],
       env: call.env ?? [],
+      network: call.network,
       labels: { [host.keys.internal]: "true" },
       memoryBytes: HELPER_MEMORY_BYTES,
       pidsLimit: HELPER_PIDS_LIMIT,
@@ -485,6 +551,50 @@ async function assertVolume(host: HostCtx, volume: string): Promise<void> {
 
 function repoEnv(keyName: string, repository: string): string[] {
   return [`RESTIC_PASSWORD_FILE=${HELPER_SECRETS_DIR}/${keyName}`, `RESTIC_REPOSITORY=${repository}`, "HOME=/tmp"];
+}
+
+/** One helper call to a remote repository: restic's options, the files it reads them from, and its environment. */
+export interface RemoteHelperCall {
+  args: string[];
+  secrets: HelperSecret[];
+  env: string[];
+}
+
+/**
+ * The options, secret files and environment of a helper that talks to a remote repository. The repository password and
+ * the target's credentials are only ever files under `HELPER_SECRETS_DIR`; the environment names those files and never
+ * holds a credential, because `docker inspect` shows it to anyone who can reach the engine.
+ */
+export function remoteHelperCall(remote: RemoteRepository, command: string[]): RemoteHelperCall {
+  const secrets: HelperSecret[] = [{ name: REMOTE_KEY_NAME, value: remote.password }];
+  const env = [
+    `RESTIC_PASSWORD_FILE=${HELPER_SECRETS_DIR}/${REMOTE_KEY_NAME}`,
+    `RESTIC_REPOSITORY=${remote.repository}`,
+    "HOME=/tmp",
+  ];
+  const options: string[] = [];
+  if (remote.credentials.kind === "s3") {
+    secrets.push({ name: AWS_KEY_NAME, value: s3CredentialsFile(remote.credentials) });
+    env.push(`AWS_SHARED_CREDENTIALS_FILE=${HELPER_SECRETS_DIR}/${AWS_KEY_NAME}`);
+    options.push("-o", `s3.region=${remote.credentials.region}`);
+  } else {
+    secrets.push({ name: SFTP_KEY_NAME, value: remote.credentials.privateKey });
+    secrets.push({ name: KNOWN_HOSTS_NAME, value: `${remote.credentials.knownHosts}\n` });
+    const sshArgs = [
+      `-i ${HELPER_SECRETS_DIR}/${SFTP_KEY_NAME}`,
+      "-o IdentitiesOnly=yes",
+      "-o StrictHostKeyChecking=yes",
+      `-o UserKnownHostsFile=${HELPER_SECRETS_DIR}/${KNOWN_HOSTS_NAME}`,
+      `-p ${remote.credentials.port}`,
+    ].join(" ");
+    options.push("-o", `sftp.args=${sshArgs}`);
+  }
+  return { args: [...options, ...command], secrets, env };
+}
+
+/** The `[default]` section of an AWS shared credentials file, which restic's SDK reads by itself. */
+function s3CredentialsFile(credentials: S3RemoteCredentials): string {
+  return `[default]\naws_access_key_id = ${credentials.accessKeyId}\naws_secret_access_key = ${credentials.secretAccessKey}\n`;
 }
 
 function packageMountOf(volume: string, mode: "rw" | "ro"): Mount {

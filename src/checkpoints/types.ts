@@ -62,6 +62,21 @@ export interface SystemLayer {
 }
 
 /**
+ * One remote repository that holds a checkpoint's snapshots, keyed by the target id it lives on. The value is when the
+ * snapshots were last confirmed there. A local forget does not remove it: the remote keeps what it was given.
+ */
+export interface RemoteSyncState {
+  readonly [targetId: string]: string;
+}
+
+/** The last failed copy of a checkpoint's snapshots, recorded when a remote could not take them. */
+export interface RemoteSyncFailure {
+  readonly targetId: string;
+  readonly at: string;
+  readonly message: string;
+}
+
+/**
  * What a new box needs to start from the checkpoint. Resources are null when the box had none recorded, as a box
  * claimed from an unlabeled container does not.
  */
@@ -100,6 +115,13 @@ export interface CheckpointRecord {
   system: SystemLayer | null;
   /** Set on a recycle bin entry. Every other checkpoint has null here. */
   trash: TrashMark | null;
+  /**
+   * The remote repositories that hold this record's snapshots, by target id, with the time each copy last succeeded.
+   * Absent on records written before remotes existed, and on records whose data has not been copied anywhere yet.
+   */
+  remoteSync?: RemoteSyncState;
+  /** The last failed copy to a remote, when one happened after the last success for that target. */
+  remoteFailure?: RemoteSyncFailure | null;
   createdAt: string;
   updatedAt: string;
 }
