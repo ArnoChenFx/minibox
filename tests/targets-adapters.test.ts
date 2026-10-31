@@ -80,6 +80,7 @@ describe("S3-compatible target adapter", () => {
 
     expect(double.objects.get(`minibox/${PACKAGE}`)).toEqual(bytes);
     expect(await session.stat(PACKAGE)).toMatchObject({ name: PACKAGE, bytes: bytes.length });
+    expect(await session.stat("packages")).toBeNull();
     expect((await session.list("packages")).map((object) => object.name)).toEqual([PACKAGE]);
     expect(await drain(await session.read(PACKAGE))).toEqual(bytes);
   });
@@ -184,6 +185,7 @@ describe("SFTP target adapter", () => {
 
     expect(new Uint8Array(await Bun.file(onDisk("minibox", PACKAGE)).arrayBuffer())).toEqual(bytes);
     expect(await session.stat(PACKAGE)).toMatchObject({ name: PACKAGE, bytes: bytes.length });
+    expect(await session.stat("packages")).toBeNull();
     expect((await session.list("packages")).map((object) => object.name)).toEqual([PACKAGE]);
     expect(await drain(await session.read(PACKAGE))).toEqual(bytes);
   });
@@ -301,6 +303,7 @@ describe("WebDAV target adapter", () => {
 
     expect(double.files.get(`minibox/${PACKAGE}`)).toEqual(bytes);
     expect(await session.stat(PACKAGE)).toMatchObject({ name: PACKAGE, bytes: bytes.length });
+    expect(await session.stat("packages")).toBeNull();
     expect((await session.list("packages")).map((object) => object.name)).toEqual([PACKAGE]);
     expect(await drain(await session.read(PACKAGE))).toEqual(bytes);
     expect(await session.list("never-created")).toEqual([]);
@@ -391,6 +394,20 @@ describe("WebDAV target adapter", () => {
     expect((failure as TargetFailure).reason).toBe("failed");
     expect((failure as TargetFailure).message).toContain(`redirected the request to ${new URL(elsewhere.url).origin}`);
     expect(elsewhere.requests).toEqual([]);
+  });
+
+  test("refuses a redirected upload rather than sending the same bytes twice", async () => {
+    session = await openSession(connection());
+    double.redirectNext((method) => method === "PUT", `${double.url}/minibox/packages/elsewhere.mbckpt`);
+
+    const failure = await session.write(PACKAGE, chunked(new Uint8Array([1, 2, 3]), 3), 3).then(
+      () => null,
+      (e: unknown) => e,
+    );
+    expect((failure as TargetFailure).reason).toBe("failed");
+    expect((failure as TargetFailure).message).toContain("redirected the upload");
+    expect(double.files.has("minibox/packages/elsewhere.mbckpt")).toBe(false);
+    expect(double.requests.filter((request) => request.startsWith("PUT "))).toHaveLength(1);
   });
 
   test("sends a known size as a content length, and no chunked encoding", async () => {

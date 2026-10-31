@@ -200,8 +200,13 @@ describe("targets over REST", () => {
   });
 
   test("a WebDAV target is tested against the server and added without its password in any answer", async () => {
-    const dav = startWebdavDouble({ user: "minibox@example.com", password: "{{SECRET_l8kwv2ra}}" });
+    const dav = startWebdavDouble({
+      user: "minibox@example.com",
+      password: "{{SECRET_l8kwv2ra}}",
+      prefix: "remote.php/dav/files/u",
+    });
     try {
+      const before = harness.app.events.head();
       const body = {
         name: "dav",
         kind: "webdav",
@@ -210,7 +215,8 @@ describe("targets over REST", () => {
         user: dav.user,
         password: dav.password,
       };
-      const tested = await call(harness.base, "/api/targets/test", { body });
+      // A trailing slash is trimmed, and the audit keeps the trimmed address.
+      const tested = await call(harness.base, "/api/targets/test", { body: { ...body, url: `${dav.url}/` } });
       expect(tested.status).toBe(200);
 
       const added = await call(harness.base, "/api/targets", { body });
@@ -225,7 +231,11 @@ describe("targets over REST", () => {
       expect(JSON.stringify(added.json)).not.toContain(dav.password);
 
       const listed = await call(harness.base, "/api/targets");
-      expect(JSON.stringify(listed.json)).not.toContain(dav.password);
+      const events = JSON.stringify(harness.app.events.after(before, {}, 20));
+      expect(events).toContain(dav.url);
+      expect(events).not.toContain(`${dav.url}/`);
+      for (const answer of [added.json, listed.json, events])
+        expect(JSON.stringify(answer)).not.toContain(dav.password);
     } finally {
       dav.stop();
     }
@@ -255,6 +265,16 @@ describe("targets over REST", () => {
       const port = await call(harness.base, "/api/targets", { body: { ...body, port: 22 } });
       expect(refused(port)).toEqual({ status: 400, key: "target_field_not_allowed" });
       expect(port.json.error?.details).toEqual({ field: "port" });
+
+      const nameWithColon = await call(harness.base, "/api/targets", { body: { ...body, user: "a:b" } });
+      expect(refused(nameWithColon)).toEqual({ status: 400, key: "target_field_invalid" });
+      expect(nameWithColon.json.error?.details).toEqual({ field: "user" });
+
+      const multilinePassword = await call(harness.base, "/api/targets", {
+        body: { ...body, password: "line\nbreak" },
+      });
+      expect(refused(multilinePassword)).toEqual({ status: 400, key: "target_field_invalid" });
+      expect(multilinePassword.json.error?.details).toEqual({ field: "password" });
 
       const s3WithUrl = await call(harness.base, "/api/targets", {
         body: { ...s3Target(), url: "https://dav.example.com" },
