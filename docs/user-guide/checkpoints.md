@@ -1,6 +1,6 @@
 # Checkpoints
 
-A checkpoint is a copy of a box's data. You can fork a new box from a checkpoint, or roll a box back to one.
+A checkpoint is a copy of a box's data. You can create a new box from a checkpoint, or roll a box back to one.
 
 A checkpoint includes the box's `/workspace` folder and its home folder. A template includes only the system files, so a checkpoint is the way to keep your work.
 
@@ -10,7 +10,7 @@ Checkpoints are not a backup of the whole server. They are stored on the host th
 
 ## Create a checkpoint
 
-**An agent host does not support checkpoints yet.** A checkpoint commits a system image and copies the box's volumes through a helper container, and an agent host can run neither, so the take is refused with `501 agent_host_unsupported`. The **Create checkpoint** button in the box's title bar and the one on the checkpoints card are both off on an agent host, with the reason as their tooltip, rather than failing after a click. One line under the title bar says the same, so the reason is there on a phone, where the buttons show only their icons. When you import or copy a checkpoint, an agent host is listed but cannot be picked. Checkpoints kept on other hosts still list, fork, export, pin and delete.
+**An agent host does not support checkpoints yet.** A checkpoint commits a system image and copies the box's volumes through a helper container, and an agent host can run neither, so the take is refused with `501 agent_host_unsupported`. The **Create checkpoint** button in the box's title bar and the one on the checkpoints card are both off on an agent host, with the reason as their tooltip, rather than failing after a click. One line under the title bar says the same, so the reason is there on a phone, where the buttons show only their icons. When you import or copy a checkpoint, an agent host is listed but cannot be picked. Checkpoints kept on other hosts still list, duplicate, export, pin and delete.
 
 1. Open the box, click **Settings**, and then **Checkpoints**.
 2. Click **Create checkpoint**. The same button is in the title bar of the box, on every tab.
@@ -25,7 +25,7 @@ Checkpoints are not a backup of the whole server. They are stored on the host th
 
    A box that is stopped or asleep is copied as it is, whichever choice you pick.
 
-5. To include the system layer, tick **Include the system layer**. This saves the box's installed software, so a fork starts with it. It takes longer, and it uses more space.
+5. To include the system layer, tick **Include the system layer**. This saves the box's installed software, so a duplicate starts with it. It takes longer, and it uses more space.
 6. Click **Create checkpoint**.
 
 The checkpoint appears in the list when it is ready. Follow the progress in the **Tasks** panel.
@@ -40,18 +40,18 @@ The list shows each checkpoint's **Taken** time, **Label**, **Kind** and **Conte
 - **Automatic**: a checkpoint that MiniBox took. MiniBox takes one before each rollback, before a box is rebuilt or has a volume attached or detached (a [safety checkpoint](#safety-checkpoints)), and on a [schedule](#scheduled-checkpoints) if you set one.
 - **Pinned**: a checkpoint that you pinned.
 - **Volume snapshot**: a snapshot of one volume taken on its own, without a box. Its record names no box, and the storage page's **Checkpoints** tab groups it under the volume, with the badge **Volume**. See [Volumes and storage](volumes-and-storage.md#snapshot-a-volume).
-- **Legacy snapshot**: a snapshot from before checkpoints existed. You can fork it or delete it, but not roll back to it.
+- **Legacy snapshot**: a snapshot from before checkpoints existed. You can duplicate it or delete it, but not roll back to it.
 
-A **Volume snapshot** cannot be forked, exported, copied or rolled back to: it holds one volume's data and no box settings, so there is no template or size to make a box from, and a package would describe no box. It can be pinned and deleted like any other checkpoint.
+A **Volume snapshot** cannot be duplicated, exported, copied or rolled back to: it holds one volume's data and no box settings, so there is no template or size to make a box from, and a package would describe no box. It can be pinned and deleted like any other checkpoint.
 
-## Fork a checkpoint
+## Duplicate a checkpoint
 
-Forking creates a new box from a checkpoint. The box that the checkpoint came from does not change.
+Duplicating creates a new box from a checkpoint. The box that the checkpoint came from does not change.
 
-1. On the checkpoint's row, click **Fork**.
+1. On the checkpoint's row, click **Duplicate**.
 2. In **New box name**, type a name for the new box.
 3. To copy the home folder, tick **Copy home**. It is off by default, because the home folder can hold credentials and other sensitive files.
-4. Click **Fork**.
+4. Click **Duplicate**.
 
 ## Roll back to a checkpoint
 
@@ -75,7 +75,7 @@ Before MiniBox rebuilds a box, it takes a safety checkpoint of the box's data, s
 It is taken by default. To skip it, clear **Take a safety checkpoint first** in the rebuild preview, or in the dialog that confirms an attach or a detach. The REST API takes `safetyCheckpoint: false` for the same purpose, and so do the MCP tools `rebuild_box`, `attach_volume` and `detach_volume`.
 
 - If the rebuild fails and MiniBox restores the box, the safety checkpoint is discarded.
-- If the box cannot be restored exactly, the safety checkpoint is kept, and the error names it. Fork it to get the data back.
+- If the box cannot be restored exactly, the safety checkpoint is kept, and the error names it. Duplicate it to get the data back.
 - A box with no volumes of its own has no data to keep, so MiniBox takes no checkpoint for it.
 - A repository at its limit refuses the checkpoint, as it refuses a rollback. A host disk below its free-space minimum refuses it with `507`.
 
@@ -111,7 +111,7 @@ On the command line, `minibox trash ls` lists the entries, `minibox trash restor
 
 ## Copy to another host
 
-A copy makes a checkpoint available on another host, so you can fork a box from it there without moving the box. The original stays where it is. The copy is a new checkpoint with its own id on the target host. It keeps the original's label, pin, creation time and box settings.
+A copy makes a checkpoint available on another host, so you can create a box from it there without moving the box. The original stays where it is. The copy is a new checkpoint with its own id on the target host. It keeps the original's label, pin, creation time and box settings.
 
 To copy one, click **Copy to host** on the checkpoint's row, choose the host, and click **Copy**. The button shows only when there is more than one host. The copy runs as a task, and its log shows the transfer. On the command line, `minibox checkpoint copy <id> --host <host>` waits for the task and prints the copy's id. Over the REST API, `POST /api/checkpoints/{id}/copy` with `{ "host": "<id>" }` returns `202` with a task. Copying is for the owner only.
 
@@ -119,7 +119,7 @@ The data is packed on the source host into a sealed package, with a passphrase m
 
 A copy is refused for the same reasons as an export. These are a snapshot from before checkpoints, a checkpoint that holds no volume data, and a checkpoint that includes its system layer. It is also refused when the target is the host the checkpoint is already on, when that host already holds a copy of it, and when the checkpoint is being exported or copied. The package must fit in `CHECKPOINT_PACKAGE_MAX_MB`, as an export does.
 
-`GET /api/checkpoints` lists the copy with its host. Forking from the copy creates the box on that host.
+`GET /api/checkpoints` lists the copy with its host. Creating a box from the copy puts it on that host.
 
 A copy is also what a [move by the checkpoint path](hosts.md#move-a-box-to-another-host) uses: the move takes a checkpoint, copies it to the target, makes the box there from the copy, and removes both checkpoints once the box runs on the target. That is why a volume a checkpoint cannot read refuses it. The template image still has to be on the target, and the copy sends it when it is not.
 
@@ -141,11 +141,11 @@ To import a package:
 
 1. In the box's **Settings**, under **Checkpoints**, click **Import**.
 2. Choose the **Package file**, a `.mbckpt` file, and type the **Passphrase** it was sealed with. If this instance has more than one host, choose the **Host** to import onto.
-3. Click **Import**. The import runs as a task. When it finishes, the checkpoint can be forked. It is listed in this section only when this box is the one it was taken from, as described below.
+3. Click **Import**. The import runs as a task. When it finishes, a box can be created from the checkpoint. It is listed in this section only when this box is the one it was taken from, as described below.
 
 A wrong passphrase fails the import, and the package stays, so you can try again until it expires. A checkpoint whose id already exists on the instance is not imported, and nothing there changes.
 
-An imported checkpoint keeps the id of the box it came from. It appears in that box's list only when a box with that id exists on this instance, and it always appears in `GET /api/checkpoints`. A checkpoint without a system layer forks from the template it was taken from, so the host needs that template's image.
+An imported checkpoint keeps the id of the box it came from. It appears in that box's list only when a box with that id exists on this instance, and it always appears in `GET /api/checkpoints`. A checkpoint without a system layer is created from the template it was taken from, so the host needs that template's image.
 
 The package size is limited by `CHECKPOINT_PACKAGE_MAX_MB`, which is 2048 MB by default. A larger export fails with `payload_too_large`. Over the REST API, export with `POST /api/checkpoints/{id}/export`, upload the file with `POST /api/packages` as `application/octet-stream`, and import it with `POST /api/packages/{id}/import`. See the [API reference](../reference/api.md).
 

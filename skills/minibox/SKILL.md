@@ -60,7 +60,7 @@ curl -s -H "Authorization: Bearer $MINIBOX_TOKEN" -H 'Content-Type: application/
 ### Which one to use
 
 - **MCP** when the agent drives itself. Tools are filtered per scope, and arguments are the operation's fields.
-- **REST** for scripts and curl, and for what MCP does not expose: checkpoints (take, list, fork, roll back), session list and close, box logs and stats, tasks, tokens, raw file streaming, event streams, and owner-only administration.
+- **REST** for scripts and curl, and for what MCP does not expose: checkpoints (take, list, duplicate, roll back), session list and close, box logs and stats, tasks, tokens, raw file streaming, event streams, and owner-only administration.
 
 ## 2. Core operations
 
@@ -150,7 +150,7 @@ curl -s -H "Authorization: Bearer $MINIBOX_TOKEN" -H 'Content-Type: application/
   -d '{"label":"before-upgrade","reason":"manual","consistency":"live"}' \
   http://127.0.0.1:3920/api/boxes/my-box/checkpoints
 
-# list, fork a new box from one, roll the box back (rollback needs If-Match and confirm)
+# list, make a new box from one, roll the box back (rollback needs If-Match and confirm)
 curl -s -H "Authorization: Bearer $MINIBOX_TOKEN" http://127.0.0.1:3920/api/checkpoints
 curl -s -H "Authorization: Bearer $MINIBOX_TOKEN" -H 'Content-Type: application/json' \
   -d '{"name":"my-box-fork"}' http://127.0.0.1:3920/api/checkpoints/ck_xxx/fork
@@ -158,7 +158,7 @@ curl -s -H "Authorization: Bearer $MINIBOX_TOKEN" -H 'Content-Type: application/
 
 `consistency` is `live` (default, crash-consistent), `pause` (freeze the box) or `stop` (stop it and start it again). Export, import, copy and schedule are owner-only.
 
-A single volume can be snapshotted without a box, which is what the storage page's **Snapshot** button does for an independent volume. The record names no box, so it can be pinned and deleted, but not forked, exported, copied or rolled back (each is refused with its reason):
+A single volume can be snapshotted without a box, which is what the storage page's **Snapshot** button does for an independent volume. The record names no box, so it can be pinned and deleted, but not duplicated, exported, copied or rolled back (each is refused with its reason):
 
 ```bash
 curl -s -H "Authorization: Bearer $MINIBOX_TOKEN" -H 'Content-Type: application/json' \

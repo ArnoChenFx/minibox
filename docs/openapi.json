@@ -36736,7 +36736,7 @@
         "tags": [
           "templates"
         ],
-        "summary": "Fork a template into a new one that can be changed on its own",
+        "summary": "Duplicate a template into a new one that can be changed on its own",
         "parameters": [
           {
             "name": "ref",
@@ -36752,7 +36752,7 @@
             "in": "query",
             "required": false,
             "schema": {
-              "description": "Host that holds the template to fork. Omitted, the first host that holds it.",
+              "description": "Host that holds the template to duplicate. Omitted, the first host that holds it.",
               "type": "string",
               "pattern": "^[a-z][a-z0-9-]{0,31}$"
             }

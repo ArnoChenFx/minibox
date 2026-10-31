@@ -2,7 +2,7 @@
 
 工具是你安装到 Box 中的程序，例如 AI 编程 Agent、语言运行时和命令行实用程序。MiniBox 有工具目录。你也可以添加自己的工具。
 
-先核对工具显示的依赖与 Box 模板。base 和 `node` 模板包含 Node.js 26，`python`、`go`、`minimal` 模板不包含 Node.js。Claude Code、Codex、OpenCode、Pi、Qoder 等 npm Agent 即使由工具写入器成功安装，其运行时仍需要 Box 内有 Node.js；请先在派生模板中补齐要求的运行时。把工具安装到共享工具卷，不会给所有 Box 镜像安装运行时。
+先核对工具显示的依赖与 Box 模板。base 和 `node` 模板包含 Node.js 26，`python`、`go`、`minimal` 模板不包含 Node.js。Claude Code、Codex、OpenCode、Pi、Qoder 等 npm Agent 即使由工具写入器成功安装，其运行时仍需要 Box 内有 Node.js；请先在复制模板中补齐要求的运行时。把工具安装到共享工具卷，不会给所有 Box 镜像安装运行时。
 
 ## 创建 Box 时选择工具
 
@@ -76,9 +76,9 @@ Tailscale 将 Box 连接到你的 tailnet。从目录安装后：
 
 表格里每个工具都有一个复制按钮，就在安装、升级或卸载按钮旁边；按钮只显示图标，鼠标悬停的提示写着**复制 JSON**（窄窗口下文字会占掉旁边按钮需要的宽度）。它把这个工具的目录条目复制成 JSON，形状与服务器上 `catalog/` 目录里的文件一致：`id`、`name`、`description`、`category`、`source`、`package`、`bin`、`needsRoot`、`estimatedMb`、`requires`、`install`、`upgrade`、`uninstall`、`stop` 和 `detect`。`requires` 与 `stop` 只在工具设置了它们时才出现。安装状态不在其中，所以复制出来的是工具本身，而不是这个 Box 的状态。
 
-内置工具没有编辑和删除按钮，这一点不变：它们的 JSON 只作只读复制，用来派生一个自己的工具。自定义工具那一行在 **编辑** 与 **删除** 旁边同样有这个复制按钮。
+内置工具没有编辑和删除按钮，这一点不变：它们的 JSON 只作只读复制，用来做一个自己的工具。自定义工具那一行在 **编辑** 与 **删除** 旁边同样有这个复制按钮。
 
-派生一个工具的步骤：
+复制一个工具的步骤：
 
 1. 点该工具那一行的复制按钮（提示写着**复制 JSON**）。提示条会确认已复制到剪贴板。浏览器拒绝时，MiniBox 仍会走旧的剪贴板通道；这条也失败时给出可读提示。
 2. 点 **自定义工具**，在对话框里展开 **粘贴 JSON**，把文本粘贴进去。
