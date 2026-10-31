@@ -1,12 +1,21 @@
 import { type BackupRecord, BackupRecordSchema } from "../backup/store";
 import { writePackageFile } from "../checkpoints/package";
 import { expiresAtFor, isExpired, type PackageMeta, PackageMetaSchema } from "../checkpoints/packages";
+import {
+  knownHostsLine,
+  type RemoteRepository,
+  remotePathFor,
+  remoteRepoPassword,
+  s3Repository,
+  sftpRepository,
+} from "../checkpoints/remote";
 import type { CheckpointStore } from "../checkpoints/store";
+import { probePublicKey } from "../host/ssh";
 import { AppError, badRequest, conflict, notFound } from "../lib/errors";
 import { log } from "../lib/logger";
 import { type Msg, msg } from "../lib/messages";
 import type { SecretStore } from "../secrets/store";
-import { TargetFailure } from "../targets/errors";
+import { classifyFailure, TargetFailure } from "../targets/errors";
 import { openSession } from "../targets/open";
 import type { TargetConnection, TargetSession } from "../targets/session";
 import { TargetStore } from "../targets/store";
@@ -19,14 +28,17 @@ import {
   objectIdOf,
   objectKindOf,
   REMOTE_FOLDER,
+  type RemoteRepo,
   remoteNames,
   SECRET_FIELDS,
+  type SftpTargetRecord,
   type TargetKind,
   type TargetRecord,
   type TargetSecretField,
   targetIdOfSecret,
   targetSecretName,
 } from "../targets/types";
+import { remotePath } from "../targets/validate";
 import type { BackupService } from "./backup";
 import { rejected } from "./checkpoint-transfer";
 
@@ -87,6 +99,22 @@ export interface TargetObject {
   readonly bytes: number;
   readonly sha256: string;
   readonly createdAt: string;
+}
+
+/**
+ * The remote repository a host's checkpoints are copied to, as the API shows it. The folder is the base the operator
+ * chose; the host id is appended to it when the repository string is built, so two hosts never share one.
+ */
+export interface RemoteRepoView {
+  readonly hostId: string;
+  readonly targetId: string;
+  readonly targetName: string;
+  readonly kind: "s3" | "sftp";
+  readonly path: string;
+  readonly lastSyncAt: string | null;
+  readonly lastError: string | null;
+  readonly createdAt: string;
+  readonly updatedAt: string;
 }
 
 export interface TargetSyncResult {
@@ -314,6 +342,109 @@ export class TargetService {
     return this.viewOf(this.recordOf(id));
   }
 
+  /** The remote repository a host's checkpoints are copied to, or null when it has none. */
+  remoteOf(hostId: string): RemoteRepoView | null {
+    const remote = this.store.remoteOf(hostId);
+    return remote ? this.remoteView(remote) : null;
+  }
+
+  /**
+   * Sets the remote repository of a host to a folder on one of its targets. Changing the target clears the sync state,
+   * since the new repository has not taken the snapshots yet. The credentials are not copied here: they stay the
+   * target's, and are read when a copy runs.
+   */
+  setRemote(hostId: string, input: { targetId: string; path?: string }): RemoteRepoView {
+    const target = this.store.get(input.targetId);
+    if (!target) throw notFound(msg("target_not_found", { id: input.targetId }));
+    if (target.kind === "webdav") throw badRequest(msg("checkpoint_remote_unsupported"), { field: "targetId" });
+    const path = remotePath(input.path ?? "", target.kind);
+    if (path === null) throw badRequest(msg("target_path_invalid"), { field: "path" });
+    const existing = this.store.remoteOf(hostId);
+    const sameTarget = existing?.targetId === target.id;
+    const now = new Date().toISOString();
+    const remote: RemoteRepo = {
+      hostId,
+      targetId: target.id,
+      kind: target.kind,
+      path,
+      createdAt: existing?.createdAt ?? now,
+      updatedAt: now,
+      lastSyncAt: sameTarget ? (existing?.lastSyncAt ?? null) : null,
+      lastError: sameTarget ? (existing?.lastError ?? null) : null,
+    };
+    this.store.putRemote(remote);
+    log.info("target.remote_set", { host: hostId, target: target.id, kind: target.kind });
+    return this.remoteView(remote);
+  }
+
+  /** Removes a host's remote repository. The snapshots already copied stay where they are. */
+  clearRemote(hostId: string): void {
+    if (!this.store.deleteRemote(hostId)) return;
+    log.info("target.remote_cleared", { host: hostId });
+  }
+
+  /** Records how the last copy to a host's remote repository ended. A null error marks a successful copy. */
+  recordRemoteResult(hostId: string, result: { at: string; error: string | null }): void {
+    const remote = this.store.remoteOf(hostId);
+    if (!remote) return;
+    try {
+      this.store.putRemote({
+        ...remote,
+        lastSyncAt: result.error === null ? result.at : remote.lastSyncAt,
+        lastError: result.error,
+      });
+    } catch (e) {
+      log.warn("target.remote_result_not_recorded", { host: hostId, error: String(e) });
+    }
+  }
+
+  /**
+   * What a copy to the host's remote repository needs, credentials included. An SFTP target needs the server's whole
+   * public key for known_hosts, so one is captured from the pinned key exchange when the record does not hold it yet.
+   * Nothing is copied here, and no password is created for a host that has no remote.
+   */
+  remoteRepository(hostId: string): Promise<RemoteRepository> {
+    return this.attempt(async () => {
+      const remote = this.store.remoteOf(hostId);
+      if (!remote) throw notFound(msg("checkpoint_remote_not_set", { host: hostId }));
+      const target = this.store.get(remote.targetId);
+      if (!target) throw notFound(msg("target_not_found", { id: remote.targetId }));
+      const path = remotePathFor(remote.path, hostId);
+      const password = remoteRepoPassword(this.options.dataDir, hostId);
+      const secret = (field: TargetSecretField) => this.options.secrets.value(targetSecretName(target.id, field));
+      if (target.kind === "s3") {
+        const accessKeyId = secret("access-key");
+        const secretAccessKey = secret("secret-key");
+        if (accessKeyId === null || secretAccessKey === null) {
+          throw conflict(msg("target_credentials_missing", { name: target.name }));
+        }
+        return {
+          targetId: target.id,
+          targetName: target.name,
+          repository: s3Repository(target.endpoint, target.bucket, path),
+          password,
+          credentials: { kind: "s3" as const, region: target.region, accessKeyId, secretAccessKey },
+        };
+      }
+      if (target.kind === "webdav") throw badRequest(msg("checkpoint_remote_unsupported"));
+      const privateKey = secret("private-key");
+      if (privateKey === null) throw conflict(msg("target_credentials_missing", { name: target.name }));
+      const key = await this.hostKeyLineOf(target);
+      return {
+        targetId: target.id,
+        targetName: target.name,
+        repository: sftpRepository(target.user, target.host, target.port, path),
+        password,
+        credentials: {
+          kind: "sftp" as const,
+          port: target.port,
+          privateKey,
+          knownHosts: knownHostsLine(target.host, target.port, key),
+        },
+      };
+    });
+  }
+
   /** Reaches the target with the draft's credentials and stores nothing. */
   async test(draft: TargetDraft): Promise<void> {
     await this.attempt(async () => {
@@ -354,6 +485,10 @@ export class TargetService {
   remove(id: string): void {
     const record = this.recordOf(id);
     if (this.busy.has(id)) throw conflict(msg("target_busy", { name: record.name }));
+    const used = this.store.remotesFor(id);
+    if (used.length > 0) {
+      throw conflict(msg("target_in_use", { name: record.name, host: used[0]?.hostId ?? "" }));
+    }
     this.store.delete(id);
     this.dropSecrets(id);
     log.info("target.removed", { id });
@@ -363,7 +498,8 @@ export class TargetService {
   async check(id: string): Promise<void> {
     const record = this.recordOf(id);
     await this.attempt(async () => {
-      const session = await this.sessionOf(record);
+      const capture = record.kind === "sftp" ? (key: string) => this.storeHostKeyLine(record, key) : undefined;
+      const session = await this.sessionOf(record, capture);
       try {
         await session.probe();
       } finally {
@@ -559,8 +695,56 @@ export class TargetService {
     };
   }
 
-  private sessionOf(record: TargetRecord): Promise<TargetSession> {
-    return openSession(this.connectionOf(record));
+  private sessionOf(record: TargetRecord, onHostKey?: (key: string) => void): Promise<TargetSession> {
+    const connection = this.connectionOf(record);
+    return openSession(connection.kind === "sftp" && onHostKey ? { ...connection, onHostKey } : connection);
+  }
+
+  /**
+   * The server's public key as `type base64`, or the one the record already holds. A key only comes from a connection
+   * whose fingerprint matches the pinned one; a server that presents another key is refused, never trusted on first use.
+   */
+  private async hostKeyLineOf(record: SftpTargetRecord): Promise<string> {
+    if (record.hostKeyLine) return record.hostKeyLine;
+    const presented = await probePublicKey(record.host, record.port).catch((e: unknown) => {
+      throw classifyFailure(e);
+    });
+    if (presented.fingerprint !== record.hostKeyFingerprint) {
+      throw new TargetFailure(
+        "host_key_mismatch",
+        `host key ${presented.fingerprint} does not match ${record.hostKeyFingerprint}`,
+        presented.fingerprint,
+      );
+    }
+    this.storeHostKeyLine(record, presented.text);
+    return presented.text;
+  }
+
+  /** Keeps the public key a pinned connection presented. A write that fails only costs another capture later. */
+  private storeHostKeyLine(record: TargetRecord, key: string): void {
+    if (record.kind !== "sftp") return;
+    const current = this.store.get(record.id);
+    if (!current || current.kind !== "sftp" || current.hostKeyLine === key) return;
+    try {
+      this.store.put({ ...current, hostKeyLine: key });
+    } catch (e) {
+      log.warn("target.host_key_not_stored", { id: record.id, error: String(e) });
+    }
+  }
+
+  private remoteView(record: RemoteRepo): RemoteRepoView {
+    const target = this.store.get(record.targetId);
+    return {
+      hostId: record.hostId,
+      targetId: record.targetId,
+      targetName: target?.name ?? record.targetId,
+      kind: record.kind,
+      path: remotePathFor(record.path, record.hostId),
+      lastSyncAt: record.lastSyncAt,
+      lastError: record.lastError,
+      createdAt: record.createdAt,
+      updatedAt: record.updatedAt,
+    };
   }
 
   private dropSecrets(id: string): void {

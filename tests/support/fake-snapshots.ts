@@ -16,6 +16,7 @@ import {
   type PackageDigest,
   writePackageFile,
 } from "../../src/checkpoints/package";
+import type { RemoteRepository } from "../../src/checkpoints/remote";
 import type { HostCtx } from "../../src/host/registry";
 import { type ByteProgress, countingChunks } from "../../src/lib/transfer";
 import { RuntimeError } from "../../src/runtime";
@@ -99,6 +100,13 @@ export class FakeCheckpointEngine implements SnapshotEngine {
   reportedBytes: number | null = null;
   /** Makes `usage` fail, as an engine that cannot be reached does. */
   usageFails = false;
+  /** The origin of every snapshot each remote repository holds, by target id. A copy adds only what is missing. */
+  readonly remoteSnapshots = new Map<string, Set<string>>();
+  /** Every copy asked of a remote repository, in order, with the ids it was given. */
+  readonly remoteCopies: { targetId: string; snapshotIds: string[] }[] = [];
+  /** Makes the next copies to a remote repository fail, as an unreachable target does. */
+  failRemoteCopy = false;
+  private remoteGate: { promise: Promise<void>; blocked: number } | null = null;
   private sequence = 0;
   private gate: { promise: Promise<void>; kind: EngineCall | null; blocked: number } | null = null;
 
@@ -199,6 +207,45 @@ export class FakeCheckpointEngine implements SnapshotEngine {
     return this.snapshotsOn(host)
       .filter(([, snapshot]) => snapshot.tags.includes(tag))
       .map(([id, snapshot]) => ({ id, tags: [...snapshot.tags], original: snapshot.original }));
+  }
+
+  /** Holds every copy to a remote repository, so a test can see one in flight. */
+  holdRemote(): { release(): void; blocked(): number } {
+    let open: (() => void) | undefined;
+    const gate = {
+      promise: new Promise<void>((resolve) => {
+        open = resolve;
+      }),
+      blocked: 0,
+    };
+    this.remoteGate = gate;
+    return {
+      release: () => {
+        if (this.remoteGate === gate) this.remoteGate = null;
+        open?.();
+      },
+      blocked: () => gate.blocked,
+    };
+  }
+
+  async copyToRemote(host: HostCtx, remote: RemoteRepository, snapshotIds: string[]): Promise<void> {
+    if (this.remoteGate) {
+      this.remoteGate.blocked += 1;
+      await this.remoteGate.promise;
+    }
+    if (this.failRemoteCopy) {
+      throw new RuntimeError(
+        "engine",
+        "restic copy to the remote checkpoint repository exited with status 1: the target is unreachable",
+      );
+    }
+    const held = this.remoteSnapshots.get(remote.targetId) ?? new Set<string>();
+    for (const id of snapshotIds) {
+      const snapshot = this.heldBy(host, id, "copy");
+      held.add(snapshot.original ?? id);
+    }
+    this.remoteSnapshots.set(remote.targetId, held);
+    this.remoteCopies.push({ targetId: remote.targetId, snapshotIds: [...snapshotIds] });
   }
 
   async pack(

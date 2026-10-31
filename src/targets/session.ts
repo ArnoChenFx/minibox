@@ -21,6 +21,11 @@ export interface SftpConnection {
   readonly privateKey: string;
   /** Null while the key is being confirmed. Such a connection gets as far as the key exchange and no further. */
   readonly hostKeyFingerprint: string | null;
+  /**
+   * Called with the server's public key (`type base64`) once it matches the pinned fingerprint. It is what a known_hosts
+   * line needs, and it is captured so a remote repository can be given the whole key rather than a hash.
+   */
+  readonly onHostKey?: (key: string) => void;
 }
 
 /**

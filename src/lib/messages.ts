@@ -780,6 +780,10 @@ export const MESSAGES = {
   target_object_invalid: "The object is not valid: {reason}",
   target_busy: "Target {name} is busy with another transfer. Try again when it finishes.",
   target_object_busy: "{object} is already being pulled. Try again when that transfer finishes.",
+  target_in_use: "Target {name} holds the checkpoint repository of host {host}. Clear that remote repository first.",
+  checkpoint_remote_not_set: "Host {host} has no remote checkpoint repository. Set one first.",
+  checkpoint_remote_unsupported: "A WebDAV target cannot hold a checkpoint repository. Use an S3 or an SFTP target.",
+  checkpoint_remote_busy: "Host {host} is already copying its checkpoints to the remote repository.",
 } as const;
 export type MessageKey = keyof typeof MESSAGES;
 

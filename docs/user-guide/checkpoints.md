@@ -155,6 +155,20 @@ An off-site target is an S3-compatible bucket, an SFTP folder or a WebDAV collec
 
 Push an exported package before it expires, 24 hours after the export. A package that you pull from a target can be imported as described above, within 24 hours of the pull. See [Backups](../admin/backups.md#off-site-targets) for how to add a target.
 
+## Remote repository
+
+Each host can copy its checkpoint snapshots to a remote restic repository on an S3-compatible bucket or an SFTP server, so a copy of the data survives the loss of this machine. The local repository stays the only place checkpoints are taken. MiniBox copies what the remote does not hold yet: a copy runs shortly after a checkpoint is written, and a pass every hour catches what a restart or a failure left behind. A failed copy changes nothing about the local checkpoint, records its reason on the checkpoint and on the remote, and is retried with a backoff.
+
+The remote repository has its own password, generated into `DATA_DIR/secrets` when it is first used, apart from the local repository's key. Losing it makes the data on the remote unreadable, and it never opens the local repository.
+
+A remote never loses a snapshot because the local repository did: `forget` and `prune` stay local. Deleting the local checkpoint, or turning the remote off, leaves everything already copied where it is.
+
+Over the REST API, `PUT /api/hosts/{host}/checkpoint-remote` sets the remote with a `targetId` and an optional folder, `GET` on the same path reads it, and `DELETE` clears it. `POST /api/hosts/{host}/checkpoint-remote/sync` copies pending checkpoints now, as a task. The target must be an S3 or an SFTP target, and the host id is appended to the folder, so two hosts never share a repository. The remote repository is created by the first copy. Every one of these is an owner operation.
+
+An SFTP target pins the server's host key when it is added. The first check or copy also stores the whole public key the server presented, once it matches that pinned fingerprint, because `ssh` needs the key itself in `known_hosts` rather than a hash. A server that presents another key is refused; nothing is trusted on first use. The S3 credentials and the SFTP private key are files that exist only while a copy runs, so no credential reaches a container's environment.
+
+restic reads the S3 credentials from a file, and the region comes from the target. A self-hosted service such as MinIO is reached with path-style requests, which restic uses for every endpoint that is not an Amazon one.
+
 ## Scheduled checkpoints
 
 A box can take checkpoints on a schedule: every few hours, or once a day at a time you choose. Schedules are off by default, so a box without one behaves as before.

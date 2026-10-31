@@ -1377,6 +1377,20 @@ async function recordScenario(): Promise<Exchange[]> {
       host: "auto",
       hostLabels: { gpu: "true" },
     });
+    // A host's remote checkpoint repository. Every binding is exercised without a target configured, so the sync refuses
+    // before a task starts; the copy itself is covered by the service and Docker tests.
+    const noRemoteTarget = "tgt_0000000000000000";
+    await send("read the remote checkpoint repository", "GET", "/api/hosts/local/checkpoint-remote");
+    await put("set a remote checkpoint repository on a missing target", "/api/hosts/local/checkpoint-remote", {
+      targetId: noRemoteTarget,
+    });
+    await send("clear a remote checkpoint repository that is not set", "DELETE", "/api/hosts/local/checkpoint-remote");
+    await post(
+      "sync checkpoints to a remote repository that is not set",
+      "/api/hosts/local/checkpoint-remote/sync",
+      {},
+    );
+    await send("read the remote repository of a host that is not added", "GET", "/api/hosts/nowhere/checkpoint-remote");
   } finally {
     server.stop(true);
     app.throttle.stop();

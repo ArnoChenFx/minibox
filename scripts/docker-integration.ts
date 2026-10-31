@@ -3,8 +3,9 @@
  * tests/docker-sessions.test.ts, tests/docker-startup-command.test.ts, tests/docker-ssh.test.ts,
  * tests/docker-templates.test.ts, tests/docker-declared-templates.test.ts, tests/docker-tools.test.ts,
  * tests/docker-hosts.test.ts, tests/docker-remote-host.test.ts, tests/docker-move.test.ts, tests/docker-agent.test.ts,
- * tests/docker-files.test.ts, tests/docker-trash.test.ts, tests/docker-prune.test.ts, tests/docker-self-token.test.ts
- * and tests/docker-egress.test.ts) against the local Docker engine, one file per process.
+ * tests/docker-files.test.ts, tests/docker-trash.test.ts, tests/docker-prune.test.ts, tests/docker-self-token.test.ts,
+ * tests/docker-checkpoint-remote.test.ts and tests/docker-egress.test.ts) against the local Docker engine, one file per
+ * process.
  *
  *   bun run test:docker
  *
@@ -21,6 +22,7 @@ import { randomBytes } from "node:crypto";
 import { join } from "node:path";
 
 import { RESTIC_IMAGE } from "../src/checkpoints/restic";
+import { AWS_CLI_IMAGE, S3PROXY_IMAGE } from "../tests/support/s3proxy";
 
 const ROOT = join(import.meta.dir, "..");
 const socket = process.env.DOCKER_SOCKET ?? "/var/run/docker.sock";
@@ -86,6 +88,8 @@ async function preflight(): Promise<void> {
     TEMPLATE_BASE,
     SECOND_ENGINE_IMAGE,
     REMOTE_TEMPLATE_BASE,
+    S3PROXY_IMAGE,
+    AWS_CLI_IMAGE,
   ])) {
     await ensureImage(ref);
   }
@@ -108,6 +112,7 @@ const TEST_FILES = [
   "tests/docker-trash.test.ts",
   "tests/docker-prune.test.ts",
   "tests/docker-self-token.test.ts",
+  "tests/docker-checkpoint-remote.test.ts",
   "tests/docker-egress.test.ts",
 ];
 

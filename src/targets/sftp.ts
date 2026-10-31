@@ -150,13 +150,16 @@ export async function openSftpSession(conn: SftpConnection): Promise<TargetSessi
 
 async function connect(conn: SftpConnection): Promise<Client> {
   try {
-    return await connectClient({
-      user: conn.user,
-      hostname: conn.host,
-      port: conn.port,
-      privateKey: conn.privateKey,
-      hostKeyFingerprint: conn.hostKeyFingerprint,
-    });
+    return await connectClient(
+      {
+        user: conn.user,
+        hostname: conn.host,
+        port: conn.port,
+        privateKey: conn.privateKey,
+        hostKeyFingerprint: conn.hostKeyFingerprint,
+      },
+      conn.onHostKey,
+    );
   } catch (e) {
     throw classifyFailure(e);
   }

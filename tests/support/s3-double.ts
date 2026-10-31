@@ -149,6 +149,16 @@ export function startS3Double(options: S3DoubleOptions): S3Double {
         );
       }
 
+      // A client asks for the bucket and its location before it touches an object.
+      if (key === "" && (req.method === "HEAD" || req.method === "GET")) {
+        if (url.searchParams.has("location")) {
+          return xml(
+            `<LocationConstraint xmlns="http://s3.amazonaws.com/doc/2006-03-01/">${region}</LocationConstraint>`,
+          );
+        }
+        return new Response(null, { status: 200 });
+      }
+
       if (req.method === "POST" && url.searchParams.has("uploads")) {
         const uploadId = `upload-${++uploadSeq}`;
         uploads.set(uploadId, { key, parts: new Map() });
@@ -198,7 +208,17 @@ export function startS3Double(options: S3DoubleOptions): S3Double {
           "last-modified": (modified.get(key) ?? new Date(0)).toUTCString(),
         };
         if (req.method === "HEAD") return new Response(null, { status: 200, headers });
-        return new Response(stored, { status: 200, headers });
+        const range = rangeOf(req.headers.get("range"), stored.byteLength);
+        if (!range) return new Response(stored, { status: 200, headers });
+        const part = stored.subarray(range.start, range.end + 1);
+        return new Response(part, {
+          status: 206,
+          headers: {
+            ...headers,
+            "content-length": String(part.byteLength),
+            "content-range": `bytes ${range.start}-${range.end}/${stored.byteLength}`,
+          },
+        });
       }
 
       if (req.method === "PUT") {
@@ -233,4 +253,23 @@ export function startS3Double(options: S3DoubleOptions): S3Double {
       server.stop(true);
     },
   };
+}
+
+/**
+ * The byte span a `Range: bytes=…` header asks for, clipped to the object. Null when there is no header or it is not a
+ * single byte range, in which case the whole object is served. restic reads pack headers with suffix ranges (`bytes=-N`).
+ */
+function rangeOf(header: string | null, size: number): { start: number; end: number } | null {
+  if (!header) return null;
+  const match = /^bytes=(\d*)-(\d*)$/.exec(header.trim());
+  if (!match) return null;
+  const [, from = "", to = ""] = match;
+  if (from === "" && to === "") return null;
+  if (from === "") {
+    const length = Math.min(Number(to), size);
+    return { start: size - length, end: size - 1 };
+  }
+  const start = Number(from);
+  const end = to === "" ? size - 1 : Math.min(Number(to), size - 1);
+  return start > end ? null : { start, end };
 }

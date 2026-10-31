@@ -42,6 +42,7 @@ import { SecretStore } from "./secrets/store";
 import { ActivityPulse } from "./services/activity-pulse";
 import { BackupService } from "./services/backup";
 import { BackupScheduler } from "./services/backup-schedule";
+import { CheckpointRemoteSync, CHECKPOINT_WRITE_OPS } from "./services/checkpoint-remote";
 import { CheckpointSweep } from "./services/checkpoint-retention";
 import { CheckpointScheduler } from "./services/checkpoint-schedule";
 import { ContainerWatch } from "./services/container-watch";
@@ -116,6 +117,8 @@ export interface App {
   checkpointScheduler: CheckpointScheduler;
   /** Takes the backup that the instance's backup schedule is due for. Only runs once the server has started. */
   backupScheduler: BackupScheduler;
+  /** Copies checkpoint snapshots to each host's remote repository, after a checkpoint and on an interval. */
+  checkpointRemote: CheckpointRemoteSync;
   tasks: TaskManager;
   /** Backups of DATA_DIR: created, kept, and streamed to a download or a target. */
   backups: BackupService;
@@ -331,6 +334,7 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
     onSecret: (value) => knownSecrets.push(value),
   });
   targets.start();
+  const checkpointRemote = new CheckpointRemoteSync(hosts, checkpoints, targets);
   const outputs = new OutputStore(join(cfg.dataDir, "exec"), redactor);
   const execs = new ExecManager(outputs, (text) => redactor.text(text));
   execs.setActivityHandler((boxId) => pulse.touch(boxId, "exec"));
@@ -420,6 +424,9 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
   hostAdmin.load();
   bus.subscribe("link", (frame) => hostAdmin.onLink(frame));
   bus.subscribe("link", (frame) => notify.onLink(frame));
+  bus.subscribe("event", (event) => {
+    if (event.status === "ok" && CHECKPOINT_WRITE_OPS.has(event.op)) checkpointRemote.request(event.hostId);
+  });
   bus.subscribe("event", (event) => notify.onEvent(event));
   agents.subscribe((event) => hostAdmin.onAgent(event));
   const terminals = new TerminalService({
@@ -475,6 +482,7 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
     checkpointSweep: new CheckpointSweep(hosts, undefined, recordNote),
     checkpointScheduler: new CheckpointScheduler(hosts, recordNote),
     backupScheduler: new BackupScheduler(backupSchedule, backups, cfg.backupPassphrase, recordNote),
+    checkpointRemote,
     tasks,
     backups,
     backupSchedule,
@@ -490,6 +498,7 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
       backupSchedule,
       backupPassphraseSet: cfg.backupPassphrase !== null,
       targets,
+      checkpointRemote,
       sshKeys,
       hooks: {
         authorize: deps.hooks?.authorize ?? authorizeOperation,

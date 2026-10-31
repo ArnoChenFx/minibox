@@ -18,6 +18,23 @@ function fingerprintOf(blob: Buffer): string {
   return `SHA256:${createHash("sha256").update(blob).digest("base64").replace(/=+$/, "")}`;
 }
 
+/** The key types a host key exchange presents, with the blob's own type as the first field. */
+const HOST_KEY_TYPE = /^(ssh-[a-z0-9-]+|ecdsa-sha2-[a-z0-9-]+|sk-[a-z0-9-]+@openssh\.com)$/;
+
+/**
+ * The public key the key exchange presented, as the `type base64` text a known_hosts line carries. A fingerprint is not
+ * enough for ssh: it checks the key itself.
+ */
+export function publicKeyTextOf(blob: Buffer): string {
+  const length = blob.length >= 4 ? blob.readUInt32BE(0) : 0;
+  if (length === 0 || length > 64 || 4 + length > blob.length) {
+    throw new Error("the host presented a key that is not a public key blob");
+  }
+  const type = blob.subarray(4, 4 + length).toString("ascii");
+  if (!HOST_KEY_TYPE.test(type)) throw new Error(`the host presented a key of an unknown type: ${type}`);
+  return `${type} ${blob.toString("base64")}`;
+}
+
 export interface SshTarget {
   readonly user: string;
   readonly hostname: string;
@@ -70,10 +87,12 @@ export function checkSshKey(privateKey: string): void {
 
 /**
  * Connects to the host and checks its key before anything else is sent. The login follows only after the presented key
- * matches the pinned one, so the private key never reaches a server that is not the one the operator confirmed.
+ * matches the pinned one, so the private key never reaches a server that is not the one the operator confirmed. A
+ * matching key is passed to `onHostKey` as `type base64`, which is what a known_hosts line needs.
  */
-export function connectClient(target: PinnedTarget): Promise<Client> {
+export function connectClient(target: PinnedTarget, onHostKey?: (key: string) => void): Promise<Client> {
   let presented: string | null = null;
+  let keyText: string | null = null;
   return new Promise<Client>((resolve, reject) => {
     const client = new Client();
     client.once("ready", () => resolve(client));
@@ -93,24 +112,45 @@ export function connectClient(target: PinnedTarget): Promise<Client> {
       keepaliveCountMax: KEEPALIVE_MISSES,
       hostVerifier: (key: Buffer) => {
         presented = fingerprintOf(key);
-        return target.hostKeyFingerprint !== null && presented === target.hostKeyFingerprint;
+        if (target.hostKeyFingerprint === null || presented !== target.hostKeyFingerprint) return false;
+        try {
+          keyText = publicKeyTextOf(key);
+        } catch {
+          // A key type this build cannot name still pins by fingerprint; only the known_hosts line is missing then.
+          keyText = null;
+        }
+        if (keyText !== null) onHostKey?.(keyText);
+        return true;
       },
     });
   });
 }
 
 /**
- * The host's key fingerprint, read from the key exchange alone. The connection is refused at that point, so no user name
- * or key is sent to the host. Adding a host then asks the operator to confirm the value before it is pinned.
+ * The host's public key, read from the key exchange alone. The connection is refused at that point, so no user name or
+ * key is sent to the host. The text is what a known_hosts line carries, and the fingerprint is what a target or a host
+ * pins.
  */
-export function probeHostKey(hostname: string, port: number): Promise<string> {
-  let presented: string | null = null;
-  return new Promise<string>((resolve, reject) => {
+export interface PresentedKey {
+  readonly text: string;
+  readonly fingerprint: string;
+}
+
+export function probePublicKey(hostname: string, port: number): Promise<PresentedKey> {
+  let presented: Buffer | null = null;
+  return new Promise<PresentedKey>((resolve, reject) => {
     const client = new Client();
     client.once("error", (e: Error) => {
       client.destroy();
-      if (presented !== null) resolve(presented);
-      else reject(e);
+      if (presented === null) {
+        reject(e);
+        return;
+      }
+      try {
+        resolve({ text: publicKeyTextOf(presented), fingerprint: fingerprintOf(presented) });
+      } catch (error) {
+        reject(error);
+      }
     });
     client.once("ready", () => {
       client.destroy();
@@ -122,11 +162,19 @@ export function probeHostKey(hostname: string, port: number): Promise<string> {
       username: "minibox-probe",
       readyTimeout: SSH_CONNECT_TIMEOUT_MS,
       hostVerifier: (key: Buffer) => {
-        presented = fingerprintOf(key);
+        presented = key;
         return false;
       },
     });
   });
+}
+
+/**
+ * The host's key fingerprint, read from the key exchange alone. The connection is refused at that point, so no user name
+ * or key is sent to the host. Adding a host then asks the operator to confirm the value before it is pinned.
+ */
+export async function probeHostKey(hostname: string, port: number): Promise<string> {
+  return (await probePublicKey(hostname, port)).fingerprint;
 }
 
 /**
