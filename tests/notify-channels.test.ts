@@ -35,7 +35,7 @@ const hostDown: Notice = { kind: "host.offline", title: "Host h1 is offline", ho
 
 const envelope: Envelope = {
   id: "01JDELIVERY0000000000000A",
-  version: "0.7.1",
+  version: "0.7.2",
   timestamp: 1_790_000_000,
   telegramBase: "https://api.telegram.org",
 };
@@ -74,7 +74,7 @@ describe("webhook requests", () => {
     });
     expect(request.headers).toMatchObject({
       "content-type": "application/json",
-      "user-agent": "MiniBox/0.7.1",
+      "user-agent": "MiniBox/0.7.2",
       "x-minibox-event": "box.oom",
       "x-minibox-delivery": "01JDELIVERY0000000000000A",
       "x-minibox-timestamp": "1790000000",
