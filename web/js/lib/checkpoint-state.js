@@ -107,6 +107,21 @@ export function rowActions(checkpoint, { held = false, pending = false, elsewher
   return { fork: ALLOWED, export: exportable, copy: copyable, rollback, pin: ALLOWED, delete: remove };
 }
 
+/**
+ * The remote copy marks a checkpoint row carries: the targets that hold its snapshots, or why the last copy failed.
+ * `targetNames` maps a target id to the name the console shows; a target the list does not name falls back to its id.
+ * An empty list means no copy was tried, so the row says nothing about a remote.
+ */
+export function remoteMarksOf(checkpoint, targetNames = new Map()) {
+  const marks = [];
+  const synced = Object.entries(checkpoint.remoteSync ?? {});
+  if (synced.length > 0) {
+    marks.push({ kind: "synced", targets: synced.map(([id]) => targetNames.get(id) ?? id) });
+  }
+  if (checkpoint.remoteFailure) marks.push({ kind: "failed", detail: checkpoint.remoteFailure.message });
+  return marks;
+}
+
 /** Whether a passphrase is one the server will seal a package with: its length, and no edge spaces or line breaks. */
 export function passphraseOk(value) {
   const length = [...value].length;

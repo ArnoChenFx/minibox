@@ -20,6 +20,7 @@ import {
   newestFirst,
   passphraseOk,
   REASON_KEYS,
+  remoteMarksOf,
   rowActions,
   SKIP_REASON_KEYS,
   browserTimezone,
@@ -54,6 +55,19 @@ function row(overrides: Partial<CheckpointRow> = {}): CheckpointRow {
     ...overrides,
   };
 }
+
+describe("remote copy marks", () => {
+  test("a copied checkpoint names its target, a failed one says why, and one never copied says nothing", () => {
+    const targetNames = new Map([["tgt_1", "archive"]]);
+    expect(remoteMarksOf(row({ remoteSync: { tgt_1: at(1) } }), targetNames)).toEqual([
+      { kind: "synced", targets: ["archive"] },
+    ]);
+    expect(
+      remoteMarksOf(row({ remoteFailure: { targetId: "tgt_1", at: at(1), message: "unreachable" } }), targetNames),
+    ).toEqual([{ kind: "failed", detail: "unreachable" }]);
+    expect(remoteMarksOf(row())).toEqual([]);
+  });
+});
 
 describe("checkpoint rules", () => {
   test("an ordinary checkpoint with owned data allows every action", () => {
@@ -507,6 +521,14 @@ const markup = runConsole<Markup>(
     cardScheduled: component.checkpointCardHtml({ rows: [], pending: null, usage: null, schedule: fixtures.schedule }),
     copyRow: component.checkpointRowHtml(fixtures.manual, { hosts: fixtures.hosts }),
     copyLegacy: component.checkpointRowHtml(fixtures.legacy, { hosts: fixtures.hosts }),
+    remoteRow: component.checkpointRowHtml(
+      {
+        ...fixtures.manual,
+        remoteSync: { tgt_1: "2026-10-20T10:01:00.000Z" },
+        remoteFailure: { targetId: "tgt_1", at: "2026-10-20T10:01:00.000Z", message: "unreachable" },
+      },
+      { targetNames: new Map([["tgt_1", "archive"]]) },
+    ),
     copyForm: component.copyFormHtml({ hosts: fixtures.hosts, from: "local" }),
   };`,
 );
@@ -533,6 +555,14 @@ describe("checkpoint rows", () => {
     expect(html).toContain("2.5 KB");
     expect(html).toContain("before &lt;b&gt;upgrade&lt;/b&gt;");
     expect(html).not.toContain("<b>upgrade</b>");
+  });
+
+  test("a checkpoint copied to a remote carries a synced badge, and a failed copy carries the reason", () => {
+    const html = markup.remoteRow ?? "";
+    expect(html).toContain("Remote");
+    expect(html).toContain("Copied to archive");
+    expect(html).toContain("Remote failed");
+    expect(html).toContain("The last copy to the remote failed: unreachable");
   });
 
   test("a volume snapshot says so, names the volume it holds, and offers only pin and delete", () => {

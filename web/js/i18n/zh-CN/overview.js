@@ -34,6 +34,7 @@ export default {
   "ov.attn.cpu_overcommit": "宿主机 CPU 超配",
   "ov.attn.memory_overcommit": "宿主机内存超配",
   "ov.attn.forward_blocked": "仅代理的 Box 无法上网",
+  "ov.attn.remote_sync_failing": "远端检查点复制持续失败",
   "ov.text.oom": "Box 内存耗尽，系统终止了其中的一个进程。",
   "ov.text.checkpoint_failed": "检查点未能完成。",
   "ov.text.checkpoint_failed_detail": "检查点未能完成：{detail}",
@@ -60,6 +61,8 @@ export default {
     "这台宿主机的 FORWARD 规则丢弃了出站上行网络（{bridge}）的流量，其上 {count} 个仅代理的 Box（{boxes}）无法访问互联网。开放出站的 Box 不受影响。",
   "ov.text.forward_blocked_unclear":
     "这台宿主机的出站上行网络（{bridge}）看起来被丢弃，其上 {count} 个仅代理的 Box（{boxes}）可能没有网络。开放出站的 Box 不受影响。",
+  "ov.text.remote_sync_failing": "连续 {failures} 次复制到 {target} 失败。本地检查点不受影响。",
+  "ov.text.remote_sync_failing_detail": "连续 {failures} 次复制到 {target} 失败：{detail}。本地检查点不受影响。",
   "ov.note.forward_policy":
     "FORWARD 里没有规则放行这些流量，是链的默认策略把它们丢弃了。确认后由 MiniBox 添加规则，也可以手动添加。",
   "ov.note.forward_rule":

@@ -7,6 +7,7 @@ import {
   kindsOf,
   newestFirst,
   passphraseOk,
+  remoteMarksOf,
   rowActions,
   SKIP_REASON_KEYS,
   usedPercent,
@@ -722,6 +723,17 @@ function hostLine(hosts, hostId) {
   return t("ck.storedOn", { host: name });
 }
 
+/** The remote copy marks a checkpoint row carries, as badges beside its kinds. */
+export function remoteBadgesHtml(checkpoint, targetNames = new Map()) {
+  return remoteMarksOf(checkpoint, targetNames)
+    .map((mark) =>
+      mark.kind === "synced"
+        ? `<span class="badge badge-success" title="${esc(t("ck.remoteSyncedTitle", { targets: mark.targets.join(", ") }))}">${esc(t("ck.remoteSynced"))}</span>`
+        : `<span class="badge badge-warning" title="${esc(t("ck.remoteFailedTitle", { detail: mark.detail }))}">${esc(t("ck.remoteFailed"))}</span>`,
+    )
+    .join("");
+}
+
 /**
  * One row. `state` carries the rollback's safety point (`held`, `pending`), the hosts when there are several (`hosts`),
  * and the host the box runs on (`boxHostId`). A checkpoint kept on another host cannot be rolled back to from here.
@@ -733,6 +745,7 @@ export function checkpointRowHtml(checkpoint, state) {
   const kinds = kindsOf(checkpoint)
     .map((kind) => `<span class="badge ${KIND_CLASS[kind]}">${esc(t(`ck.kind.${kind}`))}</span>`)
     .join("");
+  const remote = remoteBadgesHtml(checkpoint, state.targetNames);
   const detail = [contentsText(checkpoint)];
   if (state.hosts?.length > 1) detail.push(hostLine(state.hosts, checkpoint.hostId));
   const detailText = detail.join(" · ");
@@ -741,7 +754,7 @@ export function checkpointRowHtml(checkpoint, state) {
     : "";
   return `<tr>
     <td class="ck-time nowrap" title="${esc(dateTime(checkpoint.createdAt))}">${esc(dateTime(checkpoint.createdAt))}<div class="subtle">${esc(relTime(checkpoint.createdAt))}</div></td>
-    <td class="ck-label"><div class="ck-label-line"><span class="truncate" title="${esc(checkpoint.label)}">${esc(checkpoint.label)}</span><span class="ck-badges">${kinds}</span></div>
+    <td class="ck-label"><div class="ck-label-line"><span class="truncate" title="${esc(checkpoint.label)}">${esc(checkpoint.label)}</span><span class="ck-badges">${kinds}${remote}</span></div>
       <div class="subtle truncate" title="${esc(detailText)}">${esc(detailText)}</div>${reason}</td>
     <td class="ck-size num nowrap">${esc(bytes(checkpoint.bytes))}</td>
     <td class="ck-actions"><div class="actions ck-row-actions">
@@ -765,6 +778,7 @@ export function checkpointCardHtml({
   usage,
   schedule,
   hosts = [],
+  targetNames = new Map(),
   boxHostId,
   toggle = "",
   total,
@@ -783,6 +797,7 @@ export function checkpointCardHtml({
             held: pending?.safetyCheckpointId === row.id,
             pending: Boolean(pending),
             hosts,
+            targetNames,
             boxHostId,
           }),
         )
@@ -814,6 +829,8 @@ export function mountCheckpoints(root, { box, refreshBox }) {
   let pending = null;
   let schedule = undefined;
   let lastUsage = null;
+  /** The target names the remote copy badges use, read with the checkpoints. */
+  let targetNames = new Map();
 
   /** Draws the card from the last load. A long list shows its newest rows and any pinned one, with a show-all toggle. */
   const draw = () => {
@@ -830,6 +847,7 @@ export function mountCheckpoints(root, { box, refreshBox }) {
       usage: lastUsage,
       schedule,
       hosts: multiHost() ? hostsNow() : [],
+      targetNames,
       boxHostId: hostOfBox(current),
       onAgent: boxOnAgentHost(current, hostsNow()),
     });
@@ -839,7 +857,7 @@ export function mountCheckpoints(root, { box, refreshBox }) {
     const token = ++seq;
     try {
       const current = box();
-      const [{ checkpoints }, { rollback }, usage, plan] = await Promise.all([
+      const [{ checkpoints }, { rollback }, usage, plan, targets] = await Promise.all([
         api("/api/checkpoints"),
         api(`/api/boxes/${enc(current.boxId)}/rollback`),
         api("/api/checkpoints/usage").catch(() => null),
@@ -847,12 +865,14 @@ export function mountCheckpoints(root, { box, refreshBox }) {
           (reply) => reply.schedule,
           () => undefined,
         ),
+        api("/api/targets").catch(() => ({ targets: [] })),
       ]);
       if (disposed || token !== seq) return;
       rows = newestFirst(checkpoints.filter((checkpoint) => checkpoint.boxId === current.boxId));
       pending = rollback;
       schedule = plan;
       lastUsage = usage;
+      targetNames = new Map(targets.targets.map((target) => [target.id, target.name]));
       draw();
     } catch (err) {
       if (disposed || token !== seq) return;
