@@ -750,16 +750,39 @@ function withCode(code: string): Error {
 }
 
 /** A server on a raw socket that answers with a status line and then stops sending, without closing the connection. */
-function stalledServer(head: string, body: string): { url: string; stop: () => void } {
+function stalledServer(head: string, body = ""): { url: string; stop: () => void } {
   const server = Bun.listen({
     hostname: "127.0.0.1",
     port: 0,
     socket: {
       open(socket) {
         socket.write(head);
-        socket.write(body);
+        if (body !== "") socket.write(body);
       },
       data() {},
+    },
+  });
+  return { url: `http://127.0.0.1:${server.port}`, stop: () => server.stop(true) };
+}
+
+/**
+ * A server that answers a folder creation and then says nothing at all to an upload, the way a proxy that stopped reading
+ * looks. Once an upload starts, nothing is answered again, so the body is never read to the end.
+ */
+function silentOnUploadServer(): { url: string; stop: () => void } {
+  let uploading = false;
+  const server = Bun.listen({
+    hostname: "127.0.0.1",
+    port: 0,
+    socket: {
+      data(socket, chunk) {
+        if (uploading) return;
+        if (chunk.subarray(0, 4).toString("latin1") === "PUT ") {
+          uploading = true;
+          return;
+        }
+        socket.write("HTTP/1.1 201 Created\r\ncontent-length: 0\r\n\r\n");
+      },
     },
   });
   return { url: `http://127.0.0.1:${server.port}`, stop: () => server.stop(true) };
@@ -772,7 +795,7 @@ function respond(status: string, headers: string, body: string): string {
 
 describe("a transfer that stalls", () => {
   test("a download the server stops sending is given up on", async () => {
-    const server = stalledServer(respond("200 OK", "content-type: application/octet-stream", "abc"), "x");
+    const server = stalledServer(respond("200 OK", "content-type: application/octet-stream", "abc"));
     const session = await openSession(
       { kind: "webdav", url: server.url, user: "u", password: "p", path: "" },
       { idleMs: 200 },
@@ -790,16 +813,15 @@ describe("a transfer that stalls", () => {
     expect(Date.now() - started).toBeLessThan(5_000);
   });
 
-  test("an upload the server never reads is given up on", async () => {
-    // The server answers at once and never reads the body, which is what a proxy that stops reading looks like.
-    const server = stalledServer(respond("500 Server Error", "content-type: text/plain", ""), "");
+  test("an upload the server never answers is given up on", async () => {
+    const server = silentOnUploadServer();
     const session = await openSession(
       { kind: "webdav", url: server.url, user: "u", password: "p", path: "" },
       { idleMs: 200 },
     );
     const started = Date.now();
     const failure = await session
-      .write("packages/x.mbckpt", chunked(randomBytes(4 * 1024 * 1024), 64 * 1024), 4 * 1024 * 1024)
+      .write("packages/x.mbckpt", chunked(randomBytes(8 * 1024 * 1024), 64 * 1024), 8 * 1024 * 1024)
       .then(
         () => null,
         (e: unknown) => e,
@@ -807,7 +829,8 @@ describe("a transfer that stalls", () => {
     await session.close();
     server.stop();
 
-    expect(failure).toBeInstanceOf(TargetFailure);
+    expect((failure as TargetFailure).reason).toBe("unreachable");
+    expect((failure as TargetFailure).message).toContain("moved no data");
     expect(Date.now() - started).toBeLessThan(5_000);
   });
 });
@@ -841,9 +864,10 @@ describe("certificate failures", () => {
     expect(classifyFailure(new Error("certificate problem while reading the response")).message).not.toContain(
       "is not trusted",
     );
-    const s3 = withCode("InternalError");
-    s3.message = "tls certificate problem";
-    expect(classifyFailure(s3).message).toBe("tls certificate problem");
+    // A failure that carries a code of its own is read by that code, whatever its text says.
+    const coded = withCode("InternalError");
+    coded.message = "unable to verify the first certificate";
+    expect(classifyFailure(coded).message).toBe("unable to verify the first certificate");
   });
 
   test("a server that cannot be reached stays unreachable", () => {

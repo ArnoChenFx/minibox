@@ -606,9 +606,10 @@ describe("off-site targets", () => {
       const view = source.service.add("dav", webdav());
       const meta = await packageIn(source);
       await source.service.push(view.id, meta.id);
-      // The record grows far beyond a real one, and the server still reports it as tiny.
+      // The record grows far beyond a real one while staying valid, and the server still reports it as tiny.
       const record = `minibox/packages/${meta.id}.json`;
-      dav.files.set(record, new Uint8Array(200 * 1024));
+      const stored = new TextDecoder().decode(dav.files.get(record));
+      dav.files.set(record, new TextEncoder().encode(`${stored}${" ".repeat(200 * 1024)}`));
       dav.sizes.set(record, 100);
 
       expect(await source.service.objects(view.id)).toEqual([]);
