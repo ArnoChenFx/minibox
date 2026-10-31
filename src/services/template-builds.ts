@@ -306,33 +306,69 @@ export function editDraftRecipe(host: HostCtx, draft: DraftTemplate, edit: Recip
 }
 
 /**
- * Writes the recipe of a fork of the bundled base template. MiniBox builds the base template itself and keeps no recipe
- * for it, so there is none to copy; the fork gets one whose source is the base Dockerfile this MiniBox ships, as a fork of
- * an official template gets its own copy of the official Dockerfile. It is the Dockerfile as it is when the fork is made,
- * so later MiniBox releases do not change it, and the fork can be edited and rebuilt from it. A Dockerfile this MiniBox
- * cannot read, or does not accept as one, leaves the fork without a recipe, which is logged: the fork still works.
+ * The source a duplicate saves as a draft, from the recipe of the template it copies. An official source reads as the
+ * copy of the Dockerfile this MiniBox ships (see `sourceAsRead`). When that Dockerfile cannot be read or is not one, the
+ * source stays official and a draft cannot name it, so the copy is the image copy it has always been; `missing` says why.
  */
-export function forkBaseRecipe(
+export function forkRecipeDraftSource(
   host: HostCtx,
   to: string,
-  imageId: string,
-  description: string,
-  createdBy: string,
+  recipe: TemplateRecipe,
+): { source: TemplateSource } | { missing: string } {
+  const read = sourceAsRead(host, to, recipe.source);
+  if (read.source.kind === "official") return { missing: read.kept ?? "the source is the official template itself" };
+  return { source: read.source };
+}
+
+/**
+ * The source a duplicate of the bundled base template saves as a draft: the base Dockerfile this MiniBox ships, as it is
+ * at that moment. MiniBox builds the base template itself and keeps no recipe for it, so there is none to copy. A
+ * Dockerfile this MiniBox cannot read, or does not accept as one, leaves the copy the image copy it has always been;
+ * `missing` says why.
+ */
+export function forkBaseDraftSource(host: HostCtx): { source: TemplateSource } | { missing: string } {
+  return shippedDockerfileSource(shippedBaseDockerfile(host));
+}
+
+/**
+ * The source a duplicate of an official template no host has built yet saves as a draft: a copy of the Dockerfile this
+ * MiniBox ships for it. There is no image to fall back to, so the caller refuses the duplicate when `missing` is set.
+ */
+export function forkOfficialDraftSource(
+  host: HostCtx,
+  name: OfficialName,
+): { source: TemplateSource } | { missing: string } {
+  return shippedDockerfileSource(shippedDockerfile(host, name));
+}
+
+/** The `dockerfile` source `text` makes, or why a draft cannot take it. */
+function shippedDockerfileSource(text: string | null): { source: TemplateSource } | { missing: string } {
+  if (text === null) return { missing: "the shipped Dockerfile is not readable" };
+  const problem = dockerfileProblem(text);
+  if (problem !== null) return { missing: problem };
+  return { source: { kind: "dockerfile", text } };
+}
+
+/**
+ * Writes the recipe of a duplicate: a draft, with no image, which holds the source it copied, the setup its source
+ * template records and the copy's own description and creator. Nothing is built, so the copy has no size and no creation
+ * time until `buildTemplateDraft` builds it. The caller holds the name through `holdingTemplateName`.
+ */
+export function forkDraftRecipe(
+  host: HostCtx,
+  input: { name: string; description: string; source: TemplateSource; init?: TemplateInit; createdBy: string },
 ): void {
-  const text = shippedBaseDockerfile(host);
-  const problem = text === null ? "the shipped Dockerfile is not readable" : dockerfileProblem(text);
-  if (text === null || problem !== null) {
-    log.warn("template.fork_source_missing", { name: to, source: "base", reason: problem });
-    return;
-  }
-  writeRecipe(host, to, {
+  writeRecipe(host, input.name, {
     version: 1,
-    imageId,
-    description,
-    createdBy,
+    imageId: null,
+    draft: true,
+    description: input.description,
+    createdBy: input.createdBy,
     created: new Date().toISOString(),
-    source: { kind: "dockerfile", text },
+    source: input.source,
+    ...(input.init === undefined ? {} : { init: input.init }),
   });
+  log.info("template.draft_saved", { name: input.name, kind: input.source.kind });
 }
 
 /** Forgets the recipe of a template name. A recipe whose image was removed by another tool is harmless and is replaced. */
@@ -361,12 +397,12 @@ export function copyRecipe(from: HostCtx, to: HostCtx, ref: string, imageId: str
 }
 
 /**
- * Gives `to` the recipe captured with the source image, pointed at the fork's image. A source rebuilt while the fork
- * runs cannot replace this recipe. The fork's description and creator belong to the fork and survive its rebuilds. A fork
- * of an official template writes the copy of the Dockerfile it kept, as a recipe read from disk reads it, so the fork is
- * a custom template from the moment it exists. When that Dockerfile cannot be read or is not a Dockerfile, the fork keeps
- * the official source instead, and a warning names the template and why: the image is already committed by then, so the
- * fork is kept rather than thrown away.
+ * Gives `to` the recipe captured with the source image, pointed at the fork's image, for the one duplicate that is still
+ * an image copy although it has a recipe: an official template whose shipped Dockerfile cannot become the copy's own
+ * source. A draft cannot name an official template, so the copy keeps the official source, as it always has, and a
+ * warning names the template and why: the image is already committed by then, so the copy is kept rather than thrown
+ * away. The copy's description and creator belong to the copy and survive its rebuilds. The caller writes this under the
+ * name it holds, before it commits the image, only when `forkRecipeDraftSource` could not make a draft source.
  */
 export function forkRecipe(
   host: HostCtx,

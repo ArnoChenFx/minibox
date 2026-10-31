@@ -77,8 +77,8 @@ export function withDraftCards(cards, drafts) {
 
 /**
  * The label a card shows: the bundled base template, one of the official templates, or a custom template. Everything
- * else is custom, including a fork of an official template: the fork keeps its own copy of the Dockerfile, so it reads
- * as built from a Dockerfile and can be edited, unlike the official template it came from.
+ * else is custom, including a duplicate of an official template: the copy keeps its own copy of the Dockerfile, so it
+ * reads as built from a Dockerfile and can be edited, unlike the official template it came from.
  */
 export function templateBadge(card, base) {
   if (card.draft) return "tp.draft";
@@ -87,11 +87,22 @@ export function templateBadge(card, base) {
 }
 
 /**
- * The fork action a card offers. A card no host holds yet is not forked: a fork copies the built image, so there is
- * nothing to copy until the template is built. The card shows the button off, with `tp.forkUnbuilt` as its reason.
+ * The duplicate action a card offers. Every card drawn with the button takes it: a template a host holds is copied from
+ * its build source or its image, and an official template no host has built yet is copied from the Dockerfile MiniBox
+ * ships, into a draft of its own. A draft card itself offers no duplicate action, because there is no image behind it.
  */
 export function forkAction(card) {
-  return isUnbuilt(card) ? { enabled: false, reason: "tp.forkUnbuilt" } : { enabled: true, reason: null };
+  return { enabled: card.draft !== true, reason: null };
+}
+
+/**
+ * Whether a duplicate of this card copies the build source into a template that is not built yet, rather than the image.
+ * A template built from a source, an official template (built, or no host has built it yet) and the bundled base template
+ * have a source to copy; a template saved from a box has none, so its duplicate is an image copy. Pure, so the dialog and
+ * the tests share it.
+ */
+export function forkMakesDraft(card, base) {
+  return card.buildKind !== undefined || card.ref === base;
 }
 
 /** Whether no host holds the template yet, so a box can only get it by building it. */

@@ -61,14 +61,14 @@ MCP 端点将其工具分组为工具集。默认为 `core,meta`。要使用更�
 - 用 `session_start`、`session_send` 和 `session_read` **驱动终端会话**。Agent 断开后会话仍继续运行。见 [终端与会话](terminal-and-sessions.md)。
 - 用 `read_file`、`write_file`、`list_files` 和 `copy_files` **读写卷中的文件**。即使没有 Box 在运行也能使用。
 - 用 `tools` 工具集**安装和管理工具**。
-- 用 `tools` 工具集**构建模板、派生模板并拉取镜像**，仅限所有者。见 [模板](templates.md)。
+- 用 `tools` 工具集**构建模板、复制模板并拉取镜像**，仅限所有者。见 [模板](templates.md)。
 - 用 `storage` 工具集**管理卷和存储池**。需要确认的更改会返回预览，直到 Agent 发送 `confirm: true`。
 
 Agent 不能查看或使用其令牌未允许的 Box、卷或宿主机。
 
 ## 检查点
 
-拍摄、列出、派生与回滚检查点仅通过 [REST API（英文）](../../reference/api.md) 提供。令牌需要 `checkpoint:create` 或 `checkpoint:restore` scope。
+拍摄、列出、复制与回滚检查点仅通过 [REST API（英文）](../../reference/api.md) 提供。令牌需要 `checkpoint:create` 或 `checkpoint:restore` scope。
 
 检查点包的导出与导入，以及检查点计划的设置，仅限所有者，因此任何 Agent 令牌都不能执行它们。[MCP 参考（英文）](../../reference/mcp.md) 列出了执行这些操作的存储工具。
 

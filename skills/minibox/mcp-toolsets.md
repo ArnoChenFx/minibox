@@ -96,7 +96,7 @@ Listing and closing sessions are REST and CLI only (`GET`/`DELETE /api/boxes/{id
 | `save_template` | `tool:install` | Save a box's system layer as a template. Returns a task |
 | `list_templates` | `box:read` | Templates on every host |
 | `get_template_source` | `box:read` | The source a template rebuilds from |
-| `create_template`, `fork_template`, `rebuild_template`, `sync_template`, `build_official_template`, `list_official_templates`, `pull_image` | owner | Template builds, forks and image pulls. Each build returns a task; a fork answers at once |
+| `create_template`, `fork_template`, `rebuild_template`, `sync_template`, `build_official_template`, `list_official_templates`, `pull_image` | owner | Template builds, duplicates and image pulls. Each build returns a task; a duplicate answers at once |
 | `edit_template` | `tool:install` (`template:write`) | Change what a template rebuilds from. The owner may edit any template, a token only one it created |
 | `list_custom_tools`, `put_custom_tool`, `delete_custom_tool` | owner | `DATA_DIR/tools.d`. Deleting an entry does not uninstall the tool |
 

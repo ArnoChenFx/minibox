@@ -192,14 +192,14 @@ minibox cp mybox:/workspace/report.txt ./report.txt
 
 ## Templates and images
 
-Building a template, editing one, forking one, rebuilding one and pulling an image are for the owner only. A build, a rebuild and a pull run as a task. The command waits for the task, prints the task log to standard error, and exits with `1` if the task fails. `--no-wait` prints the task ID and returns at once. An edit and a fork answer with the reference at once and take no `--no-wait`, because neither builds anything. `--draft` saves a source without building it, so it answers at once too. See [Templates](../user-guide/templates.md).
+Building a template, editing one, duplicating one, rebuilding one and pulling an image are for the owner only. A build, a rebuild and a pull run as a task. The command waits for the task, prints the task log to standard error, and exits with `1` if the task fails. `--no-wait` prints the task ID and returns at once. An edit and a duplicate answer with the reference at once and take no `--no-wait`, because neither builds anything. `--draft` saves a source without building it, so it answers at once too. See [Templates](../user-guide/templates.md).
 
 | Command | Meaning |
 |---|---|
 | `minibox template create <name> (--dockerfile FILE \| --repo URL \| --context URL \| --devcontainer URL) [options]` | Builds a template from one source, and prints its reference, such as `minibox-template:node-tools`. With `--draft`, saves the source without building it |
 | `minibox template get <ref> [--host ID] [--json]` | Prints the source the template rebuilds from: the Dockerfile's text, or the URL of a repository or archive. `--json` prints the whole recipe. A template saved from a box has no source, so it is refused |
 | `minibox template edit <ref> [source options] [--description TEXT] [--forward-port N,...] [--post-create TEXT] [--clear-setup] [--host ID] [--json]` | Changes what the template rebuilds from without building it. The source options are the ones `template create` takes; `--forward-port` and `--post-create` set the ports and the `postCreateCommand` a box created from the template gets, and each keeps the one it does not name; `--clear-setup` drops both. The template keeps its image until `minibox template rebuild` runs |
-| `minibox template fork <ref> <new-name> [--description TEXT] [--host ID] [--json]` | Copies a template's image and build recipe under `new-name`, and prints the new reference. The copy can be rebuilt from the same source; a template saved from a box has no recipe, so its copy cannot. Without `--host`, the first host that holds the template. A name the host already holds is refused |
+| `minibox template fork <ref> <new-name> [--description TEXT] [--host ID] [--json]` | Duplicates a template under `new-name`, and prints the new reference. A template with a build source becomes a saved draft, not built yet, so it is built with `minibox template rebuild`; an official template no host has built yet can be duplicated too. A template saved from a box has no source, so its copy is an image. Without `--host`, the first host that holds the template, else the local host for an unbuilt official one. A name an image or a draft holds is refused |
 | `minibox template rebuild <ref> [--host ID]` | Rebuilds a template from the source it was built from. A reference that names a saved draft builds it for the first time, and a failed build keeps the draft. The tag moves only when the build succeeds. Without `--host`, the first host that holds the template. |
 | `minibox template sync <ref> --host ID` | Copies a template from a host that holds it to host `ID`, so a box can start there |
 | `minibox template build-official <name> [--host ID] [--no-wait] [--json]` | Builds an official template (`node`, `python`, `go` or `minimal`) on a host, and prints its reference. Without `--host`, the local host. A name the host already holds is refused |
@@ -232,6 +232,7 @@ minibox template edit node-tools --dockerfile ./Dockerfile --description "Our ow
 minibox template edit node-tools --forward-port 3000,8080
 minibox template edit node-tools --post-create "npm ci"
 minibox template fork minibox-template:node-tools node-tools-mine --description "Our own toolchain"
+minibox template rebuild node-tools-mine
 minibox template rebuild minibox-template:node-tools
 minibox image pull node:24-bookworm-slim
 ```
@@ -252,7 +253,7 @@ Only the owner can use this command. A copy runs as a task. The command waits fo
 
 | Command | Meaning |
 |---|---|
-| `minibox checkpoint copy <id> --host ID [--no-wait] [--json]` | Copies a checkpoint to host `ID`, so a box can be forked there. The copy is a new checkpoint with its own ID. `--json` prints the task. |
+| `minibox checkpoint copy <id> --host ID [--no-wait] [--json]` | Copies a checkpoint to host `ID`, so a box can be created from it there. The copy is a new checkpoint with its own ID. `--json` prints the task. |
 
 ```bash
 minibox checkpoint copy ck_3f9a --host lab

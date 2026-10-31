@@ -139,7 +139,7 @@ export default {
     "Change what <code>{ref}</code> rebuilds from. Its current image is kept, so boxes created before the next rebuild are unaffected.",
   "tp.editWhat": "Saving changes the recipe only. Click Rebuild on the card to build the new source into a new image.",
   "tp.editOfficial":
-    "This template is built from MiniBox's own Dockerfile, so its source cannot be edited here. Fork it to get one you can change.",
+    "This template is built from MiniBox's own Dockerfile, so its source cannot be edited here. Duplicate it to get one you can change.",
   "tp.editConfirm": "Save changes",
   "tp.editing": "Saving…",
   "tp.edited": "Template updated",
@@ -148,17 +148,24 @@ export default {
   "tp.editPortsHelp": "TCP ports a box created from the template opens, separated by commas. Empty for none.",
   "tp.editPostCreateHelp": "Runs once in each box created from the template, as /bin/sh -c. Empty for none.",
   "tp.errPort": "“{port}” is not a port between 1 and 65535.",
-  "tp.fork": "Fork",
-  "tp.forkTitle": "Fork “{name}”",
+  "tp.fork": "Duplicate",
+  "tp.forkTitle": "Duplicate “{name}”",
   "tp.forkDesc":
-    "Copy the image and build recipe of <code>{ref}</code> into a new template. The template it comes from stays as it is.",
+    "Duplicate <code>{ref}</code> from its build source into a new, independent template. Nothing is built, so the copy has no image or size until you build it; the template it comes from stays as it is.",
+  "tp.forkDescImage":
+    "Copy the image of <code>{ref}</code> into a new template. The template it comes from stays as it is.",
   "tp.forkWhat":
-    "The copy keeps the build source and the setup command, so you can change its name and description and then rebuild it from the same source. A template saved from a box has no build source, so its copy cannot be rebuilt. A fork of an official template keeps a copy of the Dockerfile MiniBox ships instead, so the copy can be edited and rebuilt like any other.",
-  "tp.forkConfirm": "Fork template",
-  "tp.forking": "Forking…",
-  "tp.forked": "Template forked",
-  "tp.forkFailed": "Couldn't fork template",
-  "tp.forkUnbuilt": "Not built on any host yet. Build it first: a fork copies the built image, not the source.",
+    "The copy keeps the build source, the setup command, the forwarded ports and the description, but not the image: it starts as a template that is not built, and building it creates its own image, size and creation time. You can edit or build it on its card.",
+  "tp.forkWhatImage":
+    "A template saved from a box has no build source to copy, so the copy is an image copy: it cannot be edited or rebuilt, exactly like the template it came from.",
+  "tp.forkWhatOfficial":
+    "MiniBox has not built this official template on a host yet, so the copy is a template that is not built, from a copy of the Dockerfile MiniBox ships. You can edit or build it like any other custom template.",
+  "tp.forkHereLocal": "The copy is saved on this host.",
+  "tp.forkConfirm": "Duplicate template",
+  "tp.forking": "Duplicating…",
+  "tp.forked": "Template duplicated",
+  "tp.forkedDraft": "Template duplicated, not built",
+  "tp.forkFailed": "Couldn't duplicate template",
   "tp.hosts": "Hosts",
   "tp.present": "Present",
   "tp.absent": "Missing",

@@ -14,7 +14,7 @@
 - [空闲休眠与 TTL](user-guide/idle-sleep.md)：让空闲 Box 休眠，并为 Box 设置生命周期。
 - [端口预览](user-guide/port-preview.md)：打开 Box 内运行的 Web 应用。
 - [模板](user-guide/templates.md)：基础模板、从 Box 保存的模板，以及从 Dockerfile 或代码仓库构建的模板。
-- [检查点](user-guide/checkpoints.md)：复制 Box 数据、fork 或回滚。
+- [检查点](user-guide/checkpoints.md)：复制 Box 数据、复制或回滚。
 - [工具与自定义工具](user-guide/tools.md)：在 Box 中安装 Agent CLI 与运行时。
 - [环境变量与密钥](user-guide/environment-and-secrets.md)：设置变量并使用密钥。
 - [卷与存储](user-guide/volumes-and-storage.md)：卷、存储池与挂载。

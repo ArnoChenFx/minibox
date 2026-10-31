@@ -8,6 +8,7 @@ import type { Box } from "../services/boxes";
 import { getBox } from "../services/boxes";
 import { type CheckpointView, getCheckpoint } from "../services/checkpoints";
 import type { ExecTarget } from "../services/exec";
+import { draftTemplate } from "../services/template-builds";
 import type { TemplateSourceImage } from "../services/templates";
 import type { BoxEnv } from "../specs/types";
 import { INIT_SESSION } from "../startup/command";
@@ -504,9 +505,13 @@ const questionRule: Rule = async ({ principal, host, resolved }) => {
 };
 
 /** A template name a token promotes into must be free: promotion would otherwise overwrite that tag. */
-async function assertTemplateNameFree(host: HostCtx, name: string): Promise<void> {
+async function assertTemplateNameFree(principal: TokenPrincipal, host: HostCtx, name: string): Promise<void> {
   const ref = `${host.prefix}-template:${name}`;
   if (await imageOrNull(host, ref)) throw refusal("template_out_of_scope");
+  // A saved draft holds its name too. One another principal saved stays theirs, so the copy is refused rather than told
+  // that a name it cannot see is free.
+  const draft = draftTemplate(host, name);
+  if (draft !== null && draft.recipe.createdBy !== principal.id) throw refusal("template_out_of_scope");
 }
 
 const RULES: ReadonlyMap<string, Rule> = new Map<string, Rule>([
@@ -553,26 +558,27 @@ const RULES: ReadonlyMap<string, Rule> = new Map<string, Rule>([
     "template.promote",
     async ({ principal, host, input }) => {
       await assertOwnedImage(principal, host, String(input.ref), "snapshot");
-      await assertTemplateNameFree(host, String(input.name));
+      await assertTemplateNameFree(principal, host, String(input.name));
     },
   ],
   [
     "template.save",
     async (check) => {
       await boxRule(check);
-      await assertTemplateNameFree(check.host, String(check.input.name));
+      await assertTemplateNameFree(check.principal, check.host, String(check.input.name));
     },
   ],
   [
     "template.fork",
     async ({ principal, host, input, resolved }) => {
-      // The source must be a template the token may use, and the name it forks into must be free: a fork would otherwise
+      // The source must be a template the token may use, and the name it copies into must be free: a copy would otherwise
       // move a tag another principal holds.
-      // Authorize the exact image the fork copies; the input tag may already point at a different image.
-      const source = resolved as TemplateSourceImage | undefined;
-      if (!source?.image?.id) throw refusal("template_out_of_scope");
-      await assertImageUsable(principal, host, source.image.id, "template");
-      await assertTemplateNameFree(host, String(input.name));
+      // Authorize the exact image the copy uses; the input tag may already point at a different image. An official
+      // template no host has built yet has no image to grant, so only the owner duplicates it.
+      const target = resolved as { kind: "image"; source: TemplateSourceImage } | { kind: "official" } | undefined;
+      if (target?.kind !== "image" || !target.source.image?.id) throw refusal("template_out_of_scope");
+      await assertImageUsable(principal, host, target.source.image.id, "template");
+      await assertTemplateNameFree(principal, host, String(input.name));
     },
   ],
   [

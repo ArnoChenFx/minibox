@@ -141,7 +141,9 @@ export default {
   "err.template_edit_empty":
     "Nothing to change: send a source, a setup (init) or a description. A template that was not built from a declared source has no source to edit.",
   "err.template_source_builtin":
-    "Template {name} is built by MiniBox itself, so its source cannot be edited. Fork it into a template of your own and edit that.",
+    "Template {name} is built by MiniBox itself, so its source cannot be edited. Duplicate it into a template of your own and edit that.",
+  "err.template_source_unreadable":
+    "MiniBox cannot read the Dockerfile it ships for the official template {name}, or that file is not a Dockerfile, so the template cannot be duplicated until it is fixed.",
   "err.template_busy": "Another change to the template “{name}” is still running. Try again when it ends.",
   "err.template_image_missing":
     "Template image {image} does not exist. Build it on the Templates page or choose another template.",
@@ -207,7 +209,7 @@ export default {
     "Checkpoint {id} was taken from another box. Roll back a box only to its own checkpoints.",
   "err.checkpoint_no_data": "Checkpoint {id} holds no volume data, so there is nothing to roll back.",
   "err.checkpoint_legacy_read_only":
-    "Snapshot {id} was made before checkpoints. It can be forked or deleted, not changed.",
+    "Snapshot {id} was made before checkpoints. It can be duplicated or deleted, not changed.",
   "err.checkpoint_path_taken":
     "Path {path} is already mounted by a volume the new box gets by default. Mount the copy elsewhere, or do not copy it.",
   "err.checkpoint_path_not_mounted":

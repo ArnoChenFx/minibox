@@ -218,7 +218,8 @@ describe("MCP", () => {
       expect(made.result.structuredContent).toEqual({
         template: { ref: "mbtest-template:tool-copy", name: "tool-copy" },
       });
-      expect(env.runtime.callsTo("commitContainer").at(-1)?.args[1]).toMatchObject({ tag: "tool-copy" });
+      // A copy of a template with a build source is an unbuilt draft: the image is not committed.
+      expect(env.runtime.callsTo("commitContainer")).toHaveLength(0);
     } finally {
       env.stop();
     }

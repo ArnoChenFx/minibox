@@ -41,8 +41,9 @@ Commands:
                                        devcontainer.json, its postCreateCommand and ports, or its description. Nothing is
                                        built, so the current image stays until you rebuild
   minibox template fork <ref> <new-name> [--description TEXT] [--host ID] [--json]
-                                       Copy a template's image and build recipe under a new name, so the copy can be
-                                       changed on its own. Without a recipe (one saved from a box) the fork cannot rebuild
+                                       Duplicate a template under a new name, so the copy can be changed on its own.
+                                       A template built from a source is copied as a draft, not built yet; build it with
+                                       template rebuild. One saved from a box is copied as an image and cannot rebuild
   minibox template rebuild <ref> [--host ID] [--no-wait] [--json]
                                        Rebuild a template from the source it was built from
   minibox template sync <ref> --host ID [--no-wait] [--json]
@@ -57,7 +58,7 @@ Commands:
                                        Forget an offline, lost host's records: its boxes, volumes and checkpoints.
                                        The machine is not contacted. Without --yes, only the preview prints
   minibox checkpoint copy <id> --host ID [--no-wait] [--json]
-                                       Copy a checkpoint to host ID, so a box can be forked there. Prints the copy's id
+                                       Copy a checkpoint to host ID, so a box can be created from it there. Prints the copy's id
   minibox image pull <ref> [--host ID] [--no-wait] [--json]
                                        Pull an image from its registry, when the engine does not have it
   minibox trash ls [--json]            List the recycle bin: deleted boxes and volumes, kept until they expire

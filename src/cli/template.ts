@@ -259,10 +259,22 @@ async function templateForkCommand(
   if (options.switches.has("--json")) return printJson(io, made.json);
   const template = (made.json as { template?: { ref?: string } } | null)?.template;
   io.stdout(`${template?.ref ?? ""}\n`);
+  // A copy of a template with a build source is a draft, which has no image until it is built. The draft list says which
+  // one it is; a template saved from a box copies an image, and prints no line.
+  if (await savedAsDraft(env, name))
+    io.stderr(`Duplicated the template as a draft. It is not built; build it with: minibox template rebuild ${name}\n`);
   return 0;
 }
 
-/** `template create`, `get`, `edit`, `fork`, `rebuild`, `sync` and `build-official`. A build, a rebuild and a copy run as a task; a read, an edit and a fork answer at once. */
+/** Whether `name` is a template saved without building it, as the draft list reports it. */
+async function savedAsDraft(env: Record<string, string | undefined>, name: string): Promise<boolean> {
+  const drafts = await request(env, "GET", "/api/templates/drafts");
+  if (drafts.status >= 400) return false;
+  const rows = (drafts.json as { templates?: { name?: string }[] } | null)?.templates ?? [];
+  return rows.some((row) => row.name === name);
+}
+
+/** `template create`, `get`, `edit`, `fork`, `rebuild`, `sync` and `build-official`. A build, a rebuild and a copy run as a task; a read, an edit and a duplicate answer at once. */
 export async function templateCommand(
   argv: string[],
   env: Record<string, string | undefined>,

@@ -109,7 +109,7 @@ Click **Snapshot** on a volume to keep a copy of its data as a checkpoint.
 - An **independent** volume is snapshotted on its own, whether or not a box mounts it. The checkpoint's record names no box, and holds that one volume. The **Checkpoints** tab groups it under the volume's name, with the badge **Volume**, and the row's **Contents** names the volume. A box that mounts the volume keeps running while the copy is taken.
 - A volume that a box **owns** goes with its owner box, so its **Snapshot** button takes a checkpoint of that box. That box's checkpoint always includes its workspace and home volumes.
 
-The snapshot is a manual checkpoint, so [retention](checkpoints.md#checkpoint-list) never expires it on its own, and it can be pinned and deleted like any other checkpoint. It holds no box settings, so it cannot be forked into a box, exported, copied or rolled back to: those buttons are off, and the API refuses each with its reason. To take a box's settings and data together, take a checkpoint of the box instead.
+The snapshot is a manual checkpoint, so [retention](checkpoints.md#checkpoint-list) never expires it on its own, and it can be pinned and deleted like any other checkpoint. It holds no box settings, so it cannot be duplicated into a box, exported, copied or rolled back to: those buttons are off, and the API refuses each with its reason. To take a box's settings and data together, take a checkpoint of the box instead.
 
 A cache volume and the shared tools volume are never part of a checkpoint, so their **Snapshot** button is off. A volume the engine has lost cannot be snapshotted either, since a copy would only create it again empty.
 

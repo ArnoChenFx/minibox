@@ -7,7 +7,13 @@ import { NAME_RE } from "../lib/validation";
 import type { ImageDetails } from "../runtime";
 import { assertNoSecretInImage } from "../secrets/env";
 import { getBox } from "../services/boxes";
-import { OFFICIAL_NAMES, OFFICIAL_TEMPLATES, officialOfRef } from "../services/official-templates";
+import {
+  OFFICIAL_NAMES,
+  OFFICIAL_TEMPLATES,
+  type OfficialTemplate,
+  officialOfRef,
+  officialTemplate,
+} from "../services/official-templates";
 import {
   buildTemplateDraft,
   createDeclaredTemplate,
@@ -26,6 +32,8 @@ import {
   buildBaseTemplate,
   deleteTemplate,
   editTemplate,
+  forkDraftSource,
+  forkOfficialTemplate,
   forkTemplate,
   holdingTemplate,
   holdingTemplateName,
@@ -306,10 +314,17 @@ const templateDraftList = defineOperation({
   },
 });
 
+/** The official template `ref` names as a bare name or as its template tag, when it names one. */
+function officialForkOf(host: HostCtx, ref: string): OfficialTemplate | undefined {
+  const prefix = `${host.prefix}-template:`;
+  const name = ref.startsWith(prefix) ? ref.slice(prefix.length) : ref;
+  return NAME_RE.test(name) ? officialTemplate(name) : undefined;
+}
+
 const templateFork = defineOperation({
   name: "template.fork",
   tag: "templates",
-  summary: "Fork a template into a new one that can be changed on its own",
+  summary: "Duplicate a template into a new one that can be changed on its own",
   kind: "write",
   scope: "template:write",
   async: false,
@@ -320,7 +335,7 @@ const templateFork = defineOperation({
     description: templateDescription(),
     host: hostId()
       .optional()
-      .meta({ description: "Host that holds the template to fork. Omitted, the first host that holds it." }),
+      .meta({ description: "Host that holds the template to duplicate. Omitted, the first host that holds it." }),
   }),
   output: z.object({ template: PromotedTemplateSchema }),
   rest: [{ method: "POST", path: "/api/templates/:ref/fork", body: true, query: ["host"], status: 201 }],
@@ -329,29 +344,54 @@ const templateFork = defineOperation({
     toolset: "tools",
     name: "fork_template",
     description:
-      "Fork a template: copy its image and its description under a new name, so the copy can be changed on its own while the original stays as it is. A template built from a Dockerfile, a repository, a build context or a devcontainer.json brings its recipe along, pointed at the new image, so rebuild_template rebuilds the fork from the same source and the fork's boxes keep the fork's postCreateCommand and forwardPorts. A template saved from a box forks too, and its fork cannot be rebuilt. Optional description replaces the one copied. Optional host names the host that holds the template; without it the first host that holds it. Owner only. Returns the new template's ref and name.",
+      "Duplicate a template: save a copy under a new name that can be changed on its own while the original stays as it is. A template built from a Dockerfile, a repository, a build context or a devcontainer.json, the bundled base template, and an official template all copy their build source, setup command, forwarded ports and description into a template that is not built yet: nothing is built and no image is made, so the copy has no size and no creation time until rebuild_template builds it. An official template that no host has built yet can be duplicated too, from a copy of the Dockerfile MiniBox ships for it; a Dockerfile that cannot be read fails the call with template_source_unreadable. A template saved from a box has no build source, so its copy is an image copy and cannot be rebuilt. Optional description replaces the one copied. Optional host names the host that holds the template; without it the first host that holds it. Owner only. Returns the new template's ref and name. The operation, route and tool are still named fork.",
   },
   hostFor: async (ctx, input) => {
+    if (input.host !== undefined) return hostById(ctx, input.host);
     // A bare name is a template on a host, so the host that holds it is looked for under its tag too.
-    if (input.host === undefined && NAME_RE.test(input.ref) && !input.ref.includes(":")) {
-      const found = await hostOfImage(ctx, `${ctx.host.prefix}-template:${input.ref}`);
-      if (found.host.id !== ctx.host.host.id) return found;
+    if (NAME_RE.test(input.ref) && !input.ref.includes(":")) {
+      const found = await hostHoldingImage(ctx, `${ctx.host.prefix}-template:${input.ref}`);
+      if (found) return found;
     }
-    return hostOfImage(ctx, input.ref, input.host);
+    // An official template no host has built yet lives nowhere in particular, so the copy is saved on the request's host.
+    return (await hostHoldingImage(ctx, input.ref)) ?? ctx.host;
   },
   precondition: async ({ host }) => refuseAgent(host, "templates"),
-  resolve: ({ host }, input) => templateSourceImage(host, input.ref),
+  resolve: async ({ host }, input) => {
+    const image = await templateSourceImage(host, input.ref).catch((e: unknown) => {
+      // A template no host has built has no image. Only an official name has something else to copy.
+      if (e instanceof AppError && e.key === "template_not_found") return null;
+      throw e;
+    });
+    if (image) return { kind: "image", source: image } as const;
+    const official = officialForkOf(host, input.ref);
+    if (!official) throw notFound(msg("template_not_found"));
+    return { kind: "official", official } as const;
+  },
   beforeTask: async ({ host }, input) => assertTemplateNameAvailable(host, input.name),
   activity: { action: () => "template.fork", target: (input) => input.name },
   audit: {
     target: (input) => ({ kind: "template", name: input.name }),
-    detail: (input, source) => ({ name: input.name, from: source?.ref }),
+    detail: (input, source) => ({
+      name: input.name,
+      from: source?.kind === "official" ? source.official.name : source?.source.ref,
+    }),
   },
-  run: async ({ host, principal }, input, source) => ({
-    template: await holdingTemplateName(host, input.name, () =>
-      forkTemplate(host, source, { name: input.name, description: input.description, createdBy: principal.id }),
-    ),
-  }),
+  run: async ({ host, principal }, input, target) => {
+    // A duplicate that saves a draft holds its name before it is built, so the names MiniBox builds itself stay out of
+    // reach. The image copy a template saved from a box still makes takes no draft, so that path does not check.
+    if (target.kind === "official" || forkDraftSource(host, target.source, input.name) !== null) {
+      assertDraftNameFree(host, input.name);
+    }
+    const wanted = { name: input.name, description: input.description, createdBy: principal.id };
+    return {
+      template: await holdingTemplateName(host, input.name, async () =>
+        target.kind === "official"
+          ? forkOfficialTemplate(host, target.official, wanted)
+          : forkTemplate(host, target.source, wanted),
+      ),
+    };
+  },
 });
 
 /**

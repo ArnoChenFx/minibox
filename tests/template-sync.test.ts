@@ -333,6 +333,10 @@ describe("a copy of an old fork keeps the source the source host stores", () => 
       {},
     );
     expect((await cluster.post("/api/templates/mbtest-template:node/fork", { name: "node-copy" })).status).toBe(201);
+    // A duplicate of an official template is a draft, which has no image to copy or sync. Build it for the first time.
+    const rebuilt = await cluster.post("/api/templates/mbtest-template:node-copy/rebuild", {});
+    expect(rebuilt.status).toBe(202);
+    await cluster.app.tasks.drain();
     const recipeFile = join(dirname(localHost.specs.dir()), "template-recipes", localHost.host.id, "node-copy.json");
     const forked = JSON.parse(readFileSync(recipeFile, "utf8")) as Record<string, unknown>;
     writeFileSync(recipeFile, JSON.stringify({ ...forked, source: { kind: "official", name: "node" } }));

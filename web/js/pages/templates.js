@@ -89,15 +89,16 @@ function detailsHtml(tp) {
 }
 
 /**
- * The fork button of a card. A card no host holds yet shows it off, with the reason as its tooltip: a fork copies the
- * built image, so there is nothing to copy until the template is built on a host.
+ * The duplicate button of a card. Every card takes one, including an official template no host has built yet: that copy
+ * is a draft from the Dockerfile MiniBox ships. A draft card draws no duplicate button, because there is no image behind
+ * it.
  */
 function forkHtml(tp) {
   const fork = forkAction(tp);
   const label = `${icon("copy")}${t("tp.fork")}`;
   return fork.enabled
     ? `<button class="btn btn-sm" data-action="fork" data-ref="${esc(tp.ref)}" title="${esc(t("tp.fork"))}">${label}</button>`
-    : `<button class="btn btn-sm" disabled title="${esc(t(fork.reason))}">${label}</button>`;
+    : `<button class="btn btn-sm" disabled>${label}</button>`;
 }
 
 export function render(view, focusName = "") {
@@ -307,7 +308,7 @@ export function render(view, focusName = "") {
     fork: (b) => {
       const card = cards.find((tp) => tp.ref === b.dataset.ref);
       if (!card) return;
-      openForkTemplate({ card, cards, onForked: (template) => load(template?.name) });
+      openForkTemplate({ card, cards, base, onForked: (template) => load(template?.name) });
     },
     edit: (b) => {
       // A draft has a host of its own, so the card it belongs to is picked by host when two cards share one reference.
