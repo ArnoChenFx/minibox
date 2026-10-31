@@ -40,7 +40,7 @@ jobs:
         run: |
           set -u
           D=$(mktemp -d); chmod 777 "$D"; echo probe-pass > "$D/pw"; chmod 644 "$D/pw"
-          docker run -d --name minio --network host -e MINIO_ROOT_USER=probeuser -e MINIO_ROOT_PASSWORD=probepass1234 minio/minio:latest server /data --address :9000
+          docker run -d --name minio --network host -e MINIO_ROOT_USER=probeuser -e MINIO_ROOT_PASSWORD=probepass1234 quay.io/minio/minio:latest server /data --address :9000
           for i in $(seq 1 30); do curl -sf http://127.0.0.1:9000/minio/health/live && break; sleep 2; done
           docker run --rm --network host --entrypoint sh minio/mc:latest -c 'mc alias set p http://127.0.0.1:9000 probeuser probepass1234 && mc mb p/probe-bucket' ; echo "mc exit=$?"
           S="docker run --rm --network host -v $D:/k -e RESTIC_PASSWORD_FILE=/k/pw -e AWS_ACCESS_KEY_ID=probeuser -e AWS_SECRET_ACCESS_KEY=probepass1234 restic/restic:0.18.1"
