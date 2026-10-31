@@ -167,10 +167,22 @@ function targetDialog(view) {
     result.innerHTML = "";
     error.textContent = "";
   };
+  /**
+   * Shows the panel of the chosen kind and turns the others off. A field of a hidden panel is disabled, so the form does
+   * not send it: SFTP and WebDAV both have a `user`, and the empty one of the panel that is not shown must not replace
+   * the one typed in the panel that is.
+   */
+  const showKind = () => {
+    for (const panel of form.querySelectorAll("[data-target-kind]")) {
+      const shown = panel.dataset.targetKind === kind.value;
+      panel.hidden = !shown;
+      for (const input of panel.querySelectorAll("input, textarea, select")) input.disabled = !shown;
+    }
+  };
+  showKind();
   form.addEventListener("submit", (event) => event.preventDefault());
   kind.addEventListener("change", () => {
-    for (const panel of form.querySelectorAll("[data-target-kind]"))
-      panel.hidden = panel.dataset.targetKind !== kind.value;
+    showKind();
     fingerprint = "";
     clearResult();
   });
