@@ -4,6 +4,8 @@ import type { App } from "../src/app";
 import type { AuditNote, Source } from "../src/events/types";
 import { HostSampler } from "../src/host/sampler";
 import { RuntimeError, type RuntimeEvent } from "../src/runtime";
+import { createBox } from "../src/services/box-create";
+import { updateBox } from "../src/services/box-update";
 import { ContainerWatch } from "../src/services/container-watch";
 import { createTestApp, silenceLogs } from "./support/app";
 
@@ -131,6 +133,24 @@ describe("container watch", () => {
     watch.stop();
 
     expect(recorded[0]?.note.target).toEqual({ kind: "box", id: "c9", name: "minibox-legacy" });
+  });
+
+  test("a renamed box is recorded under the name it has now, not the one its labels were written with", async () => {
+    const { app, runtime, recorded, watch } = setup();
+    await listen(app);
+    const host = app.hosts.get();
+    runtime.seedImage(app.cfg.baseTemplateTag, { [host.keys.template]: "true", [host.keys.templateName]: "base" });
+    // A real box, renamed: the engine keeps the labels of the create, so its events still name the old one.
+    const box = await createBox(host, { name: "oldname", cpus: 1, memoryMb: 256 });
+    const renamed = await updateBox(host, box.boxId, box.revision, { name: "newname" });
+    watch.start();
+
+    runtime.emitEvent(containerEvent("stop", renamed.id, { [PREFIX]: "true", [`${PREFIX}.name`]: "oldname" }));
+    await waitFor(() => recorded.length === 1, "the stop of the renamed box");
+    watch.stop();
+
+    expect(recorded[0]?.note.target).toEqual({ kind: "box", id: renamed.id, name: "newname" });
+    expect(recorded[0]?.note.summary).toBe("Container stopped: newname");
   });
 
   test("an event the engine replays is recorded once", async () => {

@@ -1,5 +1,5 @@
 import { mountActivity } from "../components/activity-panel.js";
-import { lifecycle, openRebuild, deleteBox, editResources } from "../components/box-actions.js";
+import { lifecycle, openRebuild, deleteBox, editResources, renameBox } from "../components/box-actions.js";
 import { openMove } from "../components/box-move.js";
 import { mountOverview } from "../components/box-overview.js";
 import { mountPorts } from "../components/box-ports.js";
@@ -76,6 +76,7 @@ export function render(view, id, tab = "overview", sub = undefined) {
   let stripCleanup = null;
   let frames = 0;
   let headShown = "";
+  let nameShown = "";
   let lastSampleAt = 0;
   const history = [];
   const listeners = new Set();
@@ -105,7 +106,7 @@ export function render(view, id, tab = "overview", sub = undefined) {
     return `
     <div class="detail-head">
       <span class="avatar">${icon("box", "icon-lg")}</span>
-      <div class="detail-title"><h1>${esc(box.name)} ${stateBadge(boxState(box))}</h1>
+      <div class="detail-title"><h1><span class="detail-name">${esc(box.name)}</span><button class="icon-btn detail-rename" data-action="rename" title="${esc(t("bd.rename"))}" aria-label="${esc(t("bd.rename"))}">${icon("pencil")}</button> ${stateBadge(boxState(box))}</h1>
         <div class="meta mono">${esc(shortId(box.id))} · ${esc(box.image)} · ${cpus(box.cpus)} / ${mem(box.memory)}</div></div>
       <div class="page-actions">
         ${box.running ? `<button class="btn" data-action="stop">${icon("stop")}${t("act.stop")}</button>` : `<button class="btn btn-primary" data-action="start">${icon("play")}${t("act.start")}</button>`}
@@ -121,6 +122,14 @@ export function render(view, id, tab = "overview", sub = undefined) {
     </div>`;
   };
 
+  /** The breadcrumb and the window title name the box too, so a live rename reaches them as well as the header. */
+  const paintName = () => {
+    if (!box || box.name === nameShown) return;
+    nameShown = box.name;
+    setCrumbs([{ label: t("nav.boxes"), href: "#/boxes" }, box.name]);
+    document.title = `${box.name} · MiniBox`;
+  };
+
   const paintHead = () => {
     if (!painted) return;
     const next = headHtml();
@@ -132,6 +141,7 @@ export function render(view, id, tab = "overview", sub = undefined) {
   const setBox = (next) => {
     if (disposed) return;
     box = next;
+    paintName();
     paintHead();
     notify();
   };
@@ -194,8 +204,6 @@ export function render(view, id, tab = "overview", sub = undefined) {
     missing = false;
     await loadHistory().catch(() => {});
     if (disposed || token !== mounts) return;
-    setCrumbs([{ label: t("nav.boxes"), href: "#/boxes" }, box.name]);
-    document.title = `${box.name} · MiniBox`;
     headShown = headHtml();
     view.innerHTML = `${headShown}
     <div class="tabs" role="tablist">${TABS.map(
@@ -258,6 +266,7 @@ export function render(view, id, tab = "overview", sub = undefined) {
       if (frames !== framesAtDelete) void rerender();
     },
     resources: () => editResources(box, rerender),
+    rename: () => renameBox(box, () => fetchBox().catch(() => undefined)),
     "attach-volume": () => attachVolume(box),
     "detach-mount": (el) => detachMount(box, el),
     "restore-mount": (el) => restoreMount(box, el),

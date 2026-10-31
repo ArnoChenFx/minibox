@@ -49,7 +49,10 @@ export class ContainerWatch {
   private observe(host: HostCtx, event: RuntimeEvent): void {
     const recorded = RECORDED[event.action];
     if (!recorded) return;
-    const name = event.attributes[host.keys.name] || event.attributes.name || event.id;
+    // The spec carries the name the box has now. The engine's event carries the labels of the create, and a rename does
+    // not change them, so reading the label would name a renamed box by its old name.
+    const spec = host.specs.findByContainer(event.id, "", host.host.id);
+    const name = spec?.name ?? (event.attributes[host.keys.name] || event.attributes.name || event.id);
     this.record(host.host.id, "system", OWNER, {
       op: recorded.op,
       kind: "write",
