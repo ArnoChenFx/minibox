@@ -37,15 +37,18 @@ export type TemplateItem = ImageItem & { buildKind?: BuildKind; postCreate?: str
 /**
  * The templates on this host. `buildKind` is set on a template built from a declared source, so a client can offer a
  * rebuild, and is left out for one saved from a box or made by other tools. `postCreate` and `forwardPorts` name the
- * setup a box created from the template gets, when its devcontainer.json asked for one.
+ * setup a box created from the template gets, when its devcontainer.json asked for one. An image is only a template when
+ * it carries the template tag or when a recipe names it: a layer a build left behind carries the template label and no
+ * recipe, so it is not listed, even though the engine will not remove it.
  */
 export async function listTemplates(host: HostCtx): Promise<TemplateItem[]> {
   const images = await listImagesByLabel(host, host.keys.template);
   const prefix = `${host.prefix}-template:`;
   return images
     .filter((image) => {
+      if (image.tags.some((tag) => tag.startsWith(prefix))) return true;
       const recipe = image.name ? readRecipe(host, image.name) : null;
-      return image.tags.some((tag) => tag.startsWith(prefix)) || !recipe || recipe.imageId === image.id;
+      return recipe !== null && recipe.imageId === image.id;
     })
     .map((image) => {
       const tag = image.tags.find((t) => t.startsWith(prefix));
