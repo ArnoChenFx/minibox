@@ -1,6 +1,6 @@
 import type { HostCtx } from "../host/registry";
 import { labelChange } from "../labels";
-import { badRequest, conflict, notFound } from "../lib/errors";
+import { AppError, badRequest, conflict, notFound } from "../lib/errors";
 import { log } from "../lib/logger";
 import { msg } from "../lib/messages";
 import { NAME_RE } from "../lib/validation";
@@ -9,14 +9,18 @@ export { BASE_DESCRIPTION, buildBaseTemplate } from "./base-template";
 import { getBox } from "./boxes";
 import { type Progress, underBox } from "./checkpoints";
 import { type ImageItem, listImagesByLabel, removeLabeledImage } from "./images";
+import type { OfficialTemplate } from "./official-templates";
 import { createSnapshot, deleteSnapshot } from "./snapshots";
 import {
   type BuildKind,
   buildKindOf,
   type DeclaredTemplate,
   editRecipe,
-  forkBaseRecipe,
+  forkBaseDraftSource,
+  forkDraftRecipe,
+  forkOfficialDraftSource,
   forkRecipe,
+  forkRecipeDraftSource,
   isDraftRecipe,
   listDraftRecipes,
   readRecipe,
@@ -24,6 +28,7 @@ import {
   removeRecipe,
   templateInitOf,
   type TemplateRecipe,
+  type TemplateSource,
 } from "./template-builds";
 
 export type TemplateItem = ImageItem & { buildKind?: BuildKind; postCreate?: string[]; forwardPorts?: number[] };
@@ -273,17 +278,18 @@ function isBaseTemplate(host: HostCtx, source: TemplateSourceImage): boolean {
 }
 
 /**
- * Forks a template: a new template image under `name` that holds the same system layer, so its description and its
- * recipe can change without touching the template it came from. The image is a fresh commit of a throwaway container of
- * the source image, labelled as a template of the new name, so the source keeps its tags, its labels and its boxes. The
- * labels a fork records are the ones a build records, and the ones a saved template has, minus the box it came from: a
- * fork is its own template, not a save of a box. The caller holds the new name through `holdingTemplateName`.
+ * Forks a template: a new template under `name` that can change on its own while the template it comes from stays as it
+ * is, with its image, its tags, its labels and its boxes.
  *
- * A template built from a declared source brings its recipe along, pointed at the new image, so `template.rebuild`
- * rebuilds the fork from the source of the template it came from. The bundled base template has no recipe, and its fork
- * gets one that holds the Dockerfile MiniBox ships for it, so the fork can be edited and rebuilt. A template with no
- * recipe otherwise, such as one saved from a box, forks too, and its fork has no recipe, so it cannot be rebuilt, exactly
- * as the template it came from.
+ * A template built from a source, the bundled base template and an official template all have a build source, so the
+ * fork is a draft: it copies the source, the setup, the ports and the description, and writes no image. Nothing is built,
+ * so the fork has no image, no size and no creation time until `template.rebuild` builds it, exactly as a template saved
+ * without building has none. A template saved from a box has no source to copy, so its fork stays the image copy it has
+ * always been: a fresh commit of a throwaway container of the source image, labelled as a template of the new name, with
+ * no recipe, so it cannot be rebuilt or edited, exactly as the template it came from. The same image copy is the
+ * fallback for an official template whose shipped Dockerfile cannot become the fork's own copy, so such a fork keeps the
+ * official source and the warning `forkRecipe` logs, and for a base template whose Dockerfile this MiniBox does not ship,
+ * which leaves the copy without a recipe as it always did. The caller holds the new name through `holdingTemplateName`.
  */
 export async function forkTemplate(
   host: HostCtx,
@@ -291,9 +297,24 @@ export async function forkTemplate(
   input: { name: string; description?: string; createdBy: string },
 ): Promise<{ ref: string; name: string }> {
   const { runtime, keys: k, prefix } = host;
-  const created = new Date().toISOString();
   const repo = `${prefix}-template`;
   const description = input.description ?? source.description ?? `Forked from template ${source.name || source.ref}`;
+  const plan = forkPlan(host, source, input.name);
+  if (plan.draft !== null) {
+    forkDraftRecipe(host, {
+      name: input.name,
+      description,
+      source: plan.draft,
+      ...(source.recipe?.init === undefined ? {} : { init: source.recipe.init }),
+      createdBy: input.createdBy,
+    });
+    log.info("template.forked", { from: source.ref, name: input.name, draft: true });
+    return { ref: `${repo}:${input.name}`, name: input.name };
+  }
+  if (plan.missing !== null) {
+    log.warn("template.fork_source_missing", { name: input.name, source: "base", reason: plan.missing });
+  }
+  const created = new Date().toISOString();
   const tmp = await runtime.createContainer({ image: source.image.id, cmd: ["true"] });
   try {
     await runtime.commitContainer(tmp.id, {
@@ -317,14 +338,69 @@ export async function forkTemplate(
   }
   const forked = await runtime.inspectImage(`${repo}:${input.name}`);
   try {
+    // Only the two fallbacks above reach this: a template with a source became a draft, and a template saved from a box
+    // has no recipe. An official source that stayed official is the one recipe this writes.
     if (source.recipe) forkRecipe(host, input.name, source.recipe, forked.id, description, input.createdBy);
-    else if (isBaseTemplate(host, source)) forkBaseRecipe(host, input.name, forked.id, description, input.createdBy);
   } catch (e) {
     await runtime.removeImage(forked.id, { force: true }).catch(() => {});
     throw e;
   }
   log.info("template.forked", { from: source.ref, name: input.name });
   return { ref: `${repo}:${input.name}`, name: input.name };
+}
+
+/**
+ * Duplicates an official template no host has built yet. There is no image to copy, so the copy is a draft holding a
+ * copy of the Dockerfile this MiniBox ships for that template, as a duplicate of a built official template is: an
+ * independent template that is not built, and that gets its own image, size and creation time when it is. A Dockerfile
+ * this MiniBox cannot read, or does not accept as one, leaves nothing to copy, so the duplicate fails before anything is
+ * written. The caller holds the name and has refused a reserved one.
+ */
+export function forkOfficialTemplate(
+  host: HostCtx,
+  official: OfficialTemplate,
+  input: { name: string; description?: string; createdBy: string },
+): { ref: string; name: string } {
+  const read = forkOfficialDraftSource(host, official.name);
+  if ("missing" in read) {
+    log.warn("template.fork_source_missing", { name: official.name, source: "official", reason: read.missing });
+    throw new AppError(500, "internal", msg("template_source_unreadable", { name: official.name }));
+  }
+  forkDraftRecipe(host, {
+    name: input.name,
+    description: input.description ?? official.description,
+    source: read.source,
+    createdBy: input.createdBy,
+  });
+  log.info("template.forked", { from: `${host.prefix}-template:${official.name}`, name: input.name, draft: true });
+  return { ref: `${host.prefix}-template:${input.name}`, name: input.name };
+}
+
+/** How a fork makes its template: a draft from the source it copies, or the image copy a fork has always been. */
+interface ForkPlan {
+  /** The source the fork saves as a draft, or null when the fork commits a copy of the source image instead. */
+  readonly draft: TemplateSource | null;
+  /** Why the base template's Dockerfile cannot become the draft's source, when that is why the fork is an image copy. */
+  readonly missing: string | null;
+}
+
+function forkPlan(host: HostCtx, source: TemplateSourceImage, name: string): ForkPlan {
+  if (source.recipe) {
+    const read = forkRecipeDraftSource(host, name, source.recipe);
+    return { draft: "source" in read ? read.source : null, missing: null };
+  }
+  if (!isBaseTemplate(host, source)) return { draft: null, missing: null };
+  const read = forkBaseDraftSource(host);
+  return "source" in read ? { draft: read.source, missing: null } : { draft: null, missing: read.missing };
+}
+
+/**
+ * The source a fork of `source` under `name` saves as a draft, or null when the fork is the image copy it has always
+ * been. The operation checks the names MiniBox keeps for its own templates against this, so a draft that is never built
+ * cannot take one.
+ */
+export function forkDraftSource(host: HostCtx, source: TemplateSourceImage, name: string): TemplateSource | null {
+  return forkPlan(host, source, name).draft;
 }
 
 /**

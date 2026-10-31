@@ -202,7 +202,9 @@ export const MESSAGES = {
   template_edit_empty:
     "Nothing to change: send a source, a setup (init) or a description. A template that was not built from a declared source has no source to edit.",
   template_source_builtin:
-    "Template {name} is built by MiniBox itself, so its source cannot be edited. Fork it into a template of your own and edit that.",
+    "Template {name} is built by MiniBox itself, so its source cannot be edited. Duplicate it into a template of your own and edit that.",
+  template_source_unreadable:
+    "MiniBox cannot read the Dockerfile it ships for the official template {name}, or that file is not a Dockerfile, so the template cannot be duplicated until it is fixed.",
   dockerfile_invalid: "The Dockerfile must be at most 64 KB, contain no NUL bytes, and include a FROM instruction.",
   dockerfile_not_found: "There is no Dockerfile at {path} in the build context.",
   context_url_invalid:

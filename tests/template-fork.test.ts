@@ -9,11 +9,13 @@ import type { LabelKeys } from "../src/labels";
 import { log } from "../src/lib/logger";
 import { RuntimeError } from "../src/runtime";
 import * as boxes from "../src/services/boxes";
+import { officialTemplate } from "../src/services/official-templates";
 import {
+  buildTemplateDraft,
   createDeclaredTemplate,
   declaredTemplate,
+  draftTemplate,
   editRecipe,
-  forkRecipe,
   readRecipe,
   rebuildDeclaredTemplate,
   templateSetupOf,
@@ -21,7 +23,9 @@ import {
 import {
   deleteTemplate,
   editTemplate,
+  forkOfficialTemplate,
   forkTemplate,
+  listTemplateDrafts,
   listTemplates,
   saveBoxAsTemplate,
   templateSourceImage,
@@ -70,9 +74,15 @@ const progressOf = (l: Lab) => ({ log: (text: string) => l.progress.push(text) }
 const recipePathOf = (host: HostCtx, name: string) =>
   join(dirname(host.specs.dir()), "template-recipes", host.host.id, `${name}.json`);
 
-function recipeOnDisk(l: Lab, name: string): { source: unknown } {
+function recipeOnDisk(l: Lab, name: string): { source: unknown; draft?: boolean; imageId?: string | null } {
   return JSON.parse(readFileSync(recipePathOf(l.host, name), "utf8"));
 }
+
+const imageGone = (l: Lab, ref: string) =>
+  l.runtime.inspectImage(ref).then(
+    () => "held",
+    () => "gone",
+  );
 
 /** The official `node` template, built from the Dockerfile that ships, as `template.official.build` builds it. */
 async function officialNode(l: Lab): Promise<void> {
@@ -83,7 +93,7 @@ async function officialNode(l: Lab): Promise<void> {
   );
 }
 
-/** A fork of the official `node` template on `l`, as the console's fork action makes one. */
+/** A duplicate of the official `node` template on `l`, as the console's duplicate action makes one. */
 async function forkNode(l: Lab, name = "node-copy"): Promise<{ ref: string; name: string }> {
   return forkTemplate(l.host, await templateSourceImage(l.host, "mbtest-template:node"), {
     name,
@@ -91,7 +101,7 @@ async function forkNode(l: Lab, name = "node-copy"): Promise<{ ref: string; name
   });
 }
 
-/** A declared template `tool` built from a pasted Dockerfile, which is what a fork copies its recipe from. */
+/** A declared template `tool` built from a pasted Dockerfile, which is what a duplicate copies its recipe from. */
 async function declared(l: Lab, name = "tool"): Promise<void> {
   await createDeclaredTemplate(
     l.host,
@@ -100,111 +110,77 @@ async function declared(l: Lab, name = "tool"): Promise<void> {
   );
 }
 
-describe("forking a template that was built from a source", () => {
-  test("the new image carries the template labels of the new name, and the source keeps its own", async () => {
+/** Builds the saved draft `name` for the first time, as `template.rebuild` does. */
+async function buildDraft(l: Lab, name: string): Promise<{ ref: string; name: string }> {
+  const draft = draftTemplate(l.host, name);
+  if (!draft) throw new Error(`no draft ${name}`);
+  return buildTemplateDraft(l.host, draft, progressOf(l));
+}
+
+describe("duplicating a template that was built from a source", () => {
+  test("the copy is a draft with no image, and the template it came from is untouched", async () => {
     const l = lab();
     await declared(l);
     const sourceId = (await l.runtime.inspectImage("mbtest-template:tool")).id;
+    // The resolution reads the source image; what the fork itself does is measured from here on.
+    const source = await templateSourceImage(l.host, "mbtest-template:tool");
+    const since = l.runtime.calls.length;
 
-    const forked = await forkTemplate(l.host, await templateSourceImage(l.host, "mbtest-template:tool"), {
+    const forked = await forkTemplate(l.host, source, {
       name: "tool-copy",
       description: "Our own toolchain",
       createdBy: "owner",
     });
 
     expect(forked).toEqual({ ref: "mbtest-template:tool-copy", name: "tool-copy" });
-    const made = await l.runtime.inspectImage("mbtest-template:tool-copy");
-    expect(made.id).not.toBe(sourceId);
-    expect(made.labels).toMatchObject({
-      [l.keys.template]: "true",
-      [l.keys.templateName]: "tool-copy",
-      [l.keys.templateDesc]: "Our own toolchain",
-      [l.keys.createdBy]: "owner",
-      [l.keys.snapshot]: "false",
+    expect(readRecipe(l.host, "tool-copy")).toMatchObject({
+      version: 1,
+      imageId: null,
+      draft: true,
+      description: "Our own toolchain",
+      createdBy: "owner",
+      source: { kind: "dockerfile", text: FROM_ALPINE },
     });
-    expect(made.labels[l.keys.created]).toBeString();
-    // The source is untouched: same image, same labels, same tag.
-    const source = await l.runtime.inspectImage("mbtest-template:tool");
-    expect(source.id).toBe(sourceId);
-    expect(source.tags).toEqual(["mbtest-template:tool"]);
-    expect(source.labels[l.keys.templateName]).toBe("tool");
-    expect(source.labels[l.keys.templateDesc]).toBe("Built from a Dockerfile");
+    expect(readRecipe(l.host, "tool-copy")?.created).toBeString();
+    expect(draftTemplate(l.host, "tool-copy")).not.toBeNull();
+    // Nothing was created, committed or built: a draft is a recipe file and nothing else.
+    expect(l.runtime.calls.slice(since).map((entry) => entry.op)).toEqual([]);
     expect(l.runtime.containers.size).toBe(0);
+    expect(await imageGone(l, "mbtest-template:tool-copy")).toBe("gone");
+    // The template list lists images, so the copy is only in the draft list until it is built.
+    expect((await listTemplates(l.host)).map((template) => template.name)).not.toContain("tool-copy");
+    expect(listTemplateDrafts(l.host)).toContainEqual({
+      name: "tool-copy",
+      ref: "mbtest-template:tool-copy",
+      description: "Our own toolchain",
+      buildKind: "dockerfile",
+    });
+    // The source keeps its image, its tags, its labels and its own recipe.
+    const kept = await l.runtime.inspectImage("mbtest-template:tool");
+    expect(kept.id).toBe(sourceId);
+    expect(kept.tags).toEqual(["mbtest-template:tool"]);
+    expect(kept.labels[l.keys.templateName]).toBe("tool");
+    expect(kept.labels[l.keys.templateDesc]).toBe("Built from a Dockerfile");
+    expect(readRecipe(l.host, "tool")).toMatchObject({
+      imageId: sourceId,
+      source: { kind: "dockerfile", text: FROM_ALPINE },
+    });
+    expect(readRecipe(l.host, "tool")).not.toHaveProperty("draft");
   });
 
-  test("the recipe is copied under the new name, and its imageId is the new image", async () => {
+  test("a copy with no description copies the source's into the draft", async () => {
     const l = lab();
     await declared(l);
-    const sourceRecipe = readRecipe(l.host, "tool");
 
     await forkTemplate(l.host, await templateSourceImage(l.host, "mbtest-template:tool"), {
       name: "tool-copy",
       createdBy: "owner",
     });
 
-    const recipe = readRecipe(l.host, "tool-copy");
-    const image = await l.runtime.inspectImage("mbtest-template:tool-copy");
-    expect(recipe?.imageId).toBe(image.id);
-    expect(recipe?.source).toEqual(sourceRecipe?.source);
-    expect(recipe?.createdBy).toBe("owner");
-    // The source's recipe still names the source's image, so neither rebuild reads the other's image.
-    expect(readRecipe(l.host, "tool")?.imageId).toBe(sourceRecipe?.imageId);
-    expect(readRecipe(l.host, "tool")?.imageId).not.toBe(recipe?.imageId);
-  });
-
-  test("a fork with no description copies the source's into both the image and the recipe", async () => {
-    const l = lab();
-    await declared(l);
-
-    await forkTemplate(l.host, await templateSourceImage(l.host, "mbtest-template:tool"), {
-      name: "tool-copy",
-      createdBy: "owner",
-    });
-
-    expect((await l.runtime.inspectImage("mbtest-template:tool-copy")).labels[l.keys.templateDesc]).toBe(
-      "Built from a Dockerfile",
-    );
     expect(readRecipe(l.host, "tool-copy")?.description).toBe("Built from a Dockerfile");
   });
 
-  test("a fork uses its resolved image even when the source tag moves before its container is created", async () => {
-    const l = lab();
-    await declared(l);
-    const source = await templateSourceImage(l.host, "mbtest-template:tool");
-    l.runtime.moveTag(source.ref, { [l.keys.template]: "true", [l.keys.templateName]: "tool", marker: "replacement" });
-    await forkTemplate(l.host, source, { name: "copy", createdBy: "owner" });
-    const image = await l.runtime.inspectImage("mbtest-template:copy");
-    expect(image.labels.marker).toBeUndefined();
-    expect(l.runtime.callsTo("createContainer").at(-1)?.args[0]).toMatchObject({ image: source.image.id });
-    expect(readRecipe(l.host, "copy")?.source).toEqual(source.recipe?.source);
-  });
-
-  test("a source rebuilt while the fork commits cannot replace the recipe the fork captured", async () => {
-    const l = lab();
-    await declared(l);
-    const source = await templateSourceImage(l.host, "mbtest-template:tool");
-    const entered = Promise.withResolvers<void>();
-    const gate = Promise.withResolvers<void>();
-    const commit = l.runtime.commitContainer.bind(l.runtime);
-    l.runtime.commitContainer = async (id, spec) => {
-      entered.resolve();
-      await gate.promise;
-      return commit(id, spec);
-    };
-    const pending = forkTemplate(l.host, source, { name: "copy", createdBy: "owner" });
-    try {
-      await entered.promise;
-      await rebuildDeclaredTemplate(l.host, await declaredTemplate(l.host, source.ref), progressOf(l));
-    } finally {
-      gate.resolve();
-    }
-    await pending;
-    expect(readRecipe(l.host, "tool")?.imageId).not.toBe(source.image.id);
-    expect(readRecipe(l.host, "copy")?.source).toEqual(source.recipe?.source);
-    expect((await listTemplates(l.host)).find((image) => image.name === "copy")?.buildKind).toBe("dockerfile");
-  });
-
-  test("a devcontainer template's setup is copied, so a box created from the fork gets it too", async () => {
+  test("the source's setup and ports come along, and the first build keeps them", async () => {
     const l = lab();
     serveRepository(l.runtime, new Map([[".devcontainer/devcontainer.json", DEVCONTAINER_WITH_SETUP]]));
     await createDeclaredTemplate(
@@ -220,62 +196,126 @@ describe("forking a template that was built from a source", () => {
 
     expect(readRecipe(l.host, "dev")?.init).toEqual(DEV_SETUP);
     expect(readRecipe(l.host, "dev-copy")?.init).toEqual(DEV_SETUP);
+    expect(readRecipe(l.host, "dev-copy")?.draft).toBe(true);
+    // A draft has no image, so a box cannot start from it and there is no setup to report until it is built.
+    expect(await templateSetupOf(l.host, "mbtest-template:dev-copy")).toBeNull();
+
+    await buildDraft(l, "dev-copy");
+
     expect(await templateSetupOf(l.host, "mbtest-template:dev-copy")).toEqual(DEV_SETUP);
   });
 
-  test("a rebuild of the fork builds from the source the original was built from, into the fork's own tag", async () => {
+  test("building the copy makes it a template of its own, and leaves the source where it was", async () => {
+    const l = lab();
+    await declared(l);
+    const sourceBefore = (await l.runtime.inspectImage("mbtest-template:tool")).id;
+    await forkTemplate(l.host, await templateSourceImage(l.host, "mbtest-template:tool"), {
+      name: "tool-copy",
+      createdBy: "owner",
+    });
+    const buildsBefore = l.runtime.builds.length;
+    const draftsBefore = listTemplateDrafts(l.host).length;
+
+    const built = await buildDraft(l, "tool-copy");
+
+    expect(built).toEqual({ ref: "mbtest-template:tool-copy", name: "tool-copy" });
+    expect(l.runtime.builds).toHaveLength(buildsBefore + 1);
+    expect(l.runtime.builds.at(-1)?.tag).toBe("mbtest-template:tool-copy");
+    expect(l.runtime.builds.at(-1)?.files.get("Dockerfile")).toBe(FROM_ALPINE);
+    const image = await l.runtime.inspectImage("mbtest-template:tool-copy");
+    expect(readRecipe(l.host, "tool-copy")).toMatchObject({ imageId: image.id });
+    expect(readRecipe(l.host, "tool-copy")).not.toHaveProperty("draft");
+    expect(draftTemplate(l.host, "tool-copy")).toBeNull();
+    expect(listTemplateDrafts(l.host)).toHaveLength(draftsBefore - 1);
+    expect((await listTemplates(l.host)).find((template) => template.name === "tool-copy")?.buildKind).toBe(
+      "dockerfile",
+    );
+    // The template the copy came from is not rebuilt, and keeps the image and recipe it had.
+    expect((await l.runtime.inspectImage("mbtest-template:tool")).id).toBe(sourceBefore);
+    expect(readRecipe(l.host, "tool")?.imageId).toBe(sourceBefore);
+  });
+
+  test("a copy saves the recipe the source had when it was resolved, even if the source changes meanwhile", async () => {
+    const l = lab();
+    await declared(l);
+    const source = await templateSourceImage(l.host, "mbtest-template:tool");
+    editRecipe(l.host, await declaredTemplate(l.host, "mbtest-template:tool"), {
+      source: { kind: "dockerfile", text: FROM_ALPINE_21 },
+    });
+
+    await forkTemplate(l.host, source, { name: "copy", createdBy: "owner" });
+
+    expect(readRecipe(l.host, "copy")?.source).toEqual({ kind: "dockerfile", text: FROM_ALPINE });
+    expect(readRecipe(l.host, "tool")?.source).toEqual({ kind: "dockerfile", text: FROM_ALPINE_21 });
+  });
+
+  test("deleting the source leaves the copy, which still builds and starts a box", async () => {
     const l = lab();
     await declared(l);
     await forkTemplate(l.host, await templateSourceImage(l.host, "mbtest-template:tool"), {
       name: "tool-copy",
       createdBy: "owner",
     });
-    const beforeFork = (await l.runtime.inspectImage("mbtest-template:tool-copy")).id;
-    const sourceBefore = (await l.runtime.inspectImage("mbtest-template:tool")).id;
-    const buildsBefore = l.runtime.builds.length;
 
-    const declaredFork = await declaredTemplate(l.host, "mbtest-template:tool-copy");
-    expect(declaredFork.recipe.source).toEqual({ kind: "dockerfile", text: FROM_ALPINE });
-    await rebuildDeclaredTemplate(l.host, declaredFork, progressOf(l));
+    await deleteTemplate(l.host, "mbtest-template:tool");
 
-    expect(l.runtime.builds).toHaveLength(buildsBefore + 1);
-    const build = l.runtime.builds.at(-1);
-    expect(build?.tag).toBe("mbtest-template:tool-copy");
-    expect(build?.files.get("Dockerfile")).toBe(FROM_ALPINE);
-    const afterFork = (await l.runtime.inspectImage("mbtest-template:tool-copy")).id;
-    expect(afterFork).not.toBe(beforeFork);
-    expect(readRecipe(l.host, "tool-copy")?.imageId).toBe(afterFork);
-    // The template the fork came from is not rebuilt, and keeps the image it had.
-    expect((await l.runtime.inspectImage("mbtest-template:tool")).id).toBe(sourceBefore);
-    expect(readRecipe(l.host, "tool")?.imageId).toBe(sourceBefore);
+    expect(await imageGone(l, "mbtest-template:tool")).toBe("gone");
+    expect(readRecipe(l.host, "tool")).toBeNull();
+    expect(readRecipe(l.host, "tool-copy")?.draft).toBe(true);
+    await buildDraft(l, "tool-copy");
+    const box = await boxes.createBox(l.host, {
+      name: "beta",
+      cpus: 1,
+      memoryMb: 256,
+      image: "mbtest-template:tool-copy",
+    });
+    expect(box.template).toBe("mbtest-template:tool-copy");
   });
 });
 
-describe("forking an official template", () => {
-  test("the fork is a custom template whose source is a copy of the Dockerfile that ships", async () => {
+describe("duplicating an official template", () => {
+  test("the copy is a draft whose source is a copy of the Dockerfile that ships", async () => {
     const l = lab();
     await officialNode(l);
-    // An official template may carry a setup of its own, and a fork brings it along.
+    // An official template may carry a setup of its own, and a duplicate brings it along.
     editRecipe(l.host, await declaredTemplate(l.host, "mbtest-template:node"), { init: DEV_SETUP });
 
     await forkNode(l);
 
-    // Both the record on disk and what a read makes of it name the copy, so the fork can be rebuilt without the original.
+    // Both the record on disk and what a read makes of it name the copy, so the copy is custom from the moment it exists.
     expect(recipeOnDisk(l, "node-copy").source).toEqual({ kind: "dockerfile", text: SHIPPED_NODE });
-    expect(readRecipe(l.host, "node-copy")?.source).toEqual({ kind: "dockerfile", text: SHIPPED_NODE });
-    expect(readRecipe(l.host, "node-copy")?.init).toEqual(DEV_SETUP);
-    expect((await listTemplates(l.host)).find((template) => template.name === "node-copy")?.buildKind).toBe(
-      "dockerfile",
-    );
+    expect(readRecipe(l.host, "node-copy")).toMatchObject({
+      imageId: null,
+      draft: true,
+      init: DEV_SETUP,
+      source: { kind: "dockerfile", text: SHIPPED_NODE },
+    });
+    expect(l.runtime.callsTo("commitContainer")).toHaveLength(0);
+    expect(await imageGone(l, "mbtest-template:node-copy")).toBe("gone");
+    expect(listTemplateDrafts(l.host)).toContainEqual({
+      name: "node-copy",
+      ref: "mbtest-template:node-copy",
+      description: "Debian 12 · Node.js 26 · pnpm · yarn · git · tmux · build-essential · non-root dev user",
+      buildKind: "dockerfile",
+    });
     // The template it came from is untouched and still official, with the source it had.
     expect(readRecipe(l.host, "node")?.source).toEqual({ kind: "official", name: "node" });
     expect((await listTemplates(l.host)).find((template) => template.name === "node")?.buildKind).toBe("official");
+
+    await buildDraft(l, "node-copy");
+
+    expect(l.runtime.builds.at(-1)?.files.get("Dockerfile")).toBe(SHIPPED_NODE);
+    expect((await listTemplates(l.host)).find((template) => template.name === "node-copy")?.buildKind).toBe(
+      "dockerfile",
+    );
+    expect(await templateSetupOf(l.host, "mbtest-template:node-copy")).toEqual(DEV_SETUP);
   });
 
-  test("its source can be replaced, and a rebuild builds the replacement into the fork's own tag", async () => {
+  test("its source can be replaced once it is built, and a rebuild builds the replacement into the copy's tag", async () => {
     const l = lab();
     await officialNode(l);
     await forkNode(l);
+    await buildDraft(l, "node-copy");
     const source = await declaredTemplate(l.host, "mbtest-template:node-copy");
     const image = await l.runtime.inspectImage("mbtest-template:node-copy");
 
@@ -290,7 +330,7 @@ describe("forking an official template", () => {
     expect(l.runtime.builds.at(-1)?.files.get("Dockerfile")).toBe(FROM_ALPINE_21);
   });
 
-  test("the official template's own source stays fixed, so only a fork can be pointed elsewhere", async () => {
+  test("the official template's own source stays fixed, so only a copy can be pointed elsewhere", async () => {
     const l = lab();
     await officialNode(l);
     const source = await declaredTemplate(l.host, "mbtest-template:node");
@@ -302,22 +342,38 @@ describe("forking an official template", () => {
 
     expect(error).toMatchObject({ status: 400, key: "template_source_builtin" });
     expect(readRecipe(l.host, "node")?.source).toEqual({ kind: "official", name: "node" });
-    // Its rebuild still builds the Dockerfile this MiniBox ships, not one a fork wrote.
+    // Its rebuild still builds the Dockerfile this MiniBox ships, not one a copy wrote.
     await rebuildDeclaredTemplate(l.host, await declaredTemplate(l.host, "mbtest-template:node"), progressOf(l));
     expect(l.runtime.builds.at(-1)?.tag).toBe("mbtest-template:node");
     expect(l.runtime.builds.at(-1)?.files.get("Dockerfile")).toBe(SHIPPED_NODE);
   });
+});
 
-  test("a fork written before it kept a copy reads as built from that copy, and its next write stores it", async () => {
+/** The recipe of a fork written before a duplicate kept its own copy: an image, still under the official source. */
+function seedLegacyFork(l: Lab, name = "node-copy"): string {
+  const imageId = l.runtime.seedImage(`mbtest-template:${name}`, {
+    [l.keys.template]: "true",
+    [l.keys.templateName]: name,
+  });
+  writeFileSync(
+    recipePathOf(l.host, name),
+    JSON.stringify({
+      version: 1,
+      imageId,
+      description: null,
+      createdBy: "owner",
+      created: new Date().toISOString(),
+      source: { kind: "official", name: "node" },
+    }),
+  );
+  return imageId;
+}
+
+describe("a recipe a fork wrote before it kept a copy of the Dockerfile", () => {
+  test("reads as the copy of what this MiniBox ships, and the next write stores that copy", async () => {
     const l = lab();
     await officialNode(l);
-    await forkNode(l);
-    // The record an earlier version wrote: the fork's own image id, under the official template's source.
-    const legacy = JSON.parse(readFileSync(recipePathOf(l.host, "node-copy"), "utf8"));
-    writeFileSync(
-      recipePathOf(l.host, "node-copy"),
-      JSON.stringify({ ...legacy, source: { kind: "official", name: "node" } }),
-    );
+    seedLegacyFork(l);
 
     expect(readRecipe(l.host, "node-copy")?.source).toEqual({ kind: "dockerfile", text: SHIPPED_NODE });
     expect((await listTemplates(l.host)).find((template) => template.name === "node-copy")?.buildKind).toBe(
@@ -334,15 +390,10 @@ describe("forking an official template", () => {
     expect(readRecipe(l.host, "node-copy")?.init).toEqual({ forwardPorts: [8080] });
   });
 
-  test("a legacy fork's rebuild builds the copy of the Dockerfile that ships", async () => {
+  test("a rebuild builds the copy of the Dockerfile that ships, and writes that copy back", async () => {
     const l = lab();
     await officialNode(l);
-    await forkNode(l);
-    const legacy = JSON.parse(readFileSync(recipePathOf(l.host, "node-copy"), "utf8"));
-    writeFileSync(
-      recipePathOf(l.host, "node-copy"),
-      JSON.stringify({ ...legacy, source: { kind: "official", name: "node" } }),
-    );
+    seedLegacyFork(l);
 
     await rebuildDeclaredTemplate(l.host, await declaredTemplate(l.host, "mbtest-template:node-copy"), progressOf(l));
 
@@ -352,33 +403,24 @@ describe("forking an official template", () => {
     expect(recipeOnDisk(l, "node-copy").source).toEqual({ kind: "dockerfile", text: SHIPPED_NODE });
   });
 
-  test("forkRecipe writes the fork's own copy even when it is handed the official source", async () => {
-    const l = lab();
-    await officialNode(l);
-    const recipe = readRecipe(l.host, "node");
-    if (!recipe) throw new Error("the official template has a recipe");
-    const imageId = l.runtime.seedImage("mbtest-template:node-copy", { [l.keys.template]: "true" });
-
-    forkRecipe(l.host, "node-copy", recipe, imageId, "Forked", "owner");
-
-    expect(recipeOnDisk(l, "node-copy").source).toEqual({ kind: "dockerfile", text: SHIPPED_NODE });
-    expect(readRecipe(l.host, "node-copy")?.imageId).toBe(imageId);
-  });
-
-  test("a Dockerfile that cannot become the copy keeps the official source, warns, and keeps the fork", async () => {
-    // A MiniBox whose shipped Dockerfile is not a Dockerfile: the copy cannot be made from it.
+  test("a Dockerfile that cannot become the copy keeps the official source, warns, and keeps the image copy", async () => {
+    // A MiniBox whose shipped Dockerfile is not a Dockerfile: a draft cannot take that source.
     const dir = mkdtempSync(join(tmpdir(), "minibox-templates-"));
     mkdirSync(join(dir, "official", "node"), { recursive: true });
     writeFileSync(join(dir, "official", "node", "Dockerfile"), "RUN true\n");
-    const { app, runtime } = createTestApp({ templatesDir: dir });
+    const { app, runtime } = createTestApp({ templatesDir: dir, labelPrefix: "mbtest" });
     const host = app.hosts.get();
+    runtime.seedImage(host.baseTemplateTag, { [host.keys.template]: "true", [host.keys.templateName]: "base" });
     const l: Lab = { app, runtime, host, keys: host.keys, progress: [] };
     const warnings = spyOn(log, "warn").mockImplementation(() => {});
     try {
       await officialNode(l);
-      await forkNode(l);
+      const forked = await forkNode(l);
 
-      expect(readRecipe(l.host, "node-copy")?.source).toEqual({ kind: "official", name: "node" });
+      expect(forked).toEqual({ ref: "mbtest-template:node-copy", name: "node-copy" });
+      // A draft cannot name an official source, so this copy is the image copy a fork has always been.
+      expect(readRecipe(l.host, "node-copy")).toMatchObject({ source: { kind: "official", name: "node" } });
+      expect(readRecipe(l.host, "node-copy")?.draft).toBeUndefined();
       const kept = warnings.mock.calls.filter(([event]) => event === "template.fork_source_kept");
       expect(kept).toHaveLength(1);
       expect(kept[0]?.[1]).toMatchObject({
@@ -386,8 +428,11 @@ describe("forking an official template", () => {
         source: "node",
         reason: "the shipped Dockerfile is not a Dockerfile",
       });
-      // The image was committed before the recipe was written, so the fork is kept rather than thrown away.
+      // The image was committed before the recipe was written, so the copy is kept rather than thrown away.
       expect((await l.runtime.inspectImage("mbtest-template:node-copy")).labels[l.keys.templateName]).toBe("node-copy");
+      expect(readRecipe(l.host, "node-copy")?.imageId).toBe(
+        (await l.runtime.inspectImage("mbtest-template:node-copy")).id,
+      );
     } finally {
       warnings.mockRestore();
       rmSync(dir, { recursive: true, force: true });
@@ -395,8 +440,95 @@ describe("forking an official template", () => {
   });
 });
 
-describe("forking a template that was saved from a box", () => {
-  test("the fork is a working template with no build kind, and it has no recipe to rebuild from", async () => {
+describe("duplicating an official template no host has built yet", () => {
+  test("the copy is a draft from a copy of the Dockerfile that ships, and no engine call is made", async () => {
+    const l = lab();
+    const official = officialTemplate("node");
+    if (!official) throw new Error("the node template ships");
+
+    const forked = forkOfficialTemplate(l.host, official, { name: "node-mine", createdBy: "owner" });
+
+    expect(forked).toEqual({ ref: "mbtest-template:node-mine", name: "node-mine" });
+    expect(readRecipe(l.host, "node-mine")).toMatchObject({
+      version: 1,
+      imageId: null,
+      draft: true,
+      description: official.description,
+      createdBy: "owner",
+      source: { kind: "dockerfile", text: SHIPPED_NODE },
+    });
+    expect(l.runtime.callsTo("createContainer")).toHaveLength(0);
+    expect(l.runtime.callsTo("commitContainer")).toHaveLength(0);
+    expect(l.runtime.callsTo("buildImage")).toHaveLength(0);
+    expect(listTemplateDrafts(l.host)).toContainEqual({
+      name: "node-mine",
+      ref: "mbtest-template:node-mine",
+      description: official.description,
+      buildKind: "dockerfile",
+    });
+    // The official template itself is still not built on this host.
+    expect(await imageGone(l, "mbtest-template:node")).toBe("gone");
+  });
+
+  test("a description the caller gives replaces the catalog's", () => {
+    const l = lab();
+    const official = officialTemplate("go");
+    if (!official) throw new Error("the go template ships");
+
+    forkOfficialTemplate(l.host, official, { name: "go-mine", description: "Ours", createdBy: "owner" });
+
+    expect(readRecipe(l.host, "go-mine")?.description).toBe("Ours");
+  });
+
+  test("building the draft gives the official template's own copy as a custom template", async () => {
+    const l = lab();
+    const official = officialTemplate("node");
+    if (!official) throw new Error("the node template ships");
+    forkOfficialTemplate(l.host, official, { name: "node-mine", createdBy: "owner" });
+
+    await buildDraft(l, "node-mine");
+
+    expect(l.runtime.builds.at(-1)?.tag).toBe("mbtest-template:node-mine");
+    expect(l.runtime.builds.at(-1)?.files.get("Dockerfile")).toBe(SHIPPED_NODE);
+    expect((await listTemplates(l.host)).find((template) => template.name === "node-mine")?.buildKind).toBe(
+      "dockerfile",
+    );
+    // Building the copy never built the official template itself.
+    expect(await imageGone(l, "mbtest-template:node")).toBe("gone");
+  });
+
+  test("a Dockerfile this MiniBox cannot read fails the copy and leaves no recipe behind", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "minibox-templates-"));
+    mkdirSync(join(dir, "official", "node"), { recursive: true });
+    writeFileSync(join(dir, "official", "node", "Dockerfile"), "RUN true\n");
+    const { app, runtime } = createTestApp({ templatesDir: dir, labelPrefix: "mbtest" });
+    const host = app.hosts.get();
+    const l: Lab = { app, runtime, host, keys: host.keys, progress: [] };
+    const warnings = spyOn(log, "warn").mockImplementation(() => {});
+    try {
+      const official = officialTemplate("node");
+      if (!official) throw new Error("the node template ships");
+
+      const error = await rejectionOf(
+        (async () => forkOfficialTemplate(l.host, official, { name: "node-mine", createdBy: "owner" }))(),
+      );
+
+      expect(error).toMatchObject({ status: 500, key: "template_source_unreadable", params: { name: "node" } });
+      expect(draftTemplate(l.host, "node-mine")).toBeNull();
+      expect(listTemplateDrafts(l.host)).toEqual([]);
+      expect(l.runtime.callsTo("createContainer")).toHaveLength(0);
+      expect(l.runtime.callsTo("buildImage")).toHaveLength(0);
+      const missing = warnings.mock.calls.filter(([event]) => event === "template.fork_source_missing");
+      expect(missing).toHaveLength(1);
+    } finally {
+      warnings.mockRestore();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("duplicating a template that was saved from a box", () => {
+  test("the copy is a working template with no build kind, and it has no recipe to rebuild from", async () => {
     const l = lab();
     const box = await boxes.createBox(l.host, { name: "alpha", cpus: 1, memoryMb: 256 });
     await saveBoxAsTemplate(l.host, box.boxId, { name: "gold", description: "Node 26 toolchain" }, "owner");
@@ -410,10 +542,11 @@ describe("forking a template that was saved from a box", () => {
     const listed = (await listTemplates(l.host)).find((template) => template.name === "gold-copy");
     expect(listed).toMatchObject({ ref: "mbtest-template:gold-copy", description: "Node 26 toolchain" });
     expect(listed).not.toHaveProperty("buildKind");
-    // A fork names no box, so it is not a save of the box the original came from.
+    // A copy names no box, so it is not a save of the box the original came from.
     expect(listed?.source).toBeNull();
     expect(listed?.sourceId).toBeNull();
     expect(readRecipe(l.host, "gold-copy")).toBeNull();
+    expect(listDraftTemplateNames(l)).not.toContain("gold-copy");
     const recipeError = await rejectionOf(declaredTemplate(l.host, "mbtest-template:gold-copy"));
     expect(recipeError).toMatchObject({ status: 400, key: "template_not_declared" });
     // The original keeps naming the box it was saved from.
@@ -421,37 +554,32 @@ describe("forking a template that was saved from a box", () => {
     expect(source).toMatchObject({ source: "alpha", sourceId: box.boxId });
   });
 
-  test("deleting the template a fork came from leaves the fork and its boxes alone", async () => {
+  test("a copy of a saved template commits an image, as it always did", async () => {
     const l = lab();
-    await declared(l);
-    await forkTemplate(l.host, await templateSourceImage(l.host, "mbtest-template:tool"), {
-      name: "tool-copy",
+    const box = await boxes.createBox(l.host, { name: "alpha", cpus: 1, memoryMb: 256 });
+    await saveBoxAsTemplate(l.host, box.boxId, { name: "gold" }, "owner");
+    const sourceId = (await l.runtime.inspectImage("mbtest-template:gold")).id;
+
+    await forkTemplate(l.host, await templateSourceImage(l.host, "mbtest-template:gold"), {
+      name: "gold-copy",
+      description: "Ours",
       createdBy: "owner",
     });
-    const forkId = (await l.runtime.inspectImage("mbtest-template:tool-copy")).id;
 
-    await deleteTemplate(l.host, "mbtest-template:tool");
-
-    expect(
-      await l.runtime.inspectImage("mbtest-template:tool").then(
-        () => "held",
-        () => "gone",
-      ),
-    ).toBe("gone");
-    expect((await l.runtime.inspectImage("mbtest-template:tool-copy")).id).toBe(forkId);
-    expect(readRecipe(l.host, "tool")).toBeNull();
-    expect(readRecipe(l.host, "tool-copy")?.imageId).toBe(forkId);
-    const box = await boxes.createBox(l.host, {
-      name: "beta",
-      cpus: 1,
-      memoryMb: 256,
-      image: "mbtest-template:tool-copy",
+    const made = await l.runtime.inspectImage("mbtest-template:gold-copy");
+    expect(made.id).not.toBe(sourceId);
+    expect(made.labels).toMatchObject({
+      [l.keys.template]: "true",
+      [l.keys.templateName]: "gold-copy",
+      [l.keys.templateDesc]: "Ours",
+      [l.keys.createdBy]: "owner",
+      [l.keys.snapshot]: "false",
     });
-    expect(box.template).toBe("mbtest-template:tool-copy");
+    expect(readRecipe(l.host, "gold-copy")).toBeNull();
   });
 });
 
-describe("the template a fork copies", () => {
+describe("the template a duplicate copies", () => {
   test("is found by its name, its tag or its image id, and anything else is not found", async () => {
     const l = lab();
     await declared(l);
@@ -463,7 +591,7 @@ describe("the template a fork copies", () => {
     expect(await rejectionOf(templateSourceImage(l.host, "nowhere"))).toMatchObject({ status: 404 });
   });
 
-  test("is not a snapshot or a plain image, so a fork never copies those", async () => {
+  test("is not a snapshot or a plain image, so a duplicate never copies those", async () => {
     const l = lab();
     l.runtime.seedImage("mbtest-snap:nightly", { [l.keys.snapshot]: "true" });
     expect(await rejectionOf(templateSourceImage(l.host, "mbtest-snap:nightly"))).toMatchObject({
@@ -473,53 +601,60 @@ describe("the template a fork copies", () => {
   });
 });
 
-describe("a fork that fails", () => {
-  test("leaves no image and no recipe, so the name stays free", async () => {
+describe("a copy that fails", () => {
+  test("an image copy leaves no image and no recipe, so the name stays free", async () => {
     const l = lab();
-    await declared(l);
+    // A template saved from a box: an image with the template labels and no recipe, which a copy commits anew.
+    l.runtime.seedImage("mbtest-template:gold", { [l.keys.template]: "true", [l.keys.templateName]: "gold" });
     l.runtime.fail("commitContainer", new RuntimeError("engine", "no space left on device"));
 
     const error = await rejectionOf(
-      forkTemplate(l.host, await templateSourceImage(l.host, "mbtest-template:tool"), {
-        name: "tool-copy",
+      forkTemplate(l.host, await templateSourceImage(l.host, "mbtest-template:gold"), {
+        name: "gold-copy",
         createdBy: "owner",
       }),
     );
 
     expect(error).toBeInstanceOf(RuntimeError);
-    expect(
-      await l.runtime.inspectImage("mbtest-template:tool-copy").then(
-        () => "held",
-        () => "gone",
-      ),
-    ).toBe("gone");
-    expect(readRecipe(l.host, "tool-copy")).toBeNull();
+    expect(await imageGone(l, "mbtest-template:gold-copy")).toBe("gone");
+    expect(readRecipe(l.host, "gold-copy")).toBeNull();
     expect(l.runtime.containers.size).toBe(0);
   });
 });
 
-/** A fork of the bundled base template on `l`, as the console's fork action makes one. */
+const listDraftTemplateNames = (l: Lab) => listTemplateDrafts(l.host).map((draft) => draft.name);
+
+/** A duplicate of the bundled base template on `l`, as the console's duplicate action makes one. */
 const forkBase = async (l: Lab, name = "base-copy") =>
   forkTemplate(l.host, await templateSourceImage(l.host, l.host.baseTemplateTag), { name, createdBy: "owner" });
 
-describe("forking the bundled base template", () => {
-  test("the fork is a custom template with its own copy of the base Dockerfile, and the base template is untouched", async () => {
+describe("duplicating the bundled base template", () => {
+  test("the copy is a draft whose source is its own copy of the base Dockerfile, and the base template is untouched", async () => {
     const l = lab();
 
     await forkBase(l);
 
     expect(recipeOnDisk(l, "base-copy").source).toEqual({ kind: "dockerfile", text: SHIPPED_BASE });
-    expect(readRecipe(l.host, "base-copy")?.imageId).toBe(
-      (await l.runtime.inspectImage("mbtest-template:base-copy")).id,
-    );
-    const listed = await listTemplates(l.host);
-    expect(listed.find((template) => template.name === "base-copy")?.buildKind).toBe("dockerfile");
+    expect(readRecipe(l.host, "base-copy")).toMatchObject({ imageId: null, draft: true });
+    expect(l.runtime.callsTo("commitContainer")).toHaveLength(0);
+    expect(await imageGone(l, "mbtest-template:base-copy")).toBe("gone");
+    expect(listTemplateDrafts(l.host)[0]).toMatchObject({ name: "base-copy", buildKind: "dockerfile" });
     // The base template is built by MiniBox itself and still has no recipe.
     expect(readRecipe(l.host, "base")).toBeNull();
-    expect(listed.find((template) => template.name === "base")?.buildKind).toBeUndefined();
+    expect((await listTemplates(l.host)).find((template) => template.name === "base")?.buildKind).toBeUndefined();
   });
 
-  test("a MiniBox that cannot read the base Dockerfile still forks, warns, and leaves the fork without a recipe", async () => {
+  test("building the copy builds the base Dockerfile into the copy's own tag", async () => {
+    const l = lab();
+    await forkBase(l);
+
+    await buildDraft(l, "base-copy");
+
+    expect(l.runtime.builds.at(-1)?.tag).toBe("mbtest-template:base-copy");
+    expect(l.runtime.builds.at(-1)?.files.get("Dockerfile")).toBe(SHIPPED_BASE);
+  });
+
+  test("a MiniBox that cannot read the base Dockerfile still copies it as an image, warns, and leaves no recipe", async () => {
     const dir = mkdtempSync(join(tmpdir(), "minibox-templates-"));
     const { app, runtime } = createTestApp({ templatesDir: dir, labelPrefix: "mbtest" });
     const host = app.hosts.get();
@@ -567,7 +702,13 @@ describe("template.fork over REST and tokens", () => {
     expect((await finishedTask(harness.base, started.json.taskId ?? "")).status).toBe("succeeded");
   }
 
-  test("rebuilding a token's fork keeps its ownership, visibility and copied description", async () => {
+  async function rebuildOverRest(name: string): Promise<void> {
+    const rebuilt = await call(harness.base, rebuildPath(`mbtest-template:${name}`), { body: {} });
+    expect(rebuilt.status).toBe(202);
+    expect((await finishedTask(harness.base, rebuilt.json.taskId ?? "")).status).toBe("succeeded");
+  }
+
+  test("rebuilding a token's copy keeps its ownership, visibility and copied description", async () => {
     const maker = mint(harness.app, { name: "maker", preset: "operator" });
     const other = mint(harness.app, { name: "other", preset: "operator" });
     const host = harness.app.hosts.get();
@@ -585,10 +726,10 @@ describe("template.fork over REST and tokens", () => {
       (await call(harness.base, forkPath("mbtest-template:shared"), { token: maker.secret, body: { name: "mine" } }))
         .status,
     ).toBe(201);
+    // The copy of a declared template is a draft, so it is not listed until it is built.
     expect(namesOf(await call(harness.base, "/api/templates", { token: other.secret }))).not.toContain("mine");
-    const rebuilt = await call(harness.base, "/api/templates/mbtest-template%3Amine/rebuild", { body: {} });
-    expect(rebuilt.status).toBe(202);
-    expect((await finishedTask(harness.base, rebuilt.json.taskId ?? "")).status).toBe("succeeded");
+    expect(readRecipe(host, "mine")).toMatchObject({ draft: true, createdBy: maker.id });
+    await rebuildOverRest("mine");
     const image = await harness.runtime.inspectImage("mbtest-template:mine");
     expect(image.labels[host.keys.createdBy]).toBe(maker.id);
     expect(image.labels[host.keys.templateDesc]).toBe("Our source description");
@@ -596,7 +737,7 @@ describe("template.fork over REST and tokens", () => {
     expect(namesOf(await call(harness.base, "/api/templates", { token: other.secret }))).not.toContain("mine");
   });
 
-  test("rebuilding an older fork repairs the copied recipe creator from the image's own owner", async () => {
+  test("rebuilding an older copy repairs the copied recipe creator from the image's own owner", async () => {
     const maker = mint(harness.app, { name: "maker", preset: "operator" });
     const host = harness.app.hosts.get();
     await declaredOverRest("shared");
@@ -604,6 +745,7 @@ describe("template.fork over REST and tokens", () => {
       (await call(harness.base, forkPath("mbtest-template:shared"), { token: maker.secret, body: { name: "mine" } }))
         .status,
     ).toBe(201);
+    await rebuildOverRest("mine");
     const recipe = readRecipe(host, "mine")!;
     // The record an earlier version wrote: correct fork image ID, but the source template's creator.
     writeFileSync(
@@ -615,7 +757,7 @@ describe("template.fork over REST and tokens", () => {
     expect(readRecipe(host, "mine")?.createdBy).toBe(maker.id);
   });
 
-  test("answers 201 with the new template, which lists with its own name and description", async () => {
+  test("answers 201 with the new template, which lists as a draft until it is built", async () => {
     await declaredOverRest("tool");
 
     const made = await call(harness.base, forkPath("mbtest-template:tool"), {
@@ -624,8 +766,19 @@ describe("template.fork over REST and tokens", () => {
 
     expect(made.status).toBe(201);
     expect(made.json.template).toEqual({ ref: "mbtest-template:tool-copy", name: "tool-copy" });
-    const listed = await call(harness.base, "/api/templates");
-    expect(listed.json.templates).toContainEqual(
+    const drafts = await call(harness.base, "/api/templates/drafts");
+    expect(drafts.json.templates).toContainEqual(
+      expect.objectContaining({
+        name: "tool-copy",
+        description: "Our own toolchain",
+        buildKind: "dockerfile",
+      }),
+    );
+    expect(namesOf(await call(harness.base, "/api/templates"))).not.toContain("tool-copy");
+
+    await rebuildOverRest("tool-copy");
+
+    expect((await call(harness.base, "/api/templates")).json.templates).toContainEqual(
       expect.objectContaining({
         ref: "mbtest-template:tool-copy",
         name: "tool-copy",
@@ -635,7 +788,7 @@ describe("template.fork over REST and tokens", () => {
     );
   });
 
-  test("a fork of an official template answers buildKind dockerfile and carries the shipped Dockerfile's text", async () => {
+  test("a copy of an official template is a draft carrying the shipped Dockerfile's text", async () => {
     const host = harness.app.hosts.get();
     await createDeclaredTemplate(
       host,
@@ -650,18 +803,51 @@ describe("template.fork over REST and tokens", () => {
       buildKind: "dockerfile",
       source: { kind: "dockerfile", text: SHIPPED_NODE },
     });
-    expect((await call(harness.base, "/api/templates")).json.templates).toContainEqual(
-      expect.objectContaining({ ref: "mbtest-template:node-copy", buildKind: "dockerfile" }),
+    expect(namesOf(await call(harness.base, "/api/templates"))).not.toContain("node-copy");
+    expect((await call(harness.base, "/api/templates/drafts")).json.templates).toContainEqual(
+      expect.objectContaining({ name: "node-copy", buildKind: "dockerfile" }),
     );
   });
 
-  test("the fork of an official template is edited and rebuilt from the source the edit names", async () => {
-    const host = harness.app.hosts.get();
-    await createDeclaredTemplate(
-      host,
-      { name: "node", source: { kind: "official", name: "node" }, createdBy: "owner" },
-      {},
+  test("an official template no host has built can be copied into a draft over REST", async () => {
+    const made = await call(harness.base, forkPath("mbtest-template:node"), { body: { name: "node-mine" } });
+
+    expect(made.status).toBe(201);
+    expect(made.json.template).toEqual({ ref: "mbtest-template:node-mine", name: "node-mine" });
+    expect((await call(harness.base, recipePath("mbtest-template:node-mine"))).json.recipe).toEqual({
+      buildKind: "dockerfile",
+      source: { kind: "dockerfile", text: SHIPPED_NODE },
+    });
+    expect(harness.runtime.callsTo("commitContainer")).toHaveLength(0);
+    expect(harness.runtime.callsTo("buildImage")).toHaveLength(0);
+    expect(namesOf(await call(harness.base, "/api/templates"))).not.toContain("node");
+    expect((await call(harness.base, "/api/templates/drafts")).json.templates).toContainEqual(
+      expect.objectContaining({ name: "node-mine", description: officialTemplate("node")?.description }),
     );
+
+    await rebuildOverRest("node-mine");
+
+    expect(harness.runtime.builds.at(-1)?.tag).toBe("mbtest-template:node-mine");
+    expect(namesOf(await call(harness.base, "/api/templates"))).toContain("node-mine");
+    // The official template still has no image of its own on this host.
+    expect(
+      await harness.runtime.inspectImage("mbtest-template:node").then(
+        () => "held",
+        () => "gone",
+      ),
+    ).toBe("gone");
+  });
+
+  test("a name MiniBox keeps for an official template is refused for the copy", async () => {
+    const reply = await call(harness.base, forkPath("mbtest-template:node"), { body: { name: "node" } });
+
+    expect(refused(reply)).toEqual({ status: 409, key: "template_name_reserved" });
+    expect(harness.runtime.callsTo("createContainer")).toHaveLength(0);
+    expect(harness.runtime.callsTo("commitContainer")).toHaveLength(0);
+    expect((await call(harness.base, "/api/templates/drafts")).json.templates).toEqual([]);
+  });
+
+  test("the copy of an unbuilt official template is edited and rebuilt from the source the edit names", async () => {
     expect((await call(harness.base, forkPath("mbtest-template:node"), { body: { name: "node-copy" } })).status).toBe(
       201,
     );
@@ -677,14 +863,12 @@ describe("template.fork over REST and tokens", () => {
       name: "node-copy",
       buildKind: "dockerfile",
     });
-    const rebuilt = await call(harness.base, rebuildPath("mbtest-template:node-copy"), { body: {} });
-    expect(rebuilt.status).toBe(202);
-    expect((await finishedTask(harness.base, rebuilt.json.taskId ?? "")).status).toBe("succeeded");
+    await rebuildOverRest("node-copy");
     expect(harness.runtime.builds.at(-1)?.tag).toBe("mbtest-template:node-copy");
     expect(harness.runtime.builds.at(-1)?.files.get("Dockerfile")).toBe(FROM_ALPINE_21);
   });
 
-  test("the fork of the bundled base template answers buildKind dockerfile, and is edited and rebuilt from the source the edit names", async () => {
+  test("the copy of the bundled base template is edited and rebuilt from the source the edit names", async () => {
     const base = harness.app.hosts.get().baseTemplateTag;
 
     const made = await call(harness.base, forkPath(base), { body: { name: "base-copy" } });
@@ -694,17 +878,15 @@ describe("template.fork over REST and tokens", () => {
       buildKind: "dockerfile",
       source: { kind: "dockerfile", text: SHIPPED_BASE },
     });
-    expect((await call(harness.base, "/api/templates")).json.templates).toContainEqual(
-      expect.objectContaining({ ref: "mbtest-template:base-copy", buildKind: "dockerfile" }),
+    expect((await call(harness.base, "/api/templates/drafts")).json.templates).toContainEqual(
+      expect.objectContaining({ name: "base-copy", buildKind: "dockerfile" }),
     );
     const edited = await call(harness.base, editPath("mbtest-template:base-copy"), {
       method: "PATCH",
       body: { source: { kind: "dockerfile", text: FROM_ALPINE_21 } },
     });
     expect(edited.status).toBe(200);
-    const rebuilt = await call(harness.base, rebuildPath("mbtest-template:base-copy"), { body: {} });
-    expect(rebuilt.status).toBe(202);
-    expect((await finishedTask(harness.base, rebuilt.json.taskId ?? "")).status).toBe("succeeded");
+    await rebuildOverRest("base-copy");
     expect(harness.runtime.builds.at(-1)?.tag).toBe("mbtest-template:base-copy");
     expect(harness.runtime.builds.at(-1)?.files.get("Dockerfile")).toBe(FROM_ALPINE_21);
   });
@@ -735,7 +917,7 @@ describe("template.fork over REST and tokens", () => {
     expect(made.json.template).toEqual({ ref: "mbtest-template:tool-copy", name: "tool-copy" });
   });
 
-  test("a name already taken is refused as a conflict, and no image is committed", async () => {
+  test("a name an image holds is refused as a conflict, and nothing is committed", async () => {
     await declaredOverRest("tool");
     await declaredOverRest("tool-copy");
     const since = harness.runtime.calls.length;
@@ -746,13 +928,30 @@ describe("template.fork over REST and tokens", () => {
     expect(harness.runtime.calls.slice(since).map((entry) => entry.op)).not.toContain("commitContainer");
   });
 
-  test("a template that does not exist is not found", async () => {
+  test("a name a draft holds is refused as a conflict, and the draft is left as it is", async () => {
+    await declaredOverRest("tool");
+    expect((await call(harness.base, forkPath("mbtest-template:tool"), { body: { name: "tool-copy" } })).status).toBe(
+      201,
+    );
+    const recipe = readRecipe(harness.app.hosts.get(), "tool-copy");
+
+    const again = await call(harness.base, forkPath("mbtest-template:tool"), {
+      body: { name: "tool-copy", description: "Replaced" },
+    });
+
+    expect(refused(again)).toEqual({ status: 409, key: "template_name_taken" });
+    expect(readRecipe(harness.app.hosts.get(), "tool-copy")).toEqual(recipe);
+  });
+
+  test("a template that does not exist is not found, and a base name that is not official is not copied either", async () => {
     const missing = await call(harness.base, forkPath("mbtest-template:nowhere"), { body: { name: "copy" } });
     expect(refused(missing)).toEqual({ status: 404, key: "template_not_found" });
+    const plain = await call(harness.base, forkPath("nowhere"), { body: { name: "copy" } });
+    expect(refused(plain)).toEqual({ status: 404, key: "template_not_found" });
     expect(harness.runtime.callsTo("commitContainer")).toHaveLength(0);
   });
 
-  test("a fork of a saved template works and cannot be rebuilt, as the template it came from could not", async () => {
+  test("a copy of a saved template works and cannot be rebuilt, as the template it came from could not", async () => {
     const box = await call(harness.base, "/api/boxes", { body: { name: "alpha", cpus: 1, memoryMb: 256 } });
     const saved = await call(harness.base, `/api/boxes/${box.json.box?.boxId ?? ""}/template`, {
       body: { name: "gold" },
@@ -762,17 +961,11 @@ describe("template.fork over REST and tokens", () => {
     const made = await call(harness.base, forkPath("mbtest-template:gold"), { body: { name: "gold-copy" } });
 
     expect(made.status).toBe(201);
-    const rebuild = await call(
-      harness.base,
-      `/api/templates/${encodeURIComponent("mbtest-template:gold-copy")}/rebuild`,
-      {
-        body: {},
-      },
-    );
+    const rebuild = await call(harness.base, rebuildPath("mbtest-template:gold-copy"), { body: {} });
     expect(refused(rebuild)).toEqual({ status: 400, key: "template_not_declared" });
   });
 
-  test("deleting the source after a fork leaves the fork, and the fork's own recipe, in place", async () => {
+  test("deleting the source after a copy leaves the draft, which still builds", async () => {
     await declaredOverRest("tool");
     expect((await call(harness.base, forkPath("mbtest-template:tool"), { body: { name: "tool-copy" } })).status).toBe(
       201,
@@ -783,10 +976,15 @@ describe("template.fork over REST and tokens", () => {
     });
 
     expect(removed.status).toBe(200);
+    expect(namesOf(await call(harness.base, "/api/templates"))).toEqual(["base"]);
+    expect((await call(harness.base, "/api/templates/drafts")).json.templates).toContainEqual(
+      expect.objectContaining({ name: "tool-copy" }),
+    );
+    await rebuildOverRest("tool-copy");
     expect(namesOf(await call(harness.base, "/api/templates"))).toEqual(["tool-copy", "base"]);
   });
 
-  test("a token may fork a template it can see into a free name, and may not fork another principal's template", async () => {
+  test("a token may copy a template it can see into a free name, and may not copy another principal's template", async () => {
     const maker = mint(harness.app, { name: "maker", preset: "operator" });
     const other = mint(harness.app, { name: "other", preset: "operator" });
     // The owner builds one, which every token may use, and one token saves its own box as a second.
@@ -806,9 +1004,12 @@ describe("template.fork over REST and tokens", () => {
       body: { name: "shared-copy" },
     });
     expect(mine.status).toBe(201);
-    expect(harness.runtime.callsTo("commitContainer").at(-1)?.args[1]).toMatchObject({ tag: "shared-copy" });
-    const made = await harness.runtime.inspectImage("mbtest-template:shared-copy");
-    expect(made.labels[harness.app.hosts.get().keys.createdBy]).toBe(maker.id);
+    // A declared source is copied as a draft, owned by the token that asked, and no image is committed.
+    const commits = harness.runtime.callsTo("commitContainer");
+    expect(
+      commits.filter((entry) => (entry.args[1] as { tag?: string } | undefined)?.tag === "shared-copy"),
+    ).toHaveLength(0);
+    expect(readRecipe(harness.app.hosts.get(), "shared-copy")).toMatchObject({ draft: true, createdBy: maker.id });
 
     const stolen = await call(harness.base, forkPath("mbtest-template:makers"), {
       token: other.secret,
@@ -849,7 +1050,7 @@ describe("template.fork over REST and tokens", () => {
     expect(harness.runtime.callsTo("commitContainer")).toHaveLength(0);
   });
 
-  test("a token may not fork into a name another principal holds", async () => {
+  test("a token may not copy into a name another principal holds", async () => {
     const maker = mint(harness.app, { name: "maker", preset: "operator" });
     const other = mint(harness.app, { name: "other", preset: "operator" });
     await declaredOverRest("shared");
@@ -866,7 +1067,7 @@ describe("template.fork over REST and tokens", () => {
     expect(refused(clash)).toEqual({ status: 403, key: "template_out_of_scope" });
   });
 
-  test("a sandboxed agent may not fork a template", async () => {
+  test("a sandboxed agent may not copy a template", async () => {
     const sandboxed = mint(harness.app, { name: "sandboxed", preset: "sandboxed-agent" });
     await declaredOverRest("tool");
     const reply = await call(harness.base, forkPath("mbtest-template:tool"), {
