@@ -852,6 +852,7 @@ describe.skipIf(!executablePath)("the Box detail page (real browser)", () => {
             const view = globalThis as unknown as {
               innerWidth: number;
               innerHeight: number;
+              getComputedStyle(element: unknown): { overflowX: string; textOverflow: string };
               document: {
                 documentElement: { scrollWidth: number; clientWidth: number };
                 querySelector(selector: string): Element | null;
@@ -864,6 +865,11 @@ describe.skipIf(!executablePath)("the Box detail page (real browser)", () => {
             };
             const head = view.document.querySelector(".detail-head");
             if (!head) throw new Error("missing .detail-head");
+            const nameEl = view.document.querySelector(".detail-head .detail-name");
+            if (!nameEl) throw new Error("missing .detail-name");
+            // A name too long for the row is clipped rather than drawn over the button beside it. Shrinking alone is not
+            // enough: the glyphs would still paint outside the box, over the button.
+            const style = view.getComputedStyle(nameEl);
             return {
               viewport: view.innerWidth,
               viewportHeight: view.innerHeight,
@@ -874,6 +880,8 @@ describe.skipIf(!executablePath)("the Box detail page (real browser)", () => {
               name: rect(".detail-head .detail-name"),
               button: rect(".detail-head [data-action='rename']"),
               badge: rect(".detail-head h1 .badge"),
+              nameClip: { overflowX: style.overflowX, textOverflow: style.textOverflow },
+              nameTooLong: nameEl.scrollWidth > nameEl.clientWidth,
             };
           });
         };
@@ -900,6 +908,8 @@ describe.skipIf(!executablePath)("the Box detail page (real browser)", () => {
             expect([language, fits.button.y + fits.button.height <= fits.viewportHeight]).toEqual([language, true]);
             expect([language, fits.name.width > 0]).toEqual([language, true]);
             expect([language, fits.button.x >= fits.name.x + fits.name.width]).toEqual([language, true]);
+            expect([language, fits.nameTooLong]).toEqual([language, true]);
+            expect([language, fits.nameClip]).toEqual([language, { overflowX: "hidden", textOverflow: "ellipsis" }]);
             expect([language, fits.button.x + fits.button.width <= fits.badge.x]).toEqual([language, true]);
           }
         } finally {
