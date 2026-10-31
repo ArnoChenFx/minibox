@@ -435,6 +435,42 @@ describe("WebDAV target adapter", () => {
     expect(double.requests.filter((request) => request.startsWith("PUT "))).toHaveLength(1);
   });
 
+  test("follows three redirects in a row and refuses a fourth", async () => {
+    session = await openSession(connection());
+    await session.write(PACKAGE, chunked(new Uint8Array([1, 2, 3]), 3), 3);
+    const gets = () => double.requests.filter((request) => request.startsWith("GET ")).length;
+    const here = `${double.url}/minibox/${PACKAGE}`;
+
+    double.redirectNext((method) => method === "GET", here, 302, 3);
+    expect(await drain(await session.read(PACKAGE))).toEqual(Buffer.from([1, 2, 3]));
+    expect(gets()).toBe(4);
+
+    double.redirectNext((method) => method === "GET", here, 302, 4);
+    const failure = await session.read(PACKAGE).then(
+      () => null,
+      (e: unknown) => e,
+    );
+    expect((failure as TargetFailure).reason).toBe("failed");
+    expect((failure as TargetFailure).message).toContain("too many times");
+    expect(gets()).toBe(8);
+  });
+
+  test("takes the 204 a server answers when a PUT replaces an object that is already there", async () => {
+    session = await openSession(connection());
+    await session.write(PACKAGE, chunked(new Uint8Array([1, 2, 3]), 3), 3);
+    await session.write(PACKAGE, chunked(new Uint8Array([4, 5]), 2), 2);
+
+    expect(await drain(await session.read(PACKAGE))).toEqual(Buffer.from([4, 5]));
+    expect(double.requests.filter((request) => request.startsWith("PUT "))).toHaveLength(2);
+    expect(double.requests.some((request) => request.startsWith("DELETE "))).toBe(false);
+  });
+
+  test("sends a password with characters beyond ASCII as UTF-8", async () => {
+    const accented = start({ password: "pässwörd€" });
+    session = await openSession(connection({ url: accented.url, user: accented.user, password: accented.password }));
+    await session.probe();
+  });
+
   test("sends a known size as a content length, and no chunked encoding", async () => {
     session = await openSession(connection());
     const bytes = randomBytes(1000);

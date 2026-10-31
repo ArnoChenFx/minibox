@@ -307,6 +307,20 @@ describe("targets over REST", () => {
     expect(harness.app.targets.list()).toEqual([]);
   });
 
+  test("a WebDAV address that carries a login, a query or a fragment is refused", async () => {
+    const body = { name: "dav", kind: "webdav", user: "minibox", password: "not-a-real-password" };
+    for (const url of [
+      "https://minibox:other@dav.example.com/dav",
+      "https://dav.example.com/dav?token=1",
+      "https://dav.example.com/dav#top",
+    ]) {
+      const response = await call(harness.base, "/api/targets", { body: { ...body, url } });
+      expect(refused(response)).toEqual({ status: 400, key: "target_url_invalid" });
+      expect(response.json.error?.details).toEqual({ field: "url" });
+    }
+    expect(harness.app.targets.list()).toEqual([]);
+  });
+
   test("only the owner reaches targets: an admin or an operator token is refused on every route", async () => {
     for (const preset of ["admin", "operator"] as const) {
       const minted = mint(harness.app, { name: preset, preset });
