@@ -57,6 +57,18 @@ function lab(): Lab {
 
 const progressOf = (l: Lab) => ({ log: (text: string) => l.progress.push(text) });
 
+/**
+ * The image under `ref` with no tag left, as a build leaves the layer under the image it built: the engine keeps it
+ * because a container still runs it, so taking its last tag away with force is what leaves it dangling.
+ */
+async function untagged(l: Lab, ref: string): Promise<string> {
+  const { id } = await l.runtime.inspectImage(ref);
+  l.runtime.seedContainer({ image: ref });
+  await l.runtime.removeImage(ref, { force: true });
+  expect((await l.runtime.inspectImage(id)).tags).toEqual([]);
+  return id;
+}
+
 const FROM_ALPINE = "FROM alpine:3.20\nRUN true\n";
 
 describe("a template built from a pasted Dockerfile", () => {
@@ -262,6 +274,51 @@ describe("rebuilding a declared template", () => {
     expect(await rejectionOf(declaredTemplate(l.host, "mbtest-template:saved"))).toMatchObject({
       key: "template_not_declared",
     });
+  });
+});
+
+describe("the images a template list shows", () => {
+  test("an image a build left behind with no recipe is not listed, though it carries the template labels", async () => {
+    const l = lab();
+    const id = l.runtime.seedImage("mbtest-layer:tool-1", {
+      [l.host.keys.template]: "true",
+      [l.host.keys.templateName]: "ghost",
+    });
+    await untagged(l, "mbtest-layer:tool-1");
+
+    const listed = await listTemplates(l.host);
+
+    expect(listed.map((template) => template.id)).not.toContain(id);
+    expect(listed.map((template) => template.name)).not.toContain("ghost");
+  });
+
+  test("an image tagged as a template is listed with no recipe", async () => {
+    const l = lab();
+    const id = l.runtime.seedImage("mbtest-template:tagged", {
+      [l.host.keys.template]: "true",
+      [l.host.keys.templateName]: "tagged",
+    });
+
+    const listed = await listTemplates(l.host);
+
+    expect(listed.find((template) => template.id === id)).toMatchObject({
+      name: "tagged",
+      tags: ["mbtest-template:tagged"],
+    });
+  });
+
+  test("an untagged image a recipe still names is listed", async () => {
+    const l = lab();
+    await createDeclaredTemplate(
+      l.host,
+      { name: "tool", source: { kind: "dockerfile", text: FROM_ALPINE }, createdBy: "owner" },
+      progressOf(l),
+    );
+    const id = await untagged(l, "mbtest-template:tool");
+
+    const listed = await listTemplates(l.host);
+
+    expect(listed.find((template) => template.id === id)).toMatchObject({ name: "tool", tags: [] });
   });
 });
 
