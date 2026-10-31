@@ -161,8 +161,8 @@ describe.skipIf(!enabled)("checkpoint remote copy against a real engine", () => 
         expect(await proxy.metrics()).toContain('http_request_method="PUT"');
         const snapshots = (await keys()).filter((key) => key.startsWith("repo/local/snapshots/"));
         expect(snapshots).toHaveLength(1);
-        const copy = JSON.parse(await client.file(snapshots[0] ?? "").text()) as { original?: string };
-        expect(copy.original).toBe(snapshotId);
+        // A snapshot object is encrypted, so its `original` cannot be read here. The second copy below shows the origin was
+        // recorded: restic skips a snapshot whose origin the repository already holds, and the key set stays the same.
 
         const before = (await keys()).toSorted();
         await host.checkpointEngine.copyToRemote(host, remote, [snapshotId]);
