@@ -9,7 +9,9 @@ import { checkpointFailed } from "../notify/rules";
 import type { Box } from "../services/box-model";
 import { listAllBoxes } from "../services/box-query";
 import { type Booking, bookedOn } from "../services/capacity";
+import { REMOTE_SYNC_FAILURE_THRESHOLD } from "../services/checkpoint-remote";
 import type { ExecService } from "../services/exec";
+import type { TargetService } from "../services/targets";
 import { freePercent } from "../volumes/disk";
 import { usageLevel } from "../volumes/limits";
 import { defineOperation } from "./define";
@@ -45,6 +47,7 @@ const ATTENTION_KINDS = [
   "host.cpu_overcommit",
   "host.memory_overcommit",
   "host.forward_blocked",
+  "host.remote_sync_failing",
 ] as const;
 
 const BoxRef = z.object({
@@ -408,6 +411,38 @@ function forwardAttention(hosts: readonly HostCtx[]): Attention[] {
   });
 }
 
+function remoteAttention(
+  hosts: readonly HostCtx[],
+  targets: TargetService | undefined,
+  remote: OperationContext["checkpointRemote"],
+): Attention[] {
+  if (!targets || !remote) return [];
+  return hosts.flatMap((host): Attention[] => {
+    // An offline host is already listed as offline, and its last copy is from before it went away. It is read again
+    // once it is back, which is what decides this item again.
+    if (host.host.status === "offline") return [];
+    const repo = targets.remoteOf(host.host.id);
+    if (!repo) return [];
+    const state = remote.stateOf(host.host.id);
+    if (state.failures < REMOTE_SYNC_FAILURE_THRESHOLD) return [];
+    return [
+      {
+        kind: "host.remote_sync_failing",
+        severity: "warning",
+        hostId: host.host.id,
+        at: state.lastFailure?.at ?? null,
+        subject: host.host.name,
+        box: null,
+        params: {
+          target: repo.targetName,
+          failures: state.failures,
+          detail: state.lastFailure?.message ?? "",
+        },
+      },
+    ];
+  });
+}
+
 async function stateAttention(ctx: OperationContext, boxes: readonly Box[], hosts: readonly HostCtx[]) {
   const items: Attention[] = [];
   const fallback = ctx.host.host.id;
@@ -511,6 +546,7 @@ async function stateAttention(ctx: OperationContext, boxes: readonly Box[], host
     items.push(...(overcommitted[position] ?? []));
   }
   items.push(...forwardAttention(hosts));
+  items.push(...remoteAttention(hosts, ctx.targets, ctx.checkpointRemote));
   return items;
 }
 

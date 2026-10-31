@@ -37,6 +37,28 @@ const RemoteSyncSummarySchema = z.object({
   snapshots: z.number().int().min(0).meta({ description: "How many snapshots were asked of the remote repository." }),
 });
 
+/** The last failed copy, as the read of a configured remote reports it. */
+const RemoteFailureSchema = z.object({
+  targetId: z.string().meta({ description: "The target the failed copy was sent to." }),
+  at: z.string().meta({ description: "When that copy failed, ISO 8601." }),
+  message: z.string().meta({ description: "Why it failed, as the engine or the target reported it." }),
+});
+
+/**
+ * A configured remote, with the sync service's in-memory failure state. A successful copy clears both fields; the
+ * count is not durable, so a restart reads it as zero. An unset remote keeps the shape of `{ remote: null }`.
+ */
+const RemoteRepoStateSchema = RemoteRepoSchema.extend({
+  failures: z
+    .number()
+    .int()
+    .min(0)
+    .meta({ description: "How many copies in a row have failed. Zero after a success." }),
+  lastFailure: RemoteFailureSchema.nullable().meta({
+    description: "The last failed copy, or null when the last copy succeeded or none has run.",
+  }),
+});
+
 const setInput = z.object({
   id: hostId().meta({ description: "Host id whose checkpoints are copied." }),
   targetId: z.string().max(64).meta({
@@ -61,10 +83,15 @@ const checkpointRemoteGet = defineOperation({
   scope: REMOTE_SCOPE,
   async: false,
   input: z.object({ id: hostId() }),
-  output: z.object({ remote: RemoteRepoSchema.nullable() }),
+  output: z.object({ remote: RemoteRepoStateSchema.nullable() }),
   rest: [{ method: "GET", path: "/api/hosts/:id/checkpoint-remote" }],
   hostFor: (ctx, input) => hostById(ctx, input.id),
-  run: async ({ targets }, input) => ({ remote: targetsOf(targets).remoteOf(input.id) }),
+  run: async ({ targets, checkpointRemote }, input) => {
+    const remote = targetsOf(targets).remoteOf(input.id);
+    if (!remote) return { remote: null };
+    const state = checkpointRemote?.stateOf(input.id) ?? { failures: 0, lastFailure: null };
+    return { remote: { ...remote, ...state } };
+  },
 });
 
 const checkpointRemoteSet = defineOperation({

@@ -8,8 +8,10 @@ import { CHECKPOINT_VERSION, type CheckpointRecord } from "../src/checkpoints/ty
 import { targetsPath } from "../src/data-dir";
 import type { HostCtx } from "../src/host/registry";
 import { AppError } from "../src/lib/errors";
+import { setLogSink } from "../src/lib/logger";
 import type { OperationContext } from "../src/operations/types";
 import { OWNER } from "../src/operations/types";
+import { REMOTE_SYNC_FAILURE_THRESHOLD } from "../src/services/checkpoint-remote";
 import { createTestApp, rejectionOf, silenceLogs } from "./support/app";
 import { FakeRuntime } from "./support/fake-runtime";
 import { FakeCheckpointEngine } from "./support/fake-snapshots";
@@ -132,6 +134,8 @@ function ctxOf(app: App): OperationContext {
     tokens: app.tokens,
     execs: app.execs,
     terminals: app.terminals,
+    targets: app.targets,
+    checkpointRemote: app.checkpointRemote,
   };
 }
 
@@ -402,5 +406,135 @@ describe("the remote repository operations", () => {
       status: 404,
       key: "checkpoint_remote_not_set",
     });
+  });
+});
+
+interface Overview {
+  attention: {
+    kind: string;
+    severity: "error" | "warning";
+    hostId: string;
+    at: string | null;
+    subject: string;
+    box: { id: string; name: string } | null;
+    params: Record<string, string | number>;
+  }[];
+}
+
+async function overviewOf(inst: Instance): Promise<Overview> {
+  return (await inst.app.operations.run("overview.get", ctxOf(inst.app), {})) as Overview;
+}
+
+describe("a streak of failed copies", () => {
+  test("the overview lists the host only at the threshold, once, and clears the item after a success", async () => {
+    const inst = instanceOf();
+    const targetId = s3Target(inst);
+    inst.app.targets.setRemote("local", { targetId });
+    await checkpointOf(inst, "src");
+    engineOf(inst).failRemoteCopy = true;
+
+    for (let failures = 1; failures < REMOTE_SYNC_FAILURE_THRESHOLD; failures += 1) {
+      await rejectionOf(inst.app.checkpointRemote.syncHost(inst.host));
+      expect(inst.app.checkpointRemote.stateOf("local").failures).toBe(failures);
+      expect((await overviewOf(inst)).attention).toEqual([]);
+    }
+    await rejectionOf(inst.app.checkpointRemote.syncHost(inst.host));
+    const state = inst.app.checkpointRemote.stateOf("local");
+    expect(state.failures).toBe(REMOTE_SYNC_FAILURE_THRESHOLD);
+    expect(state.lastFailure).toMatchObject({ targetId });
+    expect(state.lastFailure?.at).toBeString();
+    expect(state.lastFailure?.message).toContain("unreachable");
+
+    expect((await overviewOf(inst)).attention).toEqual([
+      expect.objectContaining({
+        kind: "host.remote_sync_failing",
+        severity: "warning",
+        hostId: "local",
+        subject: inst.host.host.name,
+        box: null,
+        params: {
+          target: "archive",
+          failures: REMOTE_SYNC_FAILURE_THRESHOLD,
+          detail: state.lastFailure?.message,
+        },
+      }),
+    ]);
+
+    engineOf(inst).failRemoteCopy = false;
+    await inst.app.checkpointRemote.syncHost(inst.host);
+    expect(inst.app.checkpointRemote.stateOf("local")).toEqual({ failures: 0, lastFailure: null });
+    expect((await overviewOf(inst)).attention).toEqual([]);
+  });
+
+  test("an offline host is not listed for a failing remote, since its offline item already covers it", async () => {
+    const inst = instanceOf();
+    const targetId = s3Target(inst);
+    inst.app.targets.setRemote("local", { targetId });
+    await checkpointOf(inst, "src");
+    engineOf(inst).failRemoteCopy = true;
+    for (let failures = 0; failures < REMOTE_SYNC_FAILURE_THRESHOLD; failures += 1) {
+      await rejectionOf(inst.app.checkpointRemote.syncHost(inst.host));
+    }
+    inst.host.host.status = "offline";
+
+    const kinds = (await overviewOf(inst)).attention.map((item) => item.kind);
+    expect(kinds).not.toContain("host.remote_sync_failing");
+    expect(kinds).toContain("host.offline");
+  });
+
+  test("the third failure logs once, and later failures in the same streak do not log again", async () => {
+    const inst = instanceOf();
+    const targetId = s3Target(inst);
+    inst.app.targets.setRemote("local", { targetId });
+    await checkpointOf(inst, "src");
+    engineOf(inst).failRemoteCopy = true;
+    const lines: string[] = [];
+    const restore = setLogSink((level, line) => {
+      if (level === "warn") lines.push(line);
+    }, "warn");
+    try {
+      for (let failures = 0; failures < REMOTE_SYNC_FAILURE_THRESHOLD + 2; failures += 1) {
+        await rejectionOf(inst.app.checkpointRemote.syncHost(inst.host));
+      }
+    } finally {
+      restore();
+    }
+
+    const warnings = lines.filter((line) => line.includes("checkpoint.remote_sync_failing"));
+    expect(warnings).toHaveLength(1);
+    expect(JSON.parse(warnings[0] ?? "{}")).toMatchObject({
+      level: "warn",
+      msg: "checkpoint.remote_sync_failing",
+      host: "local",
+      target: targetId,
+      failures: REMOTE_SYNC_FAILURE_THRESHOLD,
+    });
+  });
+
+  test("reading a configured remote reports the count and the last failure, and an unset remote keeps its old shape", async () => {
+    const inst = instanceOf();
+    const ctx = ctxOf(inst.app);
+    expect(await inst.app.operations.run("checkpoint.remote.get", ctx, { id: "local" })).toEqual({ remote: null });
+
+    const targetId = s3Target(inst);
+    inst.app.targets.setRemote("local", { targetId });
+    await checkpointOf(inst, "src");
+    engineOf(inst).failRemoteCopy = true;
+    await rejectionOf(inst.app.checkpointRemote.syncHost(inst.host));
+    await rejectionOf(inst.app.checkpointRemote.syncHost(inst.host));
+
+    const failed = (await inst.app.operations.run("checkpoint.remote.get", ctx, { id: "local" })) as {
+      remote: { failures: number; lastFailure: { targetId: string; at: string; message: string } | null };
+    };
+    expect(failed.remote.failures).toBe(2);
+    expect(failed.remote.lastFailure).toMatchObject({ targetId });
+    expect(failed.remote.lastFailure?.message).toContain("unreachable");
+
+    engineOf(inst).failRemoteCopy = false;
+    await inst.app.checkpointRemote.syncHost(inst.host);
+    const recovered = (await inst.app.operations.run("checkpoint.remote.get", ctx, { id: "local" })) as {
+      remote: { failures: number; lastFailure: unknown };
+    };
+    expect(recovered.remote).toMatchObject({ failures: 0, lastFailure: null });
   });
 });
