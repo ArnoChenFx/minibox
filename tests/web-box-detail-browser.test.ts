@@ -711,13 +711,13 @@ describe.skipIf(!executablePath)("the Box detail page (real browser)", () => {
 
           await page.goto(boxUrl(running));
           const before = await boxNow(running);
+          expect(before.running).toBe(true);
           const newName = "api-renamed";
           await page.locator(".detail-head [data-action='rename']").click();
           await webExpect(page.locator("#rnName")).toHaveValue(before.name);
           await page.locator("#rnName").fill(newName);
           const sent = page.waitForRequest(
-            (request) =>
-              request.method() === "PATCH" && new URL(request.url()).pathname === `/api/boxes/${running.id}`,
+            (request) => request.method() === "PATCH" && new URL(request.url()).pathname === `/api/boxes/${running.id}`,
           );
           await page.locator("#rnSave").click();
           expect((await sent).headers()["if-match"]).toBe(String(before.revision));
@@ -743,6 +743,7 @@ describe.skipIf(!executablePath)("the Box detail page (real browser)", () => {
       "a stopped box can be renamed too, and its breadcrumb and window title follow",
       async () => {
         const newName = "cold-renamed";
+        expect((await boxNow(stopped)).running).toBe(false);
         await page.goto(boxUrl(stopped));
         await page.locator(".detail-head [data-action='rename']").click();
         await page.locator("#rnName").fill(newName);
@@ -769,7 +770,7 @@ describe.skipIf(!executablePath)("the Box detail page (real browser)", () => {
         await webExpect(page.locator("#rnErr")).toContainText("already exists");
         await webExpect(page.locator(".dialog")).toBeVisible();
         await webExpect(page.locator("#rnName")).toHaveValue(second.name);
-        expect((await boxNow(first)).name).toBe(first.name);
+        expect(await boxNow(first)).toMatchObject({ name: first.name, revision: first.revision });
         await page.locator(".dialog-head [data-close]").click();
         await webExpect(page.locator(".dialog")).toHaveCount(0);
       },
@@ -890,6 +891,7 @@ describe.skipIf(!executablePath)("the Box detail page (real browser)", () => {
             ["en-US", englishFits],
             ["zh-CN", chineseFits],
           ] as const) {
+            expect([language, fits.scroll]).toEqual([language, fits.client]);
             expect([language, fits.headScroll]).toEqual([language, fits.headClient]);
             expect([language, fits.button.x >= 0]).toEqual([language, true]);
             expect([language, fits.button.x + fits.button.width <= fits.viewport]).toEqual([language, true]);
