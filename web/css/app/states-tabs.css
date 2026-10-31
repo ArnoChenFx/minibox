@@ -129,6 +129,16 @@
   align-items: center;
   gap: 10px;
 }
+/* A long name gives way to the rename button and the state badge, which stay whole and in one row. */
+.detail-head h1 .detail-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.detail-head h1 .detail-rename {
+  flex: none;
+}
 .detail-head .meta {
   color: var(--text-3);
   font-size: 12.5px;

@@ -7,7 +7,7 @@ import { icon } from "../lib/icons.js";
 import { canonicalMounts } from "../lib/mounts.js";
 import { movedBoxHash } from "../lib/routes.js";
 import { hostNow, refreshHost } from "../lib/store.js";
-import { checkboxField, confirmDialog, openDialog, toast, toastError, withBusy } from "../lib/ui.js";
+import { checkboxField, confirmDialog, nameError, openDialog, toast, toastError, withBusy } from "../lib/ui.js";
 import { bindEnvRows, envProblemText, envRow, readEnvRows, secretNames } from "./env-editor.js";
 import { mountRow, readMountRows } from "./mount-editor.js";
 
@@ -62,6 +62,76 @@ export async function deleteBox(box) {
     toastError(t("ba.deleteFailed"), e);
     return false;
   }
+}
+
+/**
+ * The rename dialog: one field, prefilled with the name the box has now. A name that did not change closes the dialog with
+ * no request, and an empty or malformed one is refused under the field. The save sends `box.update` with If-Match, so a
+ * box changed elsewhere while the dialog was open is refused with the server's message instead of overwriting it; the
+ * dialog stays open so the name can be corrected.
+ */
+export function renameBox(box, onSaved) {
+  const { root, close } = openDialog({
+    title: t("ba.renameTitle", { name: box.name }),
+    description: esc(t("ba.renameDesc")),
+    iconName: "pencil",
+    body: `<div class="field"><label class="label" for="rnName">${esc(t("label.boxName"))}</label>
+      <input class="input" id="rnName" maxlength="63" value="${esc(box.name)}" autocomplete="off" autofocus />
+      <div class="error-text" id="rnErr" role="alert"></div></div>`,
+    footer: `<button class="btn" data-close>${t("common.cancel")}</button><button class="btn btn-primary" id="rnSave">${t("common.save")}</button>`,
+  });
+  const input = root.querySelector("#rnName");
+  const error = root.querySelector("#rnErr");
+  const save = root.querySelector("#rnSave");
+
+  // The current name is chosen when the dialog opens, so typing the new one replaces it. A later click only moves the caret.
+  input.addEventListener("focus", () => input.select(), { once: true });
+  input.addEventListener("input", () => {
+    input.classList.remove("invalid");
+    error.textContent = "";
+  });
+
+  const submit = async () => {
+    if (save.disabled) return;
+    const name = input.value.trim();
+    if (name === box.name) {
+      close();
+      return;
+    }
+    const problem = nameError(name, "boxName");
+    if (problem) {
+      input.classList.add("invalid");
+      error.textContent = problem;
+      input.focus();
+      return;
+    }
+    error.textContent = "";
+    try {
+      await withBusy(save, () =>
+        api(`/api/boxes/${enc(box.id)}`, {
+          method: "PATCH",
+          body: { name },
+          headers: { "if-match": String(box.revision) },
+        }),
+      );
+    } catch (err) {
+      input.classList.add("invalid");
+      error.textContent = `${err.message}${err.hint ? ` ${err.hint}` : ""}`;
+      input.focus();
+      return;
+    }
+    close();
+    toast(t("ba.renamed"), { message: t("ba.renamedText", { old: box.name, new: name }) });
+    refreshHost();
+    onSaved?.();
+  };
+
+  save.addEventListener("click", () => void submit());
+  input.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    void submit();
+  });
 }
 
 export function editResources(box, onSaved) {
