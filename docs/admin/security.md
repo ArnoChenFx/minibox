@@ -58,7 +58,8 @@ A notification channel sends a message to an address that you give it.
 - **Backup archives.** A backup is sealed with AES-256-GCM, under a key that scrypt derives from the passphrase. MiniBox never stores the passphrase. The CLI reads it from `MINIBOX_BACKUP_PASSPHRASE` or from standard input, never from an argument. An archive holds the access key and the secrets, so keep it as protected as `DATA_DIR`.
 - **Target credentials.** They are written once, to `DATA_DIR/secrets/env/target.<id>.<field>`, with mode 600. No API returns them. Events, the audit log and the server log show only a target's name and address.
 - **SFTP host keys.** The host key is pinned when a target is added. MiniBox sends nothing to a server that presents another key.
-- **Plain HTTP.** An S3-compatible target accepts `http` only for loopback addresses.
+- **WebDAV credentials.** A WebDAV target sends HTTP Basic credentials with every request, so its address must be `https` unless it is a loopback address. The server's certificate is checked and cannot be skipped: a self-signed or otherwise untrusted certificate is reported as a certificate failure, not as an unreachable server.
+- **Plain HTTP.** An S3-compatible or a WebDAV target accepts `http` only for loopback addresses.
 - **Owner only.** Backups and targets need the access key. No token scope grants them.
 
 ## Template builds and repository clones

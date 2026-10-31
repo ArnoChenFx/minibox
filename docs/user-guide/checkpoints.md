@@ -151,7 +151,7 @@ The package size is limited by `CHECKPOINT_PACKAGE_MAX_MB`, which is 2048 MB by 
 
 ## Off-site targets
 
-An off-site target is an S3-compatible bucket or an SFTP folder outside this host. Targets are listed in **Settings**, under **Off-site targets**. Pushing and pulling packages is an owner operation of the [REST API](../reference/api.md) and the [MCP](../reference/mcp.md) storage toolset, and each one runs as a task.
+An off-site target is an S3-compatible bucket, an SFTP folder or a WebDAV collection outside this host. Targets are listed in **Settings**, under **Off-site targets**. Pushing and pulling packages is an owner operation of the [REST API](../reference/api.md) and the [MCP](../reference/mcp.md) storage toolset, and each one runs as a task.
 
 Push an exported package before it expires, 24 hours after the export. A package that you pull from a target can be imported as described above, within 24 hours of the pull. See [Backups](../admin/backups.md#off-site-targets) for how to add a target.
 

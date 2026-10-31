@@ -12,7 +12,7 @@ Open **Settings** in the sidebar to manage the console and the server's access. 
 | **Agent API tokens** | Create, read and revoke tokens for agents and scripts. See [Access, sessions and tokens](access-and-tokens.md#agent-api-tokens). |
 | **Secrets** | Add, replace and delete host secrets. See [Environment variables and secrets](environment-and-secrets.md). |
 | **SSH keys** | Add and delete the public keys that may log in over direct SSH. Each key shows its label, fingerprint, and when it was added and last used. See [SSH access](ssh-and-cli.md#connect-directly-with-any-ssh-client). |
-| **Off-site targets** | Add S3-compatible or SFTP targets for checkpoint packages and backups, check them, and remove them. See [Backups](../admin/backups.md#off-site-targets). |
+| **Off-site targets** | Add S3-compatible, SFTP or WebDAV targets for checkpoint packages and backups, check them, and remove them. See [Backups](../admin/backups.md#off-site-targets). |
 | **Backups** | Set, change and turn off the backup schedule, and see its next and last run. Off until you set one. See [Scheduled backups](../admin/backups.md#scheduled-backups). |
 | **Notifications** | Add, change, pause and delete notification channels, send a test notice, and see recent deliveries. Owner only. See [Notifications](notifications.md). |
 

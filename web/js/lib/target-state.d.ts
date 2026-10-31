@@ -1,4 +1,4 @@
-export declare const TARGET_KINDS: readonly ["s3", "sftp"];
+export declare const TARGET_KINDS: readonly ["s3", "sftp", "webdav"];
 
 export declare const KIND_FIELDS: Readonly<Record<string, readonly string[]>>;
 

@@ -31911,19 +31911,20 @@
                             "type": "string",
                             "enum": [
                               "s3",
-                              "sftp"
+                              "sftp",
+                              "webdav"
                             ]
                           },
                           "address": {
                             "type": "string",
-                            "description": "The endpoint and bucket of an S3 target, or the host and port of an SFTP server."
+                            "description": "The endpoint and bucket of an S3 target, the host and port of an SFTP server, or the collection URL of a WebDAV target."
                           },
                           "path": {
                             "type": "string",
-                            "description": "The folder on the target the objects live in. Empty is the bucket root or the login folder."
+                            "description": "The folder on the target the objects live in. Empty is the bucket root, the login folder or the collection root."
                           },
                           "hostKeyFingerprint": {
-                            "description": "The SFTP server's host key, pinned when the target was added. Null for an S3 target.",
+                            "description": "The SFTP server's host key, pinned when the target was added. Null for an S3 or WebDAV target.",
                             "type": [
                               "string",
                               "null"
@@ -32123,12 +32124,13 @@
                     "type": "string",
                     "enum": [
                       "s3",
-                      "sftp"
+                      "sftp",
+                      "webdav"
                     ],
-                    "description": "s3 for an S3-compatible bucket, sftp for an SFTP server."
+                    "description": "s3 for an S3-compatible bucket, sftp for an SFTP server, webdav for a WebDAV collection."
                   },
                   "path": {
-                    "description": "The folder the objects live in, relative to the target's root. Omitted, they go in the root.",
+                    "description": "The folder the objects live in, relative to the target's root. Omitted, they go in the bucket root, the login folder or the collection root.",
                     "type": "string",
                     "maxLength": 512
                   },
@@ -32169,9 +32171,9 @@
                     "maximum": 65535
                   },
                   "user": {
-                    "description": "SFTP only. The user the login is for.",
+                    "description": "SFTP and WebDAV only. The user the login is for.",
                     "type": "string",
-                    "maxLength": 64
+                    "maxLength": 128
                   },
                   "privateKey": {
                     "description": "SFTP only. The private key that logs in, in OpenSSH or PEM form without a passphrase. It is stored as a secret and never returned.",
@@ -32182,6 +32184,16 @@
                     "description": "SFTP only. The server's host key, SHA256:…, as a test reported it. Adding a target needs it, and nothing is sent to a server that presents another key.",
                     "type": "string",
                     "maxLength": 128
+                  },
+                  "url": {
+                    "description": "WebDAV only. The https address of the collection the objects live under, such as https://host/remote.php/dav/files/USER. It may carry a path, and is stored without a trailing slash. Plain http is accepted only for localhost, 127.0.0.1 and [::1].",
+                    "type": "string",
+                    "maxLength": 512
+                  },
+                  "password": {
+                    "description": "WebDAV only. The password or app password of the login. It is stored as a secret and never returned.",
+                    "type": "string",
+                    "maxLength": 1024
                   }
                 },
                 "required": [
@@ -32213,19 +32225,20 @@
                           "type": "string",
                           "enum": [
                             "s3",
-                            "sftp"
+                            "sftp",
+                            "webdav"
                           ]
                         },
                         "address": {
                           "type": "string",
-                          "description": "The endpoint and bucket of an S3 target, or the host and port of an SFTP server."
+                          "description": "The endpoint and bucket of an S3 target, the host and port of an SFTP server, or the collection URL of a WebDAV target."
                         },
                         "path": {
                           "type": "string",
-                          "description": "The folder on the target the objects live in. Empty is the bucket root or the login folder."
+                          "description": "The folder on the target the objects live in. Empty is the bucket root, the login folder or the collection root."
                         },
                         "hostKeyFingerprint": {
-                          "description": "The SFTP server's host key, pinned when the target was added. Null for an S3 target.",
+                          "description": "The SFTP server's host key, pinned when the target was added. Null for an S3 or WebDAV target.",
                           "type": [
                             "string",
                             "null"
@@ -32440,12 +32453,13 @@
                     "type": "string",
                     "enum": [
                       "s3",
-                      "sftp"
+                      "sftp",
+                      "webdav"
                     ],
-                    "description": "s3 for an S3-compatible bucket, sftp for an SFTP server."
+                    "description": "s3 for an S3-compatible bucket, sftp for an SFTP server, webdav for a WebDAV collection."
                   },
                   "path": {
-                    "description": "The folder the objects live in, relative to the target's root. Omitted, they go in the root.",
+                    "description": "The folder the objects live in, relative to the target's root. Omitted, they go in the bucket root, the login folder or the collection root.",
                     "type": "string",
                     "maxLength": 512
                   },
@@ -32486,9 +32500,9 @@
                     "maximum": 65535
                   },
                   "user": {
-                    "description": "SFTP only. The user the login is for.",
+                    "description": "SFTP and WebDAV only. The user the login is for.",
                     "type": "string",
-                    "maxLength": 64
+                    "maxLength": 128
                   },
                   "privateKey": {
                     "description": "SFTP only. The private key that logs in, in OpenSSH or PEM form without a passphrase. It is stored as a secret and never returned.",
@@ -32499,6 +32513,16 @@
                     "description": "SFTP only. The server's host key, SHA256:…, as a test reported it. Adding a target needs it, and nothing is sent to a server that presents another key.",
                     "type": "string",
                     "maxLength": 128
+                  },
+                  "url": {
+                    "description": "WebDAV only. The https address of the collection the objects live under, such as https://host/remote.php/dav/files/USER. It may carry a path, and is stored without a trailing slash. Plain http is accepted only for localhost, 127.0.0.1 and [::1].",
+                    "type": "string",
+                    "maxLength": 512
+                  },
+                  "password": {
+                    "description": "WebDAV only. The password or app password of the login. It is stored as a secret and never returned.",
+                    "type": "string",
+                    "maxLength": 1024
                   }
                 },
                 "required": [
@@ -33245,19 +33269,20 @@
                   "type": "string",
                   "enum": [
                     "s3",
-                    "sftp"
+                    "sftp",
+                    "webdav"
                   ]
                 },
                 "address": {
                   "type": "string",
-                  "description": "The endpoint and bucket of an S3 target, or the host and port of an SFTP server."
+                  "description": "The endpoint and bucket of an S3 target, the host and port of an SFTP server, or the collection URL of a WebDAV target."
                 },
                 "path": {
                   "type": "string",
-                  "description": "The folder on the target the objects live in. Empty is the bucket root or the login folder."
+                  "description": "The folder on the target the objects live in. Empty is the bucket root, the login folder or the collection root."
                 },
                 "hostKeyFingerprint": {
-                  "description": "The SFTP server's host key, pinned when the target was added. Null for an S3 target.",
+                  "description": "The SFTP server's host key, pinned when the target was added. Null for an S3 or WebDAV target.",
                   "type": [
                     "string",
                     "null"
@@ -33556,19 +33581,20 @@
                   "type": "string",
                   "enum": [
                     "s3",
-                    "sftp"
+                    "sftp",
+                    "webdav"
                   ]
                 },
                 "address": {
                   "type": "string",
-                  "description": "The endpoint and bucket of an S3 target, or the host and port of an SFTP server."
+                  "description": "The endpoint and bucket of an S3 target, the host and port of an SFTP server, or the collection URL of a WebDAV target."
                 },
                 "path": {
                   "type": "string",
-                  "description": "The folder on the target the objects live in. Empty is the bucket root or the login folder."
+                  "description": "The folder on the target the objects live in. Empty is the bucket root, the login folder or the collection root."
                 },
                 "hostKeyFingerprint": {
-                  "description": "The SFTP server's host key, pinned when the target was added. Null for an S3 target.",
+                  "description": "The SFTP server's host key, pinned when the target was added. Null for an S3 or WebDAV target.",
                   "type": [
                     "string",
                     "null"

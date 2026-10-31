@@ -107,9 +107,9 @@ const valuesOf = (form) => Object.fromEntries(new FormData(form));
 const HOST_FIELDS = new Set(["host", "port"]);
 
 /**
- * Adds a target. An S3 target is saved as typed. An SFTP server is pinned to the host key it presents: a test shows that
- * key, the operator confirms it, and the target is saved with it. Saving an SFTP target runs that test first when no key
- * has been confirmed yet.
+ * Adds a target. An S3 or WebDAV target is saved as typed. An SFTP server is pinned to the host key it presents: a test
+ * shows that key, the operator confirms it, and the target is saved with it. Saving an SFTP target runs that test first
+ * when no key has been confirmed yet.
  */
 function targetDialog(view) {
   const { root, close } = openDialog({
@@ -124,6 +124,7 @@ function targetDialog(view) {
           <label class="field">${t("st.targetTypeLabel")}<select class="select" name="kind">
             <option value="s3">${esc(t("st.targetKind.s3"))}</option>
             <option value="sftp">${esc(t("st.targetKind.sftp"))}</option>
+            <option value="webdav">${esc(t("st.targetKind.webdav"))}</option>
           </select></label>
         </div>
         <label class="field">${t("st.targetPath")}<input class="input mono" name="path" maxlength="512" spellcheck="false" /><span class="help">${t("st.targetPathHelp")}</span></label>
@@ -144,6 +145,13 @@ function targetDialog(view) {
           </div>
           <label class="field">${t("label.privateKey")}<textarea class="textarea mono" name="privateKey" rows="4" spellcheck="false"></textarea><span class="help">${t("st.targetSecretHelp")}</span></label>
         </div>
+        <div class="stack" data-target-kind="webdav" hidden>
+          <label class="field">${t("label.url")}<input class="input mono" name="url" inputmode="url" placeholder="https://dav.example.com/remote.php/dav/files/USER" spellcheck="false" /><span class="help">${t("st.targetWebdavUrlHelp")}</span></label>
+          <div class="grid grid-2 form-grid">
+            <label class="field">${t("label.user")}<input class="input mono" name="user" autocomplete="off" spellcheck="false" /></label>
+            <label class="field">${t("label.password")}<input class="input mono" name="password" type="password" autocomplete="new-password" spellcheck="false" /><span class="help">${t("st.targetSecretHelp")}</span></label>
+          </div>
+        </div>
         <div id="stTargetResult"></div>
         <div class="error-text" id="stTargetErr"></div>
       </form>`,
@@ -159,10 +167,22 @@ function targetDialog(view) {
     result.innerHTML = "";
     error.textContent = "";
   };
+  /**
+   * Shows the panel of the chosen kind and turns the others off. A field of a hidden panel is disabled, so the form does
+   * not send it: SFTP and WebDAV both have a `user`, and the empty one of the panel that is not shown must not replace
+   * the one typed in the panel that is.
+   */
+  const showKind = () => {
+    for (const panel of form.querySelectorAll("[data-target-kind]")) {
+      const shown = panel.dataset.targetKind === kind.value;
+      panel.hidden = !shown;
+      for (const input of panel.querySelectorAll("input, textarea, select")) input.disabled = !shown;
+    }
+  };
+  showKind();
   form.addEventListener("submit", (event) => event.preventDefault());
   kind.addEventListener("change", () => {
-    for (const panel of form.querySelectorAll("[data-target-kind]"))
-      panel.hidden = panel.dataset.targetKind !== kind.value;
+    showKind();
     fingerprint = "";
     clearResult();
   });

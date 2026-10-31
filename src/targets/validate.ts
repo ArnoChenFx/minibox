@@ -24,8 +24,33 @@ export function s3Endpoint(raw: string): string | null {
 }
 
 /**
- * A folder on the target, normalized. S3 keys have no leading slash, and an SFTP path may be absolute. A `.` or `..`
- * segment, an empty segment and a control character are refused, so no object can be written outside the folder.
+ * The WebDAV collection the objects live under, with no trailing slash, or null when the address is refused. It may carry
+ * a path, as Nextcloud does (`https://host/remote.php/dav/files/USER`). Credentials are sent with every request, so plain
+ * http is accepted only for this machine.
+ */
+export function webdavUrl(raw: string): string | null {
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return null;
+  }
+  if (url.username !== "" || url.password !== "" || url.search !== "" || url.hash !== "") return null;
+  const local = LOOPBACK.has(url.hostname);
+  if (url.protocol !== "https:" && !(url.protocol === "http:" && local)) return null;
+  const segments = url.pathname.split("/").filter((segment) => segment !== "");
+  return `${url.origin}${segments.length === 0 ? "" : `/${segments.join("/")}`}`;
+}
+
+/** A WebDAV login. It may be an email address, as Nutstore uses. A colon would end the user name of a Basic credential. */
+export function webdavUser(raw: string): boolean {
+  return /^[^:\p{Cc}]{1,128}$/u.test(raw);
+}
+
+/**
+ * A folder on the target, normalized. S3 keys and WebDAV paths have no leading slash, and an SFTP path may be absolute. A
+ * `.` or `..` segment, an empty segment and a control character are refused, so no object can be written outside the
+ * folder.
  */
 export function remotePath(raw: string, kind: TargetKind): string | null {
   if (CONTROL_RE.test(raw) || raw.includes("\\")) return null;

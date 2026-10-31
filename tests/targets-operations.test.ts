@@ -4,6 +4,7 @@ import { silenceLogs } from "./support/app";
 import { type S3Double, startS3Double } from "./support/s3-double";
 import { type SftpDouble, startSftpDouble } from "./support/sftp-double";
 import { call, finishedTask, type Harness, mint, refused, startHarness } from "./support/tokens";
+import { startWebdavDouble } from "./support/webdav-double";
 
 const PASSPHRASE = "correct horse battery staple";
 const ACCESS_KEY = "AKIATESTONLY0002";
@@ -196,6 +197,128 @@ describe("targets over REST", () => {
       status: 404,
       key: "target_not_found",
     });
+  });
+
+  test("a WebDAV target is tested against the server and added without its password in any answer", async () => {
+    const dav = startWebdavDouble({
+      user: "minibox@example.com",
+      password: "{{SECRET_l8kwv2ra}}",
+      prefix: "remote.php/dav/files/u",
+    });
+    try {
+      const before = harness.app.events.head();
+      const body = {
+        name: "dav",
+        kind: "webdav",
+        path: "minibox",
+        url: dav.url,
+        user: dav.user,
+        password: dav.password,
+      };
+      // A trailing slash is trimmed, and the audit keeps the trimmed address.
+      const tested = await call(harness.base, "/api/targets/test", { body: { ...body, url: `${dav.url}/` } });
+      expect(tested.status).toBe(200);
+
+      const added = await call(harness.base, "/api/targets", { body });
+      expect(added.status).toBe(201);
+      expect((added.json as unknown as { target: object }).target).toMatchObject({
+        name: "dav",
+        kind: "webdav",
+        address: dav.url,
+        path: "minibox",
+        credentials: true,
+      });
+      expect(JSON.stringify(added.json)).not.toContain(dav.password);
+
+      const listed = await call(harness.base, "/api/targets");
+      const events = JSON.stringify(harness.app.events.after(before, {}, 20));
+      expect(events).toContain(dav.url);
+      expect(events).not.toContain(`${dav.url}/`);
+      for (const answer of [added.json, listed.json, events])
+        expect(JSON.stringify(answer)).not.toContain(dav.password);
+    } finally {
+      dav.stop();
+    }
+  });
+
+  test("a WebDAV target that leaves out a field, or names another kind's, is refused with its field", async () => {
+    const dav = startWebdavDouble({ user: "minibox@example.com", password: "{{SECRET_l8kwv2ra}}" });
+    try {
+      const body = {
+        name: "dav",
+        kind: "webdav",
+        path: "minibox",
+        url: dav.url,
+        user: dav.user,
+        password: dav.password,
+      };
+      for (const field of ["url", "user", "password"] as const) {
+        const res = await call(harness.base, "/api/targets", { body: { ...body, [field]: undefined } });
+        expect([field, refused(res)]).toEqual([field, { status: 400, key: "field_required" }]);
+        expect([field, res.json.error?.details]).toEqual([field, { field }]);
+      }
+
+      const bucket = await call(harness.base, "/api/targets", { body: { ...body, bucket: "backups" } });
+      expect(refused(bucket)).toEqual({ status: 400, key: "target_field_not_allowed" });
+      expect(bucket.json.error?.details).toEqual({ field: "bucket" });
+
+      const port = await call(harness.base, "/api/targets", { body: { ...body, port: 22 } });
+      expect(refused(port)).toEqual({ status: 400, key: "target_field_not_allowed" });
+      expect(port.json.error?.details).toEqual({ field: "port" });
+
+      const nameWithColon = await call(harness.base, "/api/targets", { body: { ...body, user: "a:b" } });
+      expect(refused(nameWithColon)).toEqual({ status: 400, key: "target_field_invalid" });
+      expect(nameWithColon.json.error?.details).toEqual({ field: "user" });
+
+      const multilinePassword = await call(harness.base, "/api/targets", {
+        body: { ...body, password: "line\nbreak" },
+      });
+      expect(refused(multilinePassword)).toEqual({ status: 400, key: "target_field_invalid" });
+      expect(multilinePassword.json.error?.details).toEqual({ field: "password" });
+
+      const s3WithUrl = await call(harness.base, "/api/targets", {
+        body: { ...s3Target(), url: "https://dav.example.com" },
+      });
+      expect(refused(s3WithUrl)).toEqual({ status: 400, key: "target_field_not_allowed" });
+      expect(s3WithUrl.json.error?.details).toEqual({ field: "url" });
+
+      expect(harness.app.targets.list()).toEqual([]);
+    } finally {
+      dav.stop();
+    }
+  });
+
+  test("a WebDAV address over plain http, or a path that climbs out, is refused", async () => {
+    const body = {
+      name: "dav",
+      kind: "webdav",
+      path: "minibox",
+      url: "https://dav.example.com/remote.php/dav/files/u",
+      user: "minibox@example.com",
+      password: "{{SECRET_l8kwv2ra}}",
+    };
+    const plain = await call(harness.base, "/api/targets", { body: { ...body, url: "http://dav.example.com" } });
+    expect(refused(plain)).toEqual({ status: 400, key: "target_url_invalid" });
+    expect(plain.json.error?.details).toEqual({ field: "url" });
+
+    const climbing = await call(harness.base, "/api/targets", { body: { ...body, path: "../other" } });
+    expect(refused(climbing)).toEqual({ status: 400, key: "target_path_invalid" });
+    expect(climbing.json.error?.details).toEqual({ field: "path" });
+    expect(harness.app.targets.list()).toEqual([]);
+  });
+
+  test("a WebDAV address that carries a login, a query or a fragment is refused", async () => {
+    const body = { name: "dav", kind: "webdav", user: "minibox", password: "not-a-real-password" };
+    for (const url of [
+      "https://minibox:other@dav.example.com/dav",
+      "https://dav.example.com/dav?token=1",
+      "https://dav.example.com/dav#top",
+    ]) {
+      const response = await call(harness.base, "/api/targets", { body: { ...body, url } });
+      expect(refused(response)).toEqual({ status: 400, key: "target_url_invalid" });
+      expect(response.json.error?.details).toEqual({ field: "url" });
+    }
+    expect(harness.app.targets.list()).toEqual([]);
   });
 
   test("only the owner reaches targets: an admin or an operator token is refused on every route", async () => {

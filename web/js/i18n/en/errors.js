@@ -726,6 +726,8 @@ export default {
   "err.target_field_invalid": "{label} is not valid.",
   "err.target_endpoint_invalid":
     "The endpoint must be an https address. Plain http is accepted only for localhost, 127.0.0.1 and [::1].",
+  "err.target_url_invalid":
+    "The address must be an https URL with no user name, query or fragment. It may carry a path. Plain http is accepted only for localhost, 127.0.0.1 and [::1].",
   "err.target_path_invalid":
     "The path must be relative to the target's folder, with no . or .. segments and no control characters.",
   "err.target_key_invalid": "The private key cannot be used: {reason}.",

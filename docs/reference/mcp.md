@@ -257,7 +257,7 @@ Pass other secrets, such as API keys, in `env`, not in `argv` or `cmd`. The audi
 The backup and target tools are for the owner only, so a token does not see them in `tools/list`.
 
 - `create_backup` takes a `passphrase`, so the MCP client that calls it sees the passphrase. Use the [command-line tool](cli.md#backups) with `MINIBOX_BACKUP_PASSPHRASE` when an agent should not see it.
-- `add_target` takes the target's credentials as arguments, so the client sees them as well. MiniBox stores them as secrets, and no tool returns them. For an SFTP server, call `test_target` first. If the server's host key is not yet known, the call fails with the fingerprint the server presented. Pass that fingerprint to `add_target` as `hostKeyFingerprint` once you have confirmed it.
+- `add_target` takes the target's credentials as arguments, so the client sees them as well. MiniBox stores them as secrets, and no tool returns them. A WebDAV collection is `kind: "webdav"` with `url`, `user` and `password`. For an SFTP server, call `test_target` first. If the server's host key is not yet known, the call fails with the fingerprint the server presented. Pass that fingerprint to `add_target` as `hostKeyFingerprint` once you have confirmed it.
 - `push_to_target` and `pull_from_target` take an object ID, `pk_…` or `bk_…`. See [Backups](../admin/backups.md#push-and-pull).
 
 ## Self tools
