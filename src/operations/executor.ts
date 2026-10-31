@@ -10,6 +10,7 @@ import { log } from "../lib/logger";
 import { msg } from "../lib/messages";
 import type { Notifications } from "../notify/service";
 import type { BackupService } from "../services/backup";
+import type { CheckpointRemoteSync } from "../services/checkpoint-remote";
 import type { TargetService } from "../services/targets";
 import type { SshKeyStore } from "../ssh/keys";
 import type { TaskManager } from "../tasks/manager";
@@ -101,6 +102,8 @@ export interface ExecutorDeps {
   readonly backupPassphraseSet?: boolean;
   /** Off-site targets. Target operations read it from the context. */
   readonly targets?: TargetService;
+  /** Copies checkpoints to their host's remote repository. Its operations read it from the context. */
+  readonly checkpointRemote?: CheckpointRemoteSync;
   /** The owner's SSH keys. SSH key operations read it from the context. */
   readonly sshKeys?: SshKeyStore;
 }
@@ -195,6 +198,7 @@ export class Executor {
       backupSchedule: ctx.backupSchedule ?? this.deps.backupSchedule,
       backupPassphraseSet: ctx.backupPassphraseSet ?? this.deps.backupPassphraseSet,
       targets: ctx.targets ?? this.deps.targets,
+      checkpointRemote: ctx.checkpointRemote ?? this.deps.checkpointRemote,
       sshKeys: ctx.sshKeys ?? this.deps.sshKeys,
       recordActivity: (entry) => this.deps.activity.add(entry),
       boxViews: ctx.boxViews ?? (() => (hosts ? allBoxViews(hosts.list()) : specViews(ctx.host.specs.list()))),

@@ -25,6 +25,8 @@ export function viewOf(record: CheckpointRecord): CheckpointView {
     data: record.data,
     system: record.system,
     bytes: record.data.reduce((sum, layer) => sum + layer.bytes, 0),
+    ...(record.remoteSync ? { remoteSync: record.remoteSync } : {}),
+    ...(record.remoteFailure ? { remoteFailure: record.remoteFailure } : {}),
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
   };

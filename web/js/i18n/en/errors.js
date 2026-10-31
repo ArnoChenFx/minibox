@@ -749,5 +749,11 @@ export default {
   "err.target_object_held": "{object} is already stored here with other contents, so it was not replaced.",
   "err.target_object_invalid": "The object is not valid: {reason}",
   "err.target_busy": "Target {name} is busy with another transfer. Try again when it finishes.",
+  "err.target_in_use":
+    "Target {name} holds the checkpoint repository of host {host}. Clear that remote repository first.",
+  "err.checkpoint_remote_not_set": "Host {host} has no remote checkpoint repository. Set one first.",
+  "err.checkpoint_remote_unsupported":
+    "A WebDAV target cannot hold a checkpoint repository. Use an S3 or an SFTP target.",
+  "err.checkpoint_remote_busy": "Host {host} is already copying its checkpoints to the remote repository.",
   "err.target_object_busy": "{object} is already being pulled. Try again when that transfer finishes.",
 };

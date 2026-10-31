@@ -1,5 +1,12 @@
 import type { BoxProfile } from "../box-profile";
-import type { Consistency, CheckpointSpec, DataLayer, SystemLayer } from "../checkpoints/types";
+import type {
+  Consistency,
+  CheckpointSpec,
+  DataLayer,
+  RemoteSyncFailure,
+  RemoteSyncState,
+  SystemLayer,
+} from "../checkpoints/types";
 import type { ContainerChange } from "../runtime";
 import { REBUILD_LOSES } from "../specs/plan";
 import type { VolumeRole } from "../volumes/types";
@@ -33,6 +40,13 @@ export interface CheckpointView {
   system: SystemLayer | null;
   /** Bytes restic read from the volumes, summed over the data layers. */
   bytes: number;
+  /**
+   * The remote repositories that hold this record's snapshots, by target id, with when each copy last succeeded. Absent
+   * until a copy succeeded, so a record written before remotes existed reads as one that has copies nowhere yet.
+   */
+  remoteSync?: RemoteSyncState;
+  /** The last failed copy to a remote repository, when one happened after the last success for that target. */
+  remoteFailure?: RemoteSyncFailure;
   createdAt: string;
   updatedAt: string;
 }
