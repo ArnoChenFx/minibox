@@ -322,6 +322,31 @@ describe("WebDAV target adapter", () => {
     ]);
   });
 
+  test("writes into folders that already exist, which a server answers a MKCOL with 405", async () => {
+    session = await openSession(connection());
+    await session.write(PACKAGE, chunked(new Uint8Array([1]), 1), 1);
+    await session.close();
+    session = await openSession(connection());
+    await session.write("packages/pk_bbbbbbbb.mbckpt", chunked(new Uint8Array([2]), 1), 1);
+
+    expect(double.requests.filter((request) => request.startsWith("MKCOL "))).toEqual([
+      "MKCOL /minibox",
+      "MKCOL /minibox/packages",
+      "MKCOL /minibox",
+      "MKCOL /minibox/packages",
+    ]);
+    expect([...double.files.keys()].toSorted()).toEqual([`minibox/${PACKAGE}`, "minibox/packages/pk_bbbbbbbb.mbckpt"]);
+  });
+
+  test("sends no object when a folder it needs cannot be made", async () => {
+    session = await openSession(connection());
+    double.failNext((method) => method === "MKCOL", 409);
+    expect(await reasonOf(() => session!.write(PACKAGE, chunked(new Uint8Array([1]), 1), 1))).toBe("failed");
+
+    expect(double.requests.some((request) => request.startsWith("PUT "))).toBe(false);
+    expect(double.files.size).toBe(0);
+  });
+
   test("deletes what a write left behind when its source fails midway", async () => {
     session = await openSession(connection());
     const bytes = randomBytes(50_000);
