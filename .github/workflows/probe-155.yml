@@ -16,7 +16,7 @@ jobs:
           D=$(mktemp -d); chmod 777 "$D"; echo probe-pass > "$D/pw"; chmod 644 "$D/pw"
           docker run -d --name s3auth --network host -e S3PROXY_AUTHORIZATION=aws-v2-or-v4 -e S3PROXY_ENDPOINT=http://127.0.0.1:9001 -e S3PROXY_IDENTITY=probe-key -e S3PROXY_CREDENTIAL=probe-secret -e JCLOUDS_PROVIDER=transient -e JCLOUDS_IDENTITY=local-identity -e JCLOUDS_CREDENTIAL=local-credential andrewgaul/s3proxy:latest
           for i in $(seq 1 30); do curl -s -o /dev/null http://127.0.0.1:9001/ && break; sleep 2; done
-          docker run --rm --network host --entrypoint sh minio/mc:latest -c 'mc alias set p http://127.0.0.1:9001 probe-key probe-secret && mc mb p/probe-bucket'; echo "mc exit=$?"
+          docker run --rm --network host -e AWS_ACCESS_KEY_ID=probe-key -e AWS_SECRET_ACCESS_KEY=probe-secret amazon/aws-cli:latest --endpoint-url http://127.0.0.1:9001 s3 mb s3://probe-bucket; echo "mb exit=$?"
           printf '[default]\naws_access_key_id = probe-key\naws_secret_access_key = probe-secret\n' > "$D/aws"
           printf '[default]\naws_access_key_id = probe-key\naws_secret_access_key = WRONG-SECRET\n' > "$D/aws-wrong"
           chmod 644 "$D/aws" "$D/aws-wrong"
