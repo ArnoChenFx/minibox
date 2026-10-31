@@ -14,6 +14,10 @@ MiniBox is not 1.0 yet. A minor version, such as 0.4 to 0.5, can contain breakin
 2. Make a backup. See [Backups](backups.md).
 3. Note the image tag that you run now. If the new version causes problems, you can go back to it.
 
+## Agent resource scope identity
+
+Agents now require the locally generated `minibox-agent.scope` label as well as `minibox-agent.host`. Host ids are not globally unique. Version 1 scope records are upgraded to version 2, but host-only resources are not automatically trusted or deleted. Back up data before upgrading and follow [Upgrading host-only scopes](../reference/agent.md#upgrading-host-only-scopes) to recreate resources and restore their volumes locally. Preserve the agent's `scope.json` across restarts; a different scope cannot recover the old resources.
+
 ## Manual steps since 0.4
 
 These are the manual steps for changes made in 0.4 and later. Read the ones that apply to the versions you are skipping. Some need action before you start the new version.

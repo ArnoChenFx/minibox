@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 
@@ -17,30 +18,36 @@ import {
 /**
  * What an agent may touch. The engine on an agent host is shared with whatever else runs there, and a control plane that
  * has been taken over must not be able to stop, read, mount or remove any of it. So the agent works only on **MiniBox
- * resources**: containers, volumes and networks that carry this label, with this host's id as the value.
+ * resources**: containers, volumes and networks that carry this agent's locally generated scope id and host label.
  *
  * The agent writes the label itself on everything it creates and overrides a label of that name in a request, and it
  * judges ownership from what the engine says about the resource, never from what a request claims. An engine does not
  * change the labels of a resource once it exists, so something on the host that was there before can never become a
  * MiniBox resource by being named in a request. The key is fixed and does not follow `LABEL_PREFIX`: it is the agent's
- * own, and the host id in the value keeps another MiniBox on the same engine out of this one's reach.
+ * own. Host ids are only unique inside a control plane; the local scope id isolates installations on the same engine.
  */
 export const OWNER_LABEL = "minibox-agent.host";
+/** Local ownership identity, independent of host ids chosen by control planes. */
+export const SCOPE_LABEL = "minibox-agent.scope";
 
 /** Where the agent keeps the MiniBox it serves, next to its identity in its data volume. */
 export const SCOPE_FILE = "scope.json";
 
-const ScopeSchema = z.object({
+const LegacyScopeSchema = z.object({
   version: z.literal(1),
   hostId: z.string().min(1).max(64),
   /** The prefix of the MiniBox this agent serves, from pairing. Null when not known. */
   labelPrefix: z.string().max(64).nullable(),
 });
+const ScopeSchema = LegacyScopeSchema.extend({
+  version: z.literal(2),
+  scopeId: z.string().regex(/^[0-9a-f]{64}$/),
+});
 export type ScopeRecord = z.infer<typeof ScopeSchema>;
 
 /** The scope of an agent paired with a MiniBox: the prefix is the one the pairing answer named, when it named one. */
 export function freshScope(hostId: string, labelPrefix: string | null = null): ScopeRecord {
-  return { version: 1, hostId, labelPrefix };
+  return { version: 2, hostId, labelPrefix, scopeId: randomBytes(32).toString("hex") };
 }
 
 /**
@@ -57,11 +64,21 @@ export function loadScope(dataDir: string, hostId: string): ScopeRecord | null {
       throw new Error(`${SCOPE_FILE} is empty. Restore it from a backup, or remove the data volume and pair again.`);
     return null;
   }
-  const record = ScopeSchema.parse(JSON.parse(text));
+  const parsed: unknown = JSON.parse(text);
+  const legacy = LegacyScopeSchema.safeParse(parsed);
+  const record = legacy.success ? freshScope(legacy.data.hostId, legacy.data.labelPrefix) : ScopeSchema.parse(parsed);
   if (record.hostId !== hostId) {
     throw new Error(
       `${SCOPE_FILE} was written for host ${record.hostId}, not ${hostId}. Remove the data volume and pair again.`,
     );
+  }
+  // Persist the new identity before any resource can be labelled with it. Old host-only resources are not adopted.
+  if (legacy.success) {
+    saveScope(dataDir, record);
+    log.warn("agent.scope_upgraded", {
+      hostId,
+      hint: "host-only resource labels are no longer trusted; back up and recreate legacy resources locally",
+    });
   }
   return record;
 }
@@ -108,17 +125,21 @@ function notManaged(what: "container" | "volume" | "network", ref: string): Runt
  */
 export class AgentScope {
   private record: ScopeRecord | null;
+  private saved: boolean;
   /** Who the agent is, once the engine has said so. A failure is not kept: the engine may answer the next time. */
   private selfFound: { readonly value: AgentSelf | null } | null = null;
   private selfPending: Promise<AgentSelf | null> | null = null;
 
   constructor(private readonly options: AgentScopeOptions) {
     this.record = options.record;
+    this.saved = options.record !== null;
   }
 
   /** The label every resource the agent creates carries, whatever a request asked for under the same key. */
   labels(requested: Record<string, string> | undefined): Record<string, string> {
-    return { ...requested, [OWNER_LABEL]: this.options.hostId };
+    if (!this.saved || this.record === null)
+      throw new RuntimeError("unavailable", "the agent scope has not been saved yet");
+    return { ...requested, [OWNER_LABEL]: this.options.hostId, [SCOPE_LABEL]: this.record.scopeId };
   }
 
   /**
@@ -132,15 +153,17 @@ export class AgentScope {
       if (labelPrefix !== undefined && this.record.labelPrefix !== null && labelPrefix !== this.record.labelPrefix) {
         log.warn("agent.scope_prefix_differs", { kept: this.record.labelPrefix, reported: labelPrefix });
       }
-      return;
+      if (this.saved) return;
+    } else {
+      this.record = freshScope(this.options.hostId, labelPrefix ?? null);
     }
-    const record = freshScope(this.options.hostId, labelPrefix ?? null);
-    this.record = record;
+    const record = this.record;
     try {
       saveScope(this.options.dataDir, record);
+      this.saved = true;
       log.info("agent.scope_written", { hostId: record.hostId, labelPrefix: record.labelPrefix });
     } catch (e) {
-      // The record is kept for this run, so the firewall owner is still pinned; the next welcome writes it again.
+      // Keep the firewall owner pinned, but refuse resource ownership until the identity is durable. A later welcome retries.
       log.error("agent.scope_unwritable", { error: e instanceof Error ? e.message : String(e) });
     }
   }
@@ -170,21 +193,30 @@ export class AgentScope {
   }
 
   ownsContainer(info: Pick<ContainerInfo, "labels">): boolean {
-    return info.labels[OWNER_LABEL] === this.options.hostId;
+    return this.ownsLabels(info.labels);
   }
 
   ownsVolume(info: Pick<VolumeInfo, "labels">): boolean {
-    return info.labels[OWNER_LABEL] === this.options.hostId;
+    return this.ownsLabels(info.labels);
   }
 
   ownsNetwork(info: Pick<NetworkSummary, "labels">): boolean {
-    return info.labels[OWNER_LABEL] === this.options.hostId;
+    return this.ownsLabels(info.labels);
   }
 
   /** A container event, judged by what it carries: an engine puts a container's labels in the event's attributes. */
   ownsEvent(event: RuntimeEvent): boolean {
     if (event.type !== "container") return false;
-    return event.attributes[OWNER_LABEL] === this.options.hostId;
+    return this.ownsLabels(event.attributes);
+  }
+
+  private ownsLabels(labels: Record<string, string>): boolean {
+    return (
+      this.saved &&
+      this.record !== null &&
+      labels[OWNER_LABEL] === this.options.hostId &&
+      labels[SCOPE_LABEL] === this.record.scopeId
+    );
   }
 
   /**
