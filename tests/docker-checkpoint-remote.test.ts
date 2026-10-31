@@ -1,21 +1,23 @@
-/**
- * Copies checkpoints from the local restic repository to a remote repository, on a real engine: an S3 bucket served by
- * the test's S3 double, and an SFTP folder served by its SFTP double, both on the Docker bridge gateway so a helper can
- * reach them. It covers what only the real engine can: the copy crossing two repositories with different passwords, the
- * S3 credentials file, the pinned known_hosts line, and that a copy adds snapshots without ever removing one.
- *
- *   bun run test:docker
- *
- * To run this file directly: MINIBOX_TEST_DOCKER=1 MINIBOX_TEST_PREFIX=mbit<id> bun test tests/docker-checkpoint-remote.test.ts
- *
- * The machine must run Linux, so the bridge gateway address can be bound by the test process. Optional: DOCKER_SOCKET
- * (default /var/run/docker.sock) and MINIBOX_TEST_IMAGE (default alpine:3.20), which must already be present locally.
- */
 import { afterAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+/**
+ * Copies checkpoints from the local restic repository to a remote repository, on a real engine: an S3 bucket served by
+ * s3proxy in a container, and an SFTP folder served by its SFTP double, both reachable from the restic helper over the
+ * Docker bridge. It covers what only the real engine can: the copy crossing two repositories with different passwords,
+ * the S3 credentials file, the pinned known_hosts line, and that a copy adds snapshots without ever removing one.
+ *
+ *   bun run test:docker
+ *
+ * To run this file directly: MINIBOX_TEST_DOCKER=1 MINIBOX_TEST_PREFIX=mbit<id> bun test tests/docker-checkpoint-remote.test.ts
+ *
+ * The machine must run Linux, so the bridge gateway address can be published. Optional: DOCKER_SOCKET (default
+ * /var/run/docker.sock) and MINIBOX_TEST_IMAGE (default alpine:3.20), which must already be present locally. The S3
+ * service and the one-shot CLI that creates its bucket are pulled from the digests in `tests/support/s3proxy.ts`.
+ */
+import { S3Client } from "bun";
 import Docker from "dockerode";
 import { utils } from "ssh2";
 
@@ -26,7 +28,7 @@ import { createLocalHost, type HostCtx } from "../src/host/registry";
 import { probePublicKey, publicKeyTextOf } from "../src/host/ssh";
 import type { Runtime } from "../src/runtime";
 import { rejectionOf, silenceLogs, testConfig } from "./support/app";
-import { startS3Double } from "./support/s3-double";
+import { createS3Bucket, type S3Proxy, startS3Proxy } from "./support/s3proxy";
 import { newEd25519Key, startSftpDouble } from "./support/sftp-double";
 
 const enabled = process.env.MINIBOX_TEST_DOCKER === "1";
@@ -41,6 +43,8 @@ const docker = new Docker({ socketPath: SOCKET });
 const ACCESS_KEY = "AKIADOCKERTEST";
 const SECRET_KEY = "docker-test-secret-key";
 const REMOTE_PASSWORD = "the remote repository's own password";
+const BUCKET = "archive";
+const REGION = "us-east-1";
 
 const dataDir = mkdtempSync(join(tmpdir(), "minibox-docker-remote-"));
 const host: HostCtx = createLocalHost(testConfig({ dataDir, labelPrefix: prefix }), runtime);
@@ -81,6 +85,32 @@ function filesUnder(dir: string): string[] {
   return found;
 }
 
+/** Every key under a prefix, as the S3 service lists them. */
+async function listKeys(client: S3Client, prefix: string): Promise<string[]> {
+  const keys: string[] = [];
+  let continuationToken: string | undefined;
+  do {
+    const page = await client.list({ prefix, continuationToken, maxKeys: 1000 });
+    for (const item of page.contents ?? []) if (item.key !== undefined) keys.push(item.key);
+    continuationToken = page.isTruncated ? page.nextContinuationToken : undefined;
+  } while (continuationToken !== undefined);
+  return keys;
+}
+
+/** Waits for the service's metrics to show a matching request. */
+async function untilMetric(proxy: S3Proxy, pattern: RegExp, what: string, timeoutMs = 10_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    try {
+      if (pattern.test(await proxy.metrics())) return;
+    } catch {
+      // The metrics port may not answer yet.
+    }
+    if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}`);
+    await Bun.sleep(200);
+  }
+}
+
 afterAll(() => {
   rmSync(dataDir, { recursive: true, force: true });
   restoreLogs();
@@ -91,42 +121,57 @@ describe.skipIf(!enabled)("checkpoint remote copy against a real engine", () => 
     "restic copies to an S3 repository with credentials from a file, and a second copy or a local forget removes nothing",
     async () => {
       const gateway = await bridgeGateway();
+      const service = {
+        docker,
+        runtime,
+        gateway,
+        prefix,
+        accessKeyId: ACCESS_KEY,
+        secretAccessKey: SECRET_KEY,
+        bucket: BUCKET,
+      };
       const volume = `${prefix}-s3-src`;
       await seed(volume);
       const snapshotId = (await host.checkpointEngine.backup(host, volume, ["ck_remote"])).snapshotId;
-      const s3 = startS3Double({
-        hostname: gateway,
-        accessKeyId: ACCESS_KEY,
-        secretAccessKey: SECRET_KEY,
-        bucket: "archive",
-      });
-      const remote: RemoteRepository = {
-        targetId: "tgt_0000000000000000",
-        targetName: "archive",
-        repository: s3Repository(s3.endpoint, "archive", "repo/local"),
-        password: REMOTE_PASSWORD,
-        credentials: { kind: "s3", region: s3.region, accessKeyId: ACCESS_KEY, secretAccessKey: SECRET_KEY },
-      };
-      const keys = () => [...s3.objects.keys()].filter((key) => key.startsWith("repo/local/"));
+      let proxy: S3Proxy | null = null;
       try {
-        await host.checkpointEngine.copyToRemote(host, remote, [snapshotId]);
-        expect(keys()).toEqual(expect.arrayContaining(["repo/local/config"]));
-        expect(s3.requests.some((request) => request.startsWith("PUT /archive/repo/local/"))).toBe(true);
-        const snapshots = keys().filter((key) => key.startsWith("repo/local/snapshots/"));
-        expect(snapshots).toHaveLength(1);
-        const copy = JSON.parse(Buffer.from(s3.objects.get(snapshots[0] ?? "") ?? []).toString("utf8")) as {
-          original?: string;
+        proxy = await startS3Proxy(service);
+        await createS3Bucket({ ...service, endpoint: proxy.endpoint });
+        const client = new S3Client({
+          accessKeyId: ACCESS_KEY,
+          secretAccessKey: SECRET_KEY,
+          endpoint: proxy.endpoint,
+          region: REGION,
+          bucket: BUCKET,
+          virtualHostedStyle: false,
+          retry: 3,
+        });
+        const remote: RemoteRepository = {
+          targetId: "tgt_0000000000000000",
+          targetName: "archive",
+          repository: s3Repository(proxy.endpoint, BUCKET, "repo/local"),
+          password: REMOTE_PASSWORD,
+          credentials: { kind: "s3", region: REGION, accessKeyId: ACCESS_KEY, secretAccessKey: SECRET_KEY },
         };
+        const keys = () => listKeys(client, "repo/local/");
+
+        await host.checkpointEngine.copyToRemote(host, remote, [snapshotId]);
+        expect(await keys()).toEqual(expect.arrayContaining(["repo/local/config"]));
+        await untilMetric(proxy, /s3_operation="PutObject"/, "the copy's object writes");
+        expect(await proxy.metrics()).toContain('http_request_method="PUT"');
+        const snapshots = (await keys()).filter((key) => key.startsWith("repo/local/snapshots/"));
+        expect(snapshots).toHaveLength(1);
+        const copy = JSON.parse(await client.file(snapshots[0] ?? "").text()) as { original?: string };
         expect(copy.original).toBe(snapshotId);
 
-        const before = keys().toSorted();
+        const before = (await keys()).toSorted();
         await host.checkpointEngine.copyToRemote(host, remote, [snapshotId]);
-        expect(keys().toSorted()).toEqual(before);
+        expect((await keys()).toSorted()).toEqual(before);
 
         await host.checkpointEngine.forget(host, snapshotId);
-        expect(keys().toSorted()).toEqual(before);
+        expect((await keys()).toSorted()).toEqual(before);
       } finally {
-        s3.stop();
+        await proxy?.stop();
         await runtime.removeVolume(volume);
       }
     },

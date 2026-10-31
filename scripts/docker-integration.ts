@@ -22,6 +22,7 @@ import { randomBytes } from "node:crypto";
 import { join } from "node:path";
 
 import { RESTIC_IMAGE } from "../src/checkpoints/restic";
+import { AWS_CLI_IMAGE, S3PROXY_IMAGE } from "../tests/support/s3proxy";
 
 const ROOT = join(import.meta.dir, "..");
 const socket = process.env.DOCKER_SOCKET ?? "/var/run/docker.sock";
@@ -87,6 +88,8 @@ async function preflight(): Promise<void> {
     TEMPLATE_BASE,
     SECOND_ENGINE_IMAGE,
     REMOTE_TEMPLATE_BASE,
+    S3PROXY_IMAGE,
+    AWS_CLI_IMAGE,
   ])) {
     await ensureImage(ref);
   }

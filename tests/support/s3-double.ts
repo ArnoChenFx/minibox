@@ -7,8 +7,6 @@ export interface S3DoubleOptions {
   readonly region?: string;
   /** Keys per list page. Small values exercise the continuation token. */
   readonly pageSize?: number;
-  /** The interface to listen on. A Docker test binds the bridge gateway, so a container can reach it. Defaults to loopback. */
-  readonly hostname?: string;
 }
 
 export interface S3Double {
@@ -112,9 +110,8 @@ export function startS3Double(options: S3DoubleOptions): S3Double {
   const rules: { match: (method: string, key: string) => boolean; status: number; code: string; left: number }[] = [];
   let uploadSeq = 0;
 
-  const hostname = options.hostname ?? "127.0.0.1";
   const server = Bun.serve({
-    hostname,
+    hostname: "127.0.0.1",
     port: 0,
     async fetch(req) {
       const url = new URL(req.url);
@@ -152,7 +149,7 @@ export function startS3Double(options: S3DoubleOptions): S3Double {
         );
       }
 
-      // minio-go, which restic uses, asks for the bucket and its location before it touches an object.
+      // A client asks for the bucket and its location before it touches an object.
       if (key === "" && (req.method === "HEAD" || req.method === "GET")) {
         if (url.searchParams.has("location")) {
           return xml(
@@ -241,7 +238,7 @@ export function startS3Double(options: S3DoubleOptions): S3Double {
   });
 
   return {
-    endpoint: `http://${hostname}:${server.port}`,
+    endpoint: `http://127.0.0.1:${server.port}`,
     region,
     bucket: options.bucket,
     accessKeyId: options.accessKeyId,
