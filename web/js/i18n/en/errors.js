@@ -145,6 +145,10 @@ export default {
   "err.template_source_unreadable":
     "MiniBox cannot read the Dockerfile it ships for the official template {name}, or that file is not a Dockerfile, so the template cannot be duplicated until it is fixed.",
   "err.template_busy": "Another change to the template “{name}” is still running. Try again when it ends.",
+  "err.template_builtin":
+    "The built-in base template cannot be deleted. MiniBox runs its helpers, volumes and egress proxy on it.",
+  "err.template_still_used":
+    "The template's image is still used by another image, such as a snapshot, a checkpoint or a template made from it, so it was not deleted. Remove those first.",
   "err.template_image_missing":
     "Template image {image} does not exist. Build it on the Templates page or choose another template.",
   "err.template_source_required":

@@ -179,7 +179,12 @@ export function render(view, focusName = "") {
       .map((tp) => {
         const draft = tp.draft === true;
         const unbuilt = isUnbuilt(tp);
-        const deleteButton = `<button class="icon-btn danger" data-action="delete" data-ref="${esc(tp.ref)}"${draft ? ` data-draft="true" data-host="${esc(tp.hostId)}"` : ""} title="${t("tp.delete")}" aria-label="${t("tp.delete")}">${icon("trash")}</button>`;
+        // The bundled base template is MiniBox's own: helpers, volumes and the egress proxy run on it, so it cannot be
+        // deleted and its card offers no button for it.
+        const deleteButton =
+          tp.ref === base
+            ? "<span></span>"
+            : `<button class="icon-btn danger" data-action="delete" data-ref="${esc(tp.ref)}"${draft ? ` data-draft="true" data-host="${esc(tp.hostId)}"` : ""} title="${t("tp.delete")}" aria-label="${t("tp.delete")}">${icon("trash")}</button>`;
         return `<div class="card" style="display:flex;flex-direction:column" data-name="${esc(tp.name)}">
         <div class="card-body" style="flex:1">
           <div class="row between" style="margin-bottom:12px"><span class="avatar" style="width:36px;height:36px;border-radius:10px;display:grid;place-items:center;background:var(--accent-soft);color:var(--accent-text)">${icon("layers")}</span>
@@ -379,7 +384,6 @@ export function render(view, focusName = "") {
           : tp.ref === ref,
       );
       if (!card) return;
-      const isBase = ref === base;
       const draft = card.draft === true;
       // A draft lives on the host that saved it, and has no image to remove there; a built template may be on several.
       const hosts = draft ? [card.hostId] : card.holders;
@@ -391,7 +395,7 @@ export function render(view, focusName = "") {
         title: t("tp.delete"),
         message: t(draft ? "tp.deleteDraftMessage" : "tp.deleteMessage", {
           ref: esc(ref),
-          extra: `${hostsNote}${isBase ? t("tp.deleteBaseExtra") : t("tp.deleteExtra")}`,
+          extra: `${hostsNote}${t("tp.deleteExtra")}`,
         }),
         confirmText: t("tp.delete"),
         danger: true,

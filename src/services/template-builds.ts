@@ -377,6 +377,17 @@ export function removeRecipe(host: HostCtx, name: string): void {
 }
 
 /**
+ * Forgets the recipe of `name` when it is the recipe that built `imageId`. A template deleted by its image id names its
+ * recipe only through the image's template name label, so the id is checked before the file is removed: a recipe of the
+ * same name that built another image belongs to another template, and stays.
+ */
+export function removeRecipeOfImage(host: HostCtx, name: string, imageId: string): void {
+  if (!NAME_RE.test(name)) return;
+  if (readStoredRecipe(host, name)?.imageId !== imageId) return;
+  removeRecipe(host, name);
+}
+
+/**
  * Gives `to` the recipe that built the template `ref` on `from`, when that recipe names `imageId`. A copy of a declared
  * template keeps its setup and can be rebuilt on `to`; a saved or rebuilt image matches no recipe, so it copies none. The
  * source is copied as the source host stores it, not as a read interprets it: a fork written before it kept its own copy

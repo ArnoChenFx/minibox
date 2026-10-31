@@ -26,6 +26,7 @@ import {
   readRecipe,
   type RecipeEdit,
   removeRecipe,
+  removeRecipeOfImage,
   templateInitOf,
   type TemplateRecipe,
   type TemplateSource,
@@ -471,14 +472,32 @@ async function relabelTemplate(
   return runtime.inspectImage(`${prefix}-template:${declared.name}`);
 }
 
+/**
+ * Deletes a template: its image, and the recipe that built it. The bundled base template cannot be deleted, because the
+ * helpers, the volumes and the egress proxy run on it; a ref that names an image rather than a template name is told
+ * apart by its tags. The image is inspected again after the removal, so an engine that keeps an image another image is
+ * built on (and reports success) answers `409 template_still_used` instead of a delete that did nothing. Only once the
+ * image is gone is its recipe removed, whether the ref named the template or its image id.
+ */
 export async function deleteTemplate(host: HostCtx, ref: string): Promise<void> {
-  if (ref === host.baseTemplateTag) {
-    // Allowed, but it can be rebuilt from templates/base.
-    log.warn("template.base_deleted", { ref });
-  }
   const prefix = `${host.prefix}-template:`;
   const tagged = ref.startsWith(prefix);
   const name = tagged ? ref.slice(prefix.length) : NAME_RE.test(ref) ? ref : "";
+  // An image id names no template by itself, so its tags are read to see whether it is the base template.
+  const byId =
+    name === ""
+      ? await host.runtime.inspectImage(ref).catch((e: unknown) => {
+          if (isRuntimeError(e, "not_found")) return null;
+          throw e;
+        })
+      : null;
+  if (
+    ref === host.baseTemplateTag ||
+    (ref === "base" && `${prefix}base` === host.baseTemplateTag) ||
+    byId?.tags.includes(host.baseTemplateTag) === true
+  ) {
+    throw conflict(msg("template_builtin"));
+  }
   // A draft has no image: its recipe is the whole template, so that is what a delete removes. A built template keeps the
   // path it always had, and only its template reference removes the recipe beside the image. The name is held for the
   // removal, so a build that is already running makes the delete answer `409 template_busy` instead of letting the build
@@ -487,6 +506,12 @@ export async function deleteTemplate(host: HostCtx, ref: string): Promise<void> 
     await holdingTemplate(host, name, async () => removeRecipe(host, name));
     return;
   }
-  await removeLabeledImage(host, ref, host.keys.template, "template_not_found");
+  const image = await removeLabeledImage(host, ref, host.keys.template, "template_not_found", {
+    stillUsedKey: "template_still_used",
+  });
+  // The image is gone, so the recipe it built has nothing left to describe. A template reference names the recipe; an
+  // image id names it through the template name label, and only when the recipe is that image's own, so a recipe of the
+  // same name that built another template is kept.
   if (tagged && NAME_RE.test(name)) removeRecipe(host, name);
+  else if (byId !== null) removeRecipeOfImage(host, image.labels[host.keys.templateName] ?? "", image.id);
 }
