@@ -246,6 +246,9 @@ describe.skipIf(!executablePath)("duplicating a template from the Templates page
       await webExpect(card("node-mine")).toContainText("Not built");
       await webExpect(card("node-mine")).toContainText("Size—Created—");
       await webExpect(card("node-mine").getByRole("button", { name: "Build", exact: true })).toBeVisible();
+      await webExpect(card("node-mine").getByRole("button", { name: "Edit", exact: true })).toBeVisible();
+      await webExpect(card("node-mine").getByRole("button", { name: "Delete template" })).toBeVisible();
+      await webExpect(card("node-mine").getByRole("button", { name: "Duplicate", exact: true })).toHaveCount(0);
       // The official card itself is still not built anywhere.
       await webExpect(card("node")).toContainText("Not built");
     },
