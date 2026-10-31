@@ -8,6 +8,7 @@ import {
   expect as webExpect,
   type Locator,
   type Page,
+  type Request,
 } from "@playwright/test";
 
 import type { App } from "../src/app";
@@ -23,6 +24,7 @@ const restoreLogs = silenceLogs();
 afterAll(restoreLogs);
 
 const TIMEOUT_MS = 30_000;
+const RENAME_TIMEOUT_MS = 60_000;
 const VIEWPORT = { width: 1280, height: 800 };
 
 /** Matches the address a page ends on as a whole, so an extra segment or a query cannot pass by accident. */
@@ -50,6 +52,7 @@ interface BoxRow {
   id: string;
   boxId: string;
   name: string;
+  revision: number;
   running: boolean;
   sleeping: boolean;
   /** `null` inherits the global default, `0` never sleeps, a positive number is the box's own timeout. */
@@ -671,6 +674,236 @@ describe.skipIf(!executablePath)("the Box detail page (real browser)", () => {
         }
       },
       TIMEOUT_MS,
+    );
+  });
+
+  describe("renaming a box", () => {
+    let stopSampler: (() => void) | undefined;
+
+    // The console's live frames come from the host sampler, which the other tests here do not need. Starting it makes this
+    // describe see the frames a real install sends, so the lists can be checked without a reload.
+    beforeAll(async () => {
+      if (!app) throw new Error("the test server is not running");
+      const sampler = app.hosts.get().sampler;
+      sampler.start();
+      stopSampler = () => sampler.stop();
+      await waitUntil(async () => sampler.ready(), "the box sampler");
+    });
+
+    afterAll(() => stopSampler?.());
+
+    test(
+      "renaming a running box updates its page, its address and every list that shows the name",
+      async () => {
+        if (!context) throw new Error("the test browser context did not open");
+        const listPage = await context.newPage();
+        const overviewPage = await context.newPage();
+        const pickerPage = await context.newPage();
+        try {
+          await Promise.all([
+            listPage.goto(`${consoleUrl}/#/boxes`),
+            overviewPage.goto(`${consoleUrl}/#/overview`),
+            pickerPage.goto(`${consoleUrl}/#/library/tools`),
+          ]);
+          await webExpect(listPage.locator("#bxBody")).toContainText(running.name);
+          await webExpect(overviewPage.locator("#ovBoxes")).toContainText(running.name);
+          await webExpect(pickerPage.locator("#boxPick option").filter({ hasText: running.name })).toHaveCount(1);
+
+          await page.goto(boxUrl(running));
+          const before = await boxNow(running);
+          const newName = "api-renamed";
+          await page.locator(".detail-head [data-action='rename']").click();
+          await webExpect(page.locator("#rnName")).toHaveValue(before.name);
+          await page.locator("#rnName").fill(newName);
+          const sent = page.waitForRequest(
+            (request) =>
+              request.method() === "PATCH" && new URL(request.url()).pathname === `/api/boxes/${running.id}`,
+          );
+          await page.locator("#rnSave").click();
+          expect((await sent).headers()["if-match"]).toBe(String(before.revision));
+
+          await webExpect(page.locator(".detail-head .detail-name")).toHaveText(newName);
+          await webExpect(page.locator("#crumbs")).toContainText(newName);
+          expect(await page.title()).toBe(`${newName} · MiniBox`);
+          await webExpect(page).toHaveURL(at(`#/boxes/${encodeURIComponent(running.id)}`));
+          await webExpect(page.locator(".toast").filter({ hasText: english("ba.renamed") })).toBeVisible();
+
+          await webExpect(listPage.locator("#bxBody")).toContainText(newName);
+          await webExpect(overviewPage.locator("#ovBoxes")).toContainText(newName);
+          await webExpect(pickerPage.locator("#boxPick option").filter({ hasText: newName })).toHaveCount(1);
+          expect((await boxNow(running)).name).toBe(newName);
+        } finally {
+          await Promise.all([listPage.close(), overviewPage.close(), pickerPage.close()]);
+        }
+      },
+      RENAME_TIMEOUT_MS,
+    );
+
+    test(
+      "a stopped box can be renamed too, and its breadcrumb and window title follow",
+      async () => {
+        const newName = "cold-renamed";
+        await page.goto(boxUrl(stopped));
+        await page.locator(".detail-head [data-action='rename']").click();
+        await page.locator("#rnName").fill(newName);
+        await page.locator("#rnSave").click();
+        await webExpect(page.locator(".dialog")).toHaveCount(0);
+        await webExpect(page.locator(".detail-head .detail-name")).toHaveText(newName);
+        await webExpect(page.locator("#crumbs")).toContainText(newName);
+        expect(await page.title()).toBe(`${newName} · MiniBox`);
+        expect((await boxNow(stopped)).name).toBe(newName);
+      },
+      RENAME_TIMEOUT_MS,
+    );
+
+    test(
+      "a name another box holds keeps the dialog open with the server's message and changes nothing",
+      async () => {
+        const first = await makeBox("rename-taken-a");
+        const second = await makeBox("rename-taken-b");
+        await page.goto(boxUrl(first));
+        await page.locator(".detail-head [data-action='rename']").click();
+        await page.locator("#rnName").fill(second.name);
+        await page.locator("#rnSave").click();
+        await webExpect(page.locator("#rnErr")).toContainText(second.name);
+        await webExpect(page.locator("#rnErr")).toContainText("already exists");
+        await webExpect(page.locator(".dialog")).toBeVisible();
+        await webExpect(page.locator("#rnName")).toHaveValue(second.name);
+        expect((await boxNow(first)).name).toBe(first.name);
+        await page.locator(".dialog-head [data-close]").click();
+        await webExpect(page.locator(".dialog")).toHaveCount(0);
+      },
+      RENAME_TIMEOUT_MS,
+    );
+
+    test(
+      "a name that did not change closes the dialog without sending a request",
+      async () => {
+        const patches: string[] = [];
+        const onRequest = (request: Request) => {
+          if (request.method() === "PATCH" && new URL(request.url()).pathname.startsWith("/api/boxes/")) {
+            patches.push(request.url());
+          }
+        };
+        page.on("request", onRequest);
+        try {
+          await page.goto(boxUrl(running));
+          await page.locator(".detail-head [data-action='rename']").click();
+          await page.locator("#rnSave").click();
+          await webExpect(page.locator(".dialog")).toHaveCount(0);
+          expect(patches).toEqual([]);
+        } finally {
+          page.off("request", onRequest);
+        }
+      },
+      RENAME_TIMEOUT_MS,
+    );
+
+    test(
+      "an empty or malformed name is refused under the field and sends no request",
+      async () => {
+        const box = await makeBox("rename-invalid");
+        const patches: string[] = [];
+        const onRequest = (request: Request) => {
+          if (request.method() === "PATCH" && new URL(request.url()).pathname.startsWith("/api/boxes/")) {
+            patches.push(request.url());
+          }
+        };
+        page.on("request", onRequest);
+        try {
+          await page.goto(boxUrl(box));
+          await page.locator(".detail-head [data-action='rename']").click();
+          await page.locator("#rnName").fill("");
+          await page.locator("#rnSave").click();
+          await webExpect(page.locator("#rnErr")).toHaveText(english("ui.nameRequired").replace("{what}", "box name"));
+          await page.locator("#rnName").fill("not a name");
+          await page.locator("#rnSave").click();
+          await webExpect(page.locator("#rnErr")).toHaveText(english("ui.nameInvalid").replace("{what}", "Box name"));
+          await webExpect(page.locator(".dialog")).toBeVisible();
+          expect(patches).toEqual([]);
+        } finally {
+          page.off("request", onRequest);
+        }
+      },
+      RENAME_TIMEOUT_MS,
+    );
+
+    test(
+      "on a phone the rename button fits beside the name and the badge in English and in Chinese",
+      async () => {
+        const longBox = await makeBox("rename-layout-with-a-rather-long-name-0123456789abcdefghij");
+        const measure = async (target: Page) => {
+          await target.goto(boxUrl(longBox));
+          await webExpect(target.locator(".detail-head [data-action='rename']")).toBeVisible();
+          return target.evaluate(() => {
+            interface Rect {
+              x: number;
+              y: number;
+              width: number;
+              height: number;
+            }
+            interface Element {
+              getBoundingClientRect(): Rect;
+              scrollWidth: number;
+              clientWidth: number;
+            }
+            const view = globalThis as unknown as {
+              innerWidth: number;
+              innerHeight: number;
+              document: {
+                documentElement: { scrollWidth: number; clientWidth: number };
+                querySelector(selector: string): Element | null;
+              };
+            };
+            const rect = (selector: string): Rect => {
+              const element = view.document.querySelector(selector);
+              if (!element) throw new Error(`missing ${selector}`);
+              return element.getBoundingClientRect();
+            };
+            const head = view.document.querySelector(".detail-head");
+            if (!head) throw new Error("missing .detail-head");
+            return {
+              viewport: view.innerWidth,
+              viewportHeight: view.innerHeight,
+              scroll: view.document.documentElement.scrollWidth,
+              client: view.document.documentElement.clientWidth,
+              headScroll: head.scrollWidth,
+              headClient: head.clientWidth,
+              name: rect(".detail-head .detail-name"),
+              button: rect(".detail-head [data-action='rename']"),
+              badge: rect(".detail-head h1 .badge"),
+            };
+          });
+        };
+        try {
+          await page.setViewportSize({ width: 390, height: 844 });
+          const englishFits = await measure(page);
+          const zh = await signedIn({ locale: "zh-CN", viewport: { width: 390, height: 844 } });
+          let chineseFits: Awaited<ReturnType<typeof measure>>;
+          try {
+            const zhPage = await zh.newPage();
+            chineseFits = await measure(zhPage);
+          } finally {
+            await zh.close();
+          }
+          for (const [language, fits] of [
+            ["en-US", englishFits],
+            ["zh-CN", chineseFits],
+          ] as const) {
+            expect([language, fits.headScroll]).toEqual([language, fits.headClient]);
+            expect([language, fits.button.x >= 0]).toEqual([language, true]);
+            expect([language, fits.button.x + fits.button.width <= fits.viewport]).toEqual([language, true]);
+            expect([language, fits.button.y >= 0]).toEqual([language, true]);
+            expect([language, fits.button.y + fits.button.height <= fits.viewportHeight]).toEqual([language, true]);
+            expect([language, fits.name.width > 0]).toEqual([language, true]);
+            expect([language, fits.button.x >= fits.name.x + fits.name.width]).toEqual([language, true]);
+            expect([language, fits.button.x + fits.button.width <= fits.badge.x]).toEqual([language, true]);
+          }
+        } finally {
+          await page.setViewportSize(VIEWPORT);
+        }
+      },
+      RENAME_TIMEOUT_MS,
     );
   });
 });
