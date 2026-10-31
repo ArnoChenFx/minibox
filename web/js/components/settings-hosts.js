@@ -18,6 +18,7 @@ import {
   trustHostKey,
   hostBody,
 } from "./settings-host-form.js";
+import { loadHostRemote } from "./settings-host-remote.js";
 
 export async function loadHosts(view) {
   const card = view.querySelector("#stHosts");
@@ -44,6 +45,7 @@ export async function loadHosts(view) {
     return readings.get(id);
   };
   drawHosts(view, card, { hosts, readDisk });
+  void loadHostRemote(view, hosts);
 }
 
 /**

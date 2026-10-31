@@ -506,3 +506,72 @@
   width: 14px;
   height: 14px;
 }
+
+/* ---------- Remote checkpoint repository, on the hosts page ---------- */
+/* One row per host on a wide screen. On a phone each host is a card: its name, the repository, the last sync and the
+   pending count, then the controls, so the table never scrolls sideways. */
+@media (max-width: 640px) {
+  .table.host-remote-table {
+    min-width: 0;
+  }
+  .table.host-remote-table thead {
+    display: none;
+  }
+  .table.host-remote-table,
+  .table.host-remote-table tbody {
+    display: block;
+  }
+  .table.host-remote-table tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "host    host"
+      "repo    repo"
+      "last    pending"
+      "actions actions";
+    gap: 4px 12px;
+    padding: 12px 18px;
+    border-bottom: 1px solid var(--border);
+    white-space: normal;
+  }
+  .table.host-remote-table tr:last-child {
+    border-bottom: 0;
+  }
+  .table.host-remote-table td,
+  .card > .table-wrap > .table.host-remote-table tr > td:is(:first-child, :last-child) {
+    display: block;
+    padding: 0;
+    border: 0;
+    min-width: 0;
+    max-width: none;
+    white-space: normal;
+  }
+  /* As with the volume and checkpoint cards: beat the card-table padding rule head-on. */
+  .card > .table-wrap > .table.host-remote-table tr:not(.group-row) > td:is(:first-child, :last-child) {
+    padding-left: 0;
+    padding-right: 0;
+  }
+  .host-remote-host {
+    grid-area: host;
+  }
+  .host-remote-repo {
+    grid-area: repo;
+  }
+  .host-remote-last {
+    grid-area: last;
+    color: var(--text-3);
+    font-size: 12px;
+  }
+  .host-remote-pending {
+    grid-area: pending;
+    justify-self: end;
+    font-size: 12px;
+  }
+  .host-remote-actions {
+    grid-area: actions;
+  }
+  .host-remote-actions .actions {
+    margin-left: 0;
+    justify-content: flex-start;
+  }
+}
