@@ -768,6 +768,7 @@ describe.skipIf(!executablePath)("the Box detail page (real browser)", () => {
         await page.locator("#rnSave").click();
         await webExpect(page.locator("#rnErr")).toContainText(second.name);
         await webExpect(page.locator("#rnErr")).toContainText("already exists");
+        await webExpect(page.locator(".toast").filter({ hasText: english("ba.renameFailed") })).toBeVisible();
         await webExpect(page.locator(".dialog")).toBeVisible();
         await webExpect(page.locator("#rnName")).toHaveValue(second.name);
         expect(await boxNow(first)).toMatchObject({ name: first.name, revision: first.revision });

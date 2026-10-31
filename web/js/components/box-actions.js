@@ -117,6 +117,7 @@ export function renameBox(box, onSaved) {
     } catch (err) {
       input.classList.add("invalid");
       error.textContent = `${err.message}${err.hint ? ` ${err.hint}` : ""}`;
+      toastError(t("ba.renameFailed"), err);
       input.focus();
       return;
     }
