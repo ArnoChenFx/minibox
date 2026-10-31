@@ -7,7 +7,7 @@ Every box runs as the user `dev`, user ID 1000. Inside a box, `sudo` works witho
 ## Create a box
 
 1. Click **Boxes** in the sidebar, then click **Create box**.
-2. In **Name**, type a name. It must start with a letter or digit, use only letters, digits, dots, underscores and hyphens, and be at most 63 characters. In the console, you cannot change the name after the box is created.
+2. In **Name**, type a name. It must start with a letter or digit, use only letters, digits, dots, underscores and hyphens, and be at most 63 characters. You can rename the box later from its page; see [Rename a box](#rename-a-box).
 3. In **Template**, choose the template to start from. The default is **base**. See [Templates](templates.md).
 4. In **Size**, choose a preset:
 
@@ -68,6 +68,10 @@ The **Resources** section shows the CPU and memory limits, the current use, and 
 Changes that only a rebuild can apply are **staged**: the card keeps them, marks them **Pending**, and a banner above the section counts them. Nothing on the box changes until you click **Apply and rebuild** in that banner, and the banner offers **View diff** and **Discard** too. A staged change survives a MiniBox restart, and one box has one set of staged changes. These settings are staged: the template, the network egress, the security profile, the environment variables and the mounts. See [Stage a change and rebuild](boxes.md#stage-a-change-and-rebuild).
 
 The **Create checkpoint** button in the title bar takes a checkpoint from any tab, and the title bar also has the **Rebuild** button.
+
+## Rename a box
+
+Click the pencil beside the box's name on its page, type a new name and click **Save**. The name rules are the same as at creation, and a box can be renamed whether it runs or is stopped. The container is renamed with the box; its ID, volumes, checkpoints and address in the console stay the same. In subdomain mode a preview's address can change, so open it again from the **Ports** tab, and anything that referred to the box by its old name, such as SSH or the CLI, needs the new one.
 
 ## Overview and the box list
 
