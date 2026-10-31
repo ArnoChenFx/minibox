@@ -225,6 +225,7 @@ export function startS3Double(options: S3DoubleOptions): S3Double {
       }
 
       if (req.method === "PUT") {
+        console.log("DIAG PUT", key, "sha=" + req.headers.get("x-amz-content-sha256"), "enc=" + req.headers.get("content-encoding"), "decoded=" + req.headers.get("x-amz-decoded-content-length"), "len=" + body.byteLength, "head=" + Buffer.from(body.subarray(0, 24)).toString("hex"), "ascii=" + Buffer.from(body.subarray(0, 24)).toString("latin1").replace(/[^ -~]/g, "."));
         objects.set(key, body);
         modified.set(key, new Date());
         return new Response(null, { status: 200, headers: { etag: '"x"' } });
