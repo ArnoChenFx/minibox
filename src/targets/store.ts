@@ -1,5 +1,5 @@
 import { readSecretFile, SECRET_FILE_MODE, targetsPath, writeFileAtomic } from "../data-dir";
-import { TARGET_VERSION, TargetFileSchema, type TargetRecord } from "./types";
+import { TARGET_VERSION, TargetFileSchema, type RemoteRepo, type TargetRecord } from "./types";
 
 /** The file cannot be used as it is. The message names the file so the operator can fix or remove it. */
 export class TargetFileError extends Error {
@@ -10,12 +10,15 @@ export class TargetFileError extends Error {
 }
 
 /**
- * Off-site targets, kept in `DATA_DIR/targets.json`. The file holds where each target is and what was last synced, and
- * never a credential. It is read once at startup and kept in memory. A change is written whole, and is undone in memory
- * when the write fails, so the file and the list never disagree.
+ * Off-site targets, kept in `DATA_DIR/targets.json`. The file holds where each target is, what was last synced, and the
+ * remote checkpoint repository of each host that has one, named by target id and folder. It never holds a credential. It
+ * is read once at startup and kept in memory. A change is written whole, and is undone in memory when the write fails, so
+ * the file and the list never disagree.
  */
 export class TargetStore {
   private readonly records = new Map<string, TargetRecord>();
+  /** The remote repository of each host that has one, by host id. */
+  private readonly remotes = new Map<string, RemoteRepo>();
 
   constructor(private readonly dataDir: string) {}
 
@@ -42,6 +45,14 @@ export class TargetStore {
       }
       this.records.set(record.id, record);
     }
+    for (const remote of parsed.data.remotes ?? []) {
+      if (this.remotes.has(remote.hostId)) {
+        throw new TargetFileError(
+          `${path} lists a remote repository for ${remote.hostId} more than once. Fix or remove it.`,
+        );
+      }
+      this.remotes.set(remote.hostId, remote);
+    }
   }
 
   list(): TargetRecord[] {
@@ -50,6 +61,41 @@ export class TargetStore {
 
   get(id: string): TargetRecord | undefined {
     return this.records.get(id);
+  }
+
+  /** The remote repository a host's checkpoints are copied to, or undefined when the host has none. */
+  remoteOf(hostId: string): RemoteRepo | undefined {
+    return this.remotes.get(hostId);
+  }
+
+  /** The remote repositories that copy to one target. Removing such a target would leave them dangling. */
+  remotesFor(targetId: string): RemoteRepo[] {
+    return [...this.remotes.values()].filter((remote) => remote.targetId === targetId);
+  }
+
+  putRemote(remote: RemoteRepo): void {
+    const previous = this.remotes.get(remote.hostId);
+    this.remotes.set(remote.hostId, remote);
+    try {
+      this.write();
+    } catch (e) {
+      if (previous) this.remotes.set(remote.hostId, previous);
+      else this.remotes.delete(remote.hostId);
+      throw e;
+    }
+  }
+
+  deleteRemote(hostId: string): boolean {
+    const previous = this.remotes.get(hostId);
+    if (!previous) return false;
+    this.remotes.delete(hostId);
+    try {
+      this.write();
+    } catch (e) {
+      this.remotes.set(hostId, previous);
+      throw e;
+    }
+    return true;
   }
 
   put(record: TargetRecord): void {
@@ -78,7 +124,7 @@ export class TargetStore {
   }
 
   private write(): void {
-    const body = { version: TARGET_VERSION, targets: this.list() };
+    const body = { version: TARGET_VERSION, targets: this.list(), remotes: [...this.remotes.values()] };
     writeFileAtomic(targetsPath(this.dataDir), `${JSON.stringify(body, null, 2)}\n`, SECRET_FILE_MODE);
   }
 }

@@ -2,7 +2,7 @@
 
 Every MiniBox operation is available over a JSON REST API under `/api`. The console, the [CLI](cli.md) and the [MCP tools](mcp.md) use the same operations.
 
-The full machine-readable description is the OpenAPI 3.1 document in [`openapi.json`](../openapi.json). Import it into any OpenAPI tool to generate a client. The document describes 162 operations in 23 groups.
+The full machine-readable description is the OpenAPI 3.1 document in [`openapi.json`](../openapi.json). Import it into any OpenAPI tool to generate a client. The document describes 168 operations in 23 groups.
 
 ## Authentication
 
@@ -285,6 +285,10 @@ These are owner only. A key logs in to every box over direct SSH, so no token ma
 | `GET` | `/api/boxes/{id}/checkpoint-schedule` | Read a box's checkpoint schedule, with its next and last run. `null` when none is set. `timezoneUnknown` is `true` when the saved zone is one the server no longer knows; the schedule then runs in UTC until it is set again. Owner only |
 | `PUT` | `/api/boxes/{id}/checkpoint-schedule` | Set a schedule `{ "everyHours" }` or `{ "at": "HH:MM", "timezone" }`, not both. `timezone` is an IANA zone such as `Asia/Shanghai`; without it the time is UTC, and an unknown zone or a UTC offset such as `+08:00` is `400`. Replaces any schedule the box has. Owner only |
 | `DELETE` | `/api/boxes/{id}/checkpoint-schedule` | Remove a box's schedule. Checkpoints already taken are kept. Owner only |
+| `GET` | `/api/hosts/{id}/checkpoint-remote` | Read a host's remote checkpoint repository, or `null` when it has none. Owner only |
+| `PUT` | `/api/hosts/{id}/checkpoint-remote` | Set a host's remote checkpoint repository `{ "targetId", "path"? }` on an S3 or an SFTP target. The host id is appended to the path, so hosts never share a repository. Owner only |
+| `DELETE` | `/api/hosts/{id}/checkpoint-remote` | Clear a host's remote checkpoint repository. Snapshots already copied stay on the target. Owner only |
+| `POST` | `/api/hosts/{id}/checkpoint-remote/sync` | Copy the host's pending checkpoint snapshots to its remote repository, as a task. Returns `202`; the task result holds the counts. Owner only |
 
 ### backups
 

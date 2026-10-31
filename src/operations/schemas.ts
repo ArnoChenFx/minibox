@@ -155,6 +155,14 @@ export const CheckpointSchema = z.object({
   data: z.array(CheckpointDataSchema),
   system: z.object({ image: z.string(), imageId: z.string() }).nullable(),
   bytes: z.number(),
+  remoteSync: z.record(z.string(), z.string()).optional().meta({
+    description:
+      "The remote repositories that hold this checkpoint's snapshots, keyed by target id, with the time each copy last succeeded. Absent until a copy succeeded.",
+  }),
+  remoteFailure: z.object({ targetId: z.string(), at: z.string(), message: z.string() }).optional().meta({
+    description:
+      "The last failed copy of this checkpoint's snapshots to a remote repository, with its time and reason. Absent when the last copy succeeded.",
+  }),
   createdAt: z.string(),
   updatedAt: z.string(),
 });

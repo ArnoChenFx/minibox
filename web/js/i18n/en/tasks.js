@@ -42,6 +42,7 @@ export default {
   "task.op.checkpoint.delete": "Delete checkpoint",
   "task.op.checkpoint.export": "Export checkpoint",
   "task.op.checkpoint.import": "Import checkpoint",
+  "task.op.checkpoint.remote.sync": "Sync checkpoints to remote",
   "task.op.checkpoint.copy": "Copy checkpoint",
   "task.op.box.move": "Move box",
   "task.op.box.rollback": "Roll back box",

@@ -18241,6 +18241,37 @@
                 "bytes": {
                   "type": "number"
                 },
+                "remoteSync": {
+                  "description": "The remote repositories that hold this checkpoint's snapshots, keyed by target id, with the time each copy last succeeded. Absent until a copy succeeded.",
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                },
+                "remoteFailure": {
+                  "description": "The last failed copy of this checkpoint's snapshots to a remote repository, with its time and reason. Absent when the last copy succeeded.",
+                  "type": "object",
+                  "properties": {
+                    "targetId": {
+                      "type": "string"
+                    },
+                    "at": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "targetId",
+                    "at",
+                    "message"
+                  ],
+                  "additionalProperties": false
+                },
                 "createdAt": {
                   "type": "string"
                 },
@@ -24340,6 +24371,37 @@
                           "bytes": {
                             "type": "number"
                           },
+                          "remoteSync": {
+                            "description": "The remote repositories that hold this checkpoint's snapshots, keyed by target id, with the time each copy last succeeded. Absent until a copy succeeded.",
+                            "type": "object",
+                            "propertyNames": {
+                              "type": "string"
+                            },
+                            "additionalProperties": {
+                              "type": "string"
+                            }
+                          },
+                          "remoteFailure": {
+                            "description": "The last failed copy of this checkpoint's snapshots to a remote repository, with its time and reason. Absent when the last copy succeeded.",
+                            "type": "object",
+                            "properties": {
+                              "targetId": {
+                                "type": "string"
+                              },
+                              "at": {
+                                "type": "string"
+                              },
+                              "message": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "targetId",
+                              "at",
+                              "message"
+                            ],
+                            "additionalProperties": false
+                          },
                           "createdAt": {
                             "type": "string"
                           },
@@ -24856,6 +24918,37 @@
                         "bytes": {
                           "type": "number"
                         },
+                        "remoteSync": {
+                          "description": "The remote repositories that hold this checkpoint's snapshots, keyed by target id, with the time each copy last succeeded. Absent until a copy succeeded.",
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "additionalProperties": {
+                            "type": "string"
+                          }
+                        },
+                        "remoteFailure": {
+                          "description": "The last failed copy of this checkpoint's snapshots to a remote repository, with its time and reason. Absent when the last copy succeeded.",
+                          "type": "object",
+                          "properties": {
+                            "targetId": {
+                              "type": "string"
+                            },
+                            "at": {
+                              "type": "string"
+                            },
+                            "message": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "targetId",
+                            "at",
+                            "message"
+                          ],
+                          "additionalProperties": false
+                        },
                         "createdAt": {
                           "type": "string"
                         },
@@ -25367,6 +25460,37 @@
                 },
                 "bytes": {
                   "type": "number"
+                },
+                "remoteSync": {
+                  "description": "The remote repositories that hold this checkpoint's snapshots, keyed by target id, with the time each copy last succeeded. Absent until a copy succeeded.",
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                },
+                "remoteFailure": {
+                  "description": "The last failed copy of this checkpoint's snapshots to a remote repository, with its time and reason. Absent when the last copy succeeded.",
+                  "type": "object",
+                  "properties": {
+                    "targetId": {
+                      "type": "string"
+                    },
+                    "at": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "targetId",
+                    "at",
+                    "message"
+                  ],
+                  "additionalProperties": false
                 },
                 "createdAt": {
                   "type": "string"
@@ -26000,6 +26124,37 @@
                 },
                 "bytes": {
                   "type": "number"
+                },
+                "remoteSync": {
+                  "description": "The remote repositories that hold this checkpoint's snapshots, keyed by target id, with the time each copy last succeeded. Absent until a copy succeeded.",
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                },
+                "remoteFailure": {
+                  "description": "The last failed copy of this checkpoint's snapshots to a remote repository, with its time and reason. Absent when the last copy succeeded.",
+                  "type": "object",
+                  "properties": {
+                    "targetId": {
+                      "type": "string"
+                    },
+                    "at": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "targetId",
+                    "at",
+                    "message"
+                  ],
+                  "additionalProperties": false
                 },
                 "createdAt": {
                   "type": "string"
@@ -29312,6 +29467,37 @@
                 "bytes": {
                   "type": "number"
                 },
+                "remoteSync": {
+                  "description": "The remote repositories that hold this checkpoint's snapshots, keyed by target id, with the time each copy last succeeded. Absent until a copy succeeded.",
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                },
+                "remoteFailure": {
+                  "description": "The last failed copy of this checkpoint's snapshots to a remote repository, with its time and reason. Absent when the last copy succeeded.",
+                  "type": "object",
+                  "properties": {
+                    "targetId": {
+                      "type": "string"
+                    },
+                    "at": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "targetId",
+                    "at",
+                    "message"
+                  ],
+                  "additionalProperties": false
+                },
                 "createdAt": {
                   "type": "string"
                 },
@@ -29761,6 +29947,37 @@
                 },
                 "bytes": {
                   "type": "number"
+                },
+                "remoteSync": {
+                  "description": "The remote repositories that hold this checkpoint's snapshots, keyed by target id, with the time each copy last succeeded. Absent until a copy succeeded.",
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                },
+                "remoteFailure": {
+                  "description": "The last failed copy of this checkpoint's snapshots to a remote repository, with its time and reason. Absent when the last copy succeeded.",
+                  "type": "object",
+                  "properties": {
+                    "targetId": {
+                      "type": "string"
+                    },
+                    "at": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "targetId",
+                    "at",
+                    "message"
+                  ],
+                  "additionalProperties": false
                 },
                 "createdAt": {
                   "type": "string"
@@ -30497,6 +30714,748 @@
         "x-mcp": {
           "name": "clear_checkpoint_schedule",
           "toolset": "storage"
+        }
+      }
+    },
+    "/api/hosts/{id}/checkpoint-remote": {
+      "get": {
+        "operationId": "checkpoint.remote.get",
+        "tags": [
+          "checkpoints"
+        ],
+        "summary": "Read a host's remote checkpoint repository",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{0,31}$",
+              "description": "Host id: local, or the id of a host added under Settings."
+            }
+          },
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "remote": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "hostId": {
+                              "type": "string",
+                              "description": "The host whose snapshots are copied."
+                            },
+                            "targetId": {
+                              "type": "string",
+                              "description": "The target the remote repository lives on."
+                            },
+                            "targetName": {
+                              "type": "string",
+                              "description": "The target's name, for display."
+                            },
+                            "kind": {
+                              "type": "string",
+                              "enum": [
+                                "s3",
+                                "sftp"
+                              ],
+                              "description": "The target kind. A WebDAV target cannot hold a repository."
+                            },
+                            "path": {
+                              "type": "string",
+                              "description": "The folder on the target that holds this host's restic repository, with the host id appended. No credential is in it."
+                            },
+                            "lastSyncAt": {
+                              "description": "When the last copy succeeded, or null when none has. A failed copy does not move it.",
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "lastError": {
+                              "description": "Why the last copy failed, or null when it succeeded. Cleared by the next successful copy.",
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "createdAt": {
+                              "type": "string"
+                            },
+                            "updatedAt": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "hostId",
+                            "targetId",
+                            "targetName",
+                            "kind",
+                            "path",
+                            "lastSyncAt",
+                            "lastError",
+                            "createdAt",
+                            "updatedAt"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "remote"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable, or a storage pool backing the request cannot be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "read",
+        "x-scope": "target:manage",
+        "x-async": false
+      },
+      "put": {
+        "operationId": "checkpoint.remote.set",
+        "tags": [
+          "checkpoints"
+        ],
+        "summary": "Set a host's remote checkpoint repository",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{0,31}$",
+              "description": "Host id whose checkpoints are copied."
+            }
+          },
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "targetId": {
+                    "type": "string",
+                    "maxLength": 64,
+                    "description": "The target to keep the remote repository on. It must be an S3 or an SFTP target."
+                  },
+                  "path": {
+                    "description": "The base folder under the target. The host id is appended to it, so each host keeps a repository of its own. Empty or omitted puts it at the target's root.",
+                    "type": "string",
+                    "maxLength": 512
+                  }
+                },
+                "required": [
+                  "targetId"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "remote": {
+                      "type": "object",
+                      "properties": {
+                        "hostId": {
+                          "type": "string",
+                          "description": "The host whose snapshots are copied."
+                        },
+                        "targetId": {
+                          "type": "string",
+                          "description": "The target the remote repository lives on."
+                        },
+                        "targetName": {
+                          "type": "string",
+                          "description": "The target's name, for display."
+                        },
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "s3",
+                            "sftp"
+                          ],
+                          "description": "The target kind. A WebDAV target cannot hold a repository."
+                        },
+                        "path": {
+                          "type": "string",
+                          "description": "The folder on the target that holds this host's restic repository, with the host id appended. No credential is in it."
+                        },
+                        "lastSyncAt": {
+                          "description": "When the last copy succeeded, or null when none has. A failed copy does not move it.",
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "lastError": {
+                          "description": "Why the last copy failed, or null when it succeeded. Cleared by the next successful copy.",
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "hostId",
+                        "targetId",
+                        "targetName",
+                        "kind",
+                        "path",
+                        "lastSyncAt",
+                        "lastError",
+                        "createdAt",
+                        "updatedAt"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "remote"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The name is already taken, this operation is already running, a volume is in use, an exec is not running, a checkpoint is pinned or cannot change, a change was requested without confirm set to true, or a terminal session is under a person's control (code taken_over). A refusal for a confirmation includes a preview of the change, and a rebuild preview includes the docker diff and the planned changes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request declares a body that is not JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable, or a storage pool backing the request cannot be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "write",
+        "x-scope": "target:manage",
+        "x-async": false
+      },
+      "delete": {
+        "operationId": "checkpoint.remote.clear",
+        "tags": [
+          "checkpoints"
+        ],
+        "summary": "Clear a host's remote checkpoint repository",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{0,31}$",
+              "description": "Host id: local, or the id of a host added under Settings."
+            }
+          },
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "ok"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request declares a body that is not JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable, or a storage pool backing the request cannot be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "write",
+        "x-scope": "target:manage",
+        "x-async": false
+      }
+    },
+    "/api/hosts/{id}/checkpoint-remote/sync": {
+      "post": {
+        "operationId": "checkpoint.remote.sync",
+        "tags": [
+          "checkpoints"
+        ],
+        "summary": "Copy a host's pending checkpoints to its remote repository",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{0,31}$",
+              "description": "Host id: local, or the id of a host added under Settings."
+            }
+          },
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Accepted. The result is stored on the task.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "taskId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "taskId"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The name is already taken, this operation is already running, a volume is in use, an exec is not running, a checkpoint is pinned or cannot change, a change was requested without confirm set to true, or a terminal session is under a person's control (code taken_over). A refusal for a confirmation includes a preview of the change, and a rebuild preview includes the docker diff and the planned changes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request declares a body that is not JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable, or a storage pool backing the request cannot be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "write",
+        "x-scope": "target:manage",
+        "x-async": true,
+        "x-task-result": {
+          "type": "object",
+          "properties": {
+            "synced": {
+              "type": "object",
+              "properties": {
+                "hostId": {
+                  "type": "string"
+                },
+                "targetId": {
+                  "type": "string"
+                },
+                "checkpoints": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991,
+                  "description": "How many checkpoint records were copied or confirmed."
+                },
+                "snapshots": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991,
+                  "description": "How many snapshots were asked of the remote repository."
+                }
+              },
+              "required": [
+                "hostId",
+                "targetId",
+                "checkpoints",
+                "snapshots"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "synced"
+          ],
+          "additionalProperties": false
         }
       }
     },
@@ -47024,6 +47983,37 @@
                 },
                 "bytes": {
                   "type": "number"
+                },
+                "remoteSync": {
+                  "description": "The remote repositories that hold this checkpoint's snapshots, keyed by target id, with the time each copy last succeeded. Absent until a copy succeeded.",
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                },
+                "remoteFailure": {
+                  "description": "The last failed copy of this checkpoint's snapshots to a remote repository, with its time and reason. Absent when the last copy succeeded.",
+                  "type": "object",
+                  "properties": {
+                    "targetId": {
+                      "type": "string"
+                    },
+                    "at": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "targetId",
+                    "at",
+                    "message"
+                  ],
+                  "additionalProperties": false
                 },
                 "createdAt": {
                   "type": "string"

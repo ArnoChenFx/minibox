@@ -3,6 +3,7 @@ import { readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { SnapshotHeld } from "../src/checkpoints/engine";
+import type { RemoteRepository } from "../src/checkpoints/remote";
 import { ResticEngine, RESTIC_IMAGE } from "../src/checkpoints/restic";
 import { createLocalHost, type HostCtx } from "../src/host/registry";
 import type { HelperResult, HelperSpec } from "../src/runtime";
@@ -17,6 +18,8 @@ const PACKED = "2".repeat(64);
 const COPIED = "1".repeat(64);
 const PASSPHRASE = "a passphrase for one package";
 const REPO_VOLUME = "mbtest-checkpoints-local";
+/** The words a restic helper's command is, so a remote call's `-o` options do not read as its command. */
+const RESTIC_COMMANDS = new Set(["backup", "cat", "copy", "dump", "forget", "init", "restore", "snapshots", "stats"]);
 
 interface Scripted {
   rt: FakeRuntime;
@@ -36,7 +39,7 @@ function scripted(): Scripted {
   const state = { repoExists: false };
   rt.helperHandler = (spec) => {
     helpers.push(spec);
-    const command = spec.cmd.find((arg) => arg !== "--no-cache") ?? "";
+    const command = spec.cmd.find((arg) => RESTIC_COMMANDS.has(arg)) ?? "";
     const index = overrides.findIndex((o) => o.command === command);
     if (index >= 0) return overrides.splice(index, 1)[0]?.result ?? { exitCode: 0, logs: "" };
     if (command === "cat") {
@@ -70,7 +73,8 @@ function scripted(): Scripted {
   };
 }
 
-const commandsOf = (helpers: HelperSpec[]) => helpers.map((spec) => spec.cmd.find((arg) => arg !== "--no-cache") ?? "");
+const commandsOf = (helpers: HelperSpec[]) =>
+  helpers.map((spec) => spec.cmd.find((arg) => RESTIC_COMMANDS.has(arg)) ?? "");
 
 describe("ResticEngine backup", () => {
   test("the first backup initializes the repository, then snapshots the volume read-only with its tags", async () => {
@@ -388,5 +392,145 @@ describe("ResticEngine copies: the origins a listing reports, and what unpacking
     expect(commandsOf(s.helpers)).toEqual(["snapshots", "copy", "snapshots", "forget"]);
     expect(s.helpers[3]?.cmd).toEqual(["--no-cache", "forget", COPIED, "--prune"]);
     await opened.close();
+  });
+});
+
+/** A host with a local repository, so a copy has something to read from and a key to open it with. */
+async function withLocalRepo(): Promise<{ s: Scripted; engine: ResticEngine; localKey: string }> {
+  const s = scripted();
+  await s.rt.createVolume("src", {});
+  const engine = new ResticEngine({ dataDir: s.dataDir });
+  await engine.backup(s.host, "src", ["ck_abc"]);
+  const localKey = readFileSync(join(s.dataDir, "secrets", "checkpoint-repo.key"), "utf8").trim();
+  s.helpers.length = 0;
+  return { s, engine, localKey };
+}
+
+describe("ResticEngine remote copy", () => {
+  const ACCESS_KEY = "AKIAEXAMPLE";
+  const SECRET_KEY = "s3-secret-value";
+  const REMOTE_PASSWORD = "a-remote-password-of-its-own";
+  const SFTP_KEY = "-----BEGIN OPENSSH PRIVATE KEY-----\nnot-a-real-key\n-----END OPENSSH PRIVATE KEY-----";
+  const KNOWN_HOSTS = "[backup.example.com]:2222 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKnown";
+
+  const s3Remote = (overrides: Partial<RemoteRepository> = {}): RemoteRepository => ({
+    targetId: "tgt_0000000000000000",
+    targetName: "archive",
+    repository: "s3:https://s3.example.com/archive/minibox/local",
+    password: REMOTE_PASSWORD,
+    credentials: { kind: "s3", region: "us-east-1", accessKeyId: ACCESS_KEY, secretAccessKey: SECRET_KEY },
+    ...overrides,
+  });
+
+  const sftpRemote = (overrides: Partial<RemoteRepository> = {}): RemoteRepository => ({
+    targetId: "tgt_1111111111111111",
+    targetName: "nas",
+    repository: "sftp://backup@backup.example.com:2222/checkpoints/local",
+    password: REMOTE_PASSWORD,
+    credentials: { kind: "sftp", port: 2222, privateKey: SFTP_KEY, knownHosts: KNOWN_HOSTS },
+    ...overrides,
+  });
+
+  test("a missing remote repository is initialized, then copied into with both passwords as secret files", async () => {
+    const { s, engine, localKey } = await withLocalRepo();
+    s.next("cat", { exitCode: 10, logs: "Fatal: repository does not exist" });
+
+    await engine.copyToRemote(s.host, s3Remote(), [SNAPSHOT]);
+
+    expect(commandsOf(s.helpers)).toEqual(["cat", "init", "copy"]);
+    expect(s.helpers[2]?.cmd).toEqual([
+      "--no-cache",
+      "-o",
+      "s3.region=us-east-1",
+      "--retry-lock",
+      "5m",
+      "copy",
+      "--from-repo",
+      "/repo",
+      "--from-password-file",
+      "/run/secrets/repo.key",
+      SNAPSHOT,
+    ]);
+    for (const spec of s.helpers) {
+      expect(spec.network).toBe(true);
+      const secrets = new Map((spec.secrets ?? []).map((secret) => [secret.name, secret.value]));
+      expect(secrets.get("remote.key")).toBe(REMOTE_PASSWORD);
+      expect(secrets.get("repo.key")).toBe(localKey);
+      expect(secrets.get("aws-credentials")).toBe(
+        `[default]\naws_access_key_id = ${ACCESS_KEY}\naws_secret_access_key = ${SECRET_KEY}\n`,
+      );
+      expect(spec.env).toEqual([
+        "RESTIC_PASSWORD_FILE=/run/secrets/remote.key",
+        "RESTIC_REPOSITORY=s3:https://s3.example.com/archive/minibox/local",
+        "HOME=/tmp",
+        "AWS_SHARED_CREDENTIALS_FILE=/run/secrets/aws-credentials",
+      ]);
+    }
+  });
+
+  test("no credential reaches the helper's environment, which docker inspect would show", async () => {
+    const { s, engine, localKey } = await withLocalRepo();
+    s.next("cat", { exitCode: 12, logs: "Fatal: wrong password" });
+
+    await rejectionOf(engine.copyToRemote(s.host, s3Remote(), [SNAPSHOT]));
+
+    const env = JSON.stringify(s.helpers.map((spec) => spec.env ?? []));
+    for (const secret of [ACCESS_KEY, SECRET_KEY, REMOTE_PASSWORD, localKey]) expect(env).not.toContain(secret);
+    expect(env).not.toContain("AWS_ACCESS_KEY_ID");
+    expect(env).not.toContain("AWS_SECRET_ACCESS_KEY");
+    expect(env).not.toContain("RESTIC_PASSWORD=");
+  });
+
+  test("a remote repository whose password does not open it is an error, and nothing is initialized over it", async () => {
+    const { s, engine } = await withLocalRepo();
+    s.next("cat", { exitCode: 12, logs: "Fatal: wrong password" });
+
+    const error = await rejectionOf(engine.copyToRemote(s.host, s3Remote(), [SNAPSHOT]));
+    expect(error).toMatchObject({ kind: "engine" });
+    expect((error as Error).message).toContain("remote checkpoint repository password is wrong");
+    expect(commandsOf(s.helpers)).toEqual(["cat"]);
+  });
+
+  test("an SFTP copy passes the private key and the pinned host key through sftp.args, as files", async () => {
+    const { s, engine } = await withLocalRepo();
+
+    await engine.copyToRemote(s.host, sftpRemote(), [SNAPSHOT]);
+
+    expect(commandsOf(s.helpers)).toEqual(["cat", "copy"]);
+    const copy = s.helpers[1];
+    expect(copy?.cmd).toEqual([
+      "--no-cache",
+      "-o",
+      "sftp.args=-i /run/secrets/sftp.key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/run/secrets/known_hosts -p 2222",
+      "--retry-lock",
+      "5m",
+      "copy",
+      "--from-repo",
+      "/repo",
+      "--from-password-file",
+      "/run/secrets/repo.key",
+      SNAPSHOT,
+    ]);
+    const secrets = new Map((copy?.secrets ?? []).map((secret) => [secret.name, secret.value]));
+    expect(secrets.get("sftp.key")).toBe(SFTP_KEY);
+    expect(secrets.get("known_hosts")).toBe(`${KNOWN_HOSTS}\n`);
+    expect(copy?.env).not.toContain(SFTP_KEY);
+    expect(copy?.env).toContain("RESTIC_REPOSITORY=sftp://backup@backup.example.com:2222/checkpoints/local");
+  });
+
+  test("an empty copy asks nothing of the remote", async () => {
+    const { s, engine } = await withLocalRepo();
+    await engine.copyToRemote(s.host, s3Remote(), []);
+    expect(s.helpers).toEqual([]);
+  });
+
+  test("a failed copy is an engine failure with restic's output, and forgets nothing anywhere", async () => {
+    const { s, engine } = await withLocalRepo();
+    s.next("copy", { exitCode: 1, logs: "Fatal: unable to open the remote repository" });
+
+    const error = await rejectionOf(engine.copyToRemote(s.host, s3Remote(), [SNAPSHOT]));
+    expect(error).toMatchObject({ kind: "engine" });
+    expect((error as Error).message).toContain("restic copy to the remote checkpoint repository exited with status 1");
+    expect(commandsOf(s.helpers)).toEqual(["cat", "copy"]);
   });
 });

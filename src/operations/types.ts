@@ -8,6 +8,7 @@ import type { HostCtx } from "../host/registry";
 import type { RawBody } from "../lib/body";
 import type { Notifications } from "../notify/service";
 import type { BackupService } from "../services/backup";
+import type { CheckpointRemoteSync } from "../services/checkpoint-remote";
 import type { ExecService } from "../services/exec";
 import type { TargetService } from "../services/targets";
 import type { TerminalService } from "../services/terminals";
@@ -97,6 +98,8 @@ export interface OperationContext {
   readonly backupPassphraseSet?: boolean;
   /** Off-site targets. The executor fills it in; target operations read it. */
   readonly targets?: TargetService;
+  /** Copies checkpoints to their host's remote repository. The executor fills it in. */
+  readonly checkpointRemote?: CheckpointRemoteSync;
   /** The owner's SSH keys for direct SSH. The executor fills it in; SSH key operations read it. */
   readonly sshKeys?: SshKeyStore;
   /** Command exec. Present on REST, MCP and the CLI. */

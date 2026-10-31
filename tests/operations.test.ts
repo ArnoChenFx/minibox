@@ -290,6 +290,10 @@ const SAMPLES: Record<string, (boxId: string, app: App) => unknown> = {
   "checkpoint.schedule.get": (id) => ({ id }),
   "checkpoint.schedule.set": (id) => ({ id, everyHours: 6 }),
   "checkpoint.schedule.clear": (id) => ({ id }),
+  "checkpoint.remote.get": () => ({ id: "local" }),
+  "checkpoint.remote.set": () => ({ id: "local", targetId: TARGET_PLACEHOLDER }),
+  "checkpoint.remote.clear": () => ({ id: "local" }),
+  "checkpoint.remote.sync": () => ({ id: "local" }),
   "backup.create": () => ({ passphrase: PASSPHRASE }),
   "backup.list": () => ({}),
   "backup.schedule.get": () => ({}),
@@ -573,6 +577,13 @@ async function preparedInput(
   if (operation.name === "checkpoint.import") {
     const id = await packageOfCheckpoint(app, ctx, boxId);
     return { input: { id, passphrase: PASSPHRASE } };
+  }
+  if (operation.name === "checkpoint.remote.set") {
+    return { input: { id: "local", targetId: await storedTargetOf(app, ctx), path: "checkpoints" } };
+  }
+  if (operation.name === "checkpoint.remote.sync") {
+    await app.targets.setRemote("local", { targetId: await storedTargetOf(app, ctx), path: "checkpoints" });
+    return { input: { id: "local" } };
   }
   if (operation.name === "checkpoint.copy") {
     await app.operations.run("host.add", ctx, { id: "lab", endpoint: "unix:///var/run/lab.sock" });

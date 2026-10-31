@@ -224,8 +224,12 @@ export function newEd25519Key(): string {
   }
 }
 
-/** An SFTP server on 127.0.0.1 that serves a fresh temporary folder. Nothing outside the folder is reachable. */
-export async function startSftpDouble(): Promise<SftpDouble> {
+/**
+ * An SFTP server that serves a fresh temporary folder. Nothing outside the folder is reachable. It listens on loopback by
+ * default; a Docker test binds the bridge gateway, so a container can reach it.
+ */
+export async function startSftpDouble(options: { host?: string } = {}): Promise<SftpDouble> {
+  const host = options.host ?? "127.0.0.1";
   const hostKey = newEd25519Key();
   const clientPrivate = newEd25519Key();
   const clientKey = utils.parseKey(clientPrivate);
@@ -244,7 +248,7 @@ export async function startSftpDouble(): Promise<SftpDouble> {
   });
   const port = await new Promise<number>((resolve, reject) => {
     server.once("error", reject);
-    server.listen(0, "127.0.0.1", () => {
+    server.listen(0, host, () => {
       const address = server.address();
       if (address && typeof address === "object") resolve(address.port);
       else reject(new Error("the SFTP double has no address"));
@@ -253,7 +257,7 @@ export async function startSftpDouble(): Promise<SftpDouble> {
   const hostParsed = utils.parseKey(hostKey);
   if (hostParsed instanceof Error) throw hostParsed;
   return {
-    host: "127.0.0.1",
+    host,
     port,
     hostKeyFingerprint: fingerprintOf(hostParsed.getPublicSSH()),
     privateKey: clientPrivate,

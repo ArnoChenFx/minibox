@@ -120,6 +120,12 @@ const SftpTargetSchema = z.strictObject({
   port: z.number().int().min(1).max(65535),
   user: z.string().min(1).max(64),
   hostKeyFingerprint: z.string().min(1).max(128),
+  /**
+   * The server's public key as `type base64`, captured through the pinned key exchange. ssh needs the whole key in
+   * known_hosts, not a fingerprint. Absent on a target added before this was kept; it is captured on the next check or
+   * sync and stored here. It is public data, not a credential.
+   */
+  hostKeyLine: z.string().min(1).max(1024).optional(),
 });
 
 const WebdavTargetSchema = z.strictObject({
@@ -131,6 +137,26 @@ const WebdavTargetSchema = z.strictObject({
 
 const TargetRecordSchema = z.discriminatedUnion("kind", [S3TargetSchema, SftpTargetSchema, WebdavTargetSchema]);
 
+/**
+ * The remote repository one host's checkpoints are copied to. It names the target and the folder, and holds no
+ * credential: the target's secrets are read when a copy runs.
+ */
+const RemoteRepoSchema = z.strictObject({
+  /** The host whose snapshots it takes. One remote repository per host. */
+  hostId: z.string().min(1).max(64),
+  targetId: z.string().refine(isTargetId, "not a target id"),
+  /** The kind of target, kept here so the record says what it is even if the target list cannot be read. */
+  kind: z.enum(["s3", "sftp"]),
+  /** The base folder under the target. The host id is appended to it, so hosts never share a repository. */
+  path: z.string().max(512),
+  createdAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
+  lastSyncAt: z.iso.datetime().nullable(),
+  lastError: z.string().max(2000).nullable(),
+});
+
+export type RemoteRepo = z.infer<typeof RemoteRepoSchema>;
+
 export type TargetRecord = z.infer<typeof TargetRecordSchema>;
 export type S3TargetRecord = z.infer<typeof S3TargetSchema>;
 export type SftpTargetRecord = z.infer<typeof SftpTargetSchema>;
@@ -138,4 +164,6 @@ export type SftpTargetRecord = z.infer<typeof SftpTargetSchema>;
 export const TargetFileSchema = z.strictObject({
   version: z.literal(TARGET_VERSION),
   targets: z.array(TargetRecordSchema),
+  /** The remote repository of each host that has one. Absent in a file written before remotes existed. */
+  remotes: z.array(RemoteRepoSchema).optional(),
 });

@@ -638,5 +638,9 @@ export default {
   "err.target_object_held": "{object} 已保存在此处且内容不同，因此未替换。",
   "err.target_object_invalid": "对象无效：{reason}",
   "err.target_busy": "目标 {name} 正在进行另一项传输，请待其完成后再试。",
+  "err.target_in_use": "目标 {name} 保存着宿主机 {host} 的检查点仓库，请先清除该远端仓库。",
+  "err.checkpoint_remote_not_set": "宿主机 {host} 尚未设置远端检查点仓库，请先设置。",
+  "err.checkpoint_remote_unsupported": "WebDAV 目标不能保存检查点仓库，请改用 S3 或 SFTP 目标。",
+  "err.checkpoint_remote_busy": "宿主机 {host} 正在把检查点复制到远端仓库。",
   "err.target_object_busy": "{object} 正在拉取中，请待该传输完成后再试。",
 };
