@@ -8,7 +8,8 @@ import type { AgentErrorInfo } from "../src/agent/protocol";
 import {
   type AgentSelf,
   AgentScope,
-  freshScope,
+  freshScope as randomScope,
+  SCOPE_LABEL,
   loadScope,
   OWNER_LABEL,
   SCOPE_FILE,
@@ -24,10 +25,15 @@ import { FakeRuntime } from "./support/fake-runtime";
 const HOST = "edge";
 const PREFIX = "mbtest";
 const IMAGE = "alpine:3.20";
-const MINE = { [OWNER_LABEL]: HOST };
+const SCOPE_ID = "a".repeat(64);
+const freshScope = (hostId: string, prefix: string | null = null) => ({
+  ...randomScope(hostId, prefix),
+  scopeId: SCOPE_ID,
+});
+const MINE = { [OWNER_LABEL]: HOST, [SCOPE_LABEL]: SCOPE_ID };
 /** What an engine holds that was never MiniBox's: no label at all, or one that names another host. */
 const NOT_MINE = {};
-const OTHER_HOST = { [OWNER_LABEL]: "other-host" };
+const OTHER_HOST = { [OWNER_LABEL]: "other-host", [SCOPE_LABEL]: SCOPE_ID };
 
 let scratch: string;
 let restoreLog: () => void;
@@ -188,11 +194,11 @@ describe("a container that is not MiniBox's", () => {
     const made = await scoped.createContainer({
       image: IMAGE,
       name: "mine",
-      labels: { [OWNER_LABEL]: "other-host", "mbtest.box": "true" },
+      labels: { [OWNER_LABEL]: "other-host", [SCOPE_LABEL]: "forged", "mbtest.box": "true" },
       ...(await boxNetwork(scoped)),
     });
     const info = await scoped.inspectContainer(made.id);
-    expect(info.labels).toMatchObject({ [OWNER_LABEL]: HOST, "mbtest.box": "true" });
+    expect(info.labels).toMatchObject({ ...MINE, "mbtest.box": "true" });
     expect(runtime.containers.get(foreign)?.labels[OWNER_LABEL]).toBeUndefined();
   });
 });
@@ -357,7 +363,7 @@ describe("volumes", () => {
   test("a volume the agent made is MiniBox's, whatever labels the request gave it", async () => {
     const { runtime, scoped } = setup();
     await scoped.createVolume("mine", { "mbtest.volume": "true", [OWNER_LABEL]: "other-host" });
-    expect(runtime.volumes.get("mine")?.labels).toEqual({ "mbtest.volume": "true", [OWNER_LABEL]: HOST });
+    expect(runtime.volumes.get("mine")?.labels).toEqual({ "mbtest.volume": "true", ...MINE });
     expect((await scoped.inspectVolume("mine")).name).toBe("mine");
     await scoped.removeVolume("mine");
     expect(runtime.volumes.has("mine")).toBe(false);
@@ -386,7 +392,7 @@ describe("networks", () => {
   test("one the agent makes is MiniBox's, and an existing one that is not is a conflict", async () => {
     const { runtime, scoped } = setup();
     await scoped.ensureBridgeNetwork("mbtest-boxes", { interContainerComm: false });
-    expect(runtime.networks.get("mbtest-boxes")?.labels).toEqual({ [OWNER_LABEL]: HOST });
+    expect(runtime.networks.get("mbtest-boxes")?.labels).toEqual(MINE);
     await scoped.ensureBridgeNetwork("mbtest-boxes", { interContainerComm: false });
 
     runtime.seedNetwork("theirs", {}, "bridge", {});
@@ -441,9 +447,9 @@ describe("creating a container", () => {
     const { runtime, scoped } = setup();
     const on = await boxNetwork(scoped);
     const made = await scoped.createContainer({ image: IMAGE, name: "box", labels: { "mbtest.box": "true" }, ...on });
-    expect(runtime.containers.get(made.id)?.labels).toEqual({ "mbtest.box": "true", [OWNER_LABEL]: HOST });
+    expect(runtime.containers.get(made.id)?.labels).toEqual({ "mbtest.box": "true", ...MINE });
     const bare = await scoped.createContainer({ image: IMAGE, name: "bare", ...on });
-    expect(runtime.containers.get(bare.id)?.labels).toEqual({ [OWNER_LABEL]: HOST });
+    expect(runtime.containers.get(bare.id)?.labels).toEqual(MINE);
   });
 
   test("a volume it mounts must exist and be MiniBox's, or nothing is created", async () => {
@@ -623,7 +629,12 @@ describe("the owner of the host's firewall rule", () => {
     const { runtime, scope, scoped } = setup({ record: null });
     expect(scope.ingressOwner()).toBeNull();
     scope.begin(PREFIX);
-    expect(loadScope(scratch, HOST)).toEqual(freshScope(HOST, PREFIX));
+    expect(loadScope(scratch, HOST)).toMatchObject({
+      version: 2,
+      hostId: HOST,
+      labelPrefix: PREFIX,
+      scopeId: expect.stringMatching(/^[0-9a-f]{64}$/),
+    });
     expect(scope.ingressOwner()).toBe(PREFIX);
     await scoped.setHostIngressBlock(PREFIX, []);
     expect(runtime.callsTo("setHostIngressBlock")).toHaveLength(1);
@@ -656,8 +667,8 @@ describe("the scope file", () => {
 
   test("it is written and read back, and holds the host and the prefix its MiniBox uses", () => {
     saveScope(scratch, freshScope(HOST, PREFIX));
-    expect(loadScope(scratch, HOST)).toEqual({ version: 1, hostId: HOST, labelPrefix: PREFIX });
-    expect(freshScope(HOST)).toEqual({ version: 1, hostId: HOST, labelPrefix: null });
+    expect(loadScope(scratch, HOST)).toEqual({ version: 2, hostId: HOST, labelPrefix: PREFIX, scopeId: SCOPE_ID });
+    expect(freshScope(HOST)).toEqual({ version: 2, hostId: HOST, labelPrefix: null, scopeId: SCOPE_ID });
   });
 
   test("an agent that has none reads null, and a welcome then writes one", () => {
@@ -665,7 +676,12 @@ describe("the scope file", () => {
     expect(loadScope(scratch, HOST)).toBeNull();
     scope.begin(PREFIX);
     expect(existsSync(join(scratch, SCOPE_FILE))).toBe(true);
-    expect(loadScope(scratch, HOST)).toEqual(freshScope(HOST, PREFIX));
+    expect(loadScope(scratch, HOST)).toMatchObject({
+      version: 2,
+      hostId: HOST,
+      labelPrefix: PREFIX,
+      scopeId: expect.stringMatching(/^[0-9a-f]{64}$/),
+    });
   });
 
   test("a file written for another host is an error that says what to do, not a scope to trust", () => {
@@ -780,5 +796,110 @@ describe("through the executor, which is what the control plane talks to", () =>
     expect(await ask("listContainers", { labels: { "mbtest.box": "true" } })).toMatchObject({ ok: true });
     expect(((await ask("listContainers", { labels: { "mbtest.box": "true" } })).result as unknown[]).length).toBe(1);
     expect(runtime.containers.get(id)?.labels[OWNER_LABEL]).toBe(HOST);
+  });
+});
+
+describe("independent agents with the same host id", () => {
+  test("separate installations cannot operate or list each other's resources or events", async () => {
+    const runtime = new FakeRuntime();
+    runtime.seedImage(IMAGE);
+    const a = randomScope(HOST, "install-a"),
+      b = randomScope(HOST, "install-b");
+    expect(a.scopeId).not.toBe(b.scopeId);
+    const scope = (record: ScopeRecord) =>
+      new AgentScope({ hostId: HOST, dataDir: scratch, runtime, record, findSelf: async () => null });
+    const scopeA = scope(a),
+      scopeB = scope(b);
+    const first = scopedRuntime(runtime, scopeA),
+      second = scopedRuntime(runtime, scopeB);
+    await second.ensureBridgeNetwork("install-b-boxes", { interContainerComm: false });
+    await second.createVolume("b-data", {});
+    const box = await second.createContainer({
+      image: IMAGE,
+      network: "install-b-boxes",
+      mounts: [{ source: "b-data", target: "/data" }],
+    });
+    await second.startContainer(box.id);
+    for (const operation of [
+      () => first.inspectContainer(box.id),
+      () => first.stopContainer(box.id, { timeoutSec: 0 }),
+      () => first.startExec(box.id, { cmd: ["true"], env: [], workingDir: "/" }),
+      () => first.inspectVolume("b-data"),
+      () => first.removeVolume("b-data"),
+      () => first.removeNetwork("install-b-boxes"),
+      () => first.createContainer({ image: IMAGE, network: "install-b-boxes" }),
+    ])
+      await refusedAs(operation(), "not_found");
+    await first.ensureBridgeNetwork("install-a-boxes", { interContainerComm: false });
+    await refusedAs(
+      first.createContainer({
+        image: IMAGE,
+        network: "install-a-boxes",
+        mounts: [{ source: "b-data", target: "/data" }],
+      }),
+      "not_found",
+    );
+    await refusedAs(first.createVolume("b-data", {}), "conflict");
+    expect(await first.listContainers({ labels: {} })).toEqual([]);
+    expect(await first.listVolumes()).toEqual([]);
+    expect((await first.listNetworks()).map((n) => n.name)).toEqual(["install-a-boxes"]);
+    expect(runtime.containers.get(box.id)?.running).toBe(true);
+    const event = {
+      type: "container",
+      id: box.id,
+      action: "start",
+      attributes: scopeB.labels({}),
+      timeNano: Date.now() * 1_000_000,
+      time: new Date().toISOString(),
+    };
+    expect(scopeA.ownsEvent(event)).toBe(false);
+    expect(scopeB.ownsEvent(event)).toBe(true);
+    await first.createVolume("a-data", { [SCOPE_LABEL]: b.scopeId, [OWNER_LABEL]: "other" });
+    expect(runtime.volumes.get("a-data")?.labels).toMatchObject({ [SCOPE_LABEL]: a.scopeId, [OWNER_LABEL]: HOST });
+    // The same agent keeps its ownership when it restarts from its persisted record.
+    saveScope(scratch, b);
+    const restarted = scopedRuntime(runtime, scope(loadScope(scratch, HOST)!));
+    expect((await restarted.inspectContainer(box.id)).id).toBe(box.id);
+    await restarted.stopContainer(box.id, { timeoutSec: 0 });
+    expect(runtime.containers.get(box.id)?.running).toBe(false);
+  });
+
+  test("version 1 upgrades once without authorizing host-only resources", async () => {
+    writeFileSync(join(scratch, SCOPE_FILE), JSON.stringify({ version: 1, hostId: HOST, labelPrefix: PREFIX }));
+    const record = loadScope(scratch, HOST)!;
+    expect(record.version).toBe(2);
+    expect(record.scopeId).toMatch(/^[0-9a-f]{64}$/);
+    expect(loadScope(scratch, HOST)).toEqual(record);
+    const { runtime, scoped } = setup({ record });
+    const old = container(runtime, "legacy", { [OWNER_LABEL]: HOST });
+    await refusedAs(scoped.inspectContainer(old), "not_found");
+    await scoped.createVolume("new", {});
+    expect(runtime.volumes.get("new")?.labels[SCOPE_LABEL]).toBe(record.scopeId);
+  });
+
+  test("a missing or invalid version 2 scope id is refused rather than regenerated", () => {
+    for (const scopeId of [undefined, "", "wrong"]) {
+      writeFileSync(
+        join(scratch, SCOPE_FILE),
+        JSON.stringify({ version: 2, hostId: HOST, labelPrefix: PREFIX, scopeId }),
+      );
+      expect(() => loadScope(scratch, HOST)).toThrow();
+    }
+  });
+
+  test("an unwritable scope cannot mint resources with a temporary identity", async () => {
+    const blocked = join(scratch, "not-a-directory");
+    writeFileSync(blocked, "blocked");
+    const runtime = new FakeRuntime();
+    const scope = new AgentScope({ hostId: HOST, dataDir: blocked, runtime, record: null });
+    scope.begin(PREFIX);
+    expect(scope.ingressOwner()).toBe(PREFIX);
+    await refusedAs(scopedRuntime(runtime, scope).setHostIngressBlock("another-install", []), "invalid");
+    expect(() => scope.labels({})).toThrow(RuntimeError);
+    expect(scope.ownsVolume({ labels: { [OWNER_LABEL]: HOST } })).toBe(false);
+    rmSync(blocked);
+    scope.begin("different-prefix");
+    expect(scope.ingressOwner()).toBe(PREFIX);
+    expect(scope.labels({})[SCOPE_LABEL]).toBe(loadScope(blocked, HOST)?.scopeId);
   });
 });

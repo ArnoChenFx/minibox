@@ -14,7 +14,14 @@ import {
   UsageError,
 } from "../src/agent/main";
 import { AGENT_PAIR_PATH, AGENT_PROTOCOL, isEd25519PublicKey } from "../src/agent/protocol";
-import { freshScope, loadScope, OWNER_LABEL, SCOPE_FILE, saveScope } from "../src/agent/scope";
+import {
+  freshScope as randomScope,
+  SCOPE_LABEL,
+  loadScope,
+  OWNER_LABEL,
+  SCOPE_FILE,
+  saveScope,
+} from "../src/agent/scope";
 import { FakeRuntime } from "./support/fake-runtime";
 
 const dirs: string[] = [];
@@ -203,6 +210,12 @@ describe("pairing with the control plane", () => {
   });
 });
 
+const SCOPE_ID = "b".repeat(64);
+const freshScope = (hostId: string, prefix: string | null = null) => ({
+  ...randomScope(hostId, prefix),
+  scopeId: SCOPE_ID,
+});
+
 const AGENT = "9c1f0e2d8b7a4f6e5d4c3b2a1f0e9d8c";
 
 /** Starts an agent, lets it get as far as waiting for a signal, then stops it with one, as a service manager would. */
@@ -328,7 +341,12 @@ describe("what the agent may touch, from the first start", () => {
         { fetch: fetcher, runtime: new FakeRuntime(), now: () => now },
       );
     expect(await startedAndStopped(run)).toBe(0);
-    expect(loadScope(dir, "edge")).toEqual(freshScope("edge", "mbtest"));
+    expect(loadScope(dir, "edge")).toMatchObject({
+      version: 2,
+      hostId: "edge",
+      labelPrefix: "mbtest",
+      scopeId: expect.stringMatching(/^[0-9a-f]{64}$/),
+    });
     expect(statSync(join(dir, SCOPE_FILE)).mode & 0o777).toBe(0o600);
   });
 
@@ -343,7 +361,12 @@ describe("what the agent may touch, from the first start", () => {
         { fetch: fetcher, runtime: new FakeRuntime(), now: () => now },
       );
     expect(await startedAndStopped(run)).toBe(0);
-    expect(loadScope(dir, "edge")).toEqual(freshScope("edge", null));
+    expect(loadScope(dir, "edge")).toMatchObject({
+      version: 2,
+      hostId: "edge",
+      labelPrefix: null,
+      scopeId: expect.stringMatching(/^[0-9a-f]{64}$/),
+    });
   });
 
   test("an agent paired before scopes existed writes none when it starts: the welcome writes it", async () => {
@@ -366,7 +389,7 @@ describe("what the agent may touch, from the first start", () => {
       image: "alpine:3.20",
       name: "mine",
       running: true,
-      labels: { [OWNER_LABEL]: "edge" },
+      labels: { [OWNER_LABEL]: "edge", [SCOPE_LABEL]: SCOPE_ID },
     });
     saveScope(dir, freshScope("edge"));
     const plane = await controlPlane({
@@ -398,7 +421,7 @@ describe("what the agent may touch, from the first start", () => {
       image: "alpine:3.20",
       name: "mine",
       running: true,
-      labels: { [OWNER_LABEL]: "edge" },
+      labels: { [OWNER_LABEL]: "edge", [SCOPE_LABEL]: SCOPE_ID },
     });
     const plane = await controlPlane({
       labelPrefix: "mbtest",
@@ -410,8 +433,13 @@ describe("what the agent may touch, from the first start", () => {
     expect(existsSync(join(dir, SCOPE_FILE))).toBe(false);
     await servedBy(dir, engine, plane);
     expect(plane.answers.get("r1")).toMatchObject({ ok: false, error: { kind: "not_found" } });
-    expect(plane.answers.get("r2")).toMatchObject({ ok: true });
-    expect(loadScope(dir, "edge")).toEqual(freshScope("edge", "mbtest"));
+    expect(plane.answers.get("r2")).toMatchObject({ ok: false, error: { kind: "not_found" } });
+    expect(loadScope(dir, "edge")).toMatchObject({
+      version: 2,
+      hostId: "edge",
+      labelPrefix: "mbtest",
+      scopeId: expect.stringMatching(/^[0-9a-f]{64}$/),
+    });
   });
 
   test("a container runtime besides runc is allowed only when AGENT_ALLOWED_RUNTIMES says so", async () => {
@@ -426,7 +454,7 @@ describe("what the agent may touch, from the first start", () => {
       const dir = tempDir();
       const engine = new FakeRuntime();
       engine.seedImage("alpine:3.20");
-      engine.seedNetwork("mbtest-boxes", {}, "bridge", { [OWNER_LABEL]: "edge" });
+      engine.seedNetwork("mbtest-boxes", {}, "bridge", { [OWNER_LABEL]: "edge", [SCOPE_LABEL]: SCOPE_ID });
       saveScope(dir, freshScope("edge"));
       const plane = await controlPlane({ labelPrefix: "mbtest", requests: [create as [string, unknown]] });
       await servedBy(dir, engine, plane, env);

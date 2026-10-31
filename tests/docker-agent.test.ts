@@ -20,7 +20,7 @@ import { AgentClient } from "../src/agent/client";
 import { generateKeyPairPem, loadIdentity, type StoredIdentity, saveIdentity } from "../src/agent/identity";
 import { pairWith } from "../src/agent/main";
 import { AGENT_PROTOCOL } from "../src/agent/protocol";
-import { AgentScope, freshScope, OWNER_LABEL } from "../src/agent/scope";
+import { AgentScope, freshScope, OWNER_LABEL, SCOPE_LABEL } from "../src/agent/scope";
 import { type ServedRuntime, scopedRuntime } from "../src/agent/scoped-runtime";
 import { findSelf } from "../src/agent/self";
 import { type App, createApp } from "../src/app";
@@ -274,12 +274,63 @@ describe.skipIf(!enabled)("an agent host, against a real engine", () => {
       // A request that names the label for another host gets this agent's, and the install's own label stays.
       await agent.createVolume(name, { [OWNER_LABEL]: "somebody-else", [prefix]: "true" });
       try {
-        expect((await docker.getVolume(name).inspect()).Labels).toEqual({ [OWNER_LABEL]: "edge", [prefix]: "true" });
+        expect((await docker.getVolume(name).inspect()).Labels).toEqual({
+          [OWNER_LABEL]: "edge",
+          [SCOPE_LABEL]: own!.Labels[SCOPE_LABEL]!,
+          [prefix]: "true",
+        });
+        expect(own?.Labels[SCOPE_LABEL]).toMatch(/^[0-9a-f]{64}$/);
+        expect(network.Labels?.[SCOPE_LABEL]).toBe(own?.Labels[SCOPE_LABEL]);
         expect((await agent.listVolumes()).map((volume) => volume.name)).toContain(name);
       } finally {
         await agent.removeVolume(name).catch(() => {});
       }
       await expect(docker.getVolume(name).inspect()).rejects.toThrow();
+    },
+    LONG,
+  );
+
+  test(
+    "two agents using edge as host id cannot operate each other's resources",
+    async () => {
+      const first = scopedEngine();
+      const dir = mkdtempSync(join(tmpdir(), "minibox-agent-other-"));
+      dirs.push(dir);
+      const engine = createDockerRuntime(SOCKET);
+      const record = freshScope("edge", "another-install");
+      const other = scopedRuntime(
+        engine,
+        new AgentScope({ hostId: "edge", dataDir: dir, runtime: engine, record, findSelf: async () => null }),
+      );
+      const own = await boxContainerId();
+      expect((await refusal(() => other.inspectContainer(own))).kind).toBe("not_found");
+      const network = `${prefix}-other-net`,
+        volume = `${prefix}-other-data`;
+      let made: string | null = null;
+      try {
+        await other.ensureBridgeNetwork(network, { interContainerComm: false });
+        await other.createVolume(volume, { [prefix]: "true" });
+        made = (
+          await other.createContainer({
+            image: IMAGE,
+            name: `${prefix}-other-box`,
+            network,
+            cmd: ["sleep", "300"],
+            labels: { [prefix]: "true" },
+          })
+        ).id;
+        await other.startContainer(made);
+        const id = made;
+        expect((await refusal(() => first.stopContainer(id, { timeoutSec: 0 }))).kind).toBe("not_found");
+        expect((await refusal(() => first.inspectVolume(volume))).kind).toBe("not_found");
+        expect((await refusal(() => first.removeNetwork(network))).kind).toBe("not_found");
+        expect((await docker.getContainer(id).inspect()).State.Running).toBe(true);
+        expect((await first.listContainers({ labels: {} })).map((c) => c.id)).not.toContain(id);
+      } finally {
+        if (made) await other.removeContainer(made, { force: true }).catch(() => {});
+        await other.removeVolume(volume).catch(() => {});
+        await other.removeNetwork(network).catch(() => {});
+      }
     },
     LONG,
   );
