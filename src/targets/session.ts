@@ -23,7 +23,20 @@ export interface SftpConnection {
   readonly hostKeyFingerprint: string | null;
 }
 
-export type TargetConnection = S3Connection | SftpConnection;
+/**
+ * What a WebDAV target needs. The password is a secret. The address names the collection the objects live under, and
+ * may carry a path, as Nextcloud's `/remote.php/dav/files/USER` does.
+ */
+export interface WebdavConnection {
+  readonly kind: "webdav";
+  readonly url: string;
+  readonly user: string;
+  readonly password: string;
+  /** The folder beneath the address the objects live in, with no slashes at either end. Empty for the collection. */
+  readonly path: string;
+}
+
+export type TargetConnection = S3Connection | SftpConnection | WebdavConnection;
 
 /** An object on a target, named from the target's root, such as `packages/pk_….mbckpt`. */
 export interface RemoteObject {
@@ -41,7 +54,10 @@ export interface TargetSession {
   stat(name: string): Promise<RemoteObject | null>;
   /** The bytes of an object, streamed. Refuses an object that is not there. */
   read(name: string): Promise<AsyncIterable<Uint8Array>>;
-  /** Stores an object whole or not at all: a reader never sees a partial one. */
-  write(name: string, body: AsyncIterable<Uint8Array>): Promise<void>;
+  /**
+   * Stores an object whole or not at all: a reader never sees a partial one. `size`, when the caller knows the length of
+   * the body, is passed on to a server that wants it in advance.
+   */
+  write(name: string, body: AsyncIterable<Uint8Array>, size?: number): Promise<void>;
   close(): Promise<void>;
 }

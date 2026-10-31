@@ -441,7 +441,7 @@ export default {
   "st.backupScheduleFailed": "备份计划修改失败",
   "st.targets": "异地目标",
   "st.targetsHelp":
-    "把检查点包和备份复制到 S3 兼容的存储桶或 SFTP 文件夹，需要时再拉回本机。凭据保存为密钥，保存后不再显示。",
+    "把检查点包和备份复制到 S3 兼容的存储桶、SFTP 文件夹或 WebDAV 集合，需要时再拉回本机。凭据保存为密钥，保存后不再显示。",
   "st.targetAdd": "添加目标",
   "st.targetNone": "还没有目标。添加一个，就能把检查点和备份的副本保存在本机之外。",
   "st.targetColAddress": "地址",
@@ -449,6 +449,7 @@ export default {
   "st.targetColSize": "大小",
   "st.targetKind.s3": "S3 兼容",
   "st.targetKind.sftp": "SFTP",
+  "st.targetKind.webdav": "WebDAV",
   "st.targetTypeLabel": "类型",
   "st.targetDirection.push": "已推送",
   "st.targetDirection.pull": "已拉取",
@@ -466,11 +467,14 @@ export default {
   "st.targetRemoved": "已移除目标",
   "st.targetRemoveFailed": "无法移除目标",
   "st.targetAddTitle": "添加目标",
-  "st.targetDialogHelp": "检查点包和备份原样复制。拉取时，只保留与目标上记录一致的对象。",
+  "st.targetDialogHelp":
+    "检查点包和备份原样复制到 S3 兼容的存储桶、SFTP 文件夹或 WebDAV 集合。拉取时，只保留与目标上记录一致的对象。",
   "st.targetPath": "文件夹",
-  "st.targetPathHelp": "可选。相对于存储桶或登录文件夹。留空时，对象放在根目录。",
+  "st.targetPathHelp": "可选。相对于存储桶、登录文件夹或 WebDAV 集合。留空时，对象放在根目录。",
   "st.targetEndpointHelp": "服务的 https 地址。只有 localhost、127.0.0.1 和 [::1] 可以使用 http。",
   "st.targetSecretHelp": "保存为密钥。保存后不再显示。",
+  "st.targetWebdavUrlHelp":
+    "服务器上文件夹的 https 地址，例如 Nextcloud 的 https://host/remote.php/dav/files/USER。服务商提供应用专用密码时请使用它。",
   "st.targetTest": "测试",
   "st.targetTesting": "正在连接目标…",
   "st.targetTestOk": "已连接目标。没有存储任何内容。",

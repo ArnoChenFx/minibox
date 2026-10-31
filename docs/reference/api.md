@@ -305,7 +305,7 @@ A due run makes one backup through the same service as `POST /api/backups`, so i
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/api/targets` | List off-site targets. Credentials are never returned. Owner only |
-| `POST` | `/api/targets` | Add an S3-compatible or SFTP target. Takes its fields, and the credentials are stored as secrets. Owner only |
+| `POST` | `/api/targets` | Add an S3-compatible, SFTP or WebDAV target. Takes its fields, and the credentials are stored as secrets. Owner only |
 | `POST` | `/api/targets/test` | Reach a target with the given details, and store nothing. Owner only |
 | `GET` | `/api/targets/{id}/check` | Reach a stored target with its own credentials. Owner only |
 | `GET` | `/api/targets/{id}/objects` | List the complete packages and backups on a target, newest first. Owner only |
@@ -313,7 +313,7 @@ A due run makes one backup through the same service as `POST /api/backups`, so i
 | `POST` | `/api/targets/{id}/push` | Push a package (`pk_…`) or a backup (`bk_…`) to a target, as a task. Owner only |
 | `POST` | `/api/targets/{id}/pull` | Pull a package or a backup from a target, as a task. Owner only |
 
-Targets take the fields of `POST /api/targets`. An S3 target takes `endpoint`, `region`, `bucket`, `accessKeyId` and `secretAccessKey`. An SFTP target takes `host`, `port`, `user`, `privateKey` and `hostKeyFingerprint`. The fingerprint comes from `POST /api/targets/test`, which reports the server's key when the key is not yet known. See [Backups](../admin/backups.md#off-site-targets).
+Targets take the fields of `POST /api/targets`. An S3 target takes `endpoint`, `region`, `bucket`, `accessKeyId` and `secretAccessKey`. An SFTP target takes `host`, `port`, `user`, `privateKey` and `hostKeyFingerprint`. The fingerprint comes from `POST /api/targets/test`, which reports the server's key when the key is not yet known. A WebDAV target takes `url`, `user` and `password`, where `url` is the `https` address of the collection the objects live under. See [Backups](../admin/backups.md#off-site-targets).
 
 ### trash
 

@@ -152,5 +152,7 @@ export default {
   "label.user": "User",
   "label.privateKey": "Private key",
   "label.hostKeyFingerprint": "Host key fingerprint",
+  "label.url": "URL",
+  "label.password": "Password",
   "nav.trash": "Recycle bin",
 };

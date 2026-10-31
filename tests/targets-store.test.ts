@@ -68,7 +68,8 @@ describe("target records", () => {
     expect(name).toBe("target.tgt_abcdefgh.secret-key");
     expect(isTargetSecretName(name)).toBe(true);
     expect(targetIdOfSecret(name)).toBe("tgt_abcdefgh");
-    expect(targetIdOfSecret("target.tgt_abcdefgh.password")).toBeNull();
+    expect(targetIdOfSecret("target.tgt_abcdefgh.password")).toBe("tgt_abcdefgh");
+    expect(targetIdOfSecret("target.tgt_abcdefgh.token")).toBeNull();
     expect(targetIdOfSecret("api-token")).toBeNull();
   });
 
