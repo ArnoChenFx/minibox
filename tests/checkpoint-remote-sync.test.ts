@@ -519,6 +519,27 @@ describe("the sync marks when the remote position changes", () => {
     expect(storedRecord(inst, record.id).remoteSync?.[targetId]).toBeString();
   });
 
+  test("a copy that fails after the remote moves to another target, under the same folder, records nothing on the new one", async () => {
+    const inst = instanceOf();
+    const first = s3Target(inst);
+    const second = s3Target(inst, "other");
+    const ctx = ctxOf(inst.app);
+    await inst.app.operations.run("checkpoint.remote.set", ctx, { id: "local", targetId: first, path: "same" });
+    const { record } = await checkpointOf(inst, "src");
+    const gate = engineOf(inst).holdRemote();
+    const copying = inst.app.checkpointRemote.syncHost(inst.host);
+    while (gate.blocked() === 0) await Bun.sleep(1);
+
+    await inst.app.operations.run("checkpoint.remote.set", ctx, { id: "local", targetId: second, path: "same" });
+    engineOf(inst).failRemoteCopy = true;
+    gate.release();
+
+    expect(await rejectionOf(copying)).toBeInstanceOf(Error);
+    expect(storedRecord(inst, record.id).remoteFailure).toBeUndefined();
+    expect(inst.app.targets.remoteOf("local")?.lastError).toBeNull();
+    expect(inst.app.checkpointRemote.stateOf("local")).toEqual({ failures: 0, lastFailure: null });
+  });
+
   test("a copy still running when the host switches to remote-only marks nothing", async () => {
     const inst = instanceOf();
     const targetId = s3Target(inst);

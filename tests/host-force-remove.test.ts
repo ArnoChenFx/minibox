@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -716,6 +716,27 @@ describe("removing a host clears its remote checkpoint repository", () => {
     await app.hostAdmin.refresh();
     expect((await post("/api/hosts/edge/force-remove", { confirm: true })).status).toBe(200);
 
+    expect(app.checkpointRemote.stateOf("edge")).toEqual({ failures: 0, lastFailure: null });
+  });
+
+  test("a record that cannot be dropped does not keep the copy state or hold the removal", async () => {
+    const targetId = archiveTarget();
+    app.targets.setRemote("edge", { targetId });
+    const box = await boxOn("edge", "alpha");
+    await takeCheckpoint(box.boxId);
+    const host = app.hosts.get("edge");
+    (host.checkpointEngine as FakeCheckpointEngine).failRemoteCopy = true;
+    expect(await rejectionOf(app.checkpointRemote.syncHost(host))).toBeInstanceOf(Error);
+    expect(app.checkpointRemote.stateOf("edge").failures).toBe(1);
+    spyOn(app.targets, "forgetHost").mockImplementation(() => {
+      throw new Error("targets.json cannot be written");
+    });
+
+    edge.down = true;
+    await app.hostAdmin.refresh();
+    expect((await post("/api/hosts/edge/force-remove", { confirm: true })).status).toBe(200);
+
+    expect(app.hosts.has("edge")).toBe(false);
     expect(app.checkpointRemote.stateOf("edge")).toEqual({ failures: 0, lastFailure: null });
   });
 });
