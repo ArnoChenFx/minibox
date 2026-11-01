@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { mkdtempSync, readdirSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -29,7 +29,7 @@ import { createLocalHost, type HostCtx } from "../src/host/registry";
 import { probePublicKey, publicKeyTextOf } from "../src/host/ssh";
 import type { Runtime } from "../src/runtime";
 import { rejectionOf, silenceLogs, testConfig } from "./support/app";
-import { createS3Bucket, type S3Proxy, startS3Proxy } from "./support/s3proxy";
+import { createS3Bucket, type S3Proxy, type S3ServiceOptions, startS3Proxy } from "./support/s3proxy";
 import { newEd25519Key, startSftpDouble } from "./support/sftp-double";
 
 const enabled = process.env.MINIBOX_TEST_DOCKER === "1";
@@ -46,6 +46,10 @@ const SECRET_KEY = "docker-test-secret-key";
 const REMOTE_PASSWORD = "the remote repository's own password";
 const BUCKET = "archive";
 const REGION = "us-east-1";
+const PACKAGE_TAG = "ck_only_pack";
+/** 包里的 manifest 对引擎只是文本：它被存成包里的一个快照，导入方再读回来。 */
+const PACKAGE_MANIFEST = '{"from":"a remote-only host","note":"the package round trip"}';
+const PACKAGE_PASSPHRASE = "the package's own passphrase";
 
 const dataDir = mkdtempSync(join(tmpdir(), "minibox-docker-remote-"));
 const host: HostCtx = createLocalHost(testConfig({ dataDir, labelPrefix: prefix }), runtime);
@@ -142,6 +146,64 @@ async function untilMetric(proxy: S3Proxy, pattern: RegExp, what: string, timeou
     if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}`);
     await Bun.sleep(200);
   }
+}
+
+/** 现有 S3 用例共用的服务参数：运行前缀、固定的测试凭据与桶名。 */
+function s3Service(gateway: string): S3ServiceOptions {
+  return {
+    docker,
+    runtime,
+    gateway,
+    prefix,
+    accessKeyId: ACCESS_KEY,
+    secretAccessKey: SECRET_KEY,
+    bucket: BUCKET,
+  };
+}
+
+/** 本前缀下包的暂存卷：包写完后打开、关闭的整个过程结束就该一个不剩。 */
+async function packageVolumes(): Promise<string[]> {
+  const { Volumes } = await docker.listVolumes();
+  return (Volumes ?? [])
+    .map((volume) => volume.Name)
+    .filter((name) => name.startsWith(prefix) && name.includes("-package-"));
+}
+
+/**
+ * 在一台仅异地的宿主机上打包一个快照，再到另一台仅异地的宿主机上打开、解包、还原。
+ * 两台都没有本地仓库，所以这覆盖了 `pack` 以远端为源（`--from-repo`、远端口令文件、目标的 `-o` 选项与凭据文件）
+ * 和 `unpack` 以远端为目标（`--retry-lock`、`init`）。
+ */
+async function packageRoundTrip(a: HostCtx, b: HostCtx, source: string, target: string, file: string): Promise<void> {
+  await seed(source);
+  const snapshotId = (await a.checkpointEngine.backup(a, source, [PACKAGE_TAG])).snapshotId;
+  await a.checkpointEngine.pack(
+    a,
+    { snapshotIds: [snapshotId], manifest: PACKAGE_MANIFEST, passphrase: PACKAGE_PASSPHRASE },
+    file,
+    64 * 1024 * 1024,
+  );
+  expect(statSync(file).size).toBeGreaterThan(0);
+
+  const opened = await b.checkpointEngine.open(b, file, PACKAGE_PASSPHRASE);
+  const packaged = opened.snapshots.filter((snapshot) => snapshot.tags.includes(PACKAGE_TAG));
+  expect(packaged).toHaveLength(1);
+  const packagedId = packaged[0]?.id;
+  if (!packagedId) throw new Error("the package holds no snapshot carrying the tag");
+  const copies = await opened.unpack([packagedId]);
+  await opened.close();
+  expect(await packageVolumes()).toEqual([]);
+
+  // 用 tagged 找回新快照：它的 origin 仍是第一台宿主机仓库里那个快照，说明链没有断。
+  const found = await b.checkpointEngine.tagged(b, PACKAGE_TAG);
+  expect(found.map((snapshot) => snapshot.original)).toEqual([snapshotId]);
+  const copied = found[0]?.id;
+  if (!copied) throw new Error("the imported snapshot is not in the second repository");
+  expect(copies.get(packagedId)).toBe(copied);
+
+  await seed(target);
+  await b.checkpointEngine.restore(b, copied, target);
+  expect(await readFile(target, "notes.txt")).toBe("hello from the remote test\n");
 }
 
 afterAll(() => {
@@ -352,6 +414,97 @@ describe.skipIf(!enabled)("checkpoint remote copy against a real engine", () => 
         await sftp.close();
         await runtime.removeVolume(src).catch(() => undefined);
         await runtime.removeVolume(dst).catch(() => undefined);
+      }
+    },
+    LONG,
+  );
+
+  test(
+    "a remote-only S3 host exports a package that a second remote-only host imports and restores",
+    async () => {
+      const gateway = await bridgeGateway();
+      const service = s3Service(gateway);
+      const source = `${prefix}-only-pack-s3-src`;
+      const target = `${prefix}-only-pack-s3-dst`;
+      const file = join(dataDir, "only-pack-s3.mbckpt");
+      let proxy: S3Proxy | null = null;
+      try {
+        proxy = await startS3Proxy(service);
+        await createS3Bucket({ ...service, endpoint: proxy.endpoint });
+        const credentials = {
+          kind: "s3" as const,
+          region: REGION,
+          accessKeyId: ACCESS_KEY,
+          secretAccessKey: SECRET_KEY,
+        };
+        const sourceHost = onlyHostOf("onlys3packa", {
+          targetId: "tgt_6666666666666666",
+          targetName: "archive",
+          repository: s3Repository(proxy.endpoint, BUCKET, "repo/only-pack-s3-a"),
+          password: REMOTE_PASSWORD,
+          credentials,
+        });
+        const targetHost = onlyHostOf("onlys3packb", {
+          targetId: "tgt_7777777777777777",
+          targetName: "archive",
+          repository: s3Repository(proxy.endpoint, BUCKET, "repo/only-pack-s3-b"),
+          password: REMOTE_PASSWORD,
+          credentials,
+        });
+
+        await packageRoundTrip(sourceHost, targetHost, source, target, file);
+
+        // 两台都只写远端：本地检查点卷从未被创建。
+        await rejectionOf(runtime.inspectVolume(`${prefix}-checkpoints-onlys3packa`));
+        await rejectionOf(runtime.inspectVolume(`${prefix}-checkpoints-onlys3packb`));
+      } finally {
+        await proxy?.stop();
+        await runtime.removeVolume(source).catch(() => undefined);
+        await runtime.removeVolume(target).catch(() => undefined);
+      }
+    },
+    LONG,
+  );
+
+  test(
+    "a remote-only SFTP host exports a package that a second remote-only host imports and restores",
+    async () => {
+      const gateway = await bridgeGateway();
+      const sftp = await startSftpDouble({ host: gateway });
+      const presented = await probePublicKey(gateway, sftp.port);
+      const source = `${prefix}-only-pack-sftp-src`;
+      const target = `${prefix}-only-pack-sftp-dst`;
+      const file = join(dataDir, "only-pack-sftp.mbckpt");
+      try {
+        const credentials = {
+          kind: "sftp" as const,
+          port: sftp.port,
+          privateKey: sftp.privateKey,
+          knownHosts: knownHostsLine(gateway, sftp.port, presented.text),
+        };
+        const sourceHost = onlyHostOf("onlysftppacka", {
+          targetId: "tgt_8888888888888888",
+          targetName: "nas",
+          repository: `sftp://backup@${gateway}:${sftp.port}/repo/only-pack-sftp-a`,
+          password: REMOTE_PASSWORD,
+          credentials,
+        });
+        const targetHost = onlyHostOf("onlysftppackb", {
+          targetId: "tgt_9999999999999999",
+          targetName: "nas",
+          repository: `sftp://backup@${gateway}:${sftp.port}/repo/only-pack-sftp-b`,
+          password: REMOTE_PASSWORD,
+          credentials,
+        });
+
+        await packageRoundTrip(sourceHost, targetHost, source, target, file);
+
+        await rejectionOf(runtime.inspectVolume(`${prefix}-checkpoints-onlysftppacka`));
+        await rejectionOf(runtime.inspectVolume(`${prefix}-checkpoints-onlysftppackb`));
+      } finally {
+        await sftp.close();
+        await runtime.removeVolume(source).catch(() => undefined);
+        await runtime.removeVolume(target).catch(() => undefined);
       }
     },
     LONG,
