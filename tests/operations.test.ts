@@ -72,7 +72,7 @@ const CLI_COMMANDS: Record<string, { argv: string[]; stdin?: string }> = {
   "template build-official": { argv: ["node"] },
   "template create": { argv: ["sample", "--repo", "https://example.com/sample.git"] },
   "template edit": { argv: ["sample", "--description", "Ours"] },
-  "template fork": { argv: ["sample", "copy"] },
+  "template duplicate": { argv: ["sample", "copy"] },
   "template get": { argv: ["sample"] },
   "template rebuild": { argv: ["sample"] },
   "template sync": { argv: ["sample", "--host", "lab"] },
@@ -324,7 +324,7 @@ const SAMPLES: Record<string, (boxId: string, app: App) => unknown> = {
     source: { kind: "dockerfile", text: "FROM alpine:3.20\n" },
   }),
   "template.draft.list": () => ({}),
-  "template.fork": () => ({ ref: TEMPLATE_REF, name: "gold-copy" }),
+  "template.duplicate": () => ({ ref: TEMPLATE_REF, name: "gold-copy" }),
   "template.edit": () => ({ ref: "mbtest-template:sample", description: "Our own toolchain" }),
   "template.rebuild": () => ({ ref: "mbtest-template:sample" }),
   "template.build": () => ({}),
@@ -1354,8 +1354,8 @@ describe("projections", () => {
       "create_template",
       "create_template_draft",
       "delete_custom_tool",
+      "duplicate_template",
       "edit_template",
-      "fork_template",
       "get_template_source",
       "install_tool",
       "list_custom_tools",
@@ -1420,7 +1420,7 @@ describe("projections", () => {
     const named = OPERATIONS.filter((operation) => operation.cli);
     const byCommand = new Map(named.map((operation) => [operation.cli as string, operation]));
     expect(byCommand.get("box list")?.name).toBe("box.list");
-    expect(byCommand.get("template fork")?.name).toBe("template.fork");
+    expect(byCommand.get("template duplicate")?.name).toBe("template.duplicate");
     // A duplicate command name is a registry problem, not something the CLI can resolve at run time.
     expect(registryProblems(OPERATIONS)).toEqual([]);
     const twin = { ...opNamed("box.list"), cli: "box create" };

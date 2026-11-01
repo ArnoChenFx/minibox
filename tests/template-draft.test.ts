@@ -98,7 +98,7 @@ describe("saving a template without building it", () => {
     expect((listed.json.templates ?? []).map((template) => template.ref)).not.toContain("mbtest-template:tool");
   });
 
-  test("a name an image or a draft holds is refused by a save, a build, a fork, a box save and a promotion", async () => {
+  test("a name an image or a draft holds is refused by a save, a build, a duplicate, a box save and a promotion", async () => {
     expect((await save("tool")).status).toBe(201);
     expect(refused(await save("tool"))).toEqual({ status: 409, key: "template_name_taken" });
     expect(
@@ -109,7 +109,7 @@ describe("saving a template without building it", () => {
       ),
     ).toEqual({ status: 409, key: "template_name_taken" });
     expect(
-      refused(await call(harness.base, draftPath("mbtest-template:base") + "/fork", { body: { name: "tool" } })),
+      refused(await call(harness.base, draftPath("mbtest-template:base") + "/duplicate", { body: { name: "tool" } })),
     ).toEqual({ status: 409, key: "template_name_taken" });
 
     // A build under the draft's name is refused too: the draft keeps the name it will be built under.

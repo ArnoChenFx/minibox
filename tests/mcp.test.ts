@@ -196,14 +196,14 @@ describe("MCP", () => {
     }
   });
 
-  test("the tools toolset forks a template over MCP and returns the new ref", async () => {
+  test("the tools toolset duplicates a template over MCP and returns the new ref", async () => {
     const env = setup();
     try {
       const session = await openSession(env.base, "tools");
       const listed = await post(env.base, rpc(1, "tools/list"), {}, "/mcp?toolsets=tools");
       expect(
         ((await listed.json()) as { result: { tools: { name: string }[] } }).result.tools.map((t) => t.name),
-      ).toContain("fork_template");
+      ).toContain("duplicate_template");
 
       // A declared template to copy, built through the service the create operation uses.
       await createDeclaredTemplate(
@@ -212,7 +212,7 @@ describe("MCP", () => {
         {},
       );
 
-      const made = await callTool(env.base, session, "fork_template", { ref: "tool", name: "tool-copy" });
+      const made = await callTool(env.base, session, "duplicate_template", { ref: "tool", name: "tool-copy" });
 
       expect(made.result.isError).toBeUndefined();
       expect(made.result.structuredContent).toEqual({

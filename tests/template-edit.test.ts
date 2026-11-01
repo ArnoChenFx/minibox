@@ -19,7 +19,7 @@ import {
 } from "../src/services/template-builds";
 import {
   editTemplate,
-  forkTemplate,
+  duplicateTemplate,
   holdingTemplate,
   listTemplates,
   saveBoxAsTemplate,
@@ -293,10 +293,10 @@ describe("editing a template that has no source", () => {
     expect(error).toMatchObject({ status: 400, key: "template_not_declared" });
   });
 
-  test("a fork of a saved template is refused too, and its own fork stays editable", async () => {
+  test("a duplicate of a saved template is refused too, and its own duplicate stays editable", async () => {
     const l = lab();
     await declared(l);
-    await forkTemplate(l.host, await templateSourceImage(l.host, "mbtest-template:tool"), {
+    await duplicateTemplate(l.host, await templateSourceImage(l.host, "mbtest-template:tool"), {
       name: "tool-copy",
       createdBy: "owner",
     });
@@ -309,7 +309,7 @@ describe("editing a template that has no source", () => {
     await editTemplate(l.host, source, image, { source: { kind: "dockerfile", text: FROM_ALPINE_21 } });
 
     expect(readRecipe(l.host, "tool-copy")?.source).toEqual({ kind: "dockerfile", text: FROM_ALPINE_21 });
-    // The template the fork came from keeps its own recipe.
+    // The template the duplicate came from keeps its own recipe.
     expect(readRecipe(l.host, "tool")?.source).toEqual({ kind: "dockerfile", text: FROM_ALPINE });
   });
 });
@@ -407,7 +407,7 @@ describe("a rebuild and an edit of one template", () => {
   });
 });
 
-const forkPath = (ref: string) => `/api/templates/${encodeURIComponent(ref)}/fork`;
+const duplicatePath = (ref: string) => `/api/templates/${encodeURIComponent(ref)}/duplicate`;
 const recipePath = (ref: string) => `/api/templates/${encodeURIComponent(ref)}/recipe`;
 const editPath = (ref: string) => `/api/templates/${encodeURIComponent(ref)}`;
 const rebuildPath = (ref: string) => `/api/templates/${encodeURIComponent(ref)}/rebuild`;
@@ -511,13 +511,13 @@ describe("template.get and template.edit over REST", () => {
   test("a token edits the template it created, and neither the owner's nor another token's", async () => {
     const maker = mint(harness.app, { name: "maker", preset: "operator" });
     const other = mint(harness.app, { name: "other", preset: "operator" });
-    // The owner builds one; one token forks it, so the fork belongs to that token.
+    // The owner builds one; one token duplicates it, so the duplicate belongs to that token.
     await declaredOverRest("shared");
-    const forked = await call(harness.base, forkPath("mbtest-template:shared"), {
+    const duplicated = await call(harness.base, duplicatePath("mbtest-template:shared"), {
       token: maker.secret,
       body: { name: "makers" },
     });
-    expect(forked.status).toBe(201);
+    expect(duplicated.status).toBe(201);
     // A duplicate of a declared template is a draft, which only the owner can build; the edit below is on the built copy.
     const built = await call(harness.base, rebuildPath("mbtest-template:makers"), { body: {} });
     expect(built.status).toBe(202);
@@ -608,20 +608,20 @@ describe("template.get and template.edit over REST", () => {
     expect(readRecipe(host, "node")?.init).toEqual({ forwardPorts: [3000] });
   });
 
-  test("a recipe a fork wrote before it kept a copy of the official Dockerfile reads and edits as that copy", async () => {
+  test("a recipe a duplicate wrote before it kept a copy of the official Dockerfile reads and edits as that copy", async () => {
     const host = harness.app.hosts.get();
     await createDeclaredTemplate(
       host,
       { name: "node", source: { kind: "official", name: "node" }, createdBy: "owner" },
       progressOf(),
     );
-    const forked = await call(harness.base, forkPath("mbtest-template:node"), { body: { name: "node-copy" } });
-    expect(forked.status).toBe(201);
-    // A duplicate is a draft; build it for the first time, so the record below has an image id as an old fork's had.
+    const duplicated = await call(harness.base, duplicatePath("mbtest-template:node"), { body: { name: "node-copy" } });
+    expect(duplicated.status).toBe(201);
+    // A duplicate is a draft; build it for the first time, so the record below has an image id as an old duplicate's had.
     const built = await call(harness.base, rebuildPath("mbtest-template:node-copy"), { body: {} });
     expect(built.status).toBe(202);
     expect((await finishedTask(harness.base, built.json.taskId ?? "")).status).toBe("succeeded");
-    // The record an earlier version wrote: the fork's own image id, still naming the official source.
+    // The record an earlier version wrote: the duplicate's own image id, still naming the official source.
     const path = join(dirname(host.specs.dir()), "template-recipes", host.host.id, "node-copy.json");
     const legacy = JSON.parse(readFileSync(path, "utf8"));
     writeFileSync(path, JSON.stringify({ ...legacy, source: { kind: "official", name: "node" } }));
@@ -634,7 +634,7 @@ describe("template.get and template.edit over REST", () => {
       expect.objectContaining({ ref: "mbtest-template:node-copy", buildKind: "dockerfile" }),
     );
 
-    // The edit the dead loop refused: the fork the user already has takes a new source, without being forked again.
+    // The edit the dead loop refused: the duplicate the user already has takes a new source, without being duplicated again.
     const edited = await call(harness.base, editPath("mbtest-template:node-copy"), {
       method: "PATCH",
       body: { source: { kind: "dockerfile", text: FROM_ALPINE_21 } },
@@ -647,7 +647,7 @@ describe("template.get and template.edit over REST", () => {
       buildKind: "dockerfile",
     });
     expect(storedSourceOf(harness, "node-copy")).toEqual({ kind: "dockerfile", text: FROM_ALPINE_21 });
-    // The template the fork came from is still official, with the source a rebuild uses.
+    // The template the duplicate came from is still official, with the source a rebuild uses.
     expect(storedSourceOf(harness, "node")).toEqual({ kind: "official", name: "node" });
   });
 
@@ -663,7 +663,7 @@ describe("template.get and template.edit over REST", () => {
   });
 });
 
-/** The source a read of the recipe gives: an old fork's official source reads as the copy of the shipped Dockerfile. */
+/** The source a read of the recipe gives: an old duplicate's official source reads as the copy of the shipped Dockerfile. */
 function readRecipeSource(harness: Harness, name: string): unknown {
   return readRecipe(harness.app.hosts.get(), name)?.source;
 }

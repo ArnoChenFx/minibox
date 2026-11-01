@@ -6,8 +6,8 @@ import { ROOT } from "../src/config";
 import en from "../web/js/i18n/en.js";
 import zh from "../web/js/i18n/zh-CN.js";
 import {
-  forkAction,
-  forkMakesDraft,
+  duplicateAction,
+  duplicateMakesDraft,
   isUnbuilt,
   needsSync,
   syncSizeMb,
@@ -137,49 +137,49 @@ describe("the label a template card shows", () => {
 describe("the duplicate action a card offers", () => {
   test("a built card, official or not, offers the duplicate", () => {
     const [node] = withOfficialCards(builtNode(), OFFICIAL);
-    expect(node && forkAction(node)).toEqual({ enabled: true, reason: null });
+    expect(node && duplicateAction(node)).toEqual({ enabled: true, reason: null });
     const [tool] = templateCards([copy("local", { ref: "minibox-template:tool", name: "tool" })]);
-    expect(tool && forkAction(tool)).toEqual({ enabled: true, reason: null });
+    expect(tool && duplicateAction(tool)).toEqual({ enabled: true, reason: null });
   });
 
   test("an official card no host holds offers it too, because the copy is a draft from the shipped Dockerfile", () => {
     const [, python] = withOfficialCards(builtNode(), OFFICIAL);
     expect(python && isUnbuilt(python)).toBe(true);
-    expect(python && forkAction(python)).toEqual({ enabled: true, reason: null });
+    expect(python && duplicateAction(python)).toEqual({ enabled: true, reason: null });
     // The reason the button used to be off for is gone from both dictionaries.
-    expect(en).not.toHaveProperty("tp.forkUnbuilt");
-    expect(zh).not.toHaveProperty("tp.forkUnbuilt");
+    expect(en).not.toHaveProperty("tp.duplicateUnbuilt");
+    expect(zh).not.toHaveProperty("tp.duplicateUnbuilt");
   });
 
   test("a draft card offers no duplicate, because there is no image behind it", () => {
-    expect(forkAction({ draft: true })).toEqual({ enabled: false, reason: null });
+    expect(duplicateAction({ draft: true })).toEqual({ enabled: false, reason: null });
   });
 
   test("the page draws the button from the action, so a card that takes it gets a live button", () => {
     const page = readFileSync(join(ROOT, "web", "js", "pages", "templates.js"), "utf8");
-    expect(page).toContain("forkAction(tp)");
-    expect(page).toContain('data-action="fork"');
+    expect(page).toContain("duplicateAction(tp)");
+    expect(page).toContain('data-action="duplicate"');
   });
 });
 
 describe("what a duplicate copies", () => {
   test("a template with a build source, an official one (built or not), and the base template copy the source", () => {
     const [tool] = templateCards([copy("local", { ref: "minibox-template:tool", name: "tool" })]);
-    expect(tool && forkMakesDraft(tool, BASE)).toBe(true);
+    expect(tool && duplicateMakesDraft(tool, BASE)).toBe(true);
     const [node] = withOfficialCards(builtNode(), OFFICIAL);
-    expect(node && forkMakesDraft(node, BASE)).toBe(true);
+    expect(node && duplicateMakesDraft(node, BASE)).toBe(true);
     const [, python] = withOfficialCards(builtNode(), OFFICIAL);
-    expect(python && forkMakesDraft(python, BASE)).toBe(true);
-    expect(forkMakesDraft({ ref: BASE }, BASE)).toBe(true);
+    expect(python && duplicateMakesDraft(python, BASE)).toBe(true);
+    expect(duplicateMakesDraft({ ref: BASE }, BASE)).toBe(true);
   });
 
   test("a template saved from a box has no source, so its duplicate copies the image", () => {
     const [saved] = templateCards([
       copy("local", { ref: "minibox-template:gold", name: "gold", buildKind: undefined }),
     ]);
-    expect(saved && forkMakesDraft(saved, BASE)).toBe(false);
+    expect(saved && duplicateMakesDraft(saved, BASE)).toBe(false);
     // A duplicate of a saved template has no build kind either, so a duplicate of it is an image copy too.
-    expect(forkMakesDraft({ ref: "minibox-template:gold-copy" }, BASE)).toBe(false);
+    expect(duplicateMakesDraft({ ref: "minibox-template:gold-copy" }, BASE)).toBe(false);
   });
 });
 

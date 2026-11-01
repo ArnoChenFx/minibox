@@ -304,7 +304,7 @@ function storedSourceOf(host: { specs: { dir(): string }; host: { id: string } }
   return (JSON.parse(readFileSync(path, "utf8")) as { source: unknown }).source;
 }
 
-describe("a copy of an old fork keeps the source the source host stores", () => {
+describe("a copy of an old duplicate keeps the source the source host stores", () => {
   let cluster: Cluster | undefined;
   let templates = "";
 
@@ -325,21 +325,23 @@ describe("a copy of an old fork keeps the source the source host stores", () => 
     const localHost = cluster.app.hosts.get();
     const smallHost = cluster.app.hosts.get("small");
 
-    // The official `node` template, and a fork of it written the way an earlier version did: the fork's own image, still
+    // The official `node` template, and a duplicate of it written the way an earlier version did: the duplicate's own image, still
     // naming the official source.
     await createDeclaredTemplate(
       localHost,
       { name: "node", source: { kind: "official", name: "node" }, createdBy: "owner" },
       {},
     );
-    expect((await cluster.post("/api/templates/mbtest-template:node/fork", { name: "node-copy" })).status).toBe(201);
+    expect((await cluster.post("/api/templates/mbtest-template:node/duplicate", { name: "node-copy" })).status).toBe(
+      201,
+    );
     // A duplicate of an official template is a draft, which has no image to copy or sync. Build it for the first time.
     const rebuilt = await cluster.post("/api/templates/mbtest-template:node-copy/rebuild", {});
     expect(rebuilt.status).toBe(202);
     await cluster.app.tasks.drain();
     const recipeFile = join(dirname(localHost.specs.dir()), "template-recipes", localHost.host.id, "node-copy.json");
-    const forked = JSON.parse(readFileSync(recipeFile, "utf8")) as Record<string, unknown>;
-    writeFileSync(recipeFile, JSON.stringify({ ...forked, source: { kind: "official", name: "node" } }));
+    const duplicated = JSON.parse(readFileSync(recipeFile, "utf8")) as Record<string, unknown>;
+    writeFileSync(recipeFile, JSON.stringify({ ...duplicated, source: { kind: "official", name: "node" } }));
 
     // Copy it to the other host, as a create there, a sync or a move does.
     const started = await cluster.post("/api/templates/mbtest-template:node-copy/sync", { host: "small" });

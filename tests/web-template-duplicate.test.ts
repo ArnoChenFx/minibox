@@ -8,7 +8,7 @@ import type { App } from "../src/app";
 import { ROOT } from "../src/config";
 import { startServer } from "../src/server";
 import { createDeclaredTemplate } from "../src/services/template-builds";
-import { forkName, takenNames } from "../web/js/lib/fork-name.js";
+import { duplicateName, takenNames } from "../web/js/lib/duplicate-name.js";
 import { createTestApp, silenceLogs, TEST_KEY } from "./support/app";
 import { chromiumFor } from "./support/chromium";
 
@@ -28,28 +28,28 @@ afterAll(restoreLogs);
 
 describe("the name a duplicate is prefilled with", () => {
   test("is <name>-copy when that is free", () => {
-    expect(forkName("tool")).toBe("tool-copy");
-    expect(forkName("tool", takenNames([{ name: "base" }]))).toBe("tool-copy");
+    expect(duplicateName("tool")).toBe("tool-copy");
+    expect(duplicateName("tool", takenNames([{ name: "base" }]))).toBe("tool-copy");
   });
 
   test("moves on to -copy-2, then -copy-3, when the shorter names are taken", () => {
-    expect(forkName("tool", new Set(["tool-copy"]))).toBe("tool-copy-2");
-    expect(forkName("tool", new Set(["tool-copy", "tool-copy-2"]))).toBe("tool-copy-3");
+    expect(duplicateName("tool", new Set(["tool-copy"]))).toBe("tool-copy-2");
+    expect(duplicateName("tool", new Set(["tool-copy", "tool-copy-2"]))).toBe("tool-copy-3");
   });
 
   test("stays within the 63 characters a template name allows", () => {
     const long = "a".repeat(63);
-    const name = forkName(long);
+    const name = duplicateName(long);
     expect(name.length).toBeLessThanOrEqual(63);
     expect(name.endsWith("-copy")).toBe(true);
-    const next = forkName(long, new Set([name]));
+    const next = duplicateName(long, new Set([name]));
     expect(next.length).toBeLessThanOrEqual(63);
     expect(next).not.toBe(name);
   });
 
   test("drops a trailing separator so the copy's name stays valid", () => {
-    expect(forkName("tool.")).toBe("tool-copy");
-    expect(forkName("tool--")).toBe("tool-copy");
+    expect(duplicateName("tool.")).toBe("tool-copy");
+    expect(duplicateName("tool--")).toBe("tool-copy");
   });
 
   test("takenNames names every card's template, whichever host holds it", () => {
@@ -65,30 +65,33 @@ describe("the duplicate action on the template card", () => {
       ["zh-CN", ZH],
     ] as const) {
       for (const key of [
-        "tp.fork",
-        "tp.forkTitle",
-        "tp.forkDesc",
-        "tp.forkDescImage",
-        "tp.forkWhat",
-        "tp.forkWhatImage",
-        "tp.forkWhatOfficial",
-        "tp.forkHereLocal",
-        "tp.forkConfirm",
-        "tp.forking",
-        "tp.forked",
-        "tp.forkedDraft",
-        "tp.forkFailed",
+        "tp.duplicate",
+        "tp.duplicateTitle",
+        "tp.duplicateDesc",
+        "tp.duplicateDescImage",
+        "tp.duplicateWhat",
+        "tp.duplicateWhatImage",
+        "tp.duplicateWhatOfficial",
+        "tp.duplicateHereLocal",
+        "tp.duplicateConfirm",
+        "tp.duplicating",
+        "tp.duplicated",
+        "tp.duplicatedDraft",
+        "tp.duplicateFailed",
       ])
         expect([lang, key, source.includes(`"${key}":`)]).toEqual([lang, key, true]);
     }
-    expect(EN).toContain('"tp.fork": "Duplicate"');
-    expect(EN).toContain('"tp.forkConfirm": "Duplicate template"');
-    expect(ZH).toContain('"tp.fork": "复制"');
-    expect(ZH).toContain('"tp.forkConfirm": "复制模板"');
+    expect(EN).toContain('"tp.duplicate": "Duplicate"');
+    expect(EN).toContain('"tp.duplicateConfirm": "Duplicate template"');
+    expect(ZH).toContain('"tp.duplicate": "复制"');
+    expect(ZH).toContain('"tp.duplicateConfirm": "复制模板"');
     // The old wording, which copied an image, and its "build it first" reason are gone.
-    expect(EN).not.toContain("tp.forkUnbuilt");
-    expect(ZH).not.toContain("tp.forkUnbuilt");
+    expect(EN).not.toContain("tp.duplicateUnbuilt");
+    expect(ZH).not.toContain("tp.duplicateUnbuilt");
     // The activity feed and the task panel name the new operation too.
+    expect(EN_BOXES).toContain('"act.template.duplicate": "Duplicated template"');
+    expect(ZH_BOXES).toContain('"act.template.duplicate": "复制模板"');
+    // An activity record an earlier version wrote still reads, under the name it was recorded with.
     expect(EN_BOXES).toContain('"act.template.fork": "Duplicated template"');
     expect(ZH_BOXES).toContain('"act.template.fork": "复制模板"');
   });
