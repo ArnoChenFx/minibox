@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -20,7 +20,7 @@ import { newBoxId } from "../src/specs/revision";
 import { requiredScopes, scopeAllowed } from "../src/tokens/model";
 import { reserveVolumeRemoval, reserveVolumeSnapshot } from "../src/volumes/activity";
 import type { SocketData } from "../src/ws/socket";
-import { silenceLogs, TEST_KEY, testConfig } from "./support/app";
+import { silenceLogs, rejectionOf, TEST_KEY, testConfig } from "./support/app";
 import { FakeRuntime, type Op } from "./support/fake-runtime";
 import { FakeCheckpointEngine } from "./support/fake-snapshots";
 
@@ -182,6 +182,19 @@ function recordsOf(hostId: string) {
 /** The host list as the hosts file holds it, so a removal can be checked to have reached the file too. */
 function hostsFile(): string {
   return readFileSync(hostsPath(app.cfg.dataDir), "utf8");
+}
+
+/** A stored S3 target for the remote checkpoint repository of a host. No copy is run, so nothing is reached. */
+function archiveTarget(): string {
+  return app.targets.add("archive", {
+    kind: "s3",
+    path: "minibox",
+    endpoint: "https://s3.example.com",
+    region: "us-east-1",
+    bucket: "archive",
+    accessKeyId: "AKIAEXAMPLE",
+    secretAccessKey: "test-only-secret-key",
+  }).id;
 }
 
 beforeEach(async () => {
@@ -650,6 +663,81 @@ describe("the linked records a forced removal and a box delete clear", () => {
     expect(deleted.status).toBe(200);
     expect(host.checkpoints.readSchedule(box.boxId)).toBeNull();
     expect(host.checkpoints.pendingRollback(box.boxId)).toBeNull();
+  });
+});
+
+describe("removing a host clears its remote checkpoint repository", () => {
+  test("an ordinary removal drops the host's remote record, and its target can be removed", async () => {
+    const targetId = archiveTarget();
+    app.targets.setRemote("edge", { targetId });
+    expect(app.targets.remoteOf("edge")).not.toBeNull();
+
+    expect((await api("/api/hosts/edge", { method: "DELETE" })).status).toBe(200);
+
+    expect(app.hosts.has("edge")).toBe(false);
+    expect(app.targets.remoteOf("edge")).toBeNull();
+    app.targets.remove(targetId);
+    expect(app.targets.list()).toEqual([]);
+  });
+
+  test("a forced removal of a remote-only host drops its record too, and its target can be removed", async () => {
+    const targetId = archiveTarget();
+    app.targets.setRemote("edge", { targetId, mode: "only" });
+    const box = await boxOn("edge", "alpha");
+    await takeCheckpoint(box.boxId);
+    expect(
+      app.hosts
+        .get("edge")
+        .checkpoints.list()
+        .filter((record) => record.hostId === "edge"),
+    ).toHaveLength(1);
+    edge.down = true;
+    await app.hostAdmin.refresh();
+
+    expect((await post("/api/hosts/edge/force-remove", { confirm: true })).status).toBe(200);
+
+    expect(app.targets.remoteOf("edge")).toBeNull();
+    app.targets.remove(targetId);
+    expect(app.targets.list()).toEqual([]);
+  });
+
+  test("the copy state kept for a removed host in memory goes with it", async () => {
+    const targetId = archiveTarget();
+    app.targets.setRemote("edge", { targetId });
+    const box = await boxOn("edge", "alpha");
+    await takeCheckpoint(box.boxId);
+    const host = app.hosts.get("edge");
+    const engine = host.checkpointEngine as FakeCheckpointEngine;
+    engine.failRemoteCopy = true;
+    expect(await rejectionOf(app.checkpointRemote.syncHost(host))).toBeInstanceOf(Error);
+    expect(app.checkpointRemote.stateOf("edge").failures).toBe(1);
+
+    edge.down = true;
+    await app.hostAdmin.refresh();
+    expect((await post("/api/hosts/edge/force-remove", { confirm: true })).status).toBe(200);
+
+    expect(app.checkpointRemote.stateOf("edge")).toEqual({ failures: 0, lastFailure: null });
+  });
+
+  test("a record that cannot be dropped does not keep the copy state or hold the removal", async () => {
+    const targetId = archiveTarget();
+    app.targets.setRemote("edge", { targetId });
+    const box = await boxOn("edge", "alpha");
+    await takeCheckpoint(box.boxId);
+    const host = app.hosts.get("edge");
+    (host.checkpointEngine as FakeCheckpointEngine).failRemoteCopy = true;
+    expect(await rejectionOf(app.checkpointRemote.syncHost(host))).toBeInstanceOf(Error);
+    expect(app.checkpointRemote.stateOf("edge").failures).toBe(1);
+    spyOn(app.targets, "forgetHost").mockImplementation(() => {
+      throw new Error("targets.json cannot be written");
+    });
+
+    edge.down = true;
+    await app.hostAdmin.refresh();
+    expect((await post("/api/hosts/edge/force-remove", { confirm: true })).status).toBe(200);
+
+    expect(app.hosts.has("edge")).toBe(false);
+    expect(app.checkpointRemote.stateOf("edge")).toEqual({ failures: 0, lastFailure: null });
   });
 });
 

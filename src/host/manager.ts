@@ -175,6 +175,12 @@ export interface HostManagerOptions {
   /** Called when a remote host's engine becomes reachable, so its boxes are reconciled. */
   readonly onLive?: (host: HostCtx) => void;
   /**
+   * Called at the end of `forgetHost`, so the rest of the control plane drops what it recorded for the host, such as its
+   * remote checkpoint repository and the copy state kept for it. It must not throw: the host is already gone, and a
+   * failed cleanup must not hold the removal. A throw is logged and nothing else.
+   */
+  readonly onForgotten?: (hostId: string) => void;
+  /**
    * Called when a host's engine answered after being offline, or after a connection that dropped came back. The
    * firewall may have been reloaded while it was away, so the egress forward check is asked to read the rules again.
    */
@@ -559,6 +565,13 @@ export class HostManager {
     this.probes.delete(id);
     this.backoff.delete(id);
     this.options.store.removeCredentials(id);
+    if (this.options.onForgotten) {
+      try {
+        this.options.onForgotten(id);
+      } catch (e) {
+        log.warn("host.forget_cleanup_failed", { host: id, error: reasonOf(e) });
+      }
+    }
     return view;
   }
 

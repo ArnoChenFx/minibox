@@ -5,7 +5,7 @@ import type { HostCtx } from "../host/registry";
 import { conflict, notFound } from "../lib/errors";
 import { log } from "../lib/logger";
 import { msg } from "../lib/messages";
-import type { TargetService } from "./targets";
+import type { RemoteRepoView, TargetService } from "./targets";
 
 /** The fallback pass's interval. A checkpoint also asks for a copy as soon as it is written, so this only catches what a restart or a failure left behind. */
 export const REMOTE_SYNC_EVERY_MS = 60 * 60 * 1000;
@@ -21,6 +21,19 @@ const SYNC_REQUEST_DELAY_MS = 5 * 1000;
 const RETRY_BASE_MS = 30 * 1000;
 const RETRY_MAX_MS = 30 * 60 * 1000;
 const MAX_ERROR = 500;
+
+/** Whether a host's remote repository is still where a copy started: the same target, folder and mode. */
+function samePosition(
+  start: Pick<RemoteRepoView, "targetId" | "path" | "mode">,
+  current: RemoteRepoView | null,
+): boolean {
+  return (
+    current !== null &&
+    current.targetId === start.targetId &&
+    current.path === start.path &&
+    current.mode === start.mode
+  );
+}
 
 /**
  * Operations that write a checkpoint record holding snapshots, so a successful one asks for a copy to the remote
@@ -204,19 +217,19 @@ export class CheckpointRemoteSync {
       try {
         repository = await this.targets.remoteRepository(host.host.id);
       } catch (e) {
-        this.failed(host.host.id, pending, remote.targetId, now, e);
+        this.failedCopy(host, remote, pending, now, e);
         throw e;
       }
       try {
         await host.checkpointEngine.copyToRemote(host, repository, snapshotIds);
       } catch (e) {
-        this.failed(host.host.id, pending, remote.targetId, now, e);
+        this.failedCopy(host, remote, pending, now, e);
         throw e;
       }
       // The copy went to the position read above. When the operator moved or cleared the remote while it ran, the marks
       // would name a repository the snapshots are not in, so none are written and the next pass copies them again.
       const current = this.targets.remoteOf(host.host.id);
-      if (!current || current.targetId !== remote.targetId || current.path !== remote.path) {
+      if (!samePosition(remote, current)) {
         log.info("checkpoint.remote_moved_during_copy", { host: host.host.id, target: remote.targetId });
         return summary;
       }
@@ -256,6 +269,19 @@ export class CheckpointRemoteSync {
     this.retries.delete(hostId);
   }
 
+  /**
+   * Forgets the copy state a removed host kept in memory: a copy it still asked for and a retry delay a failed one set.
+   * Nothing on disk changes; the host's records are closed or gone by the time this runs.
+   */
+  forgetHost(hostId: string): void {
+    const timer = this.timers.get(hostId);
+    if (timer !== undefined) {
+      clearTimeout(timer);
+      this.timers.delete(hostId);
+    }
+    this.retries.delete(hostId);
+  }
+
   private async tick(): Promise<void> {
     try {
       await this.run();
@@ -288,6 +314,25 @@ export class CheckpointRemoteSync {
     const patch: Partial<CheckpointRecord> = { remoteSync: { ...record.remoteSync, [targetId]: at } };
     if (failure === null || failure.targetId === targetId) patch.remoteFailure = undefined;
     this.write(id, patch);
+  }
+
+  /**
+   * Records a failed copy, unless the operator moved the remote while it ran. That failure belongs to the old position:
+   * its records, the new position's last error and the retry delay must not carry it. The caller still throws the error.
+   */
+  private failedCopy(
+    host: HostCtx,
+    remote: RemoteRepoView,
+    pending: CheckpointRecord[],
+    now: Date,
+    error: unknown,
+  ): void {
+    const current = this.targets.remoteOf(host.host.id);
+    if (!samePosition(remote, current)) {
+      log.info("checkpoint.remote_moved_during_copy", { host: host.host.id, target: remote.targetId, failed: true });
+      return;
+    }
+    this.failed(host.host.id, pending, remote.targetId, now, error);
   }
 
   /** Records a failed copy on every pending record and on the host's remote, and sets the retry delay. */

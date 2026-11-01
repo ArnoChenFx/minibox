@@ -400,6 +400,24 @@ export class TargetService {
     log.info("target.remote_cleared", { host: hostId });
   }
 
+  /**
+   * Drops the remote repository record of a host that is gone. No checkpoint check runs: a forced removal has already
+   * dropped the host's records, and an ordinary removal could not have run while it held any. Only the record goes; the
+   * snapshots on the remote and the repository's password file stay there, so a host added again under the same id and
+   * set back to the same position opens the same repository.
+   */
+  forgetHost(hostId: string): void {
+    const remote = this.store.remoteOf(hostId);
+    if (!remote) return;
+    if (!this.store.deleteRemote(hostId)) return;
+    log.info("target.remote_dropped_with_host", {
+      host: hostId,
+      target: remote.targetId,
+      mode: remote.mode ?? "sync",
+      path: remotePathFor(remote.path, hostId),
+    });
+  }
+
   /** Records how the last copy to a host's remote repository ended. A null error marks a successful copy. */
   recordRemoteResult(hostId: string, result: { at: string; error: string | null }): void {
     const remote = this.store.remoteOf(hostId);
