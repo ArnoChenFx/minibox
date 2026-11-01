@@ -220,6 +220,26 @@ export class CheckpointRemoteSync {
     }
   }
 
+  /**
+   * Forgets that a host's checkpoints were copied to one target, so the next pass copies them there again. A changed
+   * folder or a cleared remote leaves the old marks naming a repository that may not hold the snapshots, and a copy
+   * only adds: copying again is safe. The host's retry delay goes too, so a target that was failing is tried right
+   * away instead of waiting out a backoff from the old position.
+   */
+  forgetMarks(hostId: string, targetId: string): void {
+    for (const record of this.checkpoints.list()) {
+      if (record.hostId !== hostId) continue;
+      const patch: Partial<CheckpointRecord> = {};
+      if (record.remoteSync?.[targetId] !== undefined) {
+        const { [targetId]: _forgotten, ...rest } = record.remoteSync;
+        patch.remoteSync = Object.keys(rest).length === 0 ? undefined : rest;
+      }
+      if (record.remoteFailure?.targetId === targetId) patch.remoteFailure = undefined;
+      if (Object.keys(patch).length > 0) this.write(record.id, patch);
+    }
+    this.retries.delete(hostId);
+  }
+
   private async tick(): Promise<void> {
     try {
       await this.run();

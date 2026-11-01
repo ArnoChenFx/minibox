@@ -119,7 +119,15 @@ const checkpointRemoteSet = defineOperation({
       path: result?.remote.path ?? input.path ?? "",
     }),
   },
-  run: async ({ targets }, input) => ({ remote: targetsOf(targets).setRemote(input.id, input) }),
+  run: async ({ targets, checkpointRemote }, input) => {
+    const service = targetsOf(targets);
+    const before = service.remoteOf(input.id);
+    const remote = service.setRemote(input.id, input);
+    if (before && (before.targetId !== remote.targetId || before.path !== remote.path)) {
+      checkpointRemote?.forgetMarks(input.id, before.targetId);
+    }
+    return { remote };
+  },
 });
 
 const checkpointRemoteClear = defineOperation({
@@ -138,8 +146,11 @@ const checkpointRemoteClear = defineOperation({
     target: (input) => ({ kind: "host", id: input.id, name: input.id }),
     detail: (input) => ({ hostId: input.id }),
   },
-  run: async ({ targets }, input) => {
-    targetsOf(targets).clearRemote(input.id);
+  run: async ({ targets, checkpointRemote }, input) => {
+    const service = targetsOf(targets);
+    const before = service.remoteOf(input.id);
+    service.clearRemote(input.id);
+    if (before) checkpointRemote?.forgetMarks(input.id, before.targetId);
     return { ok: true as const };
   },
 });
