@@ -30781,6 +30781,14 @@
                               ],
                               "description": "The target kind. A WebDAV target cannot hold a repository."
                             },
+                            "mode": {
+                              "type": "string",
+                              "enum": [
+                                "sync",
+                                "only"
+                              ],
+                              "description": "sync keeps a local checkpoint repository and copies to this one. only has no local repository: every checkpoint is taken, restored and deleted on the remote, so every one of those needs a network connection to the target."
+                            },
                             "path": {
                               "type": "string",
                               "description": "The folder on the target that holds this host's restic repository, with the host id appended. No credential is in it."
@@ -30848,6 +30856,7 @@
                             "targetId",
                             "targetName",
                             "kind",
+                            "mode",
                             "path",
                             "lastSyncAt",
                             "lastError",
@@ -30993,6 +31002,14 @@
                     "description": "The base folder under the target. The host id is appended to it, so each host keeps a repository of its own. Empty or omitted puts it at the target's root.",
                     "type": "string",
                     "maxLength": 512
+                  },
+                  "mode": {
+                    "description": "How the host uses the repository. sync (default) keeps the local repository and copies to this one. only keeps no local repository and does everything on the remote. Moving to, from or within only needs a host with no checkpoint records, including those in the recycle bin.",
+                    "type": "string",
+                    "enum": [
+                      "sync",
+                      "only"
+                    ]
                   }
                 },
                 "required": [
@@ -31033,6 +31050,14 @@
                           ],
                           "description": "The target kind. A WebDAV target cannot hold a repository."
                         },
+                        "mode": {
+                          "type": "string",
+                          "enum": [
+                            "sync",
+                            "only"
+                          ],
+                          "description": "sync keeps a local checkpoint repository and copies to this one. only has no local repository: every checkpoint is taken, restored and deleted on the remote, so every one of those needs a network connection to the target."
+                        },
                         "path": {
                           "type": "string",
                           "description": "The folder on the target that holds this host's restic repository, with the host id appended. No credential is in it."
@@ -31063,6 +31088,7 @@
                         "targetId",
                         "targetName",
                         "kind",
+                        "mode",
                         "path",
                         "lastSyncAt",
                         "lastError",

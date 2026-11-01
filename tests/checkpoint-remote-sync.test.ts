@@ -614,26 +614,33 @@ describe("a streak of failed copies", () => {
   });
 });
 
+/** The remote of a test instance, as the read operation reports it. */
+async function remoteOf(inst: Instance): Promise<{ remote: { mode: string; targetId: string; path: string } | null }> {
+  return (await inst.app.operations.run("checkpoint.remote.get", ctxOf(inst.app), { id: "local" })) as {
+    remote: { mode: string; targetId: string; path: string } | null;
+  };
+}
+
+/** Sets the remote through the operation, so the mode check and the save path are the ones a console uses. */
+function saveRemote(
+  inst: Instance,
+  input: { targetId: string; path?: string; mode?: "sync" | "only" },
+): Promise<unknown> {
+  return inst.app.operations.run("checkpoint.remote.set", ctxOf(inst.app), { id: "local", ...input });
+}
+
 describe("a host that keeps its checkpoints only on the remote", () => {
-  const getRemote = async (inst: Instance) =>
-    (await inst.app.operations.run("checkpoint.remote.get", ctxOf(inst.app), { id: "local" })) as {
-      remote: { mode: string; targetId: string; path: string } | null;
-    };
-
-  const setRemote = (inst: Instance, input: { targetId: string; path?: string; mode?: "sync" | "only" }) =>
-    inst.app.operations.run("checkpoint.remote.set", ctxOf(inst.app), { id: "local", ...input });
-
   test("a host with no records switches to only and back, and the repository is opened before the save", async () => {
     const inst = instanceOf();
     const targetId = s3Target(inst);
 
-    const set = (await setRemote(inst, { targetId, mode: "only" })) as { remote: { mode: string; path: string } };
+    const set = (await saveRemote(inst, { targetId, mode: "only" })) as { remote: { mode: string; path: string } };
     expect(set.remote).toMatchObject({ mode: "only", path: "local" });
     expect(engineOf(inst).remoteChecks).toHaveLength(1);
     expect(engineOf(inst).remoteChecks[0]?.repository).toBe("s3:https://s3.example.com/archive/local");
-    expect((await getRemote(inst)).remote).toMatchObject({ mode: "only", targetId, path: "local" });
+    expect((await remoteOf(inst)).remote).toMatchObject({ mode: "only", targetId, path: "local" });
 
-    const back = (await setRemote(inst, { targetId, mode: "sync" })) as { remote: { mode: string } };
+    const back = (await saveRemote(inst, { targetId, mode: "sync" })) as { remote: { mode: string } };
     expect(back.remote.mode).toBe("sync");
     // The remote is validated only when the host is set to use it alone.
     expect(engineOf(inst).remoteChecks).toHaveLength(1);
@@ -645,11 +652,13 @@ describe("a host that keeps its checkpoints only on the remote", () => {
     inst.app.targets.setRemote("local", { targetId });
     const { record } = await checkpointOf(inst, "src");
 
-    expect(await rejectionOf(Promise.resolve().then(() => setRemote(inst, { targetId, mode: "only" })))).toMatchObject({
-      status: 409,
-      key: "checkpoint_remote_has_checkpoints",
-    });
-    expect((await getRemote(inst)).remote?.mode).toBe("sync");
+    expect(await rejectionOf(Promise.resolve().then(() => saveRemote(inst, { targetId, mode: "only" })))).toMatchObject(
+      {
+        status: 409,
+        key: "checkpoint_remote_has_checkpoints",
+      },
+    );
+    expect((await remoteOf(inst)).remote?.mode).toBe("sync");
 
     const now = new Date().toISOString();
     inst.host.checkpoints.write({
@@ -662,42 +671,46 @@ describe("a host that keeps its checkpoints only on the remote", () => {
         expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
       },
     });
-    expect(await rejectionOf(Promise.resolve().then(() => setRemote(inst, { targetId, mode: "only" })))).toMatchObject({
-      status: 409,
-      key: "checkpoint_remote_has_checkpoints",
-    });
+    expect(await rejectionOf(Promise.resolve().then(() => saveRemote(inst, { targetId, mode: "only" })))).toMatchObject(
+      {
+        status: 409,
+        key: "checkpoint_remote_has_checkpoints",
+      },
+    );
 
     inst.host.checkpoints.remove(record.id);
-    expect(((await setRemote(inst, { targetId, mode: "only" })) as { remote: { mode: string } }).remote.mode).toBe(
+    expect(((await saveRemote(inst, { targetId, mode: "only" })) as { remote: { mode: string } }).remote.mode).toBe(
       "only",
     );
     await checkpointOf(inst, "after");
-    expect(await rejectionOf(Promise.resolve().then(() => setRemote(inst, { targetId, mode: "sync" })))).toMatchObject({
-      status: 409,
-      key: "checkpoint_remote_has_checkpoints",
-    });
+    expect(await rejectionOf(Promise.resolve().then(() => saveRemote(inst, { targetId, mode: "sync" })))).toMatchObject(
+      {
+        status: 409,
+        key: "checkpoint_remote_has_checkpoints",
+      },
+    );
   });
 
   test("a remote-only host cannot be moved or cleared with records, while a sync host still can", async () => {
     const inst = instanceOf();
     const targetId = s3Target(inst);
-    await setRemote(inst, { targetId, mode: "only" });
+    await saveRemote(inst, { targetId, mode: "only" });
     const { record } = await checkpointOf(inst, "src");
 
     expect(
-      await rejectionOf(Promise.resolve().then(() => setRemote(inst, { targetId, path: "elsewhere" }))),
+      await rejectionOf(Promise.resolve().then(() => saveRemote(inst, { targetId, path: "elsewhere" }))),
     ).toMatchObject({ status: 409, key: "checkpoint_remote_has_checkpoints" });
     expect(await rejectionOf(Promise.resolve().then(() => inst.app.targets.clearRemote("local")))).toMatchObject({
       status: 409,
       key: "checkpoint_remote_has_checkpoints",
     });
-    expect(await getRemote(inst)).toMatchObject({ remote: { mode: "only", path: "local" } });
+    expect(await remoteOf(inst)).toMatchObject({ remote: { mode: "only", path: "local" } });
 
     inst.host.checkpoints.remove(record.id);
-    const moved = (await setRemote(inst, { targetId, path: "elsewhere" })) as { remote: { path: string } };
+    const moved = (await saveRemote(inst, { targetId, path: "elsewhere" })) as { remote: { path: string } };
     expect(moved.remote.path).toBe("elsewhere/local");
     inst.app.targets.clearRemote("local");
-    expect(await getRemote(inst)).toEqual({ remote: null });
+    expect(await remoteOf(inst)).toEqual({ remote: null });
 
     // The same changes on a sync-mode host are not locked by its records.
     const sync = instanceOf();
@@ -712,7 +725,7 @@ describe("a host that keeps its checkpoints only on the remote", () => {
   test("a remote-only host is skipped by every sync pass, and a manual sync is a 409", async () => {
     const inst = instanceOf();
     const targetId = s3Target(inst);
-    await setRemote(inst, { targetId, mode: "only" });
+    await saveRemote(inst, { targetId, mode: "only" });
     const { record } = await checkpointOf(inst, "src");
 
     expect(await inst.app.checkpointRemote.run()).toEqual([]);
@@ -742,7 +755,7 @@ describe("a host that keeps its checkpoints only on the remote", () => {
 
     // The retry state survives on the service, but a remote-only host reports nothing and is never listed.
     inst.host.checkpoints.remove(record.id);
-    await setRemote(inst, { targetId, mode: "only" });
+    await saveRemote(inst, { targetId, mode: "only" });
 
     expect(inst.app.checkpointRemote.stateOf("local")).toEqual({ failures: 0, lastFailure: null });
     expect((await overviewOf(inst)).attention.some((item) => item.kind === "host.remote_sync_failing")).toBe(false);

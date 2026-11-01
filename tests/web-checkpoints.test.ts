@@ -69,6 +69,26 @@ describe("remote copy marks", () => {
     expect(remoteMarksOf(row())).toEqual([]);
   });
 
+  test("a remote-only host carries no copied badge, since its checkpoints are already there", () => {
+    const targetNames = new Map([["tgt_1", "archive"]]);
+    const checkpoint = row({ hostId: "local", remoteSync: { tgt_1: at(1) } });
+    expect(remoteMarksOf(checkpoint, targetNames, { onlyHosts: new Set(["local"]) })).toEqual([]);
+    expect(remoteMarksOf(checkpoint, targetNames, { onlyHosts: new Set(["other"]) })).toEqual([
+      { kind: "synced", targets: ["archive"] },
+    ]);
+    // A failed copy mark is left alone: only a sync host can have one, and it still says what went wrong.
+    expect(
+      remoteMarksOf(
+        row({
+          hostId: "local",
+          remoteFailure: { targetId: "tgt_1", at: at(1), message: "unreachable" },
+        }),
+        targetNames,
+        { onlyHosts: new Set(["local"]) },
+      ),
+    ).toEqual([{ kind: "failed", detail: "unreachable" }]);
+  });
+
   test("a targets reply with no list names nothing, so the marks fall back to the target ids", () => {
     expect(targetNamesOf({ targets: [{ id: "tgt_1", name: "archive" }] }).get("tgt_1")).toBe("archive");
     for (const reply of [{}, null, undefined, { targets: null }]) expect(targetNamesOf(reply).size).toBe(0);

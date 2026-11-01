@@ -291,6 +291,18 @@ export default {
   "st.hostRemote": "远端检查点仓库",
   "st.hostRemoteHelp":
     "把这台宿主机的检查点快照复制到 S3 或 SFTP 仓库，本机丢失时仍有一份副本。本地仓库仍是唯一拍摄检查点的地方。",
+  "st.hostRemoteMode": "模式",
+  "st.hostRemoteModeSync": "本地 + 定时同步",
+  "st.hostRemoteModeOnly": "仅异地",
+  "st.hostRemoteModeHelp":
+    "「本地 + 定时同步」在本机保留仓库，并定时复制到远端；「仅异地」不使用本地仓库，每个检查点的拍摄、恢复和删除都直接在远端进行。",
+  "st.hostRemoteModeLocked":
+    "这台宿主机还有 {count} 条检查点记录（含回收站）。在两种模式之间切换、或在仅异地下改位置、清除仓库，都要求没有记录，请先删除这些检查点。",
+  "st.hostRemoteOnlyBadge": "仅异地",
+  "st.hostRemoteOnlyNetwork": "拍摄、恢复和删除检查点都需要连接目标。",
+  "st.hostRemoteOnlyNoLocal": "这台机器上不保留检查点副本。",
+  "st.hostRemoteOnlyKey": "远端口令文件 {file} 只有一份，丢了之后远端的所有检查点都读不出来，必须备份。",
+  "st.hostRemoteClearLocked": "这台宿主机还有检查点记录，仅异地的仓库不能清除，请先删除这些检查点。",
   "st.hostRemoteColHost": "宿主机",
   "st.hostRemoteColRepo": "仓库",
   "st.hostRemoteColLast": "最近同步",

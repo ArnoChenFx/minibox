@@ -1,5 +1,6 @@
 import { api, enc } from "../lib/api.js";
 import { groupCheckpoints } from "../lib/checkpoint-groups.js";
+import { onlyHostsNow } from "../lib/checkpoint-remotes.js";
 import { kindsOf, rowActions, targetNamesOf } from "../lib/checkpoint-state.js";
 import { esc } from "../lib/dom.js";
 import { bytes, dateTime, relTime } from "../lib/format.js";
@@ -49,7 +50,7 @@ function actionButton(action, checkpoint, iconName, label, rule, { danger = fals
   return `<button type="button" class="icon-btn${danger ? " danger" : ""}" data-action="${action}" data-id="${esc(checkpoint.id)}" title="${esc(title)}" aria-label="${esc(label)}"${rule.allowed ? "" : " disabled"}>${icon(iconName)}</button>`;
 }
 
-function rowHtml(checkpoint, group, targetNames) {
+function rowHtml(checkpoint, group, targetNames, onlyHosts) {
   const elsewhere = group.box ? checkpoint.hostId !== hostOfBox(group.box) : false;
   const rules = rowActions(checkpoint, {
     held: group.pending?.safetyCheckpointId === checkpoint.id,
@@ -62,7 +63,7 @@ function rowHtml(checkpoint, group, targetNames) {
   const kinds = kindsOf(checkpoint)
     .map((kind) => `<span class="badge ${KIND_CLASS[kind]}">${esc(t(`ck.kind.${kind}`))}</span>`)
     .join("");
-  const remote = remoteBadgesHtml(checkpoint, targetNames);
+  const remote = remoteBadgesHtml(checkpoint, targetNames, onlyHosts);
   const contents = contentsText(checkpoint);
   // `data-label` names the contents on a phone, where the row is a card and the column header is gone. The other fields
   // name themselves there: a date, a size and a kind badge read as what they are. Contents that hold nothing are marked
@@ -122,6 +123,8 @@ export function mountStorageCheckpoints(root, { focus = "" } = {}) {
   let hosts = [];
   /** The target names the remote copy badges use, read with the checkpoints. */
   let targetNames = new Map();
+  /** The hosts whose checkpoints are kept only on the remote, so their rows carry no copied badge. */
+  let onlyHosts = new Set();
 
   const draw = () => {
     const shown = focus ? groups.filter((group) => group.id === focus) : groups;
@@ -147,7 +150,9 @@ export function mountStorageCheckpoints(root, { focus = "" } = {}) {
             });
             const more = toggle ? `<tr class="toggle-row"><td colspan="${COLUMNS}">${toggle}</td></tr>` : "";
             return (
-              groupHeadHtml(group, false, hosts) + rows.map((row) => rowHtml(row, group, targetNames)).join("") + more
+              groupHeadHtml(group, false, hosts) +
+              rows.map((row) => rowHtml(row, group, targetNames, onlyHosts)).join("") +
+              more
             );
           })
           .join("")
@@ -193,6 +198,8 @@ export function mountStorageCheckpoints(root, { focus = "" } = {}) {
       hosts = hostsNow();
       usage = usageBody;
       targetNames = targetNamesOf(targets);
+      onlyHosts = await onlyHostsNow();
+      if (disposed || token !== seq) return;
       const pendings = (pendingBody.rollbacks ?? []).map((entry) => [entry.box.boxId, entry.rollback]);
       groups = groupCheckpoints(checkpoints, boxes, new Map(pendings));
       draw();

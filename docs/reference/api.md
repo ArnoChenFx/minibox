@@ -285,10 +285,10 @@ These are owner only. A key logs in to every box over direct SSH, so no token ma
 | `GET` | `/api/boxes/{id}/checkpoint-schedule` | Read a box's checkpoint schedule, with its next and last run. `null` when none is set. `timezoneUnknown` is `true` when the saved zone is one the server no longer knows; the schedule then runs in UTC until it is set again. Owner only |
 | `PUT` | `/api/boxes/{id}/checkpoint-schedule` | Set a schedule `{ "everyHours" }` or `{ "at": "HH:MM", "timezone" }`, not both. `timezone` is an IANA zone such as `Asia/Shanghai`; without it the time is UTC, and an unknown zone or a UTC offset such as `+08:00` is `400`. Replaces any schedule the box has. Owner only |
 | `DELETE` | `/api/boxes/{id}/checkpoint-schedule` | Remove a box's schedule. Checkpoints already taken are kept. Owner only |
-| `GET` | `/api/hosts/{id}/checkpoint-remote` | Read a host's remote checkpoint repository, or `null` when it has none. Owner only |
-| `PUT` | `/api/hosts/{id}/checkpoint-remote` | Set a host's remote checkpoint repository `{ "targetId", "path"? }` on an S3 or an SFTP target. The host id is appended to the path, so hosts never share a repository. Owner only |
+| `GET` | `/api/hosts/{id}/checkpoint-remote` | Read a host's remote checkpoint repository, including its `mode`, or `null` when it has none. Owner only |
+| `PUT` | `/api/hosts/{id}/checkpoint-remote` | Set a host's remote checkpoint repository `{ "targetId", "path"?, "mode"? }` on an S3 or an SFTP target. `mode` is `sync` (the default: keep a local repository and copy to this one) or `only` (keep no local repository and do everything on the remote). The host id is appended to the path, so hosts never share a repository. Changing the mode, or moving or clearing an only-remote repository, needs a host with no checkpoint records (`409 checkpoint_remote_has_checkpoints`). Setting `only` opens the repository first and refuses a target it cannot reach or a password that does not open it (`502 checkpoint_remote_check_failed`). Owner only |
 | `DELETE` | `/api/hosts/{id}/checkpoint-remote` | Clear a host's remote checkpoint repository. Snapshots already copied stay on the target. Owner only |
-| `POST` | `/api/hosts/{id}/checkpoint-remote/sync` | Copy the host's pending checkpoint snapshots to its remote repository, as a task. Returns `202`; the task result holds the counts. Owner only |
+| `POST` | `/api/hosts/{id}/checkpoint-remote/sync` | Copy the host's pending checkpoint snapshots to its remote repository, as a task. Returns `202`; the task result holds the counts. A host in `only` mode has nothing local to copy and answers `409 checkpoint_remote_only_no_sync`. Owner only |
 
 ### backups
 

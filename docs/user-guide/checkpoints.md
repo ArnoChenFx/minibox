@@ -163,11 +163,21 @@ The remote repository has its own password, generated into `DATA_DIR/secrets` wh
 
 A remote never loses a snapshot because the local repository did: `forget` and `prune` stay local. Deleting the local checkpoint, or turning the remote off, leaves everything already copied where it is.
 
-Over the REST API, `PUT /api/hosts/{host}/checkpoint-remote` sets the remote with a `targetId` and an optional folder, `GET` on the same path reads it, and `DELETE` clears it. `POST /api/hosts/{host}/checkpoint-remote/sync` copies pending checkpoints now, as a task. The target must be an S3 or an SFTP target, and the host id is appended to the folder, so two hosts never share a repository. The remote repository is created by the first copy. Every one of these is an owner operation.
+Over the REST API, `PUT /api/hosts/{host}/checkpoint-remote` sets the remote with a `targetId`, an optional folder and an optional `mode` (`sync`, the default, or `only`), `GET` on the same path reads it, and `DELETE` clears it. `POST /api/hosts/{host}/checkpoint-remote/sync` copies pending checkpoints now, as a task. The target must be an S3 or an SFTP target, and the host id is appended to the folder, so two hosts never share a repository. The remote repository is created by the first copy. Every one of these is an owner operation.
 
 An SFTP target pins the server's host key when it is added. The first check or copy also stores the whole public key the server presented, once it matches that pinned fingerprint, because `ssh` needs the key itself in `known_hosts` rather than a hash. A server that presents another key is refused; nothing is trusted on first use. The S3 credentials and the SFTP private key are files that exist only while a copy runs, so no credential reaches a container's environment.
 
 restic reads the S3 credentials from a file, and the region comes from the target. A self-hosted service such as MinIO is reached with path-style requests, which restic uses for every endpoint that is not an Amazon one.
+
+### Only-remote mode
+
+A host's remote checkpoint repository has two modes. **Local + scheduled sync**, the default, keeps the repository on the machine and copies it to the remote as described above. **Only remote** keeps no repository on the machine: every checkpoint is taken, restored, listed and deleted on the remote restic repository itself, and its capacity is read from there too. Exporting and importing a package copy from and to the remote.
+
+Every one of those operations needs the target to be reachable. MiniBox does not fall back to a local repository when it is not: taking, restoring or deleting a checkpoint fails and says why. When a checkpoint fails part way, the `forget` that cleans up the snapshots it left only logs its own failure, so a snapshot no record names can stay on the remote and keep using space. Nothing reconciles those orphans. Deleting a box normally takes a checkpoint into the recycle bin; if the remote cannot be reached, delete with `skipTrash` to skip that checkpoint.
+
+The mode can only change while the host has no checkpoint records, including the entries in the recycle bin. Deleting the checkpoints first is the only way today: migrating a host that already holds them is not supported. In only-remote mode, changing the target or the folder, or clearing the repository, needs the same empty state, because every record names a snapshot in the repository it was taken in. Such a change is refused with `409 checkpoint_remote_has_checkpoints`. Setting the mode to only opens the repository before it is saved: it must be reachable, its password must open it, and it is initialized when it does not exist yet. An unreachable target or a wrong password refuses the save with the reason. In only-remote mode `POST /api/hosts/{host}/checkpoint-remote/sync` answers `409 checkpoint_remote_only_no_sync`, since there is nothing local to copy.
+
+The repository's password is the file `DATA_DIR/secrets/checkpoint-remote-<host id>.key`. In only-remote mode that file is the only key to every checkpoint, with no local copy to fall back on, so back it up. Losing it makes everything on the remote unreadable. Switching a host to only-remote leaves any local checkpoint volume in place; MiniBox does not delete it, and the operator can remove it by hand when it is no longer needed.
 
 ## Scheduled checkpoints
 

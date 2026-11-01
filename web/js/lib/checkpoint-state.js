@@ -119,12 +119,15 @@ export function targetNamesOf(reply) {
 /**
  * The remote copy marks a checkpoint row carries: the targets that hold its snapshots, or why the last copy failed.
  * `targetNames` maps a target id to the name the console shows; a target the list does not name falls back to its id.
- * An empty list means no copy was tried, so the row says nothing about a remote.
+ * An empty list means no copy was tried, so the row says nothing about a remote. A host in `onlyHosts` keeps every
+ * checkpoint on the remote already, so its rows carry no copied mark; a failure mark, which only a sync host can have,
+ * is still shown.
  */
-export function remoteMarksOf(checkpoint, targetNames = new Map()) {
+export function remoteMarksOf(checkpoint, targetNames = new Map(), { onlyHosts = new Set() } = {}) {
   const marks = [];
+  const remoteOnly = checkpoint.hostId !== undefined && onlyHosts.has(checkpoint.hostId);
   const synced = Object.entries(checkpoint.remoteSync ?? {});
-  if (synced.length > 0) {
+  if (synced.length > 0 && !remoteOnly) {
     marks.push({ kind: "synced", targets: synced.map(([id]) => targetNames.get(id) ?? id) });
   }
   if (checkpoint.remoteFailure) marks.push({ kind: "failed", detail: checkpoint.remoteFailure.message });

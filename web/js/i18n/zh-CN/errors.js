@@ -641,6 +641,10 @@ export default {
   "err.target_in_use": "目标 {name} 保存着宿主机 {host} 的检查点仓库，请先清除该远端仓库。",
   "err.checkpoint_remote_not_set": "宿主机 {host} 尚未设置远端检查点仓库，请先设置。",
   "err.checkpoint_remote_unsupported": "WebDAV 目标不能保存检查点仓库，请改用 S3 或 SFTP 目标。",
+  "err.checkpoint_remote_has_checkpoints":
+    "宿主机 {host} 还有 {count} 条检查点记录（含回收站）。在两种模式之间切换、在仅异地下改位置或清除仓库，都要求没有记录，请先删除这些检查点。",
+  "err.checkpoint_remote_only_no_sync": "宿主机 {host} 的检查点只保存在远端，没有可同步的内容，它们本来就都在远端。",
+  "err.checkpoint_remote_check_failed": "无法打开远端检查点仓库：{reason}",
   "err.checkpoint_remote_busy": "宿主机 {host} 正在把检查点复制到远端仓库。",
   "err.target_object_busy": "{object} 正在拉取中，请待该传输完成后再试。",
 };

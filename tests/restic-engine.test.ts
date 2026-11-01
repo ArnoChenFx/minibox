@@ -535,6 +535,13 @@ describe("ResticEngine remote copy", () => {
   });
 });
 
+/** The local checkpoint volume calls a remote-only host must never make. */
+const repoVolumeCalls = (s: Scripted) =>
+  s.rt
+    .callsTo("createVolume")
+    .concat(s.rt.callsTo("inspectVolume"))
+    .filter((call) => call.args[0] === REPO_VOLUME);
+
 describe("ResticEngine with a host that keeps its checkpoints only on the remote", () => {
   const ACCESS_KEY = "AKIAONLY";
   const SECRET_KEY = "a-secret-key-for-the-only-mode";
@@ -568,12 +575,6 @@ describe("ResticEngine with a host that keeps its checkpoints only on the remote
     s.rt.calls.length = 0;
     return { s, engine, remote };
   }
-
-  const repoVolumeCalls = (s: Scripted) =>
-    s.rt
-      .callsTo("createVolume")
-      .concat(s.rt.callsTo("inspectVolume"))
-      .filter((call) => call.args[0] === REPO_VOLUME);
 
   test("a backup opens the remote, never mounts or creates the local volume, and writes with the bounded lock wait", async () => {
     const { s, engine } = await onlyRemote();
