@@ -25,6 +25,7 @@ import {
   SKIP_REASON_KEYS,
   browserTimezone,
   scheduleBody,
+  targetNamesOf,
   usedPercent,
 } from "../web/js/lib/checkpoint-state.js";
 
@@ -66,6 +67,11 @@ describe("remote copy marks", () => {
       remoteMarksOf(row({ remoteFailure: { targetId: "tgt_1", at: at(1), message: "unreachable" } }), targetNames),
     ).toEqual([{ kind: "failed", detail: "unreachable" }]);
     expect(remoteMarksOf(row())).toEqual([]);
+  });
+
+  test("a targets reply with no list names nothing, so the marks fall back to the target ids", () => {
+    expect(targetNamesOf({ targets: [{ id: "tgt_1", name: "archive" }] }).get("tgt_1")).toBe("archive");
+    for (const reply of [{}, null, undefined, { targets: null }]) expect(targetNamesOf(reply).size).toBe(0);
   });
 });
 

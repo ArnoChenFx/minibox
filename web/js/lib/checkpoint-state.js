@@ -108,6 +108,15 @@ export function rowActions(checkpoint, { held = false, pending = false, elsewher
 }
 
 /**
+ * The target names the remote copy marks use, from a `/api/targets` reply. A reply without a list names nothing, which
+ * is what a read that failed gives too: the marks then fall back to the target ids.
+ */
+export function targetNamesOf(reply) {
+  const targets = Array.isArray(reply?.targets) ? reply.targets : [];
+  return new Map(targets.map((target) => [target.id, target.name]));
+}
+
+/**
  * The remote copy marks a checkpoint row carries: the targets that hold its snapshots, or why the last copy failed.
  * `targetNames` maps a target id to the name the console shows; a target the list does not name falls back to its id.
  * An empty list means no copy was tried, so the row says nothing about a remote.

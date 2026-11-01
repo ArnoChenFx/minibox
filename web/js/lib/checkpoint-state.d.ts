@@ -69,6 +69,9 @@ export declare const isVolumeSnapshot: (checkpoint: { boxId?: string | null }) =
 export declare function kindsOf(checkpoint: CheckpointRow): string[];
 export declare function contentsOf(checkpoint: CheckpointRow): { roles: string[]; others: number; system: boolean };
 export declare function rowActions(checkpoint: CheckpointRow, state?: RowState): RowActions;
+export declare function targetNamesOf(
+  reply: { targets?: readonly { id: string; name: string }[] | null } | null | undefined,
+): Map<string, string>;
 export declare function remoteMarksOf(
   checkpoint: Pick<CheckpointRow, "remoteSync" | "remoteFailure">,
   targetNames?: ReadonlyMap<string, string>,

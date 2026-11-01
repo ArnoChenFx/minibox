@@ -9,6 +9,7 @@ import {
   passphraseOk,
   remoteMarksOf,
   rowActions,
+  targetNamesOf,
   SKIP_REASON_KEYS,
   usedPercent,
 } from "../lib/checkpoint-state.js";
@@ -872,7 +873,7 @@ export function mountCheckpoints(root, { box, refreshBox }) {
       pending = rollback;
       schedule = plan;
       lastUsage = usage;
-      targetNames = new Map(targets.targets.map((target) => [target.id, target.name]));
+      targetNames = targetNamesOf(targets);
       draw();
     } catch (err) {
       if (disposed || token !== seq) return;

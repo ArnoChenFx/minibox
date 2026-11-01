@@ -1,6 +1,6 @@
 import { api, enc } from "../lib/api.js";
 import { groupCheckpoints } from "../lib/checkpoint-groups.js";
-import { kindsOf, rowActions } from "../lib/checkpoint-state.js";
+import { kindsOf, rowActions, targetNamesOf } from "../lib/checkpoint-state.js";
 import { esc } from "../lib/dom.js";
 import { bytes, dateTime, relTime } from "../lib/format.js";
 import { boxOnAgentHost, hostOfBox } from "../lib/host-list.js";
@@ -192,7 +192,7 @@ export function mountStorageCheckpoints(root, { focus = "" } = {}) {
       if (disposed || token !== seq) return;
       hosts = hostsNow();
       usage = usageBody;
-      targetNames = new Map(targets.targets.map((target) => [target.id, target.name]));
+      targetNames = targetNamesOf(targets);
       const pendings = (pendingBody.rollbacks ?? []).map((entry) => [entry.box.boxId, entry.rollback]);
       groups = groupCheckpoints(checkpoints, boxes, new Map(pendings));
       draw();
