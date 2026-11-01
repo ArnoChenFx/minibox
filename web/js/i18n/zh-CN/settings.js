@@ -290,7 +290,7 @@ export default {
   "st.hostTrust": "信任并添加",
   "st.hostRemote": "远端检查点仓库",
   "st.hostRemoteHelp":
-    "把这台宿主机的检查点快照复制到 S3 或 SFTP 仓库，本机丢失时仍有一份副本。本地仓库仍是唯一拍摄检查点的地方。",
+    "把这台宿主机的检查点快照复制到 S3 或 SFTP 仓库，本机丢失时仍有一份副本。也可以让它只保存在远端，不在本机保留仓库。",
   "st.hostRemoteMode": "模式",
   "st.hostRemoteModeSync": "本地 + 定时同步",
   "st.hostRemoteModeOnly": "仅异地",
@@ -319,7 +319,7 @@ export default {
   "st.hostRemoteClear": "清除",
   "st.hostRemoteSetTitle": "设置 {host} 的远端检查点仓库",
   "st.hostRemoteEditTitle": "更改 {host} 的远端检查点仓库",
-  "st.hostRemoteDialogHelp": "这台宿主机的快照会复制到此仓库。本地仓库仍是唯一拍摄检查点的地方。",
+  "st.hostRemoteDialogHelp": "这台宿主机的检查点可以保存在本地仓库并复制到此仓库，或只保存在此仓库。",
   "st.hostRemoteTarget": "目标",
   "st.hostRemoteTargetHelp": "只有 S3 与 SFTP 目标能保存检查点仓库，WebDAV 目标不会出现在这里。",
   "st.hostRemoteFolder": "文件夹",

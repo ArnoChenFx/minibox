@@ -309,7 +309,7 @@ export default {
   "st.hostTrustTest": "Trust and test",
   "st.hostRemote": "Remote checkpoint repository",
   "st.hostRemoteHelp":
-    "Copy this host's checkpoint snapshots to an S3 or SFTP repository, so a copy survives the loss of this machine. The local repository stays the only place checkpoints are taken.",
+    "Copy this host's checkpoint snapshots to an S3 or SFTP repository, so a copy survives the loss of this machine. A host can also keep them only there, with no local repository.",
   "st.hostRemoteMode": "Mode",
   "st.hostRemoteModeSync": "Local + scheduled sync",
   "st.hostRemoteModeOnly": "Only remote",
@@ -340,8 +340,7 @@ export default {
   "st.hostRemoteClear": "Clear",
   "st.hostRemoteSetTitle": "Set up the remote checkpoint repository of {host}",
   "st.hostRemoteEditTitle": "Change the remote checkpoint repository of {host}",
-  "st.hostRemoteDialogHelp":
-    "The host's snapshots are copied to this repository. The local repository stays the only place checkpoints are taken.",
+  "st.hostRemoteDialogHelp": "The host keeps its checkpoints in a local repository and copies them here, or only here.",
   "st.hostRemoteTarget": "Target",
   "st.hostRemoteTargetHelp":
     "Only S3 and SFTP targets can hold a checkpoint repository. WebDAV targets are not listed.",

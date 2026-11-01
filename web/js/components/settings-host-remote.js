@@ -255,9 +255,9 @@ function openRemoteDialog(view, host, remote, targets, hosts, checkpoints) {
           <span class="help">${t("st.hostRemoteFolderHelp")}</span>
         </label>
         <div class="callout warn${only ? "" : " hidden"}" id="stHostRemoteOnlyNotice">${icon("alert")}<div class="stack">
+          <span>${esc(t("st.hostRemoteOnlyKey", { file: passwordFile }))}</span>
           <span>${esc(t("st.hostRemoteOnlyNetwork"))}</span>
           <span>${esc(t("st.hostRemoteOnlyNoLocal"))}</span>
-          <span>${esc(t("st.hostRemoteOnlyKey", { file: passwordFile }))}</span>
         </div></div>
         ${eligible.length === 0 ? `<div class="callout warn">${icon("alert")}<span>${esc(t("st.hostRemoteNoTargets"))}</span></div>` : ""}
       </div>`,
