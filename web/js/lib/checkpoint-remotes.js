@@ -10,7 +10,7 @@ export async function onlyHostsNow() {
   const remotes = await Promise.all(
     hosts.map((host) =>
       api(`/api/hosts/${enc(host.id)}/checkpoint-remote`).then(
-        (reply) => reply.remote ?? null,
+        (reply) => reply?.remote ?? null,
         () => null,
       ),
     ),

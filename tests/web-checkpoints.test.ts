@@ -1143,3 +1143,26 @@ describe("an agent host as the target of an import or a copy", () => {
     expect(titleOf(off)).toBe(escaped(en["ck.reasonCopyAgentOnly"] ?? ""));
   });
 });
+
+describe("reading which hosts keep checkpoints only on the remote", () => {
+  test("a null or fieldless remote reply names no host and does not reject", () => {
+    for (const remote of ["null", "{}"]) {
+      const script = [
+        ...browserGlobals("en-US"),
+        `globalThis.fetch = async (path) => {
+          const reply = path === "/api/hosts"
+            ? { hosts: [{ id: "local", name: "Local", transport: "local" }] }
+            : ${remote};
+          return { ok: true, status: 200, text: async () => JSON.stringify(reply) };
+        };`,
+        `const { refreshHosts } = await import(${JSON.stringify(join(WEB, "js", "lib", "hosts.js"))});`,
+        `const { onlyHostsNow } = await import(${JSON.stringify(join(WEB, "js", "lib", "checkpoint-remotes.js"))});`,
+        `await refreshHosts();`,
+        `console.log(JSON.stringify([...await onlyHostsNow()]));`,
+      ].join("\n");
+      const run = spawnSync(process.execPath, ["-e", script], { encoding: "utf8", timeout: 20_000 });
+      if (run.status !== 0) throw new Error(run.stderr);
+      expect(JSON.parse(run.stdout.trim().split("\n").at(-1) ?? "null")).toEqual([]);
+    }
+  });
+});

@@ -66,6 +66,7 @@ These are the manual steps for changes made in 0.4 and later. Read the ones that
 ### Off-site targets
 
 - **WebDAV targets.** This release adds a third kind of off-site target, WebDAV. A release from before it refuses a `targets.json` that holds one and stops at startup with a message that names the file. Before you go back to 0.7.1 or earlier, remove every WebDAV target in **Settings → Off-site targets**, or delete the `webdav` entries from `DATA_DIR/targets.json`. Objects already on the collection are not touched.
+- **Remote checkpoint repository modes.** A save in this release writes a `mode` field into each remote checkpoint repository record in `targets.json`. A release from before this field refuses a file that holds it and stops at startup with a message that names the file. Before you go back to an earlier release, clear every host's remote checkpoint repository in **Settings → Hosts** (for a host in only-remote mode, delete its checkpoints first), or delete the `mode` fields from the remote records in `DATA_DIR/targets.json`. The remote restic repositories and their snapshots are not touched by either step.
 
 ### Hosts
 
