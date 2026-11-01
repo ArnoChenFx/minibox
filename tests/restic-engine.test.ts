@@ -726,6 +726,13 @@ describe("ResticEngine with a host that keeps its checkpoints only on the remote
     s.next("stats", { exitCode: 0, logs: '{"total_size":50}' });
     expect(await engine.usage(s.host)).toEqual({ bytes: 50 });
     expect(stats()).toBe(5);
+
+    // A prune that fails part way may have freed packs, so a failed forget drops the reading as well.
+    s.next("forget", { exitCode: 1, logs: "Fatal: unable to remove a pack" });
+    expect(await rejectionOf(engine.forget(s.host, SECOND))).toMatchObject({ kind: "engine" });
+    s.next("stats", { exitCode: 0, logs: '{"total_size":60}' });
+    expect(await engine.usage(s.host)).toEqual({ bytes: 60 });
+    expect(stats()).toBe(6);
   });
 
   test("a remote repository that does not exist reports zero usage and is not created", async () => {

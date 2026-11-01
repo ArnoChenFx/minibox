@@ -992,6 +992,19 @@ describe("a remote-only relocation and a checkpoint write exclude each other", (
       status: 409,
       key: "checkpoint_remote_relocating",
     });
+    // A second relocation of the same host is refused too, and does not release the first one's place when it fails.
+    expect(
+      await rejectionOf(Promise.resolve().then(() => store.relocating("gate3", async () => undefined))),
+    ).toMatchObject({
+      status: 409,
+      key: "checkpoint_remote_relocating",
+    });
+    expect(
+      await rejectionOf(Promise.resolve().then(() => store.writing("gate3", async () => undefined))),
+    ).toMatchObject({
+      status: 409,
+      key: "checkpoint_remote_relocating",
+    });
     releaseRelocation?.();
     await relocating;
   });
