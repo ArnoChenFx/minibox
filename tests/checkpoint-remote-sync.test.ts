@@ -1,10 +1,11 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import type { App } from "../src/app";
 import { remoteRepoPassword } from "../src/checkpoints/remote";
+import type { CheckpointStore } from "../src/checkpoints/store";
 import { CHECKPOINT_VERSION, type CheckpointRecord } from "../src/checkpoints/types";
 import { targetsPath } from "../src/data-dir";
 import type { HostCtx } from "../src/host/registry";
@@ -15,7 +16,7 @@ import type { OperationContext } from "../src/operations/types";
 import { OWNER } from "../src/operations/types";
 import { SecretStore } from "../src/secrets/store";
 import * as boxes from "../src/services/boxes";
-import { REMOTE_SYNC_FAILURE_THRESHOLD } from "../src/services/checkpoint-remote";
+import { CheckpointRemoteSync, REMOTE_SYNC_FAILURE_THRESHOLD } from "../src/services/checkpoint-remote";
 import { copyCheckpoint, exportCheckpoint, importPackage } from "../src/services/checkpoint-transfer";
 import { deleteCheckpoint, takeCheckpoint } from "../src/services/checkpoints";
 import { TargetService } from "../src/services/targets";
@@ -479,6 +480,36 @@ describe("the remote repository password and the redactor", () => {
     const task = inst.app.tasks.get(started.id, { output: true });
     expect(task?.output).toContain("***");
     expect(task?.output).not.toContain(password);
+  });
+});
+
+describe("the copy a removed host still had pending", () => {
+  test("forgetHost clears the timer and leaves nothing behind that a later request would join", () => {
+    // A service of its own, so no other timer of the app can answer for this one.
+    const sync = new CheckpointRemoteSync(
+      { list: () => [] },
+      {} as CheckpointStore,
+      { remoteOf: () => ({ targetId: "tgt_1", mode: "sync" }) } as unknown as TargetService,
+    );
+    const scheduled = spyOn(globalThis, "setTimeout");
+    const cleared = spyOn(globalThis, "clearTimeout");
+    try {
+      sync.request("local");
+      expect(scheduled).toHaveBeenCalledTimes(1);
+      const timer = scheduled.mock.results[0]?.value;
+      sync.forgetHost("local");
+      expect(cleared).toHaveBeenCalledWith(timer);
+
+      // The host is gone from the pending map too: a request made after forgetting schedules a copy of its own instead of
+      // joining one that will never run.
+      scheduled.mockClear();
+      sync.request("local");
+      expect(scheduled).toHaveBeenCalledTimes(1);
+    } finally {
+      cleared.mockRestore();
+      scheduled.mockRestore();
+      sync.stop();
+    }
   });
 });
 
