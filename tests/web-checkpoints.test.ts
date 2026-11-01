@@ -69,6 +69,26 @@ describe("remote copy marks", () => {
     expect(remoteMarksOf(row())).toEqual([]);
   });
 
+  test("a remote-only host carries no copied badge, since its checkpoints are already there", () => {
+    const targetNames = new Map([["tgt_1", "archive"]]);
+    const checkpoint = row({ hostId: "local", remoteSync: { tgt_1: at(1) } });
+    expect(remoteMarksOf(checkpoint, targetNames, { onlyHosts: new Set(["local"]) })).toEqual([]);
+    expect(remoteMarksOf(checkpoint, targetNames, { onlyHosts: new Set(["other"]) })).toEqual([
+      { kind: "synced", targets: ["archive"] },
+    ]);
+    // A failed copy mark is left alone: only a sync host can have one, and it still says what went wrong.
+    expect(
+      remoteMarksOf(
+        row({
+          hostId: "local",
+          remoteFailure: { targetId: "tgt_1", at: at(1), message: "unreachable" },
+        }),
+        targetNames,
+        { onlyHosts: new Set(["local"]) },
+      ),
+    ).toEqual([{ kind: "failed", detail: "unreachable" }]);
+  });
+
   test("a targets reply with no list names nothing, so the marks fall back to the target ids", () => {
     expect(targetNamesOf({ targets: [{ id: "tgt_1", name: "archive" }] }).get("tgt_1")).toBe("archive");
     for (const reply of [{}, null, undefined, { targets: null }]) expect(targetNamesOf(reply).size).toBe(0);
@@ -1121,5 +1141,28 @@ describe("an agent host as the target of an import or a copy", () => {
     const off = buttonFor(forms.rowAgentOnly ?? "", "ck-copy", "ck_local");
     expect(isDisabled(off)).toBe(true);
     expect(titleOf(off)).toBe(escaped(en["ck.reasonCopyAgentOnly"] ?? ""));
+  });
+});
+
+describe("reading which hosts keep checkpoints only on the remote", () => {
+  test("a null or fieldless remote reply names no host and does not reject", () => {
+    for (const remote of ["null", "{}"]) {
+      const script = [
+        ...browserGlobals("en-US"),
+        `globalThis.fetch = async (path) => {
+          const reply = path === "/api/hosts"
+            ? { hosts: [{ id: "local", name: "Local", transport: "local" }] }
+            : ${remote};
+          return { ok: true, status: 200, text: async () => JSON.stringify(reply) };
+        };`,
+        `const { refreshHosts } = await import(${JSON.stringify(join(WEB, "js", "lib", "hosts.js"))});`,
+        `const { onlyHostsNow } = await import(${JSON.stringify(join(WEB, "js", "lib", "checkpoint-remotes.js"))});`,
+        `await refreshHosts();`,
+        `console.log(JSON.stringify([...await onlyHostsNow()]));`,
+      ].join("\n");
+      const run = spawnSync(process.execPath, ["-e", script], { encoding: "utf8", timeout: 20_000 });
+      if (run.status !== 0) throw new Error(run.stderr);
+      expect(JSON.parse(run.stdout.trim().split("\n").at(-1) ?? "null")).toEqual([]);
+    }
   });
 });

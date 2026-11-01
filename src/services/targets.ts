@@ -28,6 +28,7 @@ import {
   objectIdOf,
   objectKindOf,
   REMOTE_FOLDER,
+  type RemoteMode,
   type RemoteRepo,
   remoteNames,
   SECRET_FIELDS,
@@ -110,6 +111,8 @@ export interface RemoteRepoView {
   readonly targetId: string;
   readonly targetName: string;
   readonly kind: "s3" | "sftp";
+  /** `sync` keeps the local repository and copies to this one; `only` has no local repository. */
+  readonly mode: RemoteMode;
   readonly path: string;
   readonly lastSyncAt: string | null;
   readonly lastError: string | null;
@@ -124,6 +127,14 @@ export interface TargetSyncResult {
   readonly bytes: number;
   /** True when the other side already held the same object, so nothing was sent or stored. */
   readonly skipped: boolean;
+}
+
+/** What a host's remote checkpoint repository is set to, before it is stored. */
+export interface SetRemoteInput {
+  readonly targetId: string;
+  readonly path?: string;
+  /** Defaults to the mode already stored, or `sync` for a host that has none. */
+  readonly mode?: RemoteMode;
 }
 
 export interface TargetServiceOptions {
@@ -351,34 +362,40 @@ export class TargetService {
   /**
    * Sets the remote repository of a host to a folder on one of its targets. Changing the target clears the sync state,
    * since the new repository has not taken the snapshots yet. The credentials are not copied here: they stay the
-   * target's, and are read when a copy runs.
+   * target's, and are read when a copy runs. A host in remote-only mode can only be moved or switched when it holds no
+   * checkpoint records, since a record names a snapshot in the repository it was taken in.
    */
-  setRemote(hostId: string, input: { targetId: string; path?: string }): RemoteRepoView {
-    const target = this.store.get(input.targetId);
-    if (!target) throw notFound(msg("target_not_found", { id: input.targetId }));
-    if (target.kind === "webdav") throw badRequest(msg("checkpoint_remote_unsupported"), { field: "targetId" });
-    const path = remotePath(input.path ?? "", target.kind);
-    if (path === null) throw badRequest(msg("target_path_invalid"), { field: "path" });
-    const existing = this.store.remoteOf(hostId);
-    const sameTarget = existing?.targetId === target.id;
-    const now = new Date().toISOString();
-    const remote: RemoteRepo = {
-      hostId,
-      targetId: target.id,
-      kind: target.kind,
-      path,
-      createdAt: existing?.createdAt ?? now,
-      updatedAt: now,
-      lastSyncAt: sameTarget ? (existing?.lastSyncAt ?? null) : null,
-      lastError: sameTarget ? (existing?.lastError ?? null) : null,
-    };
+  setRemote(hostId: string, input: SetRemoteInput): RemoteRepoView {
+    const remote = this.remoteCandidate(hostId, input);
     this.store.putRemote(remote);
-    log.info("target.remote_set", { host: hostId, target: target.id, kind: target.kind });
+    log.info("target.remote_set", {
+      host: hostId,
+      target: remote.targetId,
+      kind: remote.kind,
+      mode: remote.mode ?? "sync",
+    });
     return this.remoteView(remote);
   }
 
-  /** Removes a host's remote repository. The snapshots already copied stay where they are. */
+  /**
+   * What a copy to the position a `setRemote` would store needs, credentials included, without storing anything. The set
+   * operation opens the repository with it before it saves a remote-only host.
+   */
+  previewRemoteRepository(hostId: string, input: SetRemoteInput): Promise<RemoteRepository> {
+    return this.attempt(async () => {
+      const remote = this.remoteCandidate(hostId, input);
+      return await this.repositoryOf(hostId, remote);
+    });
+  }
+
+  /**
+   * Removes a host's remote repository. The snapshots already copied stay where they are. In remote-only mode the
+   * repository is the host's only copy, so it can only be cleared when the host holds no checkpoint records.
+   */
   clearRemote(hostId: string): void {
+    const existing = this.store.remoteOf(hostId);
+    if (!existing) return;
+    if ((existing.mode ?? "sync") === "only") this.assertNoCheckpoints(hostId);
     if (!this.store.deleteRemote(hostId)) return;
     log.info("target.remote_cleared", { host: hostId });
   }
@@ -407,42 +424,104 @@ export class TargetService {
     return this.attempt(async () => {
       const remote = this.store.remoteOf(hostId);
       if (!remote) throw notFound(msg("checkpoint_remote_not_set", { host: hostId }));
-      const target = this.store.get(remote.targetId);
-      if (!target) throw notFound(msg("target_not_found", { id: remote.targetId }));
-      const path = remotePathFor(remote.path, hostId);
-      const password = remoteRepoPassword(this.options.dataDir, hostId);
-      const secret = (field: TargetSecretField) => this.options.secrets.value(targetSecretName(target.id, field));
-      if (target.kind === "s3") {
-        const accessKeyId = secret("access-key");
-        const secretAccessKey = secret("secret-key");
-        if (accessKeyId === null || secretAccessKey === null) {
-          throw conflict(msg("target_credentials_missing", { name: target.name }));
-        }
-        return {
-          targetId: target.id,
-          targetName: target.name,
-          repository: s3Repository(target.endpoint, target.bucket, path),
-          password,
-          credentials: { kind: "s3" as const, region: target.region, accessKeyId, secretAccessKey },
-        };
+      return await this.repositoryOf(hostId, remote);
+    });
+  }
+
+  private async repositoryOf(hostId: string, remote: RemoteRepo): Promise<RemoteRepository> {
+    const target = this.store.get(remote.targetId);
+    if (!target) throw notFound(msg("target_not_found", { id: remote.targetId }));
+    const path = remotePathFor(remote.path, hostId);
+    const password = remoteRepoPassword(this.options.dataDir, hostId);
+    const secret = (field: TargetSecretField) => this.options.secrets.value(targetSecretName(target.id, field));
+    if (target.kind === "s3") {
+      const accessKeyId = secret("access-key");
+      const secretAccessKey = secret("secret-key");
+      if (accessKeyId === null || secretAccessKey === null) {
+        throw conflict(msg("target_credentials_missing", { name: target.name }));
       }
-      if (target.kind === "webdav") throw badRequest(msg("checkpoint_remote_unsupported"));
-      const privateKey = secret("private-key");
-      if (privateKey === null) throw conflict(msg("target_credentials_missing", { name: target.name }));
-      const key = await this.hostKeyLineOf(target);
       return {
         targetId: target.id,
         targetName: target.name,
-        repository: sftpRepository(target.user, target.host, target.port, path),
+        repository: s3Repository(target.endpoint, target.bucket, path),
         password,
-        credentials: {
-          kind: "sftp" as const,
-          port: target.port,
-          privateKey,
-          knownHosts: knownHostsLine(target.host, target.port, key),
-        },
+        credentials: { kind: "s3" as const, region: target.region, accessKeyId, secretAccessKey },
       };
-    });
+    }
+    if (target.kind === "webdav") throw badRequest(msg("checkpoint_remote_unsupported"));
+    const privateKey = secret("private-key");
+    if (privateKey === null) throw conflict(msg("target_credentials_missing", { name: target.name }));
+    const key = await this.hostKeyLineOf(target);
+    return {
+      targetId: target.id,
+      targetName: target.name,
+      repository: sftpRepository(target.user, target.host, target.port, path),
+      password,
+      credentials: {
+        kind: "sftp" as const,
+        port: target.port,
+        privateKey,
+        knownHosts: knownHostsLine(target.host, target.port, key),
+      },
+    };
+  }
+
+  /**
+   * What a `setRemote` with `input` would change, without storing anything. A caller can use it to take a relocation
+   * gate only when the change involves `only` and actually moves the position.
+   */
+  remoteMove(hostId: string, input: SetRemoteInput): { changed: boolean; mode: RemoteMode; involvesOnly: boolean } {
+    const plan = this.remotePlan(hostId, input);
+    return { changed: plan.changed, mode: plan.remote.mode ?? "sync", involvesOnly: plan.involvesOnly };
+  }
+
+  /** The remote a set would store, with its mode resolved. Refuses a move that would orphan the host's checkpoint records. */
+  private remoteCandidate(hostId: string, input: SetRemoteInput): RemoteRepo {
+    const plan = this.remotePlan(hostId, input);
+    // A record names a snapshot in the repository it was taken in. Moving or switching a remote-only host would leave
+    // those records pointing at a repository the snapshots are not in, so a host with any record (a recycle bin entry is
+    // a record too) stays where it is until they are deleted.
+    if (plan.changed && plan.involvesOnly) this.assertNoCheckpoints(hostId);
+    return plan.remote;
+  }
+
+  private remotePlan(
+    hostId: string,
+    input: SetRemoteInput,
+  ): { remote: RemoteRepo; changed: boolean; involvesOnly: boolean } {
+    const target = this.store.get(input.targetId);
+    if (!target) throw notFound(msg("target_not_found", { id: input.targetId }));
+    if (target.kind === "webdav") throw badRequest(msg("checkpoint_remote_unsupported"), { field: "targetId" });
+    const path = remotePath(input.path ?? "", target.kind);
+    if (path === null) throw badRequest(msg("target_path_invalid"), { field: "path" });
+    const existing = this.store.remoteOf(hostId);
+    const currentMode = existing?.mode ?? "sync";
+    const mode = input.mode ?? currentMode;
+    const changed = !existing || existing.targetId !== target.id || existing.path !== path || currentMode !== mode;
+    const sameTarget = existing?.targetId === target.id;
+    const sameMode = currentMode === mode;
+    const now = new Date().toISOString();
+    return {
+      changed,
+      involvesOnly: currentMode === "only" || mode === "only",
+      remote: {
+        hostId,
+        mode,
+        targetId: target.id,
+        kind: target.kind,
+        path,
+        createdAt: existing?.createdAt ?? now,
+        updatedAt: now,
+        lastSyncAt: sameTarget && sameMode ? (existing?.lastSyncAt ?? null) : null,
+        lastError: sameTarget && sameMode ? (existing?.lastError ?? null) : null,
+      },
+    };
+  }
+
+  /** A host in remote-only mode can only move or be cleared while every checkpoint record has been deleted. */
+  private assertNoCheckpoints(hostId: string): void {
+    const count = this.options.checkpoints.list().filter((record) => record.hostId === hostId).length;
+    if (count > 0) throw conflict(msg("checkpoint_remote_has_checkpoints", { host: hostId, count }));
   }
 
   /** Reaches the target with the draft's credentials and stores nothing. */
@@ -739,6 +818,7 @@ export class TargetService {
       targetId: record.targetId,
       targetName: target?.name ?? record.targetId,
       kind: record.kind,
+      mode: record.mode ?? "sync",
       path: remotePathFor(record.path, record.hostId),
       lastSyncAt: record.lastSyncAt,
       lastError: record.lastError,

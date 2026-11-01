@@ -135,6 +135,13 @@ const WebdavTargetSchema = z.strictObject({
   user: z.string().min(1).max(128),
 });
 
+/**
+ * How a host uses its remote repository. `sync` keeps the local repository and copies to the remote; `only` has no local
+ * repository, so every operation talks to the remote. A file written before modes existed reads as `sync`.
+ */
+export const REMOTE_MODES = ["sync", "only"] as const;
+export type RemoteMode = (typeof REMOTE_MODES)[number];
+
 const TargetRecordSchema = z.discriminatedUnion("kind", [S3TargetSchema, SftpTargetSchema, WebdavTargetSchema]);
 
 /**
@@ -142,6 +149,8 @@ const TargetRecordSchema = z.discriminatedUnion("kind", [S3TargetSchema, SftpTar
  * credential: the target's secrets are read when a copy runs.
  */
 const RemoteRepoSchema = z.strictObject({
+  /** Absent on a file written before modes existed, which reads as `sync`. */
+  mode: z.enum(REMOTE_MODES).optional(),
   /** The host whose snapshots it takes. One remote repository per host. */
   hostId: z.string().min(1).max(64),
   targetId: z.string().refine(isTargetId, "not a target id"),

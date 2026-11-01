@@ -27,6 +27,14 @@ function pendingCount(checkpoints, hostId, targetId) {
   ).length;
 }
 
+/**
+ * The checkpoint records a host holds, as the page already read them. The list leaves out recycle bin entries, which
+ * the server counts too; the dialog says what it can see, and a save the server refuses says why.
+ */
+function recordCount(checkpoints, hostId) {
+  return checkpoints.filter((checkpoint) => checkpoint.hostId === hostId).length;
+}
+
 /** A target the form offers: only S3 and SFTP can hold a checkpoint repository. */
 const usableTarget = (target) => target.kind === "s3" || target.kind === "sftp";
 
@@ -55,25 +63,35 @@ async function readRemotes(hosts) {
 /** One host's row: where its snapshots go, when they last went, what waits, and the controls that change it. */
 function rowHtml(host, remote, targets, checkpoints) {
   const target = remote ? targets.find((item) => item.id === remote.targetId) : undefined;
+  const only = remote?.mode === "only";
+  const locked = only && recordCount(checkpoints, host.id) > 0;
+  const mode = only ? ` <span class="badge badge-accent">${esc(t("st.hostRemoteOnlyBadge"))}</span>` : "";
   const repo = remote
-    ? `<strong>${esc(remote.targetName)}</strong> <span class="badge">${esc(t(`st.targetKind.${remote.kind}`))}</span>
+    ? `<strong>${esc(remote.targetName)}</strong> <span class="badge">${esc(t(`st.targetKind.${remote.kind}`))}</span>${mode}
        <div class="help mono truncate" title="${esc(remote.path)}">${esc(remote.path)}</div>`
     : `<span class="subtle">${esc(t("st.hostRemoteNone"))}</span>`;
   const failures =
     remote && remote.failures > 0
       ? `<div class="error-text">${esc(t("st.hostRemoteFailures", { count: remote.failures }))}</div>`
       : "";
-  const last = remote
-    ? `${remote.lastSyncAt ? `<span title="${esc(dateTime(remote.lastSyncAt))}">${esc(relTime(remote.lastSyncAt))}</span>` : `<span class="subtle">${esc(t("st.hostRemoteNever"))}</span>`}
+  // A remote-only host never copies, so it has neither a last sync nor a pending count; the mode badge says why.
+  const last = only
+    ? `<span class="subtle">—</span>`
+    : remote
+      ? `${remote.lastSyncAt ? `<span title="${esc(dateTime(remote.lastSyncAt))}">${esc(relTime(remote.lastSyncAt))}</span>` : `<span class="subtle">${esc(t("st.hostRemoteNever"))}</span>`}
        ${remote.lastError ? `<div class="error-text" title="${esc(remote.lastError)}">${esc(remote.lastError)}</div>` : ""}${failures}`
-    : `<span class="subtle">—</span>`;
-  const pending = remote ? String(pendingCount(checkpoints, host.id, remote.targetId)) : "—";
+      : `<span class="subtle">—</span>`;
+  const pending = remote && !only ? String(pendingCount(checkpoints, host.id, remote.targetId)) : "—";
   const missing = remote && !target ? `<div class="help">${esc(t("st.hostRemoteTargetMissing"))}</div>` : "";
   const agent = host.transport === "agent" ? `<div class="help">${esc(t("st.hostRemoteAgent"))}</div>` : "";
+  const syncButton = only
+    ? ""
+    : `<button class="btn btn-sm" data-remote-sync="${esc(host.id)}"${host.transport === "agent" ? " disabled" : ""}>${icon("refresh")}${esc(t("st.hostRemoteSync"))}</button>`;
+  const clearTitle = locked ? ` title="${esc(t("st.hostRemoteClearLocked"))}"` : "";
   const actions = remote
     ? `<button class="btn btn-sm" data-remote-edit="${esc(host.id)}">${icon("settings")}${esc(t("st.hostRemoteEdit"))}</button>
-       <button class="btn btn-sm" data-remote-sync="${esc(host.id)}"${host.transport === "agent" ? " disabled" : ""}>${icon("refresh")}${esc(t("st.hostRemoteSync"))}</button>
-       <button class="btn btn-sm btn-danger" data-remote-clear="${esc(host.id)}">${icon("x")}${esc(t("st.hostRemoteClear"))}</button>`
+       ${syncButton}
+       <button class="btn btn-sm btn-danger" data-remote-clear="${esc(host.id)}"${locked ? " disabled" : ""}${clearTitle}>${icon("x")}${esc(t("st.hostRemoteClear"))}</button>`
     : `<button class="btn btn-sm btn-primary" data-remote-set="${esc(host.id)}"${host.transport === "agent" ? " disabled" : ""}>${icon("plus")}${esc(t("st.hostRemoteSet"))}</button>`;
   return `<tr data-host-remote="${esc(host.id)}">
     <td class="host-remote-host"><strong>${esc(host.name)}</strong> <span class="subtle mono">${esc(host.id)}</span>${agent}</td>
@@ -137,7 +155,7 @@ function bind(card, view, hosts, data) {
       const id = button.dataset.remoteSet ?? button.dataset.remoteEdit;
       const host = hostOf(hosts, id);
       if (!host) return;
-      openRemoteDialog(view, host, data.remotes.get(id) ?? null, data.targets, hosts);
+      openRemoteDialog(view, host, data.remotes.get(id) ?? null, data.targets, hosts, data.checkpoints);
     });
   }
   for (const button of card.querySelectorAll("[data-remote-sync]")) {
@@ -194,12 +212,20 @@ async function clearRemote(button, view, hosts) {
 
 /**
  * Sets or changes one host's remote repository. The target list is the S3 and SFTP targets only: a WebDAV target cannot
- * hold a restic repository. The folder is the base the server appends the host id to.
+ * hold a restic repository. The folder is the base the server appends the host id to. A host with checkpoint records
+ * cannot move to or from the only-remote mode, and one already there cannot change its position or be cleared.
  */
-function openRemoteDialog(view, host, remote, targets, hosts) {
+function openRemoteDialog(view, host, remote, targets, hosts, checkpoints) {
   const eligible = targets.filter(usableTarget);
   const selected = remote?.targetId ?? eligible[0]?.id ?? "";
   const folder = remote ? basePathOf(remote.path, host.id, remote.kind) : "";
+  const mode = remote?.mode ?? "sync";
+  const only = mode === "only";
+  const records = recordCount(checkpoints ?? [], host.id);
+  const locked = records > 0;
+  // The mode can only change when the host has no records, and a host already in only mode is frozen while it has any.
+  const positionLocked = only && locked;
+  const passwordFile = `checkpoint-remote-${host.id}.key`;
   const options = eligible
     .map(
       (target) =>
@@ -212,28 +238,46 @@ function openRemoteDialog(view, host, remote, targets, hosts) {
     iconName: "upload",
     body: `
       <div class="stack form-stack">
+        <label class="field">${t("st.hostRemoteMode")}
+          <select class="select" name="mode"${positionLocked ? " disabled" : ""}>
+            <option value="sync"${only ? "" : " selected"}>${esc(t("st.hostRemoteModeSync"))}</option>
+            <option value="only"${only ? " selected" : ""}${locked && !only ? " disabled" : ""}>${esc(t("st.hostRemoteModeOnly"))}</option>
+          </select>
+          <span class="help">${esc(t("st.hostRemoteModeHelp"))}</span>
+        </label>
+        ${locked ? `<div class="callout warn" id="stHostRemoteRecords">${icon("alert")}<span>${esc(t("st.hostRemoteModeLocked", { count: records }))}</span></div>` : ""}
         <label class="field">${t("st.hostRemoteTarget")}
-          <select class="select" name="targetId"${eligible.length === 0 ? " disabled" : ""}>${options || `<option value="">${esc(t("st.hostRemoteNoTargets"))}</option>`}</select>
+          <select class="select" name="targetId"${eligible.length === 0 || positionLocked ? " disabled" : ""}>${options || `<option value="">${esc(t("st.hostRemoteNoTargets"))}</option>`}</select>
           <span class="help">${t("st.hostRemoteTargetHelp")}</span>
         </label>
         <label class="field">${t("st.hostRemoteFolder")}
-          <input class="input mono" name="path" maxlength="512" value="${esc(folder)}" spellcheck="false" autocomplete="off" />
+          <input class="input mono" name="path" maxlength="512" value="${esc(folder)}" spellcheck="false" autocomplete="off"${positionLocked ? " disabled" : ""} />
           <span class="help">${t("st.hostRemoteFolderHelp")}</span>
         </label>
+        <div class="callout warn${only ? "" : " hidden"}" id="stHostRemoteOnlyNotice">${icon("alert")}<div class="stack">
+          <span>${esc(t("st.hostRemoteOnlyKey", { file: passwordFile }))}</span>
+          <span>${esc(t("st.hostRemoteOnlyNetwork"))}</span>
+          <span>${esc(t("st.hostRemoteOnlyNoLocal"))}</span>
+        </div></div>
         ${eligible.length === 0 ? `<div class="callout warn">${icon("alert")}<span>${esc(t("st.hostRemoteNoTargets"))}</span></div>` : ""}
       </div>`,
     footer: `<button class="btn" data-close>${t("common.cancel")}</button>
-      ${remote ? `<button class="btn btn-danger" id="stHostRemoteClear">${icon("trash")}${t("st.hostRemoteClear")}</button>` : ""}
+      ${remote ? `<button class="btn btn-danger" id="stHostRemoteClear"${positionLocked ? " disabled" : ""}${positionLocked ? ` title="${esc(t("st.hostRemoteClearLocked"))}"` : ""}>${icon("trash")}${t("st.hostRemoteClear")}</button>` : ""}
       <button class="btn btn-primary" id="stHostRemoteSave"${eligible.length === 0 ? " disabled" : ""}>${icon("check")}${t("st.hostRemoteSave")}</button>`,
   });
+  const modeSelect = root.querySelector('[name="mode"]');
+  const notice = root.querySelector("#stHostRemoteOnlyNotice");
   const target = root.querySelector('[name="targetId"]');
   const path = root.querySelector('[name="path"]');
+  modeSelect?.addEventListener("change", () => {
+    notice?.classList.toggle("hidden", modeSelect.value !== "only");
+  });
   root.querySelector("#stHostRemoteSave")?.addEventListener("click", (event) =>
     withBusy(event.currentTarget, async () => {
       try {
         await api(`/api/hosts/${enc(host.id)}/checkpoint-remote`, {
           method: "PUT",
-          body: { targetId: target.value, path: path.value.trim() },
+          body: { targetId: target.value, path: path.value.trim(), mode: modeSelect.value },
         });
       } catch (e) {
         toastError(t("st.hostRemoteSaveFailed"), e);

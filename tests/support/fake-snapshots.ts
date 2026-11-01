@@ -106,9 +106,16 @@ export class FakeCheckpointEngine implements SnapshotEngine {
   readonly remoteCopies: { targetId: string; snapshotIds: string[] }[] = [];
   /** Makes the next copies to a remote repository fail, as an unreachable target does. */
   failRemoteCopy = false;
+  /** Every remote repository opened for a remote-only host, in order. */
+  readonly remoteChecks: RemoteRepository[] = [];
+  /** Makes the next check of a remote repository fail, as a wrong password or an unreachable target does. */
+  failRemoteCheck = false;
   private remoteGate: { promise: Promise<void>; blocked: number } | null = null;
   private sequence = 0;
   private gate: { promise: Promise<void>; kind: EngineCall | null; blocked: number } | null = null;
+  private backupGate: { at: number; seen: number; promise: Promise<void>; blocked: number } | null = null;
+  private checkGate: { promise: Promise<void>; blocked: number } | null = null;
+  private unpackGate: { promise: Promise<void>; blocked: number } | null = null;
 
   /**
    * Holds every backup, restore and pack from now until the returned `release`, or only those of `kind`, so a test can have
@@ -141,6 +148,65 @@ export class FakeCheckpointEngine implements SnapshotEngine {
     await gate.promise;
   }
 
+  /** Holds the `at`-th backup from now until the returned `release`. The backups before it run normally. */
+  holdBackupAt(at: number): { release(): void; blocked(): number } {
+    let openGate: (() => void) | undefined;
+    const gate = {
+      at,
+      seen: 0,
+      promise: new Promise<void>((resolve) => {
+        openGate = resolve;
+      }),
+      blocked: 0,
+    };
+    this.backupGate = gate;
+    return {
+      release: () => {
+        if (this.backupGate === gate) this.backupGate = null;
+        openGate?.();
+      },
+      blocked: () => gate.blocked,
+    };
+  }
+
+  /** Holds the next remote check, so a test can see a relocation that has not finished yet. */
+  holdRemoteCheck(): { release(): void; blocked(): number } {
+    let openGate: (() => void) | undefined;
+    const gate = {
+      promise: new Promise<void>((resolve) => {
+        openGate = resolve;
+      }),
+      blocked: 0,
+    };
+    this.checkGate = gate;
+    return {
+      release: () => {
+        if (this.checkGate === gate) this.checkGate = null;
+        openGate?.();
+      },
+      blocked: () => gate.blocked,
+    };
+  }
+
+  /** Holds the next unpack of an opened package, so an import or a copy can be caught before its record is written. */
+  holdUnpack(): { release(): void; blocked(): number } {
+    let openGate: (() => void) | undefined;
+    const gate = {
+      promise: new Promise<void>((resolve) => {
+        openGate = resolve;
+      }),
+      blocked: 0,
+    };
+    this.unpackGate = gate;
+    return {
+      release: () => {
+        if (this.unpackGate === gate) this.unpackGate = null;
+        openGate?.();
+      },
+      blocked: () => gate.blocked,
+    };
+  }
+
   private nextId(): string {
     this.sequence += 1;
     return this.sequence.toString(16).padStart(64, "0");
@@ -166,6 +232,11 @@ export class FakeCheckpointEngine implements SnapshotEngine {
 
   async backup(host: HostCtx, volume: string, tags: string[]): Promise<BackupResult> {
     await this.enter("backup");
+    const backupGate = this.backupGate;
+    if (backupGate && ++backupGate.seen === backupGate.at) {
+      backupGate.blocked += 1;
+      await backupGate.promise;
+    }
     const runtime = this.runtimeOf(host);
     if (!runtime.volumes.has(volume)) throw new RuntimeError("not_found", `no such volume ${volume}`);
     if (this.failBackupOf.has(volume)) throw new RuntimeError("engine", `backup of ${volume} failed`);
@@ -226,6 +297,16 @@ export class FakeCheckpointEngine implements SnapshotEngine {
       },
       blocked: () => gate.blocked,
     };
+  }
+
+  async checkRemote(_host: HostCtx, remote: RemoteRepository): Promise<void> {
+    this.remoteChecks.push(remote);
+    const checkGate = this.checkGate;
+    if (checkGate) {
+      checkGate.blocked += 1;
+      await checkGate.promise;
+    }
+    if (this.failRemoteCheck) throw new RuntimeError("engine", "restic cat config exited with status 1: unreachable");
   }
 
   async copyToRemote(host: HostCtx, remote: RemoteRepository, snapshotIds: string[]): Promise<void> {
@@ -295,7 +376,14 @@ export class FakeCheckpointEngine implements SnapshotEngine {
         if (!content) throw new PackageRejected("invalid", "the package's manifest is missing");
         return content.toString("utf8");
       },
-      unpack: async (snapshotIds) => this.unpackInto(host, stored, snapshotIds),
+      unpack: async (snapshotIds) => {
+        const unpackGate = this.unpackGate;
+        if (unpackGate) {
+          unpackGate.blocked += 1;
+          await unpackGate.promise;
+        }
+        return this.unpackInto(host, stored, snapshotIds);
+      },
       close: async () => {},
     };
   }

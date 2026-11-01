@@ -334,6 +334,14 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
     onSecret: (value) => knownSecrets.push(value),
   });
   targets.start();
+  // The local and remote Docker hosts share one engine, so one binding covers every host. The resolver only answers for
+  // a host in remote-only mode: every other host keeps its snapshots in the local volume, as before.
+  if (checkpointEngine instanceof ResticEngine) {
+    checkpointEngine.bindRemotes(async (hostId) => {
+      const remote = targets.remoteOf(hostId);
+      return remote?.mode === "only" ? await targets.remoteRepository(hostId) : null;
+    });
+  }
   const checkpointRemote = new CheckpointRemoteSync(hosts, checkpoints, targets);
   const outputs = new OutputStore(join(cfg.dataDir, "exec"), redactor);
   const execs = new ExecManager(outputs, (text) => redactor.text(text));

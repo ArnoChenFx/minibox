@@ -534,3 +534,303 @@ describe("ResticEngine remote copy", () => {
     expect(commandsOf(s.helpers)).toEqual(["cat", "copy"]);
   });
 });
+
+/** The local checkpoint volume calls a remote-only host must never make. */
+const repoVolumeCalls = (s: Scripted) =>
+  s.rt
+    .callsTo("createVolume")
+    .concat(s.rt.callsTo("inspectVolume"))
+    .filter((call) => call.args[0] === REPO_VOLUME);
+
+describe("ResticEngine with a host that keeps its checkpoints only on the remote", () => {
+  const ACCESS_KEY = "AKIAONLY";
+  const SECRET_KEY = "a-secret-key-for-the-only-mode";
+  const REMOTE_PASSWORD = "the-only-repository-password";
+  const SFTP_KEY = "-----BEGIN OPENSSH PRIVATE KEY-----\nonly mode\n-----END OPENSSH PRIVATE KEY-----";
+  const KNOWN_HOSTS = "[backup.example.com]:2222 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOnlyMode";
+
+  const remoteRepository = (overrides: Partial<RemoteRepository> = {}): RemoteRepository => ({
+    targetId: "tgt_2222222222222222",
+    targetName: "archive",
+    repository: "s3:https://s3.example.com/archive/only/local",
+    password: REMOTE_PASSWORD,
+    credentials: { kind: "s3", region: "us-east-1", accessKeyId: ACCESS_KEY, secretAccessKey: SECRET_KEY },
+    ...overrides,
+  });
+
+  const sftpRepository = (): RemoteRepository =>
+    remoteRepository({
+      targetId: "tgt_3333333333333333",
+      targetName: "nas",
+      repository: "sftp://backup@backup.example.com:2222/only/local",
+      credentials: { kind: "sftp", port: 2222, privateKey: SFTP_KEY, knownHosts: KNOWN_HOSTS },
+    });
+
+  /** A host whose only repository is `remote`, with its source volume made and the setup's own volume calls forgotten. */
+  async function onlyRemote(remote: RemoteRepository = remoteRepository(), now?: () => number) {
+    const s = scripted();
+    await s.rt.createVolume("src", {});
+    const engine = new ResticEngine({ dataDir: s.dataDir, ...(now ? { now } : {}) });
+    engine.bindRemotes(async (hostId) => (hostId === s.host.host.id ? remote : null));
+    s.rt.calls.length = 0;
+    return { s, engine, remote };
+  }
+
+  test("a backup opens the remote, never mounts or creates the local volume, and writes with the bounded lock wait", async () => {
+    const { s, engine } = await onlyRemote();
+
+    const result = await engine.backup(s.host, "src", ["ck_only"]);
+
+    expect(result).toEqual({ snapshotId: SNAPSHOT, bytes: 4096 });
+    expect(commandsOf(s.helpers)).toEqual(["cat", "init", "backup"]);
+    const backup = s.helpers[2];
+    expect(backup?.cmd).toEqual([
+      "--no-cache",
+      "-o",
+      "s3.region=us-east-1",
+      "--retry-lock",
+      "5m",
+      "backup",
+      "/data",
+      "--json",
+      "--host",
+      "local",
+      "--tag",
+      "ck_only",
+    ]);
+    // Only the box's own volume is mounted: there is no local checkpoint repository to mount.
+    expect(backup?.mounts).toEqual([{ source: "src", target: "/data", mode: "ro" }]);
+    expect(backup?.network).toBe(true);
+    for (const spec of s.helpers) {
+      const secrets = new Map((spec.secrets ?? []).map((secret) => [secret.name, secret.value]));
+      expect(secrets.get("remote.key")).toBe(REMOTE_PASSWORD);
+      expect(secrets.get("aws-credentials")).toBe(
+        `[default]\naws_access_key_id = ${ACCESS_KEY}\naws_secret_access_key = ${SECRET_KEY}\n`,
+      );
+      expect(spec.env).toEqual([
+        "RESTIC_PASSWORD_FILE=/run/secrets/remote.key",
+        "RESTIC_REPOSITORY=s3:https://s3.example.com/archive/only/local",
+        "HOME=/tmp",
+        "AWS_SHARED_CREDENTIALS_FILE=/run/secrets/aws-credentials",
+      ]);
+      expect((spec.mounts ?? []).some((mount) => mount.source === REPO_VOLUME)).toBe(false);
+      expect(spec.network).toBe(true);
+    }
+    expect(s.rt.volumes.has(REPO_VOLUME)).toBe(false);
+    expect(repoVolumeCalls(s)).toEqual([]);
+    const env = JSON.stringify(s.helpers.map((spec) => spec.env ?? []));
+    for (const secret of [ACCESS_KEY, SECRET_KEY, REMOTE_PASSWORD]) expect(env).not.toContain(secret);
+    expect(env).not.toContain("AWS_ACCESS_KEY_ID");
+    expect(env).not.toContain("RESTIC_PASSWORD=");
+  });
+
+  test("restore, forget, stats and snapshots all use the remote, and only writes wait for a lock", async () => {
+    const { s, engine } = await onlyRemote();
+    await engine.backup(s.host, "src", ["ck_only"]);
+    await s.rt.createVolume("dst", {});
+    s.helpers.length = 0;
+    s.next("snapshots", { exitCode: 0, logs: JSON.stringify([{ id: SNAPSHOT, tags: ["ck_only"] }]) });
+    s.next("stats", { exitCode: 0, logs: '{"total_size":1234}' });
+
+    await engine.restore(s.host, SNAPSHOT, "dst");
+    await engine.forget(s.host, SNAPSHOT);
+    expect(await engine.usage(s.host)).toEqual({ bytes: 1234 });
+    expect(await engine.tagged(s.host, "ck_only")).toEqual([{ id: SNAPSHOT, tags: ["ck_only"], original: null }]);
+
+    expect(commandsOf(s.helpers)).toEqual(["restore", "forget", "stats", "snapshots"]);
+    const [restore, forget, stats, snapshots] = s.helpers;
+    expect(restore?.mounts).toEqual([{ source: "dst", target: "/dst", mode: "rw" }]);
+    expect(restore?.cmd).not.toContain("--retry-lock");
+    expect(forget?.mounts).toEqual([]);
+    expect(forget?.cmd).toEqual([
+      "--no-cache",
+      "-o",
+      "s3.region=us-east-1",
+      "--retry-lock",
+      "5m",
+      "forget",
+      SNAPSHOT,
+      "--prune",
+    ]);
+    expect(stats?.cmd).not.toContain("--retry-lock");
+    expect(snapshots?.cmd).not.toContain("--retry-lock");
+    for (const spec of [restore, forget, stats, snapshots]) {
+      expect(spec?.network).toBe(true);
+      expect((spec?.mounts ?? []).some((mount) => mount.source === REPO_VOLUME)).toBe(false);
+    }
+    expect(repoVolumeCalls(s)).toEqual([]);
+  });
+
+  test("an SFTP remote-only backup passes the private key and the known_hosts line as files", async () => {
+    const { s, engine } = await onlyRemote(sftpRepository());
+
+    await engine.backup(s.host, "src", []);
+
+    expect(commandsOf(s.helpers)).toEqual(["cat", "init", "backup"]);
+    for (const spec of s.helpers) {
+      expect(spec.network).toBe(true);
+      expect((spec.mounts ?? []).some((mount) => mount.source === REPO_VOLUME)).toBe(false);
+      const secrets = new Map((spec.secrets ?? []).map((secret) => [secret.name, secret.value]));
+      expect(secrets.get("sftp.key")).toBe(SFTP_KEY);
+      expect(secrets.get("known_hosts")).toBe(`${KNOWN_HOSTS}\n`);
+      expect(spec.env).toEqual([
+        "RESTIC_PASSWORD_FILE=/run/secrets/remote.key",
+        "RESTIC_REPOSITORY=sftp://backup@backup.example.com:2222/only/local",
+        "HOME=/tmp",
+      ]);
+      expect((spec.env ?? []).join("\n")).not.toContain(SFTP_KEY);
+    }
+    expect(s.helpers[2]?.cmd).toEqual([
+      "--no-cache",
+      "-o",
+      "sftp.args=-i /run/secrets/sftp.key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/run/secrets/known_hosts -p 2222",
+      "--retry-lock",
+      "5m",
+      "backup",
+      "/data",
+      "--json",
+      "--host",
+      "local",
+    ]);
+  });
+
+  test("usage is cached for ten minutes, and a backup, a forget or a failed write clears the reading", async () => {
+    let clock = 1_000_000;
+    const { s, engine } = await onlyRemote(remoteRepository(), () => clock);
+    await engine.backup(s.host, "src", []);
+    s.next("stats", { exitCode: 0, logs: '{"total_size":10}' });
+    s.next("stats", { exitCode: 0, logs: '{"total_size":20}' });
+    const stats = () => commandsOf(s.helpers).filter((command) => command === "stats").length;
+
+    expect(await engine.usage(s.host)).toEqual({ bytes: 10 });
+    expect(await engine.usage(s.host)).toEqual({ bytes: 10 });
+    expect(stats()).toBe(1);
+
+    clock += 10 * 60 * 1000;
+    expect(await engine.usage(s.host)).toEqual({ bytes: 20 });
+    expect(stats()).toBe(2);
+
+    await engine.backup(s.host, "src", []);
+    s.next("stats", { exitCode: 0, logs: '{"total_size":30}' });
+    expect(await engine.usage(s.host)).toEqual({ bytes: 30 });
+    expect(stats()).toBe(3);
+
+    await engine.forget(s.host, SECOND);
+    s.next("stats", { exitCode: 0, logs: '{"total_size":40}' });
+    expect(await engine.usage(s.host)).toEqual({ bytes: 40 });
+    expect(stats()).toBe(4);
+
+    // A backup that fails part way may still have written packs, so its cached reading is dropped too.
+    s.next("backup", { exitCode: 1, logs: "Fatal: no space left on device" });
+    expect(await rejectionOf(engine.backup(s.host, "src", []))).toMatchObject({ kind: "engine" });
+    s.next("stats", { exitCode: 0, logs: '{"total_size":50}' });
+    expect(await engine.usage(s.host)).toEqual({ bytes: 50 });
+    expect(stats()).toBe(5);
+
+    // A prune that fails part way may have freed packs, so a failed forget drops the reading as well.
+    s.next("forget", { exitCode: 1, logs: "Fatal: unable to remove a pack" });
+    expect(await rejectionOf(engine.forget(s.host, SECOND))).toMatchObject({ kind: "engine" });
+    s.next("stats", { exitCode: 0, logs: '{"total_size":60}' });
+    expect(await engine.usage(s.host)).toEqual({ bytes: 60 });
+    expect(stats()).toBe(6);
+  });
+
+  test("a remote repository that does not exist reports zero usage and is not created", async () => {
+    const { s, engine } = await onlyRemote();
+    s.next("cat", { exitCode: 10, logs: "Fatal: repository does not exist" });
+
+    expect(await engine.usage(s.host)).toEqual({ bytes: 0 });
+    expect(commandsOf(s.helpers)).toEqual(["cat"]);
+    expect(repoVolumeCalls(s)).toEqual([]);
+    expect(s.rt.volumes.has(REPO_VOLUME)).toBe(false);
+  });
+
+  test("switching a host to remote-only probes the new repository instead of trusting the local one's state", async () => {
+    const s = scripted();
+    await s.rt.createVolume("src", {});
+    const engine = new ResticEngine({ dataDir: s.dataDir });
+    await engine.backup(s.host, "src", ["ck_local"]);
+    expect(commandsOf(s.helpers)).toEqual(["cat", "init", "backup"]);
+    s.helpers.length = 0;
+    s.rt.calls.length = 0;
+
+    engine.bindRemotes(async () => remoteRepository());
+    // The scripted `cat` answers for whatever repository is asked, so a missing remote is stated here: only a probe that
+    // actually runs sees it, and only then is the remote initialized.
+    s.next("cat", { exitCode: 10, logs: "Fatal: repository does not exist" });
+    await engine.backup(s.host, "src", ["ck_only"]);
+
+    // The local repository's `cat config` was cached under another key, so the remote is opened and initialized again.
+    expect(commandsOf(s.helpers)).toEqual(["cat", "init", "backup"]);
+    expect(repoVolumeCalls(s)).toEqual([]);
+    expect(s.rt.volumes.has(REPO_VOLUME)).toBe(true);
+  });
+
+  test("an export copies from the remote repository, with its options and password file", async () => {
+    const { s, engine } = await onlyRemote();
+    s.next("cat", { exitCode: 0, logs: "{}" });
+    // The manifest write is stopped after the copy, which is the call this test is about.
+    s.next("backup", { exitCode: 1, logs: "Fatal: no space left on device" });
+    const file = join(s.dataDir, "only.mbckpt");
+
+    await rejectionOf(
+      engine.pack(s.host, { snapshotIds: [SNAPSHOT], manifest: "{}", passphrase: PASSPHRASE }, file, 1024 * 1024),
+    );
+
+    const copy = s.helpers.find((spec) => spec.cmd.includes("copy"));
+    expect(copy?.cmd).toEqual([
+      "--no-cache",
+      "-o",
+      "s3.region=us-east-1",
+      "copy",
+      "--from-repo",
+      "s3:https://s3.example.com/archive/only/local",
+      "--from-password-file",
+      "/run/secrets/remote.key",
+      SNAPSHOT,
+    ]);
+    expect(copy?.network).toBe(true);
+    expect((copy?.mounts ?? []).some((mount) => mount.source === REPO_VOLUME)).toBe(false);
+    expect(copy?.env).toEqual([
+      "RESTIC_PASSWORD_FILE=/run/secrets/package.key",
+      "RESTIC_REPOSITORY=/pkg/repo",
+      "HOME=/tmp",
+      "AWS_SHARED_CREDENTIALS_FILE=/run/secrets/aws-credentials",
+    ]);
+    const secrets = new Map((copy?.secrets ?? []).map((secret) => [secret.name, secret.value]));
+    expect(secrets.get("remote.key")).toBe(REMOTE_PASSWORD);
+    expect(secrets.get("package.key")).toBe(PASSPHRASE);
+    expect(repoVolumeCalls(s)).toEqual([]);
+  });
+
+  test("copying into a remote-only repository is refused as unnecessary", async () => {
+    const { s, engine, remote } = await onlyRemote();
+
+    const error = await rejectionOf(engine.copyToRemote(s.host, remote, [SNAPSHOT]));
+
+    expect(error).toMatchObject({ kind: "engine" });
+    expect((error as Error).message).toContain("only on the remote");
+    expect(s.helpers).toEqual([]);
+  });
+
+  test("checking a remote opens it and creates it only when it does not exist", async () => {
+    const { s, engine, remote } = await onlyRemote();
+    s.next("cat", { exitCode: 10, logs: "Fatal: repository does not exist" });
+
+    await engine.checkRemote(s.host, remote);
+
+    expect(commandsOf(s.helpers)).toEqual(["cat", "init"]);
+    for (const spec of s.helpers) {
+      expect(spec.network).toBe(true);
+      // The check holds the relocation gate, so it is bounded much shorter than a backup's hour.
+      expect(spec.timeoutSec).toBe(120);
+      expect((spec.mounts ?? []).some((mount) => mount.source === REPO_VOLUME)).toBe(false);
+    }
+    expect(s.helpers[1]?.cmd).toEqual(["--no-cache", "-o", "s3.region=us-east-1", "--retry-lock", "5m", "init"]);
+
+    s.helpers.length = 0;
+    s.next("cat", { exitCode: 12, logs: "Fatal: wrong password" });
+    const wrong = await rejectionOf(engine.checkRemote(s.host, remote));
+    expect((wrong as Error).message).toContain("password is wrong");
+  });
+});

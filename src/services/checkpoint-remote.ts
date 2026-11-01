@@ -101,6 +101,8 @@ export class CheckpointRemoteSync {
    * changes it.
    */
   stateOf(hostId: string): RemoteSyncState {
+    // A host that keeps its checkpoints only on the remote never copies, so it never has a failing copy either.
+    if (this.isRemoteOnly(hostId)) return { failures: 0, lastFailure: null };
     const retry = this.retries.get(hostId);
     return retry ? { failures: retry.failures, lastFailure: retry.lastFailure } : { failures: 0, lastFailure: null };
   }
@@ -126,7 +128,8 @@ export class CheckpointRemoteSync {
    */
   request(hostId: string): void {
     if (this.timers.has(hostId)) return;
-    if (!this.targets.remoteOf(hostId)) return;
+    const remote = this.targets.remoteOf(hostId);
+    if (!remote || remote.mode === "only") return;
     const retry = this.retries.get(hostId);
     if (retry && this.clock().getTime() < retry.nextAt) return;
     const timer = setTimeout(() => {
@@ -156,6 +159,11 @@ export class CheckpointRemoteSync {
           this.retries.delete(host.host.id);
           continue;
         }
+        // A remote-only host has no local repository to copy from: the remote already holds every checkpoint.
+        if (remote.mode === "only") {
+          this.retries.delete(host.host.id);
+          continue;
+        }
         const retry = this.retries.get(host.host.id);
         if (retry && now.getTime() < retry.nextAt) continue;
         try {
@@ -182,6 +190,7 @@ export class CheckpointRemoteSync {
   async syncHost(host: HostCtx, options: { now?: Date } = {}): Promise<RemoteSyncSummary> {
     const remote = this.targets.remoteOf(host.host.id);
     if (!remote) throw notFound(msg("checkpoint_remote_not_set", { host: host.host.id }));
+    if (remote.mode === "only") throw conflict(msg("checkpoint_remote_only_no_sync", { host: host.host.id }));
     if (this.syncing.has(host.host.id)) throw conflict(msg("checkpoint_remote_busy", { host: host.host.id }));
     this.syncing.add(host.host.id);
     const now = options.now ?? this.clock();
@@ -255,8 +264,15 @@ export class CheckpointRemoteSync {
     }
   }
 
+  /** Whether a host keeps its checkpoints only on the remote, so there is no local repository to copy from. */
+  private isRemoteOnly(hostId: string): boolean {
+    return this.targets.remoteOf(hostId)?.mode === "only";
+  }
+
   /** The records of one host whose data has not been copied to this remote repository yet. A recycle bin entry counts. */
   private pending(hostId: string, targetId: string): CheckpointRecord[] {
+    // A remote-only host has nothing waiting: everything it has is already on the remote.
+    if (this.isRemoteOnly(hostId)) return [];
     return this.checkpoints
       .list()
       .filter(

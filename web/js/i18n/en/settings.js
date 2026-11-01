@@ -309,7 +309,21 @@ export default {
   "st.hostTrustTest": "Trust and test",
   "st.hostRemote": "Remote checkpoint repository",
   "st.hostRemoteHelp":
-    "Copy this host's checkpoint snapshots to an S3 or SFTP repository, so a copy survives the loss of this machine. The local repository stays the only place checkpoints are taken.",
+    "Copy this host's checkpoint snapshots to an S3 or SFTP repository, so a copy survives the loss of this machine. A host can also keep them only there, with no local repository.",
+  "st.hostRemoteMode": "Mode",
+  "st.hostRemoteModeSync": "Local + scheduled sync",
+  "st.hostRemoteModeOnly": "Only remote",
+  "st.hostRemoteModeHelp":
+    "Local + scheduled sync keeps a repository on this machine and copies it to the remote. Only remote keeps no local repository: every checkpoint is taken, restored and deleted on the remote.",
+  "st.hostRemoteModeLocked":
+    "This host still has {count} checkpoint records, including those in the recycle bin. Switching between the two modes, or changing or clearing an only-remote position, needs a host with none. Delete those checkpoints first.",
+  "st.hostRemoteOnlyBadge": "Only remote",
+  "st.hostRemoteOnlyNetwork": "Taking, restoring and deleting a checkpoint all need a connection to the target.",
+  "st.hostRemoteOnlyNoLocal": "This machine keeps no copy of the checkpoints.",
+  "st.hostRemoteOnlyKey":
+    "The remote repository's password file, {file}, is the only copy. If it is lost, none of the checkpoints on the remote can be read. Back it up.",
+  "st.hostRemoteClearLocked":
+    "This host still has checkpoint records, so its only-remote repository cannot be cleared. Delete them first.",
   "st.hostRemoteColHost": "Host",
   "st.hostRemoteColRepo": "Repository",
   "st.hostRemoteColLast": "Last sync",
@@ -326,8 +340,7 @@ export default {
   "st.hostRemoteClear": "Clear",
   "st.hostRemoteSetTitle": "Set up the remote checkpoint repository of {host}",
   "st.hostRemoteEditTitle": "Change the remote checkpoint repository of {host}",
-  "st.hostRemoteDialogHelp":
-    "The host's snapshots are copied to this repository. The local repository stays the only place checkpoints are taken.",
+  "st.hostRemoteDialogHelp": "The host keeps its checkpoints in a local repository and copies them here, or only here.",
   "st.hostRemoteTarget": "Target",
   "st.hostRemoteTargetHelp":
     "Only S3 and SFTP targets can hold a checkpoint repository. WebDAV targets are not listed.",

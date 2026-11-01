@@ -1,4 +1,5 @@
 import { api, enc } from "../lib/api.js";
+import { onlyHostsNow } from "../lib/checkpoint-remotes.js";
 import {
   browserTimezone,
   contentsOf,
@@ -725,8 +726,8 @@ function hostLine(hosts, hostId) {
 }
 
 /** The remote copy marks a checkpoint row carries, as badges beside its kinds. */
-export function remoteBadgesHtml(checkpoint, targetNames = new Map()) {
-  return remoteMarksOf(checkpoint, targetNames)
+export function remoteBadgesHtml(checkpoint, targetNames = new Map(), onlyHosts = new Set()) {
+  return remoteMarksOf(checkpoint, targetNames, { onlyHosts })
     .map((mark) =>
       mark.kind === "synced"
         ? `<span class="badge badge-success" title="${esc(t("ck.remoteSyncedTitle", { targets: mark.targets.join(", ") }))}">${esc(t("ck.remoteSynced"))}</span>`
@@ -746,7 +747,7 @@ export function checkpointRowHtml(checkpoint, state) {
   const kinds = kindsOf(checkpoint)
     .map((kind) => `<span class="badge ${KIND_CLASS[kind]}">${esc(t(`ck.kind.${kind}`))}</span>`)
     .join("");
-  const remote = remoteBadgesHtml(checkpoint, state.targetNames);
+  const remote = remoteBadgesHtml(checkpoint, state.targetNames, state.onlyHosts);
   const detail = [contentsText(checkpoint)];
   if (state.hosts?.length > 1) detail.push(hostLine(state.hosts, checkpoint.hostId));
   const detailText = detail.join(" · ");
@@ -780,6 +781,7 @@ export function checkpointCardHtml({
   schedule,
   hosts = [],
   targetNames = new Map(),
+  onlyHosts = new Set(),
   boxHostId,
   toggle = "",
   total,
@@ -799,6 +801,7 @@ export function checkpointCardHtml({
             pending: Boolean(pending),
             hosts,
             targetNames,
+            onlyHosts,
             boxHostId,
           }),
         )
@@ -832,6 +835,8 @@ export function mountCheckpoints(root, { box, refreshBox }) {
   let lastUsage = null;
   /** The target names the remote copy badges use, read with the checkpoints. */
   let targetNames = new Map();
+  /** The hosts whose checkpoints are kept only on the remote, so their rows carry no copied badge. */
+  let onlyHosts = new Set();
 
   /** Draws the card from the last load. A long list shows its newest rows and any pinned one, with a show-all toggle. */
   const draw = () => {
@@ -849,6 +854,7 @@ export function mountCheckpoints(root, { box, refreshBox }) {
       schedule,
       hosts: multiHost() ? hostsNow() : [],
       targetNames,
+      onlyHosts,
       boxHostId: hostOfBox(current),
       onAgent: boxOnAgentHost(current, hostsNow()),
     });
@@ -858,7 +864,7 @@ export function mountCheckpoints(root, { box, refreshBox }) {
     const token = ++seq;
     try {
       const current = box();
-      const [{ checkpoints }, { rollback }, usage, plan, targets] = await Promise.all([
+      const [{ checkpoints }, { rollback }, usage, plan, targets, only] = await Promise.all([
         api("/api/checkpoints"),
         api(`/api/boxes/${enc(current.boxId)}/rollback`),
         api("/api/checkpoints/usage").catch(() => null),
@@ -867,6 +873,7 @@ export function mountCheckpoints(root, { box, refreshBox }) {
           () => undefined,
         ),
         api("/api/targets").catch(() => ({ targets: [] })),
+        onlyHostsNow(),
       ]);
       if (disposed || token !== seq) return;
       rows = newestFirst(checkpoints.filter((checkpoint) => checkpoint.boxId === current.boxId));
@@ -874,6 +881,7 @@ export function mountCheckpoints(root, { box, refreshBox }) {
       schedule = plan;
       lastUsage = usage;
       targetNames = targetNamesOf(targets);
+      onlyHosts = only;
       draw();
     } catch (err) {
       if (disposed || token !== seq) return;

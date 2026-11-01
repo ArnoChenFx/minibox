@@ -27,6 +27,7 @@ export interface CheckpointLayer {
 export interface CheckpointRow {
   legacy: boolean;
   boxId?: string | null;
+  hostId?: string;
   auto: boolean;
   pinned: boolean;
   createdAt: string;
@@ -73,8 +74,9 @@ export declare function targetNamesOf(
   reply: { targets?: readonly { id: string; name: string }[] | null } | null | undefined,
 ): Map<string, string>;
 export declare function remoteMarksOf(
-  checkpoint: Pick<CheckpointRow, "remoteSync" | "remoteFailure">,
+  checkpoint: Pick<CheckpointRow, "hostId" | "remoteSync" | "remoteFailure">,
   targetNames?: ReadonlyMap<string, string>,
+  options?: { onlyHosts?: ReadonlySet<string> },
 ): RemoteMark[];
 export declare function passphraseOk(value: string): boolean;
 export declare function scheduleZone(
