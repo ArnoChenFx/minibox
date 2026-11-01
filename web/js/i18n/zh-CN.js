@@ -141,23 +141,23 @@ export default {
   "tp.editPortsHelp": "由该模板创建的 Box 会打开的 TCP 端口，用逗号分隔。留空表示不打开。",
   "tp.editPostCreateHelp": "在以该模板创建的每个 Box 中运行一次，形式为 /bin/sh -c。留空表示不运行。",
   "tp.errPort": "「{port}」不是 1 到 65535 之间的端口。",
-  "tp.fork": "复制",
-  "tp.forkTitle": "复制「{name}」",
-  "tp.forkDesc":
+  "tp.duplicate": "复制",
+  "tp.duplicateTitle": "复制「{name}」",
+  "tp.duplicateDesc":
     "把 <code>{ref}</code> 的构建来源复制成一个新的独立模板。副本不构建，所以还没有镜像和大小；原模板保持不变。",
-  "tp.forkDescImage": "把 <code>{ref}</code> 的镜像复制成一个新模板。原模板保持不变。",
-  "tp.forkWhat":
+  "tp.duplicateDescImage": "把 <code>{ref}</code> 的镜像复制成一个新模板。原模板保持不变。",
+  "tp.duplicateWhat":
     "副本只复制构建来源、设置命令、端口和描述，不复制镜像：它是一张尚未构建的模板，构建之后才有自己的镜像、大小和创建时间。可以在卡片上修改或构建它。",
-  "tp.forkWhatImage":
+  "tp.duplicateWhatImage":
     "从 Box 保存的模板没有构建来源可复制，所以副本是一次镜像复制：它不能修改，也不能重新构建，和原模板一样。",
-  "tp.forkWhatOfficial":
+  "tp.duplicateWhatOfficial":
     "MiniBox 还没有在任何宿主机上构建这个官方模板，所以副本是一张尚未构建的模板，来源是 MiniBox 自带 Dockerfile 的副本。可以像其他自定义模板一样修改或构建它。",
-  "tp.forkHereLocal": "副本保存在本机。",
-  "tp.forkConfirm": "复制模板",
-  "tp.forking": "正在复制…",
-  "tp.forked": "已复制模板",
-  "tp.forkedDraft": "已复制模板，尚未构建",
-  "tp.forkFailed": "无法复制模板",
+  "tp.duplicateHereLocal": "副本保存在本机。",
+  "tp.duplicateConfirm": "复制模板",
+  "tp.duplicating": "正在复制…",
+  "tp.duplicated": "已复制模板",
+  "tp.duplicatedDraft": "已复制模板，尚未构建",
+  "tp.duplicateFailed": "无法复制模板",
   "tp.hosts": "宿主机",
   "tp.present": "已有",
   "tp.absent": "缺失",

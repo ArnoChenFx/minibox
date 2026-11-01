@@ -50,6 +50,8 @@ export const ACTION_ICON = {
   "template.create": "hammer",
   "template.draft.create": "layers",
   "template.edit": "pencil",
+  "template.duplicate": "copy",
+  // 历史记录：旧版本把这个 action 写成 template.fork，已写在事件库里的记录仍按这个图标显示。
   "template.fork": "copy",
   "template.rebuild": "hammer",
   "template.promote": "upload",

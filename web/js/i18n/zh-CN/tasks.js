@@ -27,6 +27,8 @@ export default {
   "task.op.template.build": "构建基础模板",
   "task.op.template.save": "将 Box 存为模板",
   "task.op.template.create": "构建模板",
+  "task.op.template.duplicate": "复制模板",
+  // 历史记录：旧版本的任务摘要写成 task.op.template.fork，已写入的任务仍按这个键显示。
   "task.op.template.fork": "复制模板",
   "task.op.template.rebuild": "重新构建模板",
   "task.op.template.sync": "同步模板",

@@ -60,12 +60,12 @@ export declare function templateBadge(
   card: { ref: string; buildKind?: unknown; draft?: unknown },
   base: string,
 ): "tp.builtin" | "tp.official" | "tp.custom" | "tp.draft";
-export declare function forkAction(card: TemplateCard | UnbuiltCard | { draft?: unknown }): {
+export declare function duplicateAction(card: TemplateCard | UnbuiltCard | { draft?: unknown }): {
   enabled: boolean;
   reason: null;
 };
 /** Whether a duplicate copies the build source into a draft, rather than copying the image. */
-export declare function forkMakesDraft(card: { ref: string; buildKind?: unknown }, base: string): boolean;
+export declare function duplicateMakesDraft(card: { ref: string; buildKind?: unknown }, base: string): boolean;
 export declare function withDraftCards(
   cards: readonly TemplateCard[],
   drafts: readonly DraftRow[],

@@ -91,7 +91,7 @@ export function templateBadge(card, base) {
  * its build source or its image, and an official template no host has built yet is copied from the Dockerfile MiniBox
  * ships, into a draft of its own. A draft card itself offers no duplicate action, because there is no image behind it.
  */
-export function forkAction(card) {
+export function duplicateAction(card) {
   return { enabled: card.draft !== true, reason: null };
 }
 
@@ -101,7 +101,7 @@ export function forkAction(card) {
  * have a source to copy; a template saved from a box has none, so its duplicate is an image copy. Pure, so the dialog and
  * the tests share it.
  */
-export function forkMakesDraft(card, base) {
+export function duplicateMakesDraft(card, base) {
   return card.buildKind !== undefined || card.ref === base;
 }
 

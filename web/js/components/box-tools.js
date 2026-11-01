@@ -68,7 +68,7 @@ function customActionCell(tool) {
 }
 
 /**
- * Every row offers the catalog entry as JSON, built-in or custom, so a fork starts from a copy. The button is its icon
+ * Every row offers the catalog entry as JSON, built-in or custom, so a custom version starts from a copy. The button is its icon
  * alone at every width: the words are its tooltip, which says what the copy is for, and its accessible name, so the row
  * keeps the room the actions beside it need on a phone.
  */

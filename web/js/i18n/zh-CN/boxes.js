@@ -59,8 +59,10 @@ export default {
   "act.checkpoint.schedule.clear": "清除定时检查点",
   "act.template.create": "构建模板",
   "act.template.draft.create": "保存了模板草稿",
-  "act.template.edit": "修改模板",
+  "act.template.duplicate": "复制模板",
+  // 历史记录：旧版本把这个 action 写成 template.fork，已写在事件库里的记录仍按这个键显示。
   "act.template.fork": "复制模板",
+  "act.template.edit": "修改模板",
   "act.template.rebuild": "重新构建模板",
   "act.template.sync": "将模板复制到宿主机",
   "act.template.official.build": "构建官方模板",
