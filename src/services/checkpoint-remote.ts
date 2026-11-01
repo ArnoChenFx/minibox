@@ -204,6 +204,13 @@ export class CheckpointRemoteSync {
         this.failed(host.host.id, pending, remote.targetId, now, e);
         throw e;
       }
+      // The copy went to the position read above. When the operator moved or cleared the remote while it ran, the marks
+      // would name a repository the snapshots are not in, so none are written and the next pass copies them again.
+      const current = this.targets.remoteOf(host.host.id);
+      if (!current || current.targetId !== remote.targetId || current.path !== remote.path) {
+        log.info("checkpoint.remote_moved_during_copy", { host: host.host.id, target: remote.targetId });
+        return summary;
+      }
       const at = now.toISOString();
       for (const record of pending) this.markSynced(record.id, remote.targetId, at);
       this.targets.recordRemoteResult(host.host.id, { at, error: null });

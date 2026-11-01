@@ -463,6 +463,25 @@ describe("the sync marks when the remote position changes", () => {
     expect(await inst.app.checkpointRemote.syncHost(inst.host)).toMatchObject({ checkpoints: 0, snapshots: 0 });
     expect(engineOf(inst).remoteCopies).toHaveLength(1);
   });
+
+  test("a copy still running when the position changes marks nothing, since it went to the old position", async () => {
+    const inst = instanceOf();
+    const targetId = s3Target(inst);
+    const ctx = ctxOf(inst.app);
+    await inst.app.operations.run("checkpoint.remote.set", ctx, { id: "local", targetId, path: "first" });
+    const { record } = await checkpointOf(inst, "src");
+    const gate = engineOf(inst).holdRemote();
+    const copying = inst.app.checkpointRemote.syncHost(inst.host);
+    while (gate.blocked() === 0) await Bun.sleep(1);
+
+    await inst.app.operations.run("checkpoint.remote.set", ctx, { id: "local", targetId, path: "second" });
+    gate.release();
+    expect(await copying).toMatchObject({ checkpoints: 0 });
+
+    expect(storedRecord(inst, record.id).remoteSync?.[targetId]).toBeUndefined();
+    expect(inst.app.targets.remoteOf("local")?.lastSyncAt).toBeNull();
+    expect(await inst.app.checkpointRemote.syncHost(inst.host)).toMatchObject({ checkpoints: 1, snapshots: 1 });
+  });
 });
 
 interface Overview {
