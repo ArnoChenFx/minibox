@@ -409,6 +409,62 @@ describe("the remote repository operations", () => {
   });
 });
 
+describe("the sync marks when the remote position changes", () => {
+  test("a new folder on the same target makes the checkpoint pending again and copies it there", async () => {
+    const inst = instanceOf();
+    const targetId = s3Target(inst);
+    const ctx = ctxOf(inst.app);
+    await inst.app.operations.run("checkpoint.remote.set", ctx, { id: "local", targetId, path: "first" });
+    const { record, snapshotId } = await checkpointOf(inst, "src");
+    await inst.app.checkpointRemote.syncHost(inst.host);
+    expect(storedRecord(inst, record.id).remoteSync?.[targetId]).toBeString();
+
+    await inst.app.operations.run("checkpoint.remote.set", ctx, { id: "local", targetId, path: "second" });
+
+    expect(storedRecord(inst, record.id).remoteSync?.[targetId]).toBeUndefined();
+    const again = await inst.app.checkpointRemote.syncHost(inst.host);
+    expect(again).toEqual({ hostId: "local", targetId, checkpoints: 1, snapshots: 1 });
+    expect(engineOf(inst).remoteCopies).toHaveLength(2);
+    expect(engineOf(inst).remoteCopies[1]).toEqual({ targetId, snapshotIds: [snapshotId] });
+    expect((await inst.app.targets.remoteRepository("local")).repository).toBe(
+      "s3:https://s3.example.com/archive/second/local",
+    );
+  });
+
+  test("clearing the remote and setting the same position back leaves the checkpoint pending", async () => {
+    const inst = instanceOf();
+    const targetId = s3Target(inst);
+    const ctx = ctxOf(inst.app);
+    await inst.app.operations.run("checkpoint.remote.set", ctx, { id: "local", targetId, path: "same" });
+    const { record } = await checkpointOf(inst, "src");
+    await inst.app.checkpointRemote.syncHost(inst.host);
+    expect(storedRecord(inst, record.id).remoteSync?.[targetId]).toBeString();
+
+    await inst.app.operations.run("checkpoint.remote.clear", ctx, { id: "local" });
+    await inst.app.operations.run("checkpoint.remote.set", ctx, { id: "local", targetId, path: "same" });
+
+    expect(storedRecord(inst, record.id).remoteSync?.[targetId]).toBeUndefined();
+    expect(await inst.app.checkpointRemote.syncHost(inst.host)).toMatchObject({ checkpoints: 1, snapshots: 1 });
+  });
+
+  test("saving the same position again keeps the marks and copies nothing", async () => {
+    const inst = instanceOf();
+    const targetId = s3Target(inst);
+    const ctx = ctxOf(inst.app);
+    await inst.app.operations.run("checkpoint.remote.set", ctx, { id: "local", targetId, path: "same" });
+    const { record } = await checkpointOf(inst, "src");
+    await inst.app.checkpointRemote.syncHost(inst.host);
+    const at = storedRecord(inst, record.id).remoteSync?.[targetId];
+    expect(at).toBeString();
+
+    await inst.app.operations.run("checkpoint.remote.set", ctx, { id: "local", targetId, path: "same" });
+
+    expect(storedRecord(inst, record.id).remoteSync?.[targetId]).toBe(at);
+    expect(await inst.app.checkpointRemote.syncHost(inst.host)).toMatchObject({ checkpoints: 0, snapshots: 0 });
+    expect(engineOf(inst).remoteCopies).toHaveLength(1);
+  });
+});
+
 interface Overview {
   attention: {
     kind: string;
