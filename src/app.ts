@@ -425,6 +425,16 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
     },
     release: (host) => egressForward.release(host),
     onLive: reconcileOnLive,
+    onForgotten: (hostId) => {
+      // The host is gone, so its remote checkpoint repository record and the copy state kept for it go with it. The
+      // remote itself is left as it is, password file included. The memory state is always cleared, even when the file
+      // write fails; the caller logs that failure.
+      try {
+        targets.forgetHost(hostId);
+      } finally {
+        checkpointRemote.forgetHost(hostId);
+      }
+    },
     onReachable: (host) => egressForward.hostOnline(host.host.id),
     agents,
     localLabels: cfg.localHostLabels,

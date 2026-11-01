@@ -142,9 +142,11 @@ export function recordsChanged(records: HostRecords): AppError {
  * A confirmation may name the digest of the preview it saw. When the records are no longer that set, nothing is removed,
  * the host is put back into service and the caller answers with a fresh preview instead.
  *
- * The checkpoint records go, but the data they describe does not: each host's restic repository lives in a Docker volume
- * on that host (`<prefix>-checkpoints-<host>`), so it went with the machine. Exported packages under `DATA_DIR/packages`
- * are files of this control plane and are left for their own expiry, because they are a copy somebody may still import.
+ * The checkpoint records go, but the data they describe does not. In local + scheduled sync mode each host's local restic
+ * repository lives in a Docker volume on that host (`<prefix>-checkpoints-<host>`), so it went with the machine, while the
+ * copies already made to its remote repository stay there. A host in remote-only mode has no local repository at all: its
+ * repository is on the remote, so only the record naming it goes. Exported packages under `DATA_DIR/packages` are files of
+ * this control plane and are left for their own expiry, because they are a copy somebody may still import.
  */
 export function discardHostRecords(host: HostCtx, expectedDigest?: string): DiscardOutcome {
   const id = host.host.id;
