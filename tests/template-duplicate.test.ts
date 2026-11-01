@@ -948,6 +948,19 @@ describe("template.duplicate over REST and tokens", () => {
     expect(made.json.template).toEqual({ ref: "mbtest-template:tool-copy", name: "tool-copy" });
   });
 
+  test("a copy is recorded in the activity feed under the new name, which the console draws an icon and a label for", async () => {
+    await declaredOverRest("tool");
+
+    const made = await call(harness.base, duplicatePath("mbtest-template:tool"), { body: { name: "tool-copy" } });
+
+    expect(made.status).toBe(201);
+    expect(harness.app.activity.list()[0]).toMatchObject({
+      action: "template.duplicate",
+      target: "tool-copy",
+      ok: true,
+    });
+  });
+
   test("a name an image holds is refused as a conflict, and nothing is committed", async () => {
     await declaredOverRest("tool");
     await declaredOverRest("tool-copy");
