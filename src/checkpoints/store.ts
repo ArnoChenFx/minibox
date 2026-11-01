@@ -3,7 +3,9 @@ import { join } from "node:path";
 
 import { DIR_MODE, ensureDataDir, writeFileAtomic } from "../data-dir";
 import { hostGone } from "../host/gone";
+import { conflict } from "../lib/errors";
 import { log } from "../lib/logger";
+import { msg } from "../lib/messages";
 import { isBoxId } from "../specs/revision";
 import { isCheckpointId, newCheckpointId } from "./id";
 import { PackageStore } from "./packages";
@@ -87,6 +89,10 @@ export class CheckpointStore {
   readonly exporting = new Set<string>();
   /** Hosts that were removed, so a write that was already on its way cannot bring one of their records back. */
   private readonly closed = new Set<string>();
+  /** How many checkpoint writes are in flight for each host. A write is a take, an import or a copy's record write. */
+  private readonly writes = new Map<string, number>();
+  /** Hosts whose remote-only position is being changed. A write must not start under one. */
+  private readonly relocations = new Set<string>();
 
   constructor(
     private readonly dataDir: string,
@@ -236,6 +242,39 @@ export class CheckpointStore {
       () => undefined,
     );
     return run;
+  }
+
+  /**
+   * Runs a checkpoint write for one host, refusing it while that host's remote-only position is being changed. Writes do
+   * not queue: a caller that arrives during a relocation gets a conflict at once. The count drops in `finally`, so a
+   * failed write releases the host too.
+   */
+  async writing<T>(hostId: string, fn: () => Promise<T>): Promise<T> {
+    if (this.relocations.has(hostId)) throw conflict(msg("checkpoint_remote_relocating", { host: hostId }));
+    this.writes.set(hostId, (this.writes.get(hostId) ?? 0) + 1);
+    try {
+      return await fn();
+    } finally {
+      const left = (this.writes.get(hostId) ?? 1) - 1;
+      if (left <= 0) this.writes.delete(hostId);
+      else this.writes.set(hostId, left);
+    }
+  }
+
+  /**
+   * Runs a change of a host's remote-only position, refusing it while a checkpoint write is in flight and refusing a
+   * second relocation of the same host. The gate is released in `finally`, so a failed check or save does not keep the
+   * host locked.
+   */
+  async relocating<T>(hostId: string, fn: () => Promise<T>): Promise<T> {
+    if ((this.writes.get(hostId) ?? 0) > 0) throw conflict(msg("checkpoint_remote_write_busy", { host: hostId }));
+    if (this.relocations.has(hostId)) throw conflict(msg("checkpoint_remote_relocating", { host: hostId }));
+    this.relocations.add(hostId);
+    try {
+      return await fn();
+    } finally {
+      this.relocations.delete(hostId);
+    }
   }
 
   allocateId(): string {

@@ -694,7 +694,7 @@ describe("ResticEngine with a host that keeps its checkpoints only on the remote
     ]);
   });
 
-  test("usage is cached for ten minutes, and a backup or a forget clears the reading", async () => {
+  test("usage is cached for ten minutes, and a backup, a forget or a failed write clears the reading", async () => {
     let clock = 1_000_000;
     const { s, engine } = await onlyRemote(remoteRepository(), () => clock);
     await engine.backup(s.host, "src", []);
@@ -719,6 +719,13 @@ describe("ResticEngine with a host that keeps its checkpoints only on the remote
     s.next("stats", { exitCode: 0, logs: '{"total_size":40}' });
     expect(await engine.usage(s.host)).toEqual({ bytes: 40 });
     expect(stats()).toBe(4);
+
+    // A backup that fails part way may still have written packs, so its cached reading is dropped too.
+    s.next("backup", { exitCode: 1, logs: "Fatal: no space left on device" });
+    expect(await rejectionOf(engine.backup(s.host, "src", []))).toMatchObject({ kind: "engine" });
+    s.next("stats", { exitCode: 0, logs: '{"total_size":50}' });
+    expect(await engine.usage(s.host)).toEqual({ bytes: 50 });
+    expect(stats()).toBe(5);
   });
 
   test("a remote repository that does not exist reports zero usage and is not created", async () => {
@@ -808,6 +815,8 @@ describe("ResticEngine with a host that keeps its checkpoints only on the remote
     expect(commandsOf(s.helpers)).toEqual(["cat", "init"]);
     for (const spec of s.helpers) {
       expect(spec.network).toBe(true);
+      // The check holds the relocation gate, so it is bounded much shorter than a backup's hour.
+      expect(spec.timeoutSec).toBe(120);
       expect((spec.mounts ?? []).some((mount) => mount.source === REPO_VOLUME)).toBe(false);
     }
     expect(s.helpers[1]?.cmd).toEqual(["--no-cache", "-o", "s3.region=us-east-1", "--retry-lock", "5m", "init"]);

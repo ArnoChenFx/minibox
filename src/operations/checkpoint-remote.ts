@@ -110,6 +110,7 @@ const checkpointRemoteSet = defineOperation({
   scope: REMOTE_SCOPE,
   async: false,
   conflicts: true,
+  longSync: true,
   input: setInput,
   output: z.object({ remote: RemoteRepoSchema }),
   rest: [{ method: "PUT", path: "/api/hosts/:id/checkpoint-remote", body: true }],
@@ -129,23 +130,37 @@ const checkpointRemoteSet = defineOperation({
   },
   run: async ({ host, targets, checkpointRemote }, input) => {
     const service = targetsOf(targets);
-    const before = service.remoteOf(input.id);
-    // A remote-only host has no local repository to fall back on, so the repository is opened before the position is
-    // saved. A wrong password or an unreachable target refuses the save with the reason restic gave.
-    if ((input.mode ?? before?.mode ?? "sync") === "only") {
-      const repository = await service.previewRemoteRepository(input.id, input);
-      try {
-        await host.checkpointEngine.checkRemote(host, repository);
-      } catch (e) {
-        const reason = e instanceof Error ? e.message : String(e);
-        throw new AppError(502, "bad_gateway", msg("checkpoint_remote_check_failed", { reason }), { reason });
+    const move = service.remoteMove(input.id, input);
+    // A save that changes nothing is answered from what is stored: it is not a reason to open the remote again.
+    if (!move.changed) {
+      const current = service.remoteOf(input.id);
+      if (current) return { remote: current };
+    }
+    const apply = async () => {
+      const before = service.remoteOf(input.id);
+      // A remote-only host has no local repository to fall back on, so the repository is opened before the position is
+      // saved. A wrong password or an unreachable target refuses the save with the reason restic gave.
+      if (move.mode === "only") {
+        const repository = await service.previewRemoteRepository(input.id, input);
+        try {
+          await host.checkpointEngine.checkRemote(host, repository);
+        } catch (e) {
+          const reason = e instanceof Error ? e.message : String(e);
+          throw new AppError(502, "bad_gateway", msg("checkpoint_remote_check_failed", { reason }), { reason });
+        }
       }
-    }
-    const remote = service.setRemote(input.id, input);
-    if (before && (before.targetId !== remote.targetId || before.path !== remote.path || before.mode !== remote.mode)) {
-      checkpointRemote?.forgetMarks(input.id, before.targetId);
-    }
-    return { remote };
+      const remote = service.setRemote(input.id, input);
+      if (
+        before &&
+        (before.targetId !== remote.targetId || before.path !== remote.path || before.mode !== remote.mode)
+      ) {
+        checkpointRemote?.forgetMarks(input.id, before.targetId);
+      }
+      return { remote };
+    };
+    // Only a change that involves the remote-only mode is a relocation: a sync host may still change its folder with
+    // records, as before, and does not hold the gate while it does.
+    return move.involvesOnly ? await host.checkpoints.relocating(input.id, apply) : await apply();
   },
 });
 
@@ -165,12 +180,17 @@ const checkpointRemoteClear = defineOperation({
     target: (input) => ({ kind: "host", id: input.id, name: input.id }),
     detail: (input) => ({ hostId: input.id }),
   },
-  run: async ({ targets, checkpointRemote }, input) => {
+  run: async ({ host, targets, checkpointRemote }, input) => {
     const service = targetsOf(targets);
     const before = service.remoteOf(input.id);
-    service.clearRemote(input.id);
-    if (before) checkpointRemote?.forgetMarks(input.id, before.targetId);
-    return { ok: true as const };
+    const apply = async () => {
+      service.clearRemote(input.id);
+      if (before) checkpointRemote?.forgetMarks(input.id, before.targetId);
+      return { ok: true as const };
+    };
+    // Clearing a remote-only repository is a relocation, so a checkpoint write in flight is refused and a take during
+    // the clear cannot leave snapshots with no record. A sync remote is cleared as before.
+    return before?.mode === "only" ? await host.checkpoints.relocating(input.id, apply) : await apply();
   },
 });
 

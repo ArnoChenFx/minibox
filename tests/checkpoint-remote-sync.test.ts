@@ -9,9 +9,15 @@ import { targetsPath } from "../src/data-dir";
 import type { HostCtx } from "../src/host/registry";
 import { AppError } from "../src/lib/errors";
 import { setLogSink } from "../src/lib/logger";
+import { OPERATIONS } from "../src/operations/registry";
 import type { OperationContext } from "../src/operations/types";
 import { OWNER } from "../src/operations/types";
+import * as boxes from "../src/services/boxes";
 import { REMOTE_SYNC_FAILURE_THRESHOLD } from "../src/services/checkpoint-remote";
+import { copyCheckpoint, exportCheckpoint, importPackage } from "../src/services/checkpoint-transfer";
+import { deleteCheckpoint, takeCheckpoint } from "../src/services/checkpoints";
+import { newBoxId } from "../src/specs/revision";
+import { provisionDefaultMounts } from "../src/volumes/provision";
 import { createTestApp, rejectionOf, silenceLogs } from "./support/app";
 import { FakeRuntime } from "./support/fake-runtime";
 import { FakeCheckpointEngine } from "./support/fake-snapshots";
@@ -54,8 +60,28 @@ afterEach(async () => {
 function instanceOf(): Instance {
   const dataDir = mkdtempSync(join(tmpdir(), "minibox-remote-sync-"));
   dirs.push(dataDir);
-  const { app } = createTestApp({ dataDir });
-  return { app, host: app.hosts.get(), dataDir };
+  const { app, runtime } = createTestApp({ dataDir });
+  const host = app.hosts.get();
+  runtime.seedImage(host.baseTemplateTag, {
+    [host.keys.template]: "true",
+    [host.keys.templateName]: "base",
+  });
+  return { app, host, dataDir };
+}
+
+async function waitFor(check: () => boolean, what: string): Promise<void> {
+  const deadline = Date.now() + 2000;
+  while (!check()) {
+    if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}`);
+    await Bun.sleep(1);
+  }
+}
+
+/** A running box with its default workspace and home, so a checkpoint has two layers to write. */
+async function runningBox(inst: Instance, name = "race"): Promise<boxes.Box> {
+  const id = newBoxId();
+  const mounts = await provisionDefaultMounts(inst.host, { id, name, createdBy: "owner" }, new Set());
+  return boxes.createBox(inst.host, { id, name, cpus: 1, memoryMb: 256, createdBy: "owner", mounts });
 }
 
 function s3Target(inst: Instance, name = "archive"): string {
@@ -629,6 +655,14 @@ function saveRemote(
   return inst.app.operations.run("checkpoint.remote.set", ctxOf(inst.app), { id: "local", ...input });
 }
 
+function saveRemoteOn(
+  inst: Instance,
+  hostId: string,
+  input: { targetId: string; path?: string; mode?: "sync" | "only" },
+): Promise<unknown> {
+  return inst.app.operations.run("checkpoint.remote.set", ctxOf(inst.app), { id: hostId, ...input });
+}
+
 describe("a host that keeps its checkpoints only on the remote", () => {
   test("a host with no records switches to only and back, and the repository is opened before the save", async () => {
     const inst = instanceOf();
@@ -717,7 +751,10 @@ describe("a host that keeps its checkpoints only on the remote", () => {
     const syncTarget = s3Target(sync);
     sync.app.targets.setRemote("local", { targetId: syncTarget });
     await checkpointOf(sync, "src");
-    expect(sync.app.targets.setRemote("local", { targetId: syncTarget, path: "moved" }).path).toBe("moved/local");
+    const movedSync = (await saveRemote(sync, { targetId: syncTarget, path: "moved" })) as {
+      remote: { path: string };
+    };
+    expect(movedSync.remote.path).toBe("moved/local");
     sync.app.targets.clearRemote("local");
     expect(sync.app.targets.remoteOf("local")).toBeNull();
   });
@@ -819,5 +856,232 @@ describe("a host that keeps its checkpoints only on the remote", () => {
     const { app } = createTestApp({ dataDir });
 
     expect(app.targets.remoteOf("local")).toMatchObject({ mode: "sync", path: "old/local" });
+  });
+});
+
+describe("a remote-only relocation and a checkpoint write exclude each other", () => {
+  const PASSPHRASE = "correct horse battery staple";
+
+  test("a multi-layer take in progress refuses a switch to only, and the record stays in the repository it started in", async () => {
+    const inst = instanceOf();
+    const targetId = s3Target(inst);
+    inst.app.targets.setRemote("local", { targetId });
+    const box = await runningBox(inst);
+    const gate = engineOf(inst).holdBackupAt(2);
+
+    const taking = takeCheckpoint(
+      inst.host,
+      box.boxId,
+      { pinned: false, include: { system: false, volumes: [] }, consistency: "live" },
+      "owner",
+    );
+    await waitFor(() => gate.blocked() > 0, "the second layer");
+
+    const error = await rejectionOf(saveRemote(inst, { targetId, mode: "only" }));
+
+    expect(error).toMatchObject({ status: 409, key: "checkpoint_remote_write_busy" });
+    expect(inst.app.targets.remoteOf("local")?.mode).toBe("sync");
+    gate.release();
+    const view = await taking;
+    expect(inst.host.checkpoints.read(view.id)?.data).toHaveLength(2);
+    expect(inst.app.targets.remoteOf("local")?.mode).toBe("sync");
+  });
+
+  test("a switch to only in progress refuses a take, and the take succeeds after the save", async () => {
+    const inst = instanceOf();
+    const targetId = s3Target(inst);
+    const box = await runningBox(inst);
+    const gate = engineOf(inst).holdRemoteCheck();
+
+    const saving = saveRemote(inst, { targetId, mode: "only" });
+    await waitFor(() => gate.blocked() > 0, "the remote check");
+    const error = await rejectionOf(
+      takeCheckpoint(
+        inst.host,
+        box.boxId,
+        { pinned: false, include: { system: false, volumes: [] }, consistency: "live" },
+        "owner",
+      ),
+    );
+
+    expect(error).toMatchObject({ status: 409, key: "checkpoint_remote_relocating" });
+    expect(engineOf(inst).started).toBe(0);
+    expect(inst.host.checkpoints.list()).toEqual([]);
+    gate.release();
+    await saving;
+    expect(inst.app.targets.remoteOf("local")?.mode).toBe("only");
+
+    const view = await takeCheckpoint(
+      inst.host,
+      box.boxId,
+      { pinned: false, include: { system: false, volumes: [] }, consistency: "live" },
+      "owner",
+    );
+    expect(inst.host.checkpoints.read(view.id)?.data).toHaveLength(2);
+  });
+
+  test("a take in progress refuses clearing an only-remote repository", async () => {
+    const inst = instanceOf();
+    const targetId = s3Target(inst);
+    await saveRemote(inst, { targetId, mode: "only" });
+    const box = await runningBox(inst);
+    const gate = engineOf(inst).holdBackupAt(1);
+
+    const taking = takeCheckpoint(
+      inst.host,
+      box.boxId,
+      { pinned: false, include: { system: false, volumes: [] }, consistency: "live" },
+      "owner",
+    );
+    await waitFor(() => gate.blocked() > 0, "the first layer");
+    const error = await rejectionOf(
+      inst.app.operations.run("checkpoint.remote.clear", ctxOf(inst.app), { id: "local" }),
+    );
+
+    expect(error).toMatchObject({ status: 409, key: "checkpoint_remote_write_busy" });
+    expect(inst.app.targets.remoteOf("local")?.mode).toBe("only");
+    gate.release();
+    await taking;
+    expect(inst.app.targets.remoteOf("local")?.mode).toBe("only");
+  });
+
+  test("the gate releases after success and after a throw, and refuses each side while the other holds it", async () => {
+    const inst = instanceOf();
+    const store = inst.host.checkpoints;
+    let releaseWrite: (() => void) | undefined;
+    const writing = store.writing(
+      "gate",
+      () =>
+        new Promise<void>((resolve) => {
+          releaseWrite = resolve;
+        }),
+    );
+    await waitFor(() => releaseWrite !== undefined, "the write gate");
+
+    expect(
+      await rejectionOf(Promise.resolve().then(() => store.relocating("gate", async () => undefined))),
+    ).toMatchObject({
+      status: 409,
+      key: "checkpoint_remote_write_busy",
+    });
+    releaseWrite?.();
+    await writing;
+    await store.relocating("gate", async () => undefined);
+
+    expect(
+      await rejectionOf(
+        store.writing("gate2", async () => {
+          throw new Error("the write failed");
+        }),
+      ),
+    ).toBeInstanceOf(Error);
+    await store.relocating("gate2", async () => undefined);
+
+    let releaseRelocation: (() => void) | undefined;
+    const relocating = store.relocating(
+      "gate3",
+      () =>
+        new Promise<void>((resolve) => {
+          releaseRelocation = resolve;
+        }),
+    );
+    await waitFor(() => releaseRelocation !== undefined, "the relocation gate");
+    expect(
+      await rejectionOf(Promise.resolve().then(() => store.writing("gate3", async () => undefined))),
+    ).toMatchObject({
+      status: 409,
+      key: "checkpoint_remote_relocating",
+    });
+    releaseRelocation?.();
+    await relocating;
+  });
+
+  test("an import in progress refuses a switch to only, and writes its record after the save is refused", async () => {
+    const inst = instanceOf();
+    const targetId = s3Target(inst);
+    const box = await runningBox(inst, "imported");
+    const checkpoint = await takeCheckpoint(
+      inst.host,
+      box.boxId,
+      { pinned: false, include: { system: false, volumes: [] }, consistency: "live" },
+      "owner",
+    );
+    const pkg = await exportCheckpoint(inst.host, checkpoint.id, PASSPHRASE, "owner");
+    await deleteCheckpoint(inst.host, checkpoint.id);
+    expect(inst.host.checkpoints.read(checkpoint.id)).toBeNull();
+    const gate = engineOf(inst).holdUnpack();
+
+    const importing = importPackage(inst.host, pkg.id, PASSPHRASE, "owner");
+    await waitFor(() => gate.blocked() > 0, "the import unpack");
+    const error = await rejectionOf(saveRemote(inst, { targetId, mode: "only" }));
+
+    expect(error).toMatchObject({ status: 409, key: "checkpoint_remote_write_busy" });
+    expect(inst.app.targets.remoteOf("local")).toBeNull();
+    gate.release();
+    await importing;
+    expect(inst.host.checkpoints.read(checkpoint.id)).not.toBeNull();
+  });
+
+  test("a copy in progress on the target refuses a switch to only there", async () => {
+    const inst = instanceOf();
+    const targetId = s3Target(inst);
+    await inst.app.hostAdmin.add({ id: "edge", endpoint: "unix:///run/minibox-test/edge-docker.sock" });
+    const edge = inst.app.hosts.get("edge");
+    (edge.runtime as FakeRuntime).seedImage(edge.baseTemplateTag, {
+      [edge.keys.template]: "true",
+      [edge.keys.templateName]: "base",
+    });
+    const box = await runningBox(inst, "copied");
+    const record = await takeCheckpoint(
+      inst.host,
+      box.boxId,
+      { pinned: false, include: { system: false, volumes: [] }, consistency: "live" },
+      "owner",
+    );
+    const gate = engineOf(inst).holdUnpack();
+
+    const copying = copyCheckpoint(inst.host, edge, record.id, "owner", [inst.host]);
+    await waitFor(() => gate.blocked() > 0, "the copy unpack");
+    const error = await rejectionOf(saveRemoteOn(inst, "edge", { targetId, mode: "only" }));
+
+    expect(error).toMatchObject({ status: 409, key: "checkpoint_remote_write_busy" });
+    expect(inst.app.targets.remoteOf("edge")).toBeNull();
+    gate.release();
+    const copy = await copying;
+    expect(edge.checkpoints.read(copy.id)?.hostId).toBe("edge");
+    inst.app.hostAdmin.close();
+  });
+
+  test("a no-op only save leaves the remote alone, and a sync folder change still works during a write", async () => {
+    const inst = instanceOf();
+    const targetId = s3Target(inst);
+    await saveRemote(inst, { targetId, mode: "only" });
+    const checks = engineOf(inst).remoteChecks.length;
+
+    await saveRemote(inst, { targetId, mode: "only" });
+    expect(engineOf(inst).remoteChecks).toHaveLength(checks);
+
+    const sync = instanceOf();
+    const syncTarget = s3Target(sync);
+    sync.app.targets.setRemote("local", { targetId: syncTarget });
+    const box = await runningBox(sync);
+    const gate = engineOf(sync).holdBackupAt(1);
+    const taking = takeCheckpoint(
+      sync.host,
+      box.boxId,
+      { pinned: false, include: { system: false, volumes: [] }, consistency: "live" },
+      "owner",
+    );
+    await waitFor(() => gate.blocked() > 0, "the sync write");
+    const movedSync = (await saveRemote(sync, { targetId: syncTarget, path: "moved" })) as {
+      remote: { path: string };
+    };
+    expect(movedSync.remote.path).toBe("moved/local");
+    gate.release();
+    await taking;
+  });
+
+  test("the set operation is a long synchronous request", () => {
+    expect(OPERATIONS.find((operation) => operation.name === "checkpoint.remote.set")?.longSync).toBe(true);
   });
 });

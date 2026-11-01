@@ -645,6 +645,8 @@ export default {
     "宿主机 {host} 还有 {count} 条检查点记录（含回收站）。在两种模式之间切换、在仅异地下改位置或清除仓库，都要求没有记录，请先删除这些检查点。",
   "err.checkpoint_remote_only_no_sync": "宿主机 {host} 的检查点只保存在远端，没有可同步的内容，它们本来就都在远端。",
   "err.checkpoint_remote_check_failed": "无法打开远端检查点仓库：{reason}",
+  "err.checkpoint_remote_write_busy": "宿主机 {host} 正在拍摄、导入或复制检查点，请等这次写入结束后重试。",
+  "err.checkpoint_remote_relocating": "宿主机 {host} 的远端检查点仓库正在更改，请稍后再试。",
   "err.checkpoint_remote_busy": "宿主机 {host} 正在把检查点复制到远端仓库。",
   "err.target_object_busy": "{object} 正在拉取中，请待该传输完成后再试。",
 };

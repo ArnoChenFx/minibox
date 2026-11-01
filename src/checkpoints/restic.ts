@@ -68,6 +68,12 @@ const HELPER_MEMORY_BYTES = 1024 * 1024 * 1024;
 const HELPER_PIDS_LIMIT = 256;
 const HELPER_TMPFS_BYTES = 64 * 1024 * 1024;
 const HELPER_TIMEOUT_SEC = 3600;
+/**
+ * How long the check that opens a remote before it becomes a host's only repository may run. It holds that host's
+ * relocation gate, and every checkpoint write on the host waits behind it, so it is bounded much shorter than a backup.
+ * A target that cannot answer in this time is refused and the operator can try again.
+ */
+const REMOTE_CHECK_TIMEOUT_SEC = 120;
 const STAGE_MEMORY_BYTES = 256 * 1024 * 1024;
 
 /** restic exits 10 when the repository does not exist, and 12 when the password does not open it. */
@@ -109,6 +115,8 @@ interface HelperCall {
   network?: boolean;
   /** Appends the bounded lock wait to a restic call that writes the repository. Remote-only repositories set it. */
   write?: boolean;
+  /** Overrides the helper's lifetime, for the remote check that must not hold a relocation gate for an hour. */
+  timeoutSec?: number;
 }
 
 /**
@@ -149,17 +157,21 @@ export class ResticEngine implements SnapshotEngine {
       await assertVolume(host, volume);
       await this.ensureRepo(host, { create: true });
       const tagFlags = tags.flatMap((tag) => ["--tag", tag]);
-      const result = await this.run(host, {
-        args: ["backup", DATA_MOUNT, "--json", "--host", host.host.id, ...tagFlags],
-        mounts: [{ source: volume, target: DATA_MOUNT, mode: "ro" }],
-        capAdd: ["DAC_READ_SEARCH"],
-        write: true,
-      });
-      this.assertOk(host, result, "restic backup");
-      const summary = summaryOf(result.logs);
-      if (!summary) throw failure("restic backup printed no summary", result);
-      this.invalidateUsage(host);
-      return summary;
+      try {
+        const result = await this.run(host, {
+          args: ["backup", DATA_MOUNT, "--json", "--host", host.host.id, ...tagFlags],
+          mounts: [{ source: volume, target: DATA_MOUNT, mode: "ro" }],
+          capAdd: ["DAC_READ_SEARCH"],
+          write: true,
+        });
+        this.assertOk(host, result, "restic backup");
+        const summary = summaryOf(result.logs);
+        if (!summary) throw failure("restic backup printed no summary", result);
+        return summary;
+      } finally {
+        // A failed backup may already have written a pack, so the cached reading is dropped either way.
+        this.invalidateUsage(host);
+      }
     });
   }
 
@@ -181,9 +193,13 @@ export class ResticEngine implements SnapshotEngine {
     return this.serial(host, async () => {
       assertSnapshotId(snapshotId);
       await this.ensureRepo(host, { create: false });
-      const result = await this.run(host, { args: ["forget", snapshotId, "--prune"], write: true });
-      this.assertOk(host, result, "restic forget");
-      this.invalidateUsage(host);
+      try {
+        const result = await this.run(host, { args: ["forget", snapshotId, "--prune"], write: true });
+        this.assertOk(host, result, "restic forget");
+      } finally {
+        // A prune that failed part way may still have freed packs, so the cached reading is dropped either way.
+        this.invalidateUsage(host);
+      }
     });
   }
 
@@ -292,7 +308,12 @@ export class ResticEngine implements SnapshotEngine {
     return this.serial(host, async () => {
       await host.runtime.pullImage(this.image);
       const call = remoteHelperCall(remote, []);
-      const common = { secrets: call.secrets, env: call.env, network: true };
+      const common = {
+        secrets: call.secrets,
+        env: call.env,
+        network: true,
+        timeoutSec: REMOTE_CHECK_TIMEOUT_SEC,
+      };
       const probe = await this.helper(host, { ...common, args: [...call.args, "cat", "config"] });
       if (probe.exitCode === EXIT_WRONG_PASSWORD) {
         throw failure("the remote checkpoint repository password is wrong", probe);
@@ -472,12 +493,14 @@ export class ResticEngine implements SnapshotEngine {
               write: true,
             });
             this.assertOk(host, result, "restic copy out of the package");
-            this.invalidateUsage(host);
             const copies = (await this.listing(host, [])).filter((snapshot) => !known.has(snapshot.id));
             return copiedIds(roots, copies);
           } catch (e) {
             await this.forgetCopies(host, known, rootSet);
             throw e;
+          } finally {
+            // A copy that failed may have written packs, so the cached reading is dropped either way.
+            this.invalidateUsage(host);
           }
         }),
       close: async () => {
@@ -616,7 +639,7 @@ export class ResticEngine implements SnapshotEngine {
       memoryBytes: HELPER_MEMORY_BYTES,
       pidsLimit: HELPER_PIDS_LIMIT,
       tmpfsBytes: HELPER_TMPFS_BYTES,
-      timeoutSec: HELPER_TIMEOUT_SEC,
+      timeoutSec: call.timeoutSec ?? HELPER_TIMEOUT_SEC,
     });
   }
 

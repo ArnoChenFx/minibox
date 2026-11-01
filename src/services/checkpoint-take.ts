@@ -106,7 +106,11 @@ export async function backupLayers(
 ): Promise<CheckpointView> {
   const releases = layers.map(({ volume }) => holdVolumeBoxes(host, volume, { quiet: opts.quiet }));
   try {
-    return await writeCheckpoint(host, source, layers, input, createdBy, auto, opts, progress);
+    // The whole write, from the first engine call to the record on disk, is one host write. A remote-only relocation of
+    // this host is refused meanwhile, so a record cannot name snapshots from two repositories.
+    return await host.checkpoints.writing(host.host.id, () =>
+      writeCheckpoint(host, source, layers, input, createdBy, auto, opts, progress),
+    );
   } finally {
     for (const release of releases) release();
   }

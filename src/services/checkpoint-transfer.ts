@@ -281,44 +281,47 @@ async function restorePackage(
       throw badRequest(msg("package_invalid", { reason: "the package holds no single manifest" }));
     }
     const manifest = parseManifest(await opened.readManifest(manifestSnapshot.id).catch(rejected));
-    await assertImportable(host, manifest.id);
     progress?.log?.(`Restoring ${manifest.label}…\n`);
-    const data = await unpackLayers(host, opened, manifest.id, manifest.data).catch((e: unknown) => {
-      if (e instanceof SnapshotHeld) throw conflict(msg("checkpoint_import_exists", { id: manifest.id }));
-      return rejected(e);
+    const record = await host.checkpoints.writing(host.host.id, async () => {
+      await assertImportable(host, manifest.id);
+      const data = await unpackLayers(host, opened, manifest.id, manifest.data).catch((e: unknown) => {
+        if (e instanceof SnapshotHeld) throw conflict(msg("checkpoint_import_exists", { id: manifest.id }));
+        return rejected(e);
+      });
+      const now = new Date().toISOString();
+      const written: CheckpointRecord = {
+        version: CHECKPOINT_VERSION,
+        id: manifest.id,
+        hostId: host.host.id,
+        boxId: manifest.boxId,
+        boxName: manifest.boxName,
+        label: manifest.label,
+        reason: manifest.reason,
+        createdBy,
+        pinned: manifest.pinned,
+        auto: false,
+        consistency: manifest.consistency,
+        specRevision: manifest.specRevision,
+        spec: manifest.spec,
+        data,
+        system: null,
+        trash: null,
+        createdAt: manifest.createdAt,
+        updatedAt: now,
+      };
+      try {
+        host.checkpoints.write(written);
+      } catch (e) {
+        await forgetCopied(
+          host,
+          manifest.id,
+          data.map((layer) => layer.snapshotId),
+        );
+        throw e;
+      }
+      return written;
     });
-    const now = new Date().toISOString();
-    const record: CheckpointRecord = {
-      version: CHECKPOINT_VERSION,
-      id: manifest.id,
-      hostId: host.host.id,
-      boxId: manifest.boxId,
-      boxName: manifest.boxName,
-      label: manifest.label,
-      reason: manifest.reason,
-      createdBy,
-      pinned: manifest.pinned,
-      auto: false,
-      consistency: manifest.consistency,
-      specRevision: manifest.specRevision,
-      spec: manifest.spec,
-      data,
-      system: null,
-      trash: null,
-      createdAt: manifest.createdAt,
-      updatedAt: now,
-    };
-    try {
-      host.checkpoints.write(record);
-    } catch (e) {
-      await forgetCopied(
-        host,
-        manifest.id,
-        data.map((layer) => layer.snapshotId),
-      );
-      throw e;
-    }
-    log.info("checkpoint.imported", { id: manifest.id, box: manifest.boxName, layers: data.length });
+    log.info("checkpoint.imported", { id: manifest.id, box: manifest.boxName, layers: record.data.length });
     return viewOf(record);
   } finally {
     await opened.close().catch((e: unknown) => {
@@ -451,35 +454,40 @@ export async function copyCheckpoint(
     if (progress?.signal?.aborted) throw abortError();
     progress?.log?.(`Restoring ${record.label} on ${target.host.id}…\n`);
     opened = await target.checkpointEngine.open(target, path, passphrase, byteLog(progress, "Sent")).catch(rejected);
-    const layers = record.data.map(({ snapshotId: _snapshotId, ...layer }) => layer);
-    const data = await unpackLayers(target, opened, id, layers).catch((e: unknown) => {
-      if (e instanceof SnapshotHeld) throw conflict(msg("checkpoint_copy_exists", { id, host: target.host.id }));
-      return rejected(e);
+    // The target's unpack and its record write are one host write, so a remote-only relocation of the target is refused
+    // while the copy is landing there.
+    const copy = await target.checkpoints.writing(target.host.id, async () => {
+      const layers = record.data.map(({ snapshotId: _snapshotId, ...layer }) => layer);
+      const data = await unpackLayers(target, opened as OpenedPackage, id, layers).catch((e: unknown) => {
+        if (e instanceof SnapshotHeld) throw conflict(msg("checkpoint_copy_exists", { id, host: target.host.id }));
+        return rejected(e);
+      });
+      copies = data.map((layer) => layer.snapshotId);
+      const written: CheckpointRecord = {
+        version: CHECKPOINT_VERSION,
+        id: target.checkpoints.allocateId(),
+        hostId: target.host.id,
+        boxId: record.boxId,
+        boxName: record.boxName,
+        label: record.label,
+        reason: record.reason,
+        createdBy,
+        pinned: record.pinned,
+        auto: false,
+        consistency: record.consistency,
+        specRevision: record.specRevision,
+        spec: record.spec,
+        data,
+        system: null,
+        trash: null,
+        createdAt: record.createdAt,
+        updatedAt: new Date().toISOString(),
+      };
+      target.checkpoints.write(written);
+      copies = [];
+      return written;
     });
-    copies = data.map((layer) => layer.snapshotId);
-    const copy: CheckpointRecord = {
-      version: CHECKPOINT_VERSION,
-      id: target.checkpoints.allocateId(),
-      hostId: target.host.id,
-      boxId: record.boxId,
-      boxName: record.boxName,
-      label: record.label,
-      reason: record.reason,
-      createdBy,
-      pinned: record.pinned,
-      auto: false,
-      consistency: record.consistency,
-      specRevision: record.specRevision,
-      spec: record.spec,
-      data,
-      system: null,
-      trash: null,
-      createdAt: record.createdAt,
-      updatedAt: new Date().toISOString(),
-    };
-    target.checkpoints.write(copy);
-    copies = [];
-    const bytes = data.reduce((sum, layer) => sum + layer.bytes, 0);
+    const bytes = copy.data.reduce((sum, layer) => sum + layer.bytes, 0);
     log.info("checkpoint.copied", { id, copy: copy.id, host: target.host.id, bytes });
     return viewOf(copy);
   } catch (e) {

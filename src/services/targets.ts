@@ -466,8 +466,29 @@ export class TargetService {
     };
   }
 
+  /**
+   * What a `setRemote` with `input` would change, without storing anything. A caller can use it to take a relocation
+   * gate only when the change involves `only` and actually moves the position.
+   */
+  remoteMove(hostId: string, input: SetRemoteInput): { changed: boolean; mode: RemoteMode; involvesOnly: boolean } {
+    const plan = this.remotePlan(hostId, input);
+    return { changed: plan.changed, mode: plan.remote.mode ?? "sync", involvesOnly: plan.involvesOnly };
+  }
+
   /** The remote a set would store, with its mode resolved. Refuses a move that would orphan the host's checkpoint records. */
   private remoteCandidate(hostId: string, input: SetRemoteInput): RemoteRepo {
+    const plan = this.remotePlan(hostId, input);
+    // A record names a snapshot in the repository it was taken in. Moving or switching a remote-only host would leave
+    // those records pointing at a repository the snapshots are not in, so a host with any record (a recycle bin entry is
+    // a record too) stays where it is until they are deleted.
+    if (plan.changed && plan.involvesOnly) this.assertNoCheckpoints(hostId);
+    return plan.remote;
+  }
+
+  private remotePlan(
+    hostId: string,
+    input: SetRemoteInput,
+  ): { remote: RemoteRepo; changed: boolean; involvesOnly: boolean } {
     const target = this.store.get(input.targetId);
     if (!target) throw notFound(msg("target_not_found", { id: input.targetId }));
     if (target.kind === "webdav") throw badRequest(msg("checkpoint_remote_unsupported"), { field: "targetId" });
@@ -477,23 +498,23 @@ export class TargetService {
     const currentMode = existing?.mode ?? "sync";
     const mode = input.mode ?? currentMode;
     const changed = !existing || existing.targetId !== target.id || existing.path !== path || currentMode !== mode;
-    // A record names a snapshot in the repository it was taken in. Moving or switching a remote-only host would leave
-    // those records pointing at a repository the snapshots are not in, so a host with any record (a recycle bin entry is
-    // a record too) stays where it is until they are deleted.
-    if (changed && (currentMode === "only" || mode === "only")) this.assertNoCheckpoints(hostId);
     const sameTarget = existing?.targetId === target.id;
     const sameMode = currentMode === mode;
     const now = new Date().toISOString();
     return {
-      hostId,
-      mode,
-      targetId: target.id,
-      kind: target.kind,
-      path,
-      createdAt: existing?.createdAt ?? now,
-      updatedAt: now,
-      lastSyncAt: sameTarget && sameMode ? (existing?.lastSyncAt ?? null) : null,
-      lastError: sameTarget && sameMode ? (existing?.lastError ?? null) : null,
+      changed,
+      involvesOnly: currentMode === "only" || mode === "only",
+      remote: {
+        hostId,
+        mode,
+        targetId: target.id,
+        kind: target.kind,
+        path,
+        createdAt: existing?.createdAt ?? now,
+        updatedAt: now,
+        lastSyncAt: sameTarget && sameMode ? (existing?.lastSyncAt ?? null) : null,
+        lastError: sameTarget && sameMode ? (existing?.lastError ?? null) : null,
+      },
     };
   }
 

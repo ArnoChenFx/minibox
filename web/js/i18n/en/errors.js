@@ -759,6 +759,10 @@ export default {
   "err.checkpoint_remote_only_no_sync":
     "Host {host} keeps its checkpoints only on the remote repository, so there is nothing to sync. Every checkpoint is already there.",
   "err.checkpoint_remote_check_failed": "The remote checkpoint repository cannot be opened: {reason}",
+  "err.checkpoint_remote_write_busy":
+    "Host {host} is taking, importing or copying a checkpoint. Wait for that write to finish, then try again.",
+  "err.checkpoint_remote_relocating":
+    "The remote checkpoint repository of host {host} is being changed. Try again in a moment.",
   "err.checkpoint_remote_busy": "Host {host} is already copying its checkpoints to the remote repository.",
   "err.target_object_busy": "{object} is already being pulled. Try again when that transfer finishes.",
 };
