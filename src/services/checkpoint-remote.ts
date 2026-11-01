@@ -204,6 +204,13 @@ export class CheckpointRemoteSync {
         this.failed(host.host.id, pending, remote.targetId, now, e);
         throw e;
       }
+      // The copy went to the position read above. When the operator moved or cleared the remote while it ran, the marks
+      // would name a repository the snapshots are not in, so none are written and the next pass copies them again.
+      const current = this.targets.remoteOf(host.host.id);
+      if (!current || current.targetId !== remote.targetId || current.path !== remote.path) {
+        log.info("checkpoint.remote_moved_during_copy", { host: host.host.id, target: remote.targetId });
+        return summary;
+      }
       const at = now.toISOString();
       for (const record of pending) this.markSynced(record.id, remote.targetId, at);
       this.targets.recordRemoteResult(host.host.id, { at, error: null });
@@ -218,6 +225,26 @@ export class CheckpointRemoteSync {
     } finally {
       this.syncing.delete(host.host.id);
     }
+  }
+
+  /**
+   * Forgets that a host's checkpoints were copied to one target, so the next pass copies them there again. A changed
+   * folder or a cleared remote leaves the old marks naming a repository that may not hold the snapshots, and a copy
+   * only adds: copying again is safe. The host's retry delay goes too, so a target that was failing is tried right
+   * away instead of waiting out a backoff from the old position.
+   */
+  forgetMarks(hostId: string, targetId: string): void {
+    for (const record of this.checkpoints.list()) {
+      if (record.hostId !== hostId) continue;
+      const patch: Partial<CheckpointRecord> = {};
+      if (record.remoteSync?.[targetId] !== undefined) {
+        const { [targetId]: _forgotten, ...rest } = record.remoteSync;
+        patch.remoteSync = Object.keys(rest).length === 0 ? undefined : rest;
+      }
+      if (record.remoteFailure?.targetId === targetId) patch.remoteFailure = undefined;
+      if (Object.keys(patch).length > 0) this.write(record.id, patch);
+    }
+    this.retries.delete(hostId);
   }
 
   private async tick(): Promise<void> {
