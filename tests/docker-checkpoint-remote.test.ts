@@ -161,6 +161,19 @@ function s3Service(gateway: string): S3ServiceOptions {
   };
 }
 
+/** 读回桶里的对象用的客户端，配置与既有复制用例一致。 */
+function s3Client(endpoint: string): S3Client {
+  return new S3Client({
+    accessKeyId: ACCESS_KEY,
+    secretAccessKey: SECRET_KEY,
+    endpoint,
+    region: REGION,
+    bucket: BUCKET,
+    virtualHostedStyle: false,
+    retry: 3,
+  });
+}
+
 /** 本前缀下包的暂存卷：包写完后打开、关闭的整个过程结束就该一个不剩。 */
 async function packageVolumes(): Promise<string[]> {
   const { Volumes } = await docker.listVolumes();
@@ -204,6 +217,17 @@ async function packageRoundTrip(a: HostCtx, b: HostCtx, source: string, target: 
   await seed(target);
   await b.checkpointEngine.restore(b, copied, target);
   expect(await readFile(target, "notes.txt")).toBe("hello from the remote test\n");
+}
+
+/** 让调用在 `ms` 内落地，超时就让测试报挂起：不可达的目标不该把测试拖到 helper 的 120 秒上限。 */
+async function within<T>(promise: Promise<T>, ms: number, what: string): Promise<T> {
+  const timer = Promise.withResolvers<never>();
+  const timeout = setTimeout(() => timer.reject(new Error(`timed out after ${ms}ms waiting for ${what}`)), ms);
+  try {
+    return await Promise.race([promise, timer.promise]);
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 afterAll(() => {
@@ -505,6 +529,164 @@ describe.skipIf(!enabled)("checkpoint remote copy against a real engine", () => 
         await sftp.close();
         await runtime.removeVolume(source).catch(() => undefined);
         await runtime.removeVolume(target).catch(() => undefined);
+      }
+    },
+    LONG,
+  );
+
+  test(
+    "checking a remote-only S3 repository creates it, opens it again, and refuses a wrong password",
+    async () => {
+      const gateway = await bridgeGateway();
+      const service = s3Service(gateway);
+      const folder = "repo/only-check-s3";
+      let proxy: S3Proxy | null = null;
+      try {
+        proxy = await startS3Proxy(service);
+        await createS3Bucket({ ...service, endpoint: proxy.endpoint });
+        const client = s3Client(proxy.endpoint);
+        const remote: RemoteRepository = {
+          targetId: "tgt_aaaaaaaaaaaaaaaa",
+          targetName: "archive",
+          repository: s3Repository(proxy.endpoint, BUCKET, folder),
+          password: REMOTE_PASSWORD,
+          credentials: { kind: "s3", region: REGION, accessKeyId: ACCESS_KEY, secretAccessKey: SECRET_KEY },
+        };
+        const host = onlyHostOf("checks3", remote);
+        const keys = () => listKeys(client, `${folder}/`);
+        const config = async () => Buffer.from(await client.file(`${folder}/config`).arrayBuffer()).toString("utf8");
+
+        // 空仓库：检查通过，远端里有了 config。
+        await host.checkpointEngine.checkRemote(host, remote);
+        const before = (await keys()).toSorted();
+        expect(before).toContain(`${folder}/config`);
+        const configBefore = await config();
+
+        // 再检查一次：不重复 init，也不改 config。
+        await host.checkpointEngine.checkRemote(host, remote);
+        expect((await keys()).toSorted()).toEqual(before);
+        expect(await config()).toBe(configBefore);
+
+        // 换一个口令：被拒，仓库不变。
+        const wrong: RemoteRepository = { ...remote, password: "a password that does not open the remote" };
+        const error = await rejectionOf(host.checkpointEngine.checkRemote(host, wrong));
+        expect((error as Error).message).toContain("password is wrong");
+        expect((await keys()).toSorted()).toEqual(before);
+
+        await rejectionOf(runtime.inspectVolume(`${prefix}-checkpoints-checks3`));
+      } finally {
+        await proxy?.stop();
+      }
+    },
+    LONG,
+  );
+
+  test(
+    "checking a remote-only SFTP repository creates it, opens it again, and refuses a wrong password",
+    async () => {
+      const gateway = await bridgeGateway();
+      const sftp = await startSftpDouble({ host: gateway });
+      const presented = await probePublicKey(gateway, sftp.port);
+      const folder = join(sftp.root, "repo/only-check-sftp");
+      try {
+        const remote: RemoteRepository = {
+          targetId: "tgt_bbbbbbbbbbbbbbbb",
+          targetName: "nas",
+          repository: `sftp://backup@${gateway}:${sftp.port}/repo/only-check-sftp`,
+          password: REMOTE_PASSWORD,
+          credentials: {
+            kind: "sftp",
+            port: sftp.port,
+            privateKey: sftp.privateKey,
+            knownHosts: knownHostsLine(gateway, sftp.port, presented.text),
+          },
+        };
+        const host = onlyHostOf("checksftp", remote);
+
+        await host.checkpointEngine.checkRemote(host, remote);
+        expect(filesUnder(folder)).toContain("config");
+        const before = filesUnder(folder).toSorted();
+
+        await host.checkpointEngine.checkRemote(host, remote);
+        expect(filesUnder(folder).toSorted()).toEqual(before);
+
+        const wrong: RemoteRepository = { ...remote, password: "a password that does not open the remote" };
+        const error = await rejectionOf(host.checkpointEngine.checkRemote(host, wrong));
+        expect((error as Error).message).toContain("password is wrong");
+        expect(filesUnder(folder).toSorted()).toEqual(before);
+
+        await rejectionOf(runtime.inspectVolume(`${prefix}-checkpoints-checksftp`));
+      } finally {
+        await sftp.close();
+      }
+    },
+    LONG,
+  );
+
+  test(
+    "an SFTP check refuses another host key and an unreachable target without touching the repository",
+    async () => {
+      const gateway = await bridgeGateway();
+      const sftp = await startSftpDouble({ host: gateway });
+      const presented = await probePublicKey(gateway, sftp.port);
+      const folder = join(sftp.root, "repo/only-guard-sftp");
+      try {
+        const remote: RemoteRepository = {
+          targetId: "tgt_cccccccccccccccc",
+          targetName: "nas",
+          repository: `sftp://backup@${gateway}:${sftp.port}/repo/only-guard-sftp`,
+          password: REMOTE_PASSWORD,
+          credentials: {
+            kind: "sftp",
+            port: sftp.port,
+            privateKey: sftp.privateKey,
+            knownHosts: knownHostsLine(gateway, sftp.port, presented.text),
+          },
+        };
+        const host = onlyHostOf("checksftpb", remote);
+        await host.checkpointEngine.checkRemote(host, remote);
+        const before = filesUnder(folder).toSorted();
+        expect(before).toContain("config");
+
+        // 另一个主机密钥：拒绝即可。报错文字在 CI 上有已知的另一种写法（#326），不断言它。
+        const otherKey = utils.parseKey(newEd25519Key());
+        if (otherKey instanceof Error) throw otherKey;
+        const credentials = remote.credentials;
+        if (credentials.kind !== "sftp") throw new Error("the remote is not an SFTP repository");
+        const wrongKey: RemoteRepository = {
+          ...remote,
+          credentials: {
+            ...credentials,
+            knownHosts: knownHostsLine(gateway, sftp.port, publicKeyTextOf(otherKey.getPublicSSH())),
+          },
+        };
+        await rejectionOf(host.checkpointEngine.checkRemote(host, wrongKey));
+        expect(filesUnder(folder).toSorted()).toEqual(before);
+
+        // 关掉这个服务，它刚释放的端口就是 bridge 上没人监听的端口：拒绝，且远快于 helper 的 120 秒上限。
+        const deadPort = sftp.port;
+        await sftp.close();
+        const unreachable: RemoteRepository = {
+          targetId: "tgt_dddddddddddddddd",
+          targetName: "nas",
+          repository: `sftp://backup@${gateway}:${deadPort}/repo/unreachable`,
+          password: REMOTE_PASSWORD,
+          credentials: {
+            kind: "sftp",
+            port: deadPort,
+            privateKey: sftp.privateKey,
+            knownHosts: knownHostsLine(gateway, deadPort, presented.text),
+          },
+        };
+        await within(
+          rejectionOf(host.checkpointEngine.checkRemote(host, unreachable)),
+          60_000,
+          "the unreachable repository to be refused",
+        );
+
+        await rejectionOf(runtime.inspectVolume(`${prefix}-checkpoints-checksftpb`));
+      } finally {
+        await sftp.close();
       }
     },
     LONG,
