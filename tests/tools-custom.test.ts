@@ -162,10 +162,10 @@ describe("saving a custom entry", () => {
     expect(refused(await put("uv", ENTRY))).toEqual({ status: 409, key: "tool_custom_builtin" });
     expect(filesIn()).toEqual([]);
 
-    const replaced = await put("uv", { ...ENTRY, name: "uv (fork)", overrideBuiltin: true });
+    const replaced = await put("uv", { ...ENTRY, name: "uv (mine)", overrideBuiltin: true });
     expect(replaced.status).toBe(200);
-    expect(replaced.json.tool).toMatchObject({ id: "uv", name: "uv (fork)", overridesBuiltin: true });
-    expect(catalogName("uv")).toBe("uv (fork)");
+    expect(replaced.json.tool).toMatchObject({ id: "uv", name: "uv (mine)", overridesBuiltin: true });
+    expect(catalogName("uv")).toBe("uv (mine)");
     expect((await list()).json.tools).toEqual([expect.objectContaining({ id: "uv", overridesBuiltin: true })]);
 
     expect((await remove("uv")).json).toEqual({ id: "uv", restoredBuiltin: true });

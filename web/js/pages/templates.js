@@ -1,6 +1,6 @@
 import { openCreateBox } from "../components/create-box.js";
+import { openDuplicateTemplate } from "../components/duplicate-template.js";
 import { openEditTemplate } from "../components/edit-template.js";
-import { openForkTemplate } from "../components/fork-template.js";
 import { bindToggles, limitList } from "../components/list-toggle.js";
 import { bindSearchBox, searchBoxHtml } from "../components/search-box.js";
 import { openTasks, trackTask } from "../components/tasks.js";
@@ -15,7 +15,7 @@ import { icon } from "../lib/icons.js";
 import { filterBySearch, searchTerms } from "../lib/search.js";
 import { invalidateTemplates } from "../lib/store.js";
 import {
-  forkAction,
+  duplicateAction,
   isUnbuilt,
   templateBadge,
   templateCards,
@@ -93,11 +93,11 @@ function detailsHtml(tp) {
  * is a draft from the Dockerfile MiniBox ships. A draft card draws no duplicate button, because there is no image behind
  * it.
  */
-function forkHtml(tp) {
-  const fork = forkAction(tp);
-  const label = `${icon("copy")}${t("tp.fork")}`;
-  return fork.enabled
-    ? `<button class="btn btn-sm" data-action="fork" data-ref="${esc(tp.ref)}" title="${esc(t("tp.fork"))}">${label}</button>`
+function duplicateHtml(tp) {
+  const duplicate = duplicateAction(tp);
+  const label = `${icon("copy")}${t("tp.duplicate")}`;
+  return duplicate.enabled
+    ? `<button class="btn btn-sm" data-action="duplicate" data-ref="${esc(tp.ref)}" title="${esc(t("tp.duplicate"))}">${label}</button>`
     : `<button class="btn btn-sm" disabled>${label}</button>`;
 }
 
@@ -205,7 +205,7 @@ export function render(view, focusName = "") {
                 ? `<button class="btn btn-sm" data-action="rebuild" data-draft="true" data-ref="${esc(tp.ref)}" data-host="${esc(tp.hostId)}">${icon("hammer")}${t("tp.buildDraft")}</button>
                  <button class="btn btn-sm" data-action="edit" data-draft="true" data-ref="${esc(tp.ref)}" data-host="${esc(tp.hostId)}" title="${esc(t("tp.edit"))}">${icon("pencil")}${t("tp.edit")}</button>`
                 : `${unbuilt && !multiHost() ? `<button class="btn btn-sm" data-action="build-official" data-name="${esc(tp.name)}">${icon("hammer")}${t("tp.buildOfficial")}</button>` : ""}
-                 ${forkHtml(tp)}
+                 ${duplicateHtml(tp)}
                  ${tp.buildKind && !unbuilt ? `<button class="btn btn-sm" data-action="edit" data-ref="${esc(tp.ref)}" title="${esc(t("tp.edit"))}">${icon("pencil")}${t("tp.edit")}</button>` : ""}
                  ${tp.buildKind && !unbuilt ? `<button class="btn btn-sm" data-action="rebuild" data-ref="${esc(tp.ref)}" data-host="${esc(tp.holders[0])}">${icon("refresh")}${t("tp.rebuild")}</button>` : ""}
                  <button class="btn btn-sm btn-primary" data-action="use" data-ref="${esc(tp.ref)}">${icon("plus")}${t("tp.use")}</button>`
@@ -310,10 +310,10 @@ export function render(view, focusName = "") {
         toastError(t("tp.pullFailed"), e);
       }
     },
-    fork: (b) => {
+    duplicate: (b) => {
       const card = cards.find((tp) => tp.ref === b.dataset.ref);
       if (!card) return;
-      openForkTemplate({ card, cards, base, onForked: (template) => load(template?.name) });
+      openDuplicateTemplate({ card, cards, base, onDuplicated: (template) => load(template?.name) });
     },
     edit: (b) => {
       // A draft has a host of its own, so the card it belongs to is picked by host when two cards share one reference.

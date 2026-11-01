@@ -75,7 +75,7 @@ export interface Body {
   volumes?: { id: string; name: string; createdBy: string | null }[];
   snapshots?: { ref: string; source: string | null; createdBy: string | null }[];
   templates?: { ref: string; name: string | null; createdBy: string | null }[];
-  /** The template a fork answered with, or an edit: an edit also names the kind of source it now rebuilds from. */
+  /** The template a duplicate answered with, or an edit: an edit also names the kind of source it now rebuilds from. */
   template?: { ref: string; name: string; buildKind?: string };
   /** The source a template rebuilds from, as `GET /api/templates/:ref/recipe` answers it. */
   recipe?: {

@@ -1257,26 +1257,26 @@ describe("CLI templates, images and box clones", () => {
     }
   });
 
-  test("template fork saves a template's build source as a draft and prints its ref; a taken name exits 1 with the message", async () => {
+  test("template duplicate saves a template's build source as a draft and prints its ref; a taken name exits 1 with the message", async () => {
     const env = serve();
     try {
-      const file = join(mkdtempSync(join(tmpdir(), "mb-cli-fork-")), "Dockerfile");
+      const file = join(mkdtempSync(join(tmpdir(), "mb-cli-duplicate-")), "Dockerfile");
       writeFileSync(file, "FROM alpine:3.20\n");
       expect(await runCli(["template", "create", "tool", "--dockerfile", file], env.env, io(), lines([]))).toBe(0);
 
-      const forked = io();
+      const duplicated = io();
       expect(
         await runCli(
-          ["template", "fork", "mbtest-template:tool", "tool-copy", "--description", "Ours"],
+          ["template", "duplicate", "mbtest-template:tool", "tool-copy", "--description", "Ours"],
           env.env,
-          forked,
+          duplicated,
           lines([]),
         ),
       ).toBe(0);
-      expect(forked.out).toBe("mbtest-template:tool-copy\n");
+      expect(duplicated.out).toBe("mbtest-template:tool-copy\n");
       // A template built from a source is copied as a draft: no image exists until it is built, and the hint says so.
-      expect(forked.err).toContain("Duplicated the template as a draft. It is not built");
-      expect(forked.err).toContain("minibox template rebuild tool-copy");
+      expect(duplicated.err).toContain("Duplicated the template as a draft. It is not built");
+      expect(duplicated.err).toContain("minibox template rebuild tool-copy");
       expect(
         await env.runtime.inspectImage("mbtest-template:tool-copy").then(
           () => "held",
@@ -1295,13 +1295,25 @@ describe("CLI templates, images and box clones", () => {
       expect(env.runtime.builds.at(-1)?.tag).toBe("mbtest-template:tool-copy");
 
       const asJson = io();
-      expect(await runCli(["template", "fork", "tool", "tool-2", "--json"], env.env, asJson, lines([]))).toBe(0);
+      expect(await runCli(["template", "duplicate", "tool", "tool-2", "--json"], env.env, asJson, lines([]))).toBe(0);
       expect(JSON.parse(asJson.out)).toEqual({ template: { ref: "mbtest-template:tool-2", name: "tool-2" } });
 
       const again = io();
-      expect(await runCli(["template", "fork", "tool", "tool-copy"], env.env, again, lines([]))).toBe(1);
+      expect(await runCli(["template", "duplicate", "tool", "tool-copy"], env.env, again, lines([]))).toBe(1);
       expect(again.out).toBe("");
       expect(again.err).toContain("A template named “tool-copy” already exists.");
+    } finally {
+      env.stop();
+    }
+  });
+
+  test("template fork was renamed and says so instead of running", async () => {
+    const env = serve();
+    try {
+      const sink = io();
+      expect(await runCli(["template", "fork", "tool", "tool-copy"], env.env, sink, lines([]))).toBe(2);
+      expect(sink.out).toBe("");
+      expect(sink.err).toContain("minibox template fork was renamed to minibox template duplicate");
     } finally {
       env.stop();
     }
@@ -1451,9 +1463,9 @@ describe("CLI templates, images and box clones", () => {
       ["template", "create", "tool", "--repo"],
       ["template", "rebuild"],
       ["template", "rebuild", "a", "b"],
-      ["template", "fork"],
-      ["template", "fork", "mbtest-template:tool"],
-      ["template", "fork", "a", "b", "c"],
+      ["template", "duplicate"],
+      ["template", "duplicate", "mbtest-template:tool"],
+      ["template", "duplicate", "a", "b", "c"],
       ["template", "edit"],
       ["template", "edit", "a", "b"],
       ["template", "edit", "tool", "--dockerfile", dockerfile, "--repo", "https://github.com/org/app.git"],

@@ -40,7 +40,7 @@ Commands:
                                        Change what a template rebuilds from: its Dockerfile, repository, context or
                                        devcontainer.json, its postCreateCommand and ports, or its description. Nothing is
                                        built, so the current image stays until you rebuild
-  minibox template fork <ref> <new-name> [--description TEXT] [--host ID] [--json]
+  minibox template duplicate <ref> <new-name> [--description TEXT] [--host ID] [--json]
                                        Duplicate a template under a new name, so the copy can be changed on its own.
                                        A template built from a source is copied as a draft, not built yet; build it with
                                        template rebuild. One saved from a box is copied as an image and cannot rebuild

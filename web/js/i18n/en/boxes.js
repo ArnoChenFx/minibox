@@ -59,8 +59,10 @@ export default {
   "act.checkpoint.schedule.clear": "Cleared checkpoint schedule",
   "act.template.create": "Built template",
   "act.template.draft.create": "Saved template draft",
-  "act.template.edit": "Edited template",
+  "act.template.duplicate": "Duplicated template",
+  // 历史记录：旧版本把这个 action 写成 template.fork，已写在事件库里的记录仍按这个键显示。
   "act.template.fork": "Duplicated template",
+  "act.template.edit": "Edited template",
   "act.template.rebuild": "Rebuilt template",
   "act.template.sync": "Copied template to host",
   "act.template.official.build": "Built official template",

@@ -147,24 +147,24 @@ export default {
   "tp.editPortsHelp": "TCP ports a box created from the template opens, separated by commas. Empty for none.",
   "tp.editPostCreateHelp": "Runs once in each box created from the template, as /bin/sh -c. Empty for none.",
   "tp.errPort": "“{port}” is not a port between 1 and 65535.",
-  "tp.fork": "Duplicate",
-  "tp.forkTitle": "Duplicate “{name}”",
-  "tp.forkDesc":
+  "tp.duplicate": "Duplicate",
+  "tp.duplicateTitle": "Duplicate “{name}”",
+  "tp.duplicateDesc":
     "Duplicate <code>{ref}</code> from its build source into a new, independent template. Nothing is built, so the copy has no image or size until you build it; the template it comes from stays as it is.",
-  "tp.forkDescImage":
+  "tp.duplicateDescImage":
     "Copy the image of <code>{ref}</code> into a new template. The template it comes from stays as it is.",
-  "tp.forkWhat":
+  "tp.duplicateWhat":
     "The copy keeps the build source, the setup command, the forwarded ports and the description, but not the image: it starts as a template that is not built, and building it creates its own image, size and creation time. You can edit or build it on its card.",
-  "tp.forkWhatImage":
+  "tp.duplicateWhatImage":
     "A template saved from a box has no build source to copy, so the copy is an image copy: it cannot be edited or rebuilt, exactly like the template it came from.",
-  "tp.forkWhatOfficial":
+  "tp.duplicateWhatOfficial":
     "MiniBox has not built this official template on a host yet, so the copy is a template that is not built, from a copy of the Dockerfile MiniBox ships. You can edit or build it like any other custom template.",
-  "tp.forkHereLocal": "The copy is saved on this host.",
-  "tp.forkConfirm": "Duplicate template",
-  "tp.forking": "Duplicating…",
-  "tp.forked": "Template duplicated",
-  "tp.forkedDraft": "Template duplicated, not built",
-  "tp.forkFailed": "Couldn't duplicate template",
+  "tp.duplicateHereLocal": "The copy is saved on this host.",
+  "tp.duplicateConfirm": "Duplicate template",
+  "tp.duplicating": "Duplicating…",
+  "tp.duplicated": "Template duplicated",
+  "tp.duplicatedDraft": "Template duplicated, not built",
+  "tp.duplicateFailed": "Couldn't duplicate template",
   "tp.hosts": "Hosts",
   "tp.present": "Present",
   "tp.absent": "Missing",

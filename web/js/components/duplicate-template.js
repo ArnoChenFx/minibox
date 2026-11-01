@@ -1,11 +1,11 @@
 import { api, enc } from "../lib/api.js";
 import { esc } from "../lib/dom.js";
-import { forkName, takenNames } from "../lib/fork-name.js";
+import { duplicateName, takenNames } from "../lib/duplicate-name.js";
 import { multiHost } from "../lib/hosts.js";
 import { t } from "../lib/i18n.js";
 import { icon } from "../lib/icons.js";
 import { invalidateTemplates } from "../lib/store.js";
-import { forkMakesDraft, isUnbuilt } from "../lib/template-list.js";
+import { duplicateMakesDraft, isUnbuilt } from "../lib/template-list.js";
 import { nameError, openDialog, toast, toastError } from "../lib/ui.js";
 import { openTasks } from "./tasks.js";
 
@@ -23,9 +23,9 @@ function formHtml(name, description, note) {
 /** The line under the form: what the copy keeps, which differs for a source copy, an image copy and an unbuilt official. */
 function noteFor(card, draft) {
   if (draft && isUnbuilt(card) && card.buildKind === "official") {
-    return [t("tp.forkWhatOfficial"), ...(multiHost() ? [t("tp.forkHereLocal")] : [])].join(" ");
+    return [t("tp.duplicateWhatOfficial"), ...(multiHost() ? [t("tp.duplicateHereLocal")] : [])].join(" ");
   }
-  return t(draft ? "tp.forkWhat" : "tp.forkWhatImage");
+  return t(draft ? "tp.duplicateWhat" : "tp.duplicateWhatImage");
 }
 
 /**
@@ -33,18 +33,18 @@ function noteFor(card, draft) {
  * box, with a name and a description of its own. The name is prefilled with a free `<name>-copy`, and the description
  * with the source's, or with the official catalog's for an official template no host has built yet. A duplicate answers
  * with the new template instead of a task, because nothing is built; the dialog closes and the card appears. A duplicate
- * made from a build source is a draft, so its card says it is not built yet. `onForked(template)` runs once the copy
+ * made from a build source is a draft, so its card says it is not built yet. `onDuplicated(template)` runs once the copy
  * exists.
  */
-export function openForkTemplate({ card, cards = [], base = "", onForked } = {}) {
-  const name = forkName(card.name, takenNames(cards));
-  const draft = forkMakesDraft(card, base);
+export function openDuplicateTemplate({ card, cards = [], base = "", onDuplicated } = {}) {
+  const name = duplicateName(card.name, takenNames(cards));
+  const draft = duplicateMakesDraft(card, base);
   const { root, close } = openDialog({
-    title: t("tp.forkTitle", { name: esc(card.name) }),
-    description: t(draft ? "tp.forkDesc" : "tp.forkDescImage", { ref: esc(card.ref) }),
+    title: t("tp.duplicateTitle", { name: esc(card.name) }),
+    description: t(draft ? "tp.duplicateDesc" : "tp.duplicateDescImage", { ref: esc(card.ref) }),
     iconName: ICON,
     body: formHtml(name, card.description, noteFor(card, draft)),
-    footer: `<button class="btn" data-close>${esc(t("common.cancel"))}</button><button class="btn btn-primary" id="tfOk">${icon(ICON)}${esc(t("tp.forkConfirm"))}</button>`,
+    footer: `<button class="btn" data-close>${esc(t("common.cancel"))}</button><button class="btn btn-primary" id="tfOk">${icon(ICON)}${esc(t("tp.duplicateConfirm"))}</button>`,
   });
   const field = root.querySelector("#tfName");
   const description = root.querySelector("#tfDesc");
@@ -53,7 +53,7 @@ export function openForkTemplate({ card, cards = [], base = "", onForked } = {})
 
   const idle = () => {
     ok.disabled = false;
-    ok.innerHTML = `${icon(ICON)}${esc(t("tp.forkConfirm"))}`;
+    ok.innerHTML = `${icon(ICON)}${esc(t("tp.duplicateConfirm"))}`;
   };
   const refuse = (message) => {
     idle();
@@ -73,10 +73,10 @@ export function openForkTemplate({ card, cards = [], base = "", onForked } = {})
     const problem = nameError(value, "templateName");
     if (problem) return refuse(problem);
     ok.disabled = true;
-    ok.innerHTML = `<span class="spinner"></span>${esc(t("tp.forking"))}`;
+    ok.innerHTML = `<span class="spinner"></span>${esc(t("tp.duplicating"))}`;
     let made;
     try {
-      made = await api(`/api/templates/${enc(card.ref)}/fork`, {
+      made = await api(`/api/templates/${enc(card.ref)}/duplicate`, {
         method: "POST",
         body: { name: value, ...(text ? { description: text } : {}) },
       });
@@ -89,19 +89,19 @@ export function openForkTemplate({ card, cards = [], base = "", onForked } = {})
         refuse(e.message);
       } else {
         close();
-        toastError(t("tp.forkFailed"), e);
+        toastError(t("tp.duplicateFailed"), e);
       }
       return;
     }
     close();
     invalidateTemplates();
     // A copy made from a build source is a draft, so the toast says nothing was built, as a saved draft does.
-    toast(t(draft ? "tp.forkedDraft" : "tp.forked"), {
+    toast(t(draft ? "tp.duplicatedDraft" : "tp.duplicated"), {
       message: draft ? t("tp.draftSavedText") : (made.template?.name ?? value),
       link: { href: `#/library/templates/${enc(made.template?.name ?? value)}`, text: t("tp.openTemplate") },
       timeout: 15000,
     });
-    onForked?.(made.template);
+    onDuplicated?.(made.template);
   };
   ok.addEventListener("click", () => void submit());
   field.addEventListener("keydown", (event) => event.key === "Enter" && void submit());

@@ -27,6 +27,8 @@ export default {
   "task.op.template.build": "Build base template",
   "task.op.template.save": "Save box as template",
   "task.op.template.create": "Build template",
+  "task.op.template.duplicate": "Duplicate template",
+  // 历史记录：旧版本的任务摘要写成 task.op.template.fork，已写入的任务仍按这个键显示。
   "task.op.template.fork": "Duplicate template",
   "task.op.template.rebuild": "Rebuild template",
   "task.op.template.sync": "Sync template",

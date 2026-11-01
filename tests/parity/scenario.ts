@@ -977,17 +977,17 @@ async function recordScenario(): Promise<Exchange[]> {
     await waitTask(base, sampleRebuilt.json);
     await send("read the rebuild task", "GET", `/api/tasks/${String(sampleRebuilt.json?.taskId ?? "")}`);
     await send("rebuild a template that was not declared", "POST", "/api/templates/mbtest-template%3Abase/rebuild");
-    await post("fork the sample template", "/api/templates/mbtest-template%3Asample/fork", {
+    await post("duplicate the sample template", "/api/templates/mbtest-template%3Asample/duplicate", {
       name: "sample-copy",
     });
-    await send("list templates after the fork", "GET", "/api/templates");
-    await post("fork a template under a name that is taken", "/api/templates/mbtest-template%3Asample/fork", {
+    await send("list templates after the duplicate", "GET", "/api/templates");
+    await post("duplicate a template under a name that is taken", "/api/templates/mbtest-template%3Asample/duplicate", {
       name: "sample-copy",
     });
-    await post("fork a template that does not exist", "/api/templates/mbtest-template%3Aghost/fork", {
+    await post("duplicate a template that does not exist", "/api/templates/mbtest-template%3Aghost/duplicate", {
       name: "ghost-copy",
     });
-    await send("delete the forked template", "DELETE", "/api/templates/mbtest-template%3Asample-copy");
+    await send("delete the duplicated template", "DELETE", "/api/templates/mbtest-template%3Asample-copy");
     await send("read the source a template rebuilds from", "GET", "/api/templates/mbtest-template%3Asample/recipe");
     await send("read the source of a template that has none", "GET", "/api/templates/mbtest-template%3Abase/recipe");
     await send("edit a template with nothing to change", "PATCH", "/api/templates/mbtest-template%3Asample", {

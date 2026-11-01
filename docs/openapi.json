@@ -37787,9 +37787,9 @@
         }
       }
     },
-    "/api/templates/{ref}/fork": {
+    "/api/templates/{ref}/duplicate": {
       "post": {
-        "operationId": "template.fork",
+        "operationId": "template.duplicate",
         "tags": [
           "templates"
         ],
@@ -37991,9 +37991,9 @@
         "x-kind": "write",
         "x-scope": "template:write",
         "x-async": false,
-        "x-cli": "template fork",
+        "x-cli": "template duplicate",
         "x-mcp": {
-          "name": "fork_template",
+          "name": "duplicate_template",
           "toolset": "tools"
         }
       }
