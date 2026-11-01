@@ -91,14 +91,22 @@ const checkpointRemoteGet = defineOperation({
   scope: REMOTE_SCOPE,
   async: false,
   input: z.object({ id: hostId() }),
-  output: z.object({ remote: RemoteRepoStateSchema.nullable() }),
+  output: z.object({
+    remote: RemoteRepoStateSchema.nullable(),
+    records: z.number().int().min(0).meta({
+      description:
+        "How many checkpoint records the host holds, recycle bin entries included. A bin entry still names a snapshot in the repository it was taken in, so it locks a remote-only host's position.",
+    }),
+  }),
   rest: [{ method: "GET", path: "/api/hosts/:id/checkpoint-remote" }],
   hostFor: (ctx, input) => hostById(ctx, input.id),
   run: async ({ targets, checkpointRemote }, input) => {
-    const remote = targetsOf(targets).remoteOf(input.id);
-    if (!remote) return { remote: null };
+    const service = targetsOf(targets);
+    const records = service.checkpointRecordCount(input.id);
+    const remote = service.remoteOf(input.id);
+    if (!remote) return { remote: null, records };
     const state = checkpointRemote?.stateOf(input.id) ?? { failures: 0, lastFailure: null };
-    return { remote: { ...remote, ...state } };
+    return { remote: { ...remote, ...state }, records };
   },
 });
 

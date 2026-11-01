@@ -538,8 +538,16 @@ export class TargetService {
 
   /** A host in remote-only mode can only move or be cleared while every checkpoint record has been deleted. */
   private assertNoCheckpoints(hostId: string): void {
-    const count = this.options.checkpoints.list().filter((record) => record.hostId === hostId).length;
+    const count = this.checkpointRecordCount(hostId);
     if (count > 0) throw conflict(msg("checkpoint_remote_has_checkpoints", { host: hostId, count }));
+  }
+
+  /**
+   * How many checkpoint records a host holds, recycle bin entries included. A record in the bin still names a snapshot in
+   * the repository it was taken in, so the server counts those too; the page's checkpoint list leaves them out.
+   */
+  checkpointRecordCount(hostId: string): number {
+    return this.options.checkpoints.list().filter((record) => record.hostId === hostId).length;
   }
 
   /** Reaches the target with the draft's credentials and stores nothing. */
