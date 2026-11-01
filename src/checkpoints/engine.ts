@@ -78,6 +78,11 @@ export interface SnapshotEngine {
   /** The snapshots of this host's repository that carry `tag`. A repository that does not exist has none. */
   tagged(host: HostCtx, tag: string): Promise<SnapshotRef[]>;
   /**
+   * Opens `remote` and creates it when it does not exist. Used when a host is set to keep its checkpoints only there: a
+   * password that does not open it, or a target that cannot be reached, refuses the setting with the reason.
+   */
+  checkRemote(host: HostCtx, remote: RemoteRepository): Promise<void>;
+  /**
    * Copies snapshots into `remote`, adding only the ones it does not hold yet, and creating the remote repository when
    * it does not exist. A remote repository is never written to in any other way: nothing is removed or changed there, so
    * a local forget or prune does not reach it. The copy is idempotent, because restic recognizes a snapshot by its origin.

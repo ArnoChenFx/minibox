@@ -423,6 +423,8 @@ function remoteAttention(
     if (host.host.status === "offline") return [];
     const repo = targets.remoteOf(host.host.id);
     if (!repo) return [];
+    // A remote-only host never copies: its checkpoints are taken on the remote, so there is no copy that can fail.
+    if (repo.mode === "only") return [];
     const state = remote.stateOf(host.host.id);
     if (state.failures < REMOTE_SYNC_FAILURE_THRESHOLD) return [];
     return [

@@ -106,6 +106,10 @@ export class FakeCheckpointEngine implements SnapshotEngine {
   readonly remoteCopies: { targetId: string; snapshotIds: string[] }[] = [];
   /** Makes the next copies to a remote repository fail, as an unreachable target does. */
   failRemoteCopy = false;
+  /** Every remote repository opened for a remote-only host, in order. */
+  readonly remoteChecks: RemoteRepository[] = [];
+  /** Makes the next check of a remote repository fail, as a wrong password or an unreachable target does. */
+  failRemoteCheck = false;
   private remoteGate: { promise: Promise<void>; blocked: number } | null = null;
   private sequence = 0;
   private gate: { promise: Promise<void>; kind: EngineCall | null; blocked: number } | null = null;
@@ -226,6 +230,11 @@ export class FakeCheckpointEngine implements SnapshotEngine {
       },
       blocked: () => gate.blocked,
     };
+  }
+
+  async checkRemote(_host: HostCtx, remote: RemoteRepository): Promise<void> {
+    this.remoteChecks.push(remote);
+    if (this.failRemoteCheck) throw new RuntimeError("engine", "restic cat config exited with status 1: unreachable");
   }
 
   async copyToRemote(host: HostCtx, remote: RemoteRepository, snapshotIds: string[]): Promise<void> {

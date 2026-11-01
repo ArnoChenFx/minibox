@@ -56,6 +56,12 @@ const KNOWN_HOSTS_NAME = "known_hosts";
  * never run, since a live holder would then be overridden.
  */
 const REMOTE_LOCK_WAIT = "5m";
+/**
+ * How long a remote-only host's usage reading is kept. `stats` reads the repository's whole index, which over a network is
+ * the most expensive call this engine makes; a reading that old is still useful for capacity decisions, and writing a
+ * checkpoint or deleting one clears it at once.
+ */
+const USAGE_TTL_MS = 10 * 60 * 1000;
 const SNAPSHOT_ID_RE = /^[0-9a-f]{64}$/;
 
 const HELPER_MEMORY_BYTES = 1024 * 1024 * 1024;
@@ -72,6 +78,24 @@ export interface ResticOptions {
   /** `DATA_DIR`. The repository key lives in `secrets/`. */
   dataDir: string;
   image?: string;
+  /** The clock the usage cache reads, for tests. Defaults to `Date.now`. */
+  now?: () => number;
+}
+
+/** A repository a host's helpers read and write: its restic options, the files those options name, and its environment. */
+interface PrimaryRepository {
+  /** Names the repository itself, apart from the host's name, so a mode or position change is probed again. */
+  key: string;
+  /** Null when the repository is the local volume. */
+  remote: RemoteRepository | null;
+  /** Restic options that precede the command, such as the S3 region or the SFTP ssh arguments. */
+  options: string[];
+  mounts: Mount[];
+  secrets: HelperSecret[];
+  env: string[];
+  /** The environment that names a target's credential files alone, without the repository a helper writes. */
+  credentialEnv: string[];
+  network: boolean;
 }
 
 /** One restic or helper run: its arguments, and what the helper gets beside the defaults. */
@@ -83,6 +107,8 @@ interface HelperCall {
   env?: string[];
   /** Joins the bridge, so a helper that copies to a remote repository can reach it. */
   network?: boolean;
+  /** Appends the bounded lock wait to a restic call that writes the repository. Remote-only repositories set it. */
+  write?: boolean;
 }
 
 /**
@@ -97,10 +123,25 @@ interface HelperCall {
 export class ResticEngine implements SnapshotEngine {
   private readonly image: string;
   private readonly queues = new Map<string, Promise<unknown>>();
+  /** The repository identities whose `cat config` has answered since the engine started. */
   private readonly ready = new Set<string>();
+  /** Remote-only usage readings, by repository identity. Cleared when the repository changes. */
+  private readonly usageCache = new Map<string, { bytes: number; at: number }>();
+  private readonly now: () => number;
+  /** Answers the remote repository of a host that keeps its checkpoints only there, bound after the target service is built. */
+  private remotes: ((hostId: string) => Promise<RemoteRepository | null>) | undefined;
 
   constructor(private readonly opts: ResticOptions) {
     this.image = opts.image ?? RESTIC_IMAGE;
+    this.now = opts.now ?? Date.now;
+  }
+
+  /**
+   * Binds the remote-only repositories after the target service exists. The resolver returns a repository only for a host
+   * in `only` mode; every other host keeps using its local volume.
+   */
+  bindRemotes(resolve: (hostId: string) => Promise<RemoteRepository | null>): void {
+    this.remotes = resolve;
   }
 
   backup(host: HostCtx, volume: string, tags: string[]): Promise<BackupResult> {
@@ -112,10 +153,12 @@ export class ResticEngine implements SnapshotEngine {
         args: ["backup", DATA_MOUNT, "--json", "--host", host.host.id, ...tagFlags],
         mounts: [{ source: volume, target: DATA_MOUNT, mode: "ro" }],
         capAdd: ["DAC_READ_SEARCH"],
+        write: true,
       });
       this.assertOk(host, result, "restic backup");
       const summary = summaryOf(result.logs);
       if (!summary) throw failure("restic backup printed no summary", result);
+      this.invalidateUsage(host);
       return summary;
     });
   }
@@ -138,15 +181,22 @@ export class ResticEngine implements SnapshotEngine {
     return this.serial(host, async () => {
       assertSnapshotId(snapshotId);
       await this.ensureRepo(host, { create: false });
-      const result = await this.run(host, { args: ["forget", snapshotId, "--prune"] });
+      const result = await this.run(host, { args: ["forget", snapshotId, "--prune"], write: true });
       this.assertOk(host, result, "restic forget");
+      this.invalidateUsage(host);
     });
   }
 
   /** Reads the raw data size from the index. A repository that was never created is empty, and nothing is created here. */
   usage(host: HostCtx): Promise<EngineUsage> {
     return this.serial(host, async () => {
-      if (!(await repoVolumeExists(host))) return { bytes: 0 };
+      const repo = await this.primary(host);
+      if (repo.remote) {
+        const cached = this.usageCache.get(repo.key);
+        if (cached && this.now() - cached.at < USAGE_TTL_MS) return { bytes: cached.bytes };
+      } else if (!(await repoVolumeExists(host))) {
+        return { bytes: 0 };
+      }
       try {
         await this.ensureRepo(host, { create: false });
       } catch (e) {
@@ -154,16 +204,22 @@ export class ResticEngine implements SnapshotEngine {
         throw e;
       }
       const result = await this.run(host, { args: ["stats", "--mode", "raw-data", "--json"] });
+      // A repository removed behind the engine is empty, not an error: the next backup creates it again.
+      if (result.exitCode === EXIT_NO_REPO) {
+        this.forgetReady(host);
+        return { bytes: 0 };
+      }
       this.assertOk(host, result, "restic stats");
       const bytes = storedBytesOf(result.logs);
       if (bytes === null) throw failure("restic stats printed no size", result);
+      if (repo.remote) this.usageCache.set(repo.key, { bytes, at: this.now() });
       return { bytes };
     });
   }
 
   tagged(host: HostCtx, tag: string): Promise<SnapshotRef[]> {
     return this.serial(host, async () => {
-      if (!(await repoVolumeExists(host))) return [];
+      if (!(await this.primary(host)).remote && !(await repoVolumeExists(host))) return [];
       try {
         await this.ensureRepo(host, { create: false });
       } catch (e) {
@@ -183,6 +239,10 @@ export class ResticEngine implements SnapshotEngine {
   copyToRemote(host: HostCtx, remote: RemoteRepository, snapshotIds: string[]): Promise<void> {
     return this.serial(host, async () => {
       snapshotIds.forEach(assertSnapshotId);
+      // A remote-only host has no local repository to copy from; its snapshots are already on the remote.
+      if ((await this.primary(host)).remote) {
+        throw new RuntimeError("engine", "a host that keeps its checkpoints only on the remote has nothing to copy");
+      }
       if (snapshotIds.length === 0) return;
       await this.ensureRepo(host, { create: false });
       const call = remoteHelperCall(remote, []);
@@ -223,6 +283,32 @@ export class ResticEngine implements SnapshotEngine {
     });
   }
 
+  /**
+   * Opens a remote repository that is about to become a host's only one, creating it when it does not exist yet. Its
+   * password is the one the target service generated, so a wrong password refuses the setting rather than replacing a
+   * repository. The helper joins the bridge and gets the credentials as files, exactly as a remote-only backup does.
+   */
+  checkRemote(host: HostCtx, remote: RemoteRepository): Promise<void> {
+    return this.serial(host, async () => {
+      await host.runtime.pullImage(this.image);
+      const call = remoteHelperCall(remote, []);
+      const common = { secrets: call.secrets, env: call.env, network: true };
+      const probe = await this.helper(host, { ...common, args: [...call.args, "cat", "config"] });
+      if (probe.exitCode === EXIT_WRONG_PASSWORD) {
+        throw failure("the remote checkpoint repository password is wrong", probe);
+      }
+      if (probe.exitCode === EXIT_NO_REPO) {
+        const init = await this.helper(host, {
+          ...common,
+          args: [...call.args, "--retry-lock", REMOTE_LOCK_WAIT, "init"],
+        });
+        if (init.exitCode !== 0) throw failure("restic init of the remote checkpoint repository", init);
+        return;
+      }
+      if (probe.exitCode !== 0) throw failure("could not open the remote checkpoint repository", probe);
+    });
+  }
+
   /** The snapshots of this repository that match the `snapshots` filter flags. The caller holds the host's queue. */
   private async listing(host: HostCtx, filter: string[]): Promise<SnapshotRef[]> {
     const result = await this.run(host, { args: ["snapshots", ...filter, "--json"] });
@@ -248,7 +334,7 @@ export class ResticEngine implements SnapshotEngine {
     }
     for (const snapshot of leftovers) {
       try {
-        const result = await this.run(host, { args: ["forget", snapshot.id, "--prune"] });
+        const result = await this.run(host, { args: ["forget", snapshot.id, "--prune"], write: true });
         if (result.exitCode !== 0) {
           log.warn("checkpoint.copy_cleanup_failed", { host: host.host.id, snapshot: snapshot.id });
         }
@@ -268,6 +354,7 @@ export class ResticEngine implements SnapshotEngine {
     return this.serial(host, async () => {
       input.snapshotIds.forEach(assertSnapshotId);
       await this.ensureRepo(host, { create: false });
+      const repo = await this.primary(host);
       const volume = await this.stage(host);
       try {
         const sealed: HelperSecret[] = [{ name: PACKAGE_KEY_NAME, value: input.passphrase }];
@@ -275,18 +362,22 @@ export class ResticEngine implements SnapshotEngine {
         const packageMount = packageMountOf(volume, "rw");
         const init = await this.helper(host, { args: ["init"], mounts: [packageMount], secrets: sealed, env });
         if (init.exitCode !== 0) throw failure("restic init of the package", init);
+        // The package is the destination, so the repository being written stays the package's. The source repository
+        // arrives as restic options and a password file, together with the credential file a remote target needs.
         const copy = await this.helper(host, {
           args: [
+            ...repo.options,
             "copy",
             "--from-repo",
-            REPO_MOUNT,
+            repo.remote?.repository ?? REPO_MOUNT,
             "--from-password-file",
-            `${HELPER_SECRETS_DIR}/${HELPER_KEY_NAME}`,
+            `${HELPER_SECRETS_DIR}/${repo.remote ? REMOTE_KEY_NAME : HELPER_KEY_NAME}`,
             ...input.snapshotIds,
           ],
-          mounts: [{ source: repoVolume(host), target: REPO_MOUNT, mode: "rw" }, packageMount],
-          secrets: [{ name: HELPER_KEY_NAME, value: this.password() }, ...sealed],
-          env,
+          mounts: [...repo.mounts, packageMount],
+          secrets: [...repo.secrets, ...sealed],
+          env: repo.remote ? [...env, ...repo.credentialEnv] : env,
+          ...(repo.network ? { network: true } : {}),
         });
         if (copy.exitCode !== 0) throw failure("restic copy into the package", copy);
         const manifest = await this.helper(host, {
@@ -378,8 +469,10 @@ export class ResticEngine implements SnapshotEngine {
               ],
               mounts,
               secrets: sealed,
+              write: true,
             });
             this.assertOk(host, result, "restic copy out of the package");
+            this.invalidateUsage(host);
             const copies = (await this.listing(host, [])).filter((snapshot) => !known.has(snapshot.id));
             return copiedIds(roots, copies);
           } catch (e) {
@@ -410,45 +503,103 @@ export class ResticEngine implements SnapshotEngine {
 
   /**
    * Opens the repository, initializing it only when `create` is set. Without `create`, a missing repository is an
-   * error: a restore or a forget names a snapshot that the repository must already hold.
+   * error: a restore or a forget names a snapshot that the repository must already hold. A host in remote-only mode has
+   * no local volume to create or inspect: the repository is the remote one, opened with `cat config`.
    */
   private async ensureRepo(host: HostCtx, { create }: { create: boolean }): Promise<void> {
-    const key = host.host.id;
-    if (this.ready.has(key)) return;
+    const repo = await this.primary(host);
+    if (this.ready.has(repo.key)) return;
     await host.runtime.pullImage(this.image);
-    if (create) {
-      await host.runtime.createVolume(repoVolume(host), { [host.keys.internal]: "true", [host.keys.checkpoint]: key });
-    } else {
-      await host.runtime.inspectVolume(repoVolume(host));
+    if (!repo.remote) {
+      if (create) {
+        await host.runtime.createVolume(repoVolume(host), {
+          [host.keys.internal]: "true",
+          [host.keys.checkpoint]: host.host.id,
+        });
+      } else {
+        await host.runtime.inspectVolume(repoVolume(host));
+      }
     }
-    const probe = await this.run(host, { args: ["cat", "config"] });
+    const probe = await this.runIn(host, repo, { args: ["cat", "config"] });
     if (probe.exitCode === 0) {
-      this.ready.add(key);
+      this.ready.add(repo.key);
       return;
     }
     if (probe.exitCode === EXIT_WRONG_PASSWORD) throw failure("the checkpoint repository password is wrong", probe);
     if (probe.exitCode !== EXIT_NO_REPO) throw failure("could not open the checkpoint repository", probe);
     if (!create) throw new RuntimeError("not_found", "the checkpoint repository does not exist");
-    const init = await this.run(host, { args: ["init"] });
+    const init = await this.runIn(host, repo, { args: ["init"], write: true });
     if (init.exitCode !== 0) throw failure("restic init", init);
-    this.ready.add(key);
+    this.ready.add(repo.key);
   }
 
   /** A missing repository means its volume was removed behind the engine, so the next call checks it again. */
   private assertOk(host: HostCtx, result: HelperResult, what: string): void {
     if (result.exitCode === 0) return;
-    if (result.exitCode === EXIT_NO_REPO) this.ready.delete(host.host.id);
+    if (result.exitCode === EXIT_NO_REPO) this.forgetReady(host);
     throw failure(what, result);
   }
 
-  /** restic on this host's repository. The repository key and the repository mount are added to the call. */
-  private run(host: HostCtx, call: Omit<HelperCall, "env">): Promise<HelperResult> {
-    return this.helper(host, {
-      ...call,
-      mounts: [{ source: repoVolume(host), target: REPO_MOUNT, mode: "rw" }, ...(call.mounts ?? [])],
-      secrets: [{ name: HELPER_KEY_NAME, value: this.password() }, ...(call.secrets ?? [])],
+  /**
+   * The repository this host's checkpoints live in. A host in remote-only mode has no local volume: its repository is
+   * the remote one, with restic's options for it and its credentials as files. The key names the repository itself, so
+   * switching modes or moving the remote probes the new one instead of trusting the old one's `cat config`.
+   */
+  private async primary(host: HostCtx): Promise<PrimaryRepository> {
+    const remote = this.remotes ? await this.remotes(host.host.id) : null;
+    if (remote) {
+      const call = remoteHelperCall(remote, []);
+      return {
+        key: `${host.host.id}\u0000remote:${remote.repository}`,
+        remote,
+        options: call.args,
+        mounts: [],
+        secrets: call.secrets,
+        env: call.env,
+        credentialEnv: credentialEnvOf(remote),
+        network: true,
+      };
+    }
+    return {
+      key: `${host.host.id}\u0000local:${repoVolume(host)}`,
+      remote: null,
+      options: [],
+      mounts: [{ source: repoVolume(host), target: REPO_MOUNT, mode: "rw" }],
+      secrets: [{ name: HELPER_KEY_NAME, value: this.password() }],
       env: repoEnv(HELPER_KEY_NAME, REPO_MOUNT),
+      credentialEnv: [],
+      network: false,
+    };
+  }
+
+  /** restic on this host's repository. Its options, key and mount are added to the call. */
+  private async run(host: HostCtx, call: Omit<HelperCall, "env">): Promise<HelperResult> {
+    return this.runIn(host, await this.primary(host), call);
+  }
+
+  private runIn(host: HostCtx, repo: PrimaryRepository, call: Omit<HelperCall, "env">): Promise<HelperResult> {
+    const { write, ...rest } = call;
+    return this.helper(host, {
+      ...rest,
+      args: [...repo.options, ...(write && repo.remote ? ["--retry-lock", REMOTE_LOCK_WAIT] : []), ...call.args],
+      mounts: [...repo.mounts, ...(call.mounts ?? [])],
+      secrets: [...repo.secrets, ...(call.secrets ?? [])],
+      env: repo.env,
+      network: repo.network || undefined,
     });
+  }
+
+  /** A repository that was removed behind the engine is probed and read again on the next call. */
+  private forgetReady(host: HostCtx): void {
+    for (const key of this.ready) if (key.startsWith(`${host.host.id}\u0000`)) this.ready.delete(key);
+    this.invalidateUsage(host);
+  }
+
+  /** Drops a host's cached usage reading, since a write changed what the repository stores. */
+  private invalidateUsage(host: HostCtx): void {
+    for (const key of this.usageCache.keys()) {
+      if (key.startsWith(`${host.host.id}\u0000`)) this.usageCache.delete(key);
+    }
   }
 
   private helper(host: HostCtx, call: HelperCall): Promise<HelperResult> {
@@ -561,17 +712,13 @@ export interface RemoteHelperCall {
 }
 
 /**
- * The options, secret files and environment of a helper that talks to a remote repository. The repository password and
- * the target's credentials are only ever files under `HELPER_SECRETS_DIR`; the environment names those files and never
- * holds a credential, because `docker inspect` shows it to anyone who can reach the engine.
+ * The options and files that name a remote repository, without the repository environment. A helper that reads the remote
+ * as a copy source writes another repository, so its `RESTIC_REPOSITORY` and `RESTIC_PASSWORD_FILE` must stay that
+ * other one's; only the target's credential file, which restic's SDK reads by itself, joins its environment.
  */
-export function remoteHelperCall(remote: RemoteRepository, command: string[]): RemoteHelperCall {
+function remoteFileParts(remote: RemoteRepository): { options: string[]; secrets: HelperSecret[]; env: string[] } {
   const secrets: HelperSecret[] = [{ name: REMOTE_KEY_NAME, value: remote.password }];
-  const env = [
-    `RESTIC_PASSWORD_FILE=${HELPER_SECRETS_DIR}/${REMOTE_KEY_NAME}`,
-    `RESTIC_REPOSITORY=${remote.repository}`,
-    "HOME=/tmp",
-  ];
+  const env: string[] = [];
   const options: string[] = [];
   if (remote.credentials.kind === "s3") {
     secrets.push({ name: AWS_KEY_NAME, value: s3CredentialsFile(remote.credentials) });
@@ -589,7 +736,26 @@ export function remoteHelperCall(remote: RemoteRepository, command: string[]): R
     ].join(" ");
     options.push("-o", `sftp.args=${sshArgs}`);
   }
-  return { args: [...options, ...command], secrets, env };
+  return { options, secrets, env };
+}
+
+/** The credential-file environment of a remote repository, which a helper may add beside another repository's own. */
+function credentialEnvOf(remote: RemoteRepository): string[] {
+  return remoteFileParts(remote).env;
+}
+
+/**
+ * The options, secret files and environment of a helper that talks to a remote repository. The repository password and
+ * the target's credentials are only ever files under `HELPER_SECRETS_DIR`; the environment names those files and never
+ * holds a credential, because `docker inspect` shows it to anyone who can reach the engine.
+ */
+export function remoteHelperCall(remote: RemoteRepository, command: string[]): RemoteHelperCall {
+  const parts = remoteFileParts(remote);
+  return {
+    args: [...parts.options, ...command],
+    secrets: parts.secrets,
+    env: [...repoEnv(REMOTE_KEY_NAME, remote.repository), ...parts.env],
+  };
 }
 
 /** The `[default]` section of an AWS shared credentials file, which restic's SDK reads by itself. */

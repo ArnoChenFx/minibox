@@ -613,3 +613,198 @@ describe("a streak of failed copies", () => {
     expect(recovered.remote).toMatchObject({ failures: 0, lastFailure: null });
   });
 });
+
+describe("a host that keeps its checkpoints only on the remote", () => {
+  const getRemote = async (inst: Instance) =>
+    (await inst.app.operations.run("checkpoint.remote.get", ctxOf(inst.app), { id: "local" })) as {
+      remote: { mode: string; targetId: string; path: string } | null;
+    };
+
+  const setRemote = (inst: Instance, input: { targetId: string; path?: string; mode?: "sync" | "only" }) =>
+    inst.app.operations.run("checkpoint.remote.set", ctxOf(inst.app), { id: "local", ...input });
+
+  test("a host with no records switches to only and back, and the repository is opened before the save", async () => {
+    const inst = instanceOf();
+    const targetId = s3Target(inst);
+
+    const set = (await setRemote(inst, { targetId, mode: "only" })) as { remote: { mode: string; path: string } };
+    expect(set.remote).toMatchObject({ mode: "only", path: "local" });
+    expect(engineOf(inst).remoteChecks).toHaveLength(1);
+    expect(engineOf(inst).remoteChecks[0]?.repository).toBe("s3:https://s3.example.com/archive/local");
+    expect((await getRemote(inst)).remote).toMatchObject({ mode: "only", targetId, path: "local" });
+
+    const back = (await setRemote(inst, { targetId, mode: "sync" })) as { remote: { mode: string } };
+    expect(back.remote.mode).toBe("sync");
+    // The remote is validated only when the host is set to use it alone.
+    expect(engineOf(inst).remoteChecks).toHaveLength(1);
+  });
+
+  test("a host with a record cannot switch either way, and a record in the recycle bin counts", async () => {
+    const inst = instanceOf();
+    const targetId = s3Target(inst);
+    inst.app.targets.setRemote("local", { targetId });
+    const { record } = await checkpointOf(inst, "src");
+
+    expect(await rejectionOf(Promise.resolve().then(() => setRemote(inst, { targetId, mode: "only" })))).toMatchObject({
+      status: 409,
+      key: "checkpoint_remote_has_checkpoints",
+    });
+    expect((await getRemote(inst)).remote?.mode).toBe("sync");
+
+    const now = new Date().toISOString();
+    inst.host.checkpoints.write({
+      ...storedRecord(inst, record.id),
+      trash: {
+        kind: "box",
+        sourceId: "bx_abcdefgh",
+        sourceName: "deleted",
+        deletedAt: now,
+        expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
+      },
+    });
+    expect(await rejectionOf(Promise.resolve().then(() => setRemote(inst, { targetId, mode: "only" })))).toMatchObject({
+      status: 409,
+      key: "checkpoint_remote_has_checkpoints",
+    });
+
+    inst.host.checkpoints.remove(record.id);
+    expect(((await setRemote(inst, { targetId, mode: "only" })) as { remote: { mode: string } }).remote.mode).toBe(
+      "only",
+    );
+    await checkpointOf(inst, "after");
+    expect(await rejectionOf(Promise.resolve().then(() => setRemote(inst, { targetId, mode: "sync" })))).toMatchObject({
+      status: 409,
+      key: "checkpoint_remote_has_checkpoints",
+    });
+  });
+
+  test("a remote-only host cannot be moved or cleared with records, while a sync host still can", async () => {
+    const inst = instanceOf();
+    const targetId = s3Target(inst);
+    await setRemote(inst, { targetId, mode: "only" });
+    const { record } = await checkpointOf(inst, "src");
+
+    expect(
+      await rejectionOf(Promise.resolve().then(() => setRemote(inst, { targetId, path: "elsewhere" }))),
+    ).toMatchObject({ status: 409, key: "checkpoint_remote_has_checkpoints" });
+    expect(await rejectionOf(Promise.resolve().then(() => inst.app.targets.clearRemote("local")))).toMatchObject({
+      status: 409,
+      key: "checkpoint_remote_has_checkpoints",
+    });
+    expect(await getRemote(inst)).toMatchObject({ remote: { mode: "only", path: "local" } });
+
+    inst.host.checkpoints.remove(record.id);
+    const moved = (await setRemote(inst, { targetId, path: "elsewhere" })) as { remote: { path: string } };
+    expect(moved.remote.path).toBe("elsewhere/local");
+    inst.app.targets.clearRemote("local");
+    expect(await getRemote(inst)).toEqual({ remote: null });
+
+    // The same changes on a sync-mode host are not locked by its records.
+    const sync = instanceOf();
+    const syncTarget = s3Target(sync);
+    sync.app.targets.setRemote("local", { targetId: syncTarget });
+    await checkpointOf(sync, "src");
+    expect(sync.app.targets.setRemote("local", { targetId: syncTarget, path: "moved" }).path).toBe("moved/local");
+    sync.app.targets.clearRemote("local");
+    expect(sync.app.targets.remoteOf("local")).toBeNull();
+  });
+
+  test("a remote-only host is skipped by every sync pass, and a manual sync is a 409", async () => {
+    const inst = instanceOf();
+    const targetId = s3Target(inst);
+    await setRemote(inst, { targetId, mode: "only" });
+    const { record } = await checkpointOf(inst, "src");
+
+    expect(await inst.app.checkpointRemote.run()).toEqual([]);
+    expect(engineOf(inst).remoteCopies).toEqual([]);
+    expect(storedRecord(inst, record.id).remoteSync).toBeUndefined();
+    expect(inst.app.checkpointRemote.stateOf("local")).toEqual({ failures: 0, lastFailure: null });
+    expect(await rejectionOf(inst.app.checkpointRemote.syncHost(inst.host))).toMatchObject({
+      status: 409,
+      key: "checkpoint_remote_only_no_sync",
+    });
+    expect(
+      await rejectionOf(inst.app.operations.run("checkpoint.remote.sync", ctxOf(inst.app), { id: "local" })),
+    ).toMatchObject({ status: 409, key: "checkpoint_remote_only_no_sync" });
+    expect(engineOf(inst).remoteCopies).toEqual([]);
+  });
+
+  test("the overview drops a failing sync streak when the host switches to remote-only", async () => {
+    const inst = instanceOf();
+    const targetId = s3Target(inst);
+    inst.app.targets.setRemote("local", { targetId });
+    const { record } = await checkpointOf(inst, "src");
+    engineOf(inst).failRemoteCopy = true;
+    for (let failures = 0; failures < REMOTE_SYNC_FAILURE_THRESHOLD; failures += 1) {
+      await rejectionOf(inst.app.checkpointRemote.syncHost(inst.host));
+    }
+    expect((await overviewOf(inst)).attention.some((item) => item.kind === "host.remote_sync_failing")).toBe(true);
+
+    // The retry state survives on the service, but a remote-only host reports nothing and is never listed.
+    inst.host.checkpoints.remove(record.id);
+    await setRemote(inst, { targetId, mode: "only" });
+
+    expect(inst.app.checkpointRemote.stateOf("local")).toEqual({ failures: 0, lastFailure: null });
+    expect((await overviewOf(inst)).attention.some((item) => item.kind === "host.remote_sync_failing")).toBe(false);
+  });
+
+  test("a failed check refuses the save and leaves the previous setting in place", async () => {
+    const inst = instanceOf();
+    const targetId = s3Target(inst);
+    inst.app.targets.setRemote("local", { targetId, path: "first" });
+    engineOf(inst).failRemoteCheck = true;
+
+    const error = await rejectionOf(
+      Promise.resolve().then(() =>
+        inst.app.operations.run("checkpoint.remote.set", ctxOf(inst.app), {
+          id: "local",
+          targetId,
+          path: "second",
+          mode: "only",
+        }),
+      ),
+    );
+    expect(error).toMatchObject({ status: 502, key: "checkpoint_remote_check_failed" });
+    expect(inst.app.targets.remoteOf("local")).toMatchObject({ mode: "sync", path: "first/local" });
+    expect(engineOf(inst).remoteChecks).toHaveLength(1);
+
+    engineOf(inst).failRemoteCheck = false;
+    const saved = (await inst.app.operations.run("checkpoint.remote.set", ctxOf(inst.app), {
+      id: "local",
+      targetId,
+      path: "second",
+      mode: "only",
+    })) as { remote: { mode: string } };
+    expect(saved.remote.mode).toBe("only");
+    expect(engineOf(inst).remoteChecks).toHaveLength(2);
+  });
+
+  test("a remote file written before modes existed reads as sync", () => {
+    const dataDir = mkdtempSync(join(tmpdir(), "minibox-remote-old-"));
+    dirs.push(dataDir);
+    const now = new Date().toISOString();
+    mkdirSync(join(dataDir, "secrets"), { recursive: true, mode: 0o700 });
+    writeFileSync(
+      targetsPath(dataDir),
+      JSON.stringify({
+        version: 1,
+        targets: [],
+        remotes: [
+          {
+            hostId: "local",
+            targetId: "tgt_0000000000000000",
+            kind: "s3",
+            path: "old",
+            createdAt: now,
+            updatedAt: now,
+            lastSyncAt: null,
+            lastError: null,
+          },
+        ],
+      }),
+    );
+    const { app } = createTestApp({ dataDir });
+
+    expect(app.targets.remoteOf("local")).toMatchObject({ mode: "sync", path: "old/local" });
+  });
+});

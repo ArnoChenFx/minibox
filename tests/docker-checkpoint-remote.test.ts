@@ -23,6 +23,7 @@ import { utils } from "ssh2";
 
 import type { RemoteRepository } from "../src/checkpoints/remote";
 import { knownHostsLine, s3Repository } from "../src/checkpoints/remote";
+import { ResticEngine } from "../src/checkpoints/restic";
 import { createDockerRuntime } from "../src/docker/runtime";
 import { createLocalHost, type HostCtx } from "../src/host/registry";
 import { probePublicKey, publicKeyTextOf } from "../src/host/ssh";
@@ -69,6 +70,38 @@ async function seed(volume: string): Promise<void> {
     timeoutSec: 60,
   });
   if (result.exitCode !== 0) throw new Error(`could not seed ${volume}: ${result.logs}`);
+}
+
+/** The contents of one file in a volume, read through a helper. */
+async function readFile(volume: string, name: string): Promise<string> {
+  const result = await runtime.runHelper({
+    image: IMAGE,
+    cmd: ["cat", `/data/${name}`],
+    mounts: [{ source: volume, target: "/data", mode: "ro" }],
+    labels: { [host.keys.internal]: "true" },
+    timeoutSec: 60,
+  });
+  if (result.exitCode !== 0) throw new Error(`could not read ${name} from ${volume}: ${result.logs}`);
+  return result.logs;
+}
+
+/** A host whose only checkpoint repository is `remote`, with an engine that answers for it alone. */
+function onlyHostOf(id: string, remote: RemoteRepository): HostCtx {
+  const engine = new ResticEngine({ dataDir });
+  engine.bindRemotes(async (hostId) => (hostId === id ? remote : null));
+  return createLocalHost(
+    testConfig({ dataDir, labelPrefix: prefix }),
+    runtime,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    {
+      id,
+      name: id,
+      checkpointEngine: engine,
+    },
+  );
 }
 
 /** Every file under a folder, as paths relative to it. */
@@ -225,6 +258,100 @@ describe.skipIf(!enabled)("checkpoint remote copy against a real engine", () => 
       } finally {
         await sftp.close();
         await runtime.removeVolume(volume);
+      }
+    },
+    LONG,
+  );
+
+  test(
+    "a remote-only S3 host backs up, restores and forgets on the remote, and never creates a local checkpoint volume",
+    async () => {
+      const gateway = await bridgeGateway();
+      const service = {
+        docker,
+        runtime,
+        gateway,
+        prefix,
+        accessKeyId: ACCESS_KEY,
+        secretAccessKey: SECRET_KEY,
+        bucket: BUCKET,
+      };
+      let proxy: S3Proxy | null = null;
+      const src = `${prefix}-only-s3-src`;
+      const dst = `${prefix}-only-s3-dst`;
+      try {
+        proxy = await startS3Proxy(service);
+        await createS3Bucket({ ...service, endpoint: proxy.endpoint });
+        const remote: RemoteRepository = {
+          targetId: "tgt_4444444444444444",
+          targetName: "archive",
+          repository: s3Repository(proxy.endpoint, BUCKET, "repo/only-s3"),
+          password: REMOTE_PASSWORD,
+          credentials: { kind: "s3", region: REGION, accessKeyId: ACCESS_KEY, secretAccessKey: SECRET_KEY },
+        };
+        const host = onlyHostOf("onlys3", remote);
+        await seed(src);
+        const snapshotId = (await host.checkpointEngine.backup(host, src, ["ck_only"])).snapshotId;
+
+        expect((await host.checkpointEngine.tagged(host, "ck_only")).map((snapshot) => snapshot.id)).toEqual([
+          snapshotId,
+        ]);
+        await seed(dst);
+        await host.checkpointEngine.restore(host, snapshotId, dst);
+        expect(await readFile(dst, "notes.txt")).toBe("hello from the remote test\n");
+
+        await host.checkpointEngine.forget(host, snapshotId);
+        expect(await host.checkpointEngine.tagged(host, "ck_only")).toEqual([]);
+        await rejectionOf(runtime.inspectVolume(`${prefix}-checkpoints-onlys3`));
+      } finally {
+        await proxy?.stop();
+        await runtime.removeVolume(src).catch(() => undefined);
+        await runtime.removeVolume(dst).catch(() => undefined);
+      }
+    },
+    LONG,
+  );
+
+  test(
+    "a remote-only SFTP host backs up, restores and forgets on the remote, and never creates a local checkpoint volume",
+    async () => {
+      const gateway = await bridgeGateway();
+      const sftp = await startSftpDouble({ host: gateway });
+      const presented = await probePublicKey(gateway, sftp.port);
+      const src = `${prefix}-only-sftp-src`;
+      const dst = `${prefix}-only-sftp-dst`;
+      try {
+        const remote: RemoteRepository = {
+          targetId: "tgt_5555555555555555",
+          targetName: "nas",
+          repository: `sftp://backup@${gateway}:${sftp.port}/repo/only-sftp`,
+          password: REMOTE_PASSWORD,
+          credentials: {
+            kind: "sftp",
+            port: sftp.port,
+            privateKey: sftp.privateKey,
+            knownHosts: knownHostsLine(gateway, sftp.port, presented.text),
+          },
+        };
+        const host = onlyHostOf("onlysftp", remote);
+        await seed(src);
+        const snapshotId = (await host.checkpointEngine.backup(host, src, ["ck_only"])).snapshotId;
+
+        expect((await host.checkpointEngine.tagged(host, "ck_only")).map((snapshot) => snapshot.id)).toEqual([
+          snapshotId,
+        ]);
+        await seed(dst);
+        await host.checkpointEngine.restore(host, snapshotId, dst);
+        expect(await readFile(dst, "notes.txt")).toBe("hello from the remote test\n");
+
+        await host.checkpointEngine.forget(host, snapshotId);
+        expect(await host.checkpointEngine.tagged(host, "ck_only")).toEqual([]);
+        expect(filesUnder(join(sftp.root, "repo/only-sftp/snapshots"))).toEqual([]);
+        await rejectionOf(runtime.inspectVolume(`${prefix}-checkpoints-onlysftp`));
+      } finally {
+        await sftp.close();
+        await runtime.removeVolume(src).catch(() => undefined);
+        await runtime.removeVolume(dst).catch(() => undefined);
       }
     },
     LONG,
