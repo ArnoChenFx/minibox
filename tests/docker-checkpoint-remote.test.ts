@@ -691,4 +691,70 @@ describe.skipIf(!enabled)("checkpoint remote copy against a real engine", () => 
     },
     LONG,
   );
+
+  test(
+    "a remote-only S3 repository that was never created reports zero usage and is not created",
+    async () => {
+      const gateway = await bridgeGateway();
+      const service = s3Service(gateway);
+      const folder = "repo/only-usage-empty";
+      let proxy: S3Proxy | null = null;
+      try {
+        proxy = await startS3Proxy(service);
+        await createS3Bucket({ ...service, endpoint: proxy.endpoint });
+        const client = s3Client(proxy.endpoint);
+        const host = onlyHostOf("usageempty", {
+          targetId: "tgt_eeeeeeeeeeeeeeee",
+          targetName: "archive",
+          repository: s3Repository(proxy.endpoint, BUCKET, folder),
+          password: REMOTE_PASSWORD,
+          credentials: { kind: "s3", region: REGION, accessKeyId: ACCESS_KEY, secretAccessKey: SECRET_KEY },
+        });
+
+        // 容量报 0 是「仓库不存在」，不是「建一个空仓库」：远端里连 config 都不该有。
+        expect(await host.checkpointEngine.usage(host)).toEqual({ bytes: 0 });
+        expect(await listKeys(client, `${folder}/`)).toEqual([]);
+        await rejectionOf(runtime.inspectVolume(`${prefix}-checkpoints-usageempty`));
+      } finally {
+        await proxy?.stop();
+      }
+    },
+    LONG,
+  );
+
+  test(
+    "a remote-only S3 repository reports its usage after a backup, and zero again once the snapshot is forgotten",
+    async () => {
+      const gateway = await bridgeGateway();
+      const service = s3Service(gateway);
+      const volume = `${prefix}-only-usage-src`;
+      let proxy: S3Proxy | null = null;
+      try {
+        proxy = await startS3Proxy(service);
+        await createS3Bucket({ ...service, endpoint: proxy.endpoint });
+        const host = onlyHostOf("usageforget", {
+          targetId: "tgt_ffffffffffffffff",
+          targetName: "archive",
+          repository: s3Repository(proxy.endpoint, BUCKET, "repo/only-usage-s3"),
+          password: REMOTE_PASSWORD,
+          credentials: { kind: "s3", region: REGION, accessKeyId: ACCESS_KEY, secretAccessKey: SECRET_KEY },
+        });
+        await seed(volume);
+        const snapshotId = (await host.checkpointEngine.backup(host, volume, ["ck_only_usage"])).snapshotId;
+
+        // 先读一次，让引擎把这次读数缓存住；再 forget，缓存必须作废，否则这里会拿到备份后的旧数。
+        const stored = await host.checkpointEngine.usage(host);
+        expect(stored.bytes).toBeGreaterThan(0);
+
+        await host.checkpointEngine.forget(host, snapshotId);
+        expect(await host.checkpointEngine.usage(host)).toEqual({ bytes: 0 });
+
+        await rejectionOf(runtime.inspectVolume(`${prefix}-checkpoints-usageforget`));
+      } finally {
+        await proxy?.stop();
+        await runtime.removeVolume(volume).catch(() => undefined);
+      }
+    },
+    LONG,
+  );
 });
