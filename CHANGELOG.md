@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### 修复
+
+- **更换远端检查点的文件夹、或清除远端后再设回同一位置，检查点会重新同步**（[#155](https://github.com/ArnoChenFx/minibox/issues/155) PR 2 的缺陷）：检查点的 `remoteSync` 只按目标 id 记「已复制」，`checkpoint.remote.set` 在同一目标上改文件夹、`checkpoint.remote.clear` 清除远端时都没有碰它，于是记录仍被当作已同步，界面和列表还显示「已复制到 archive」，而新文件夹里什么都没有。现在 `set` 先读旧位置，目标 id 或文件夹变了就调用 `CheckpointRemoteSync.forgetMarks`，清掉该宿主机所有记录上属于旧目标的 `remoteSync` 和对应的 `remoteFailure`；`clear` 对旧目标同样清掉。位置没变（再保存一次同样的值）时不清。清除时连内存里的重试退避一起清掉，下一次同步不会被旧位置的失败挡住。复制只追加、靠 restic 的 `original` 判重，重同步最坏只多一次幂等的 copy；记录的磁盘结构、API 响应和 OpenAPI 未变。测试：`tests/checkpoint-remote-sync.test.ts` 新增三条（换文件夹后重新待同步并复制到新文件夹、清除后设回同一位置仍是待同步、只再保存同样位置时标记不变），三条负对照各自撤掉守卫后对应用例都变红。未验证：真实 restic 在换文件夹后重复 copy 的行为（2a 的探针只在 fake engine 上证明过幂等）。
+
 ## [0.7.3] - 2026-10-31
 
 ### 修复
