@@ -191,6 +191,23 @@ describe.skipIf(!executablePath)("the host page's remote checkpoint repository (
         return { scroll: doc.documentElement.scrollWidth, client: doc.documentElement.clientWidth };
       });
       expect(width.scroll).toBeLessThanOrEqual(width.client);
+      // The column headers are gone on a phone, so the two values name themselves.
+      const labels = await page.evaluate(() => {
+        interface El {
+          getBoundingClientRect(): unknown;
+        }
+        interface W {
+          document: { querySelector(selector: string): El | null };
+          getComputedStyle(element: El, pseudo: string): { content: string };
+        }
+        const w = globalThis as unknown as W;
+        const content = (selector: string) => {
+          const element = w.document.querySelector(selector);
+          return element ? w.getComputedStyle(element, "::before").content : null;
+        };
+        return [content("[data-remote-last]"), content("[data-remote-pending]")];
+      });
+      expect(labels).toEqual(['"Last sync"', '"Pending"']);
       const card = boxOf(await page.locator("#stHostRemote").boundingBox());
       expect(card).not.toBeNull();
       if (card) {

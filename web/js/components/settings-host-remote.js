@@ -78,8 +78,8 @@ function rowHtml(host, remote, targets, checkpoints) {
   return `<tr data-host-remote="${esc(host.id)}">
     <td class="host-remote-host"><strong>${esc(host.name)}</strong> <span class="subtle mono">${esc(host.id)}</span>${agent}</td>
     <td class="host-remote-repo">${repo}${missing}</td>
-    <td class="host-remote-last" data-remote-last>${last}</td>
-    <td class="host-remote-pending num" data-remote-pending>${pending}</td>
+    <td class="host-remote-last" data-remote-last data-label="${esc(t("st.hostRemoteColLast"))}">${last}</td>
+    <td class="host-remote-pending num" data-remote-pending data-label="${esc(t("st.hostRemoteColPending"))}">${pending}</td>
     <td class="host-remote-actions"><div class="actions">${actions}</div></td>
   </tr>`;
 }

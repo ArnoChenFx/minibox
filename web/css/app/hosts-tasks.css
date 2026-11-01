@@ -567,6 +567,15 @@
     justify-self: end;
     font-size: 12px;
   }
+  /* The column header is gone on a phone, so each value names itself above it, as the volume cards do. */
+  .table.host-remote-table td[data-label]::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 3px;
+    color: var(--text-3);
+    font-size: 12px;
+    font-weight: 400;
+  }
   .host-remote-actions {
     grid-area: actions;
   }
