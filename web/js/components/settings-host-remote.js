@@ -1,4 +1,5 @@
 import { api, enc } from "../lib/api.js";
+import { forgetOnlyHosts } from "../lib/checkpoint-remotes.js";
 import { esc } from "../lib/dom.js";
 import { dateTime, relTime } from "../lib/format.js";
 import { t } from "../lib/i18n.js";
@@ -211,6 +212,7 @@ async function clearRemote(button, view, hosts) {
       return;
     }
     toast(t("st.hostRemoteCleared"), { message: name });
+    forgetOnlyHosts();
     await loadHostRemote(view, hosts);
   });
 }
@@ -290,6 +292,7 @@ function openRemoteDialog(view, host, remote, targets, hosts, checkpoints, check
       }
       close();
       toast(t("st.hostRemoteSaved"), { message: host.name });
+      forgetOnlyHosts();
       await loadHostRemote(view, hosts);
     }),
   );
@@ -310,6 +313,7 @@ function openRemoteDialog(view, host, remote, targets, hosts, checkpoints, check
       }
       close();
       toast(t("st.hostRemoteCleared"), { message: host.name });
+      forgetOnlyHosts();
       await loadHostRemote(view, hosts);
     }),
   );
