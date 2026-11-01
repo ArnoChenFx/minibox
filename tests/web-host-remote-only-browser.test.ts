@@ -251,4 +251,41 @@ describe.skipIf(!executablePath)("a host whose checkpoints are kept only on the 
     },
     TIMEOUT_MS,
   );
+
+  test(
+    "a record only in the recycle bin still locks the mode and clear, and the dialog counts it",
+    async () => {
+      if (!app) throw new Error("the app is not running");
+      const host = app.hosts.get();
+      const record = host.checkpoints.list().find((checkpoint) => checkpoint.hostId === "local");
+      if (!record) throw new Error("the seeded checkpoint is gone");
+      const now = new Date().toISOString();
+      host.checkpoints.write({
+        ...record,
+        trash: {
+          kind: "box",
+          sourceId: "bx_abcdefgh",
+          sourceName: "deleted",
+          deletedAt: now,
+          expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
+        },
+        updatedAt: now,
+      });
+      // The page's checkpoint list leaves a recycle bin entry out, so only the read's count can lock the controls.
+      await page.reload();
+      await page.waitForSelector('#stHostRemote [data-host-remote="local"]');
+      await webExpect(row()).toContainText("Only remote");
+      await webExpect(row().locator("[data-remote-clear]")).toBeDisabled();
+
+      await row().locator("[data-remote-edit]").click();
+      await webExpect(dialog()).toBeVisible();
+      await webExpect(dialog().locator('select[name="mode"]')).toBeDisabled();
+      await webExpect(dialog().locator('select[name="targetId"]')).toBeDisabled();
+      await webExpect(dialog().locator("#stHostRemoteRecords")).toContainText("1 checkpoint records");
+      await webExpect(dialog().locator("#stHostRemoteClear")).toBeDisabled();
+      await dialog().getByRole("button", { name: "Cancel" }).click();
+      await webExpect(dialog()).toHaveCount(0);
+    },
+    TIMEOUT_MS,
+  );
 });

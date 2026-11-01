@@ -317,6 +317,27 @@ function runConsole<T>(language: string, fixtures: unknown, body: string): T {
   return JSON.parse(run.stdout.trim().split("\n").at(-1) ?? "null") as T;
 }
 
+/** Runs a console script against a stubbed fetch that answers the host list and one host's remote read. */
+function withRemoteStub(body: string[]): string {
+  return [
+    ...browserGlobals("en-US"),
+    `globalThis.fetch = async (path) => {
+      if (path === "/api/hosts") {
+        return { ok: true, status: 200, text: async () => JSON.stringify({ hosts: [{ id: "local", name: "Local", transport: "local" }] }) };
+      }
+      return globalThis.remoteReply(path);
+    };`,
+    ...body,
+  ].join("\n");
+}
+
+/** Runs a script in a fresh process and reads the JSON its last line printed. */
+function runScript<T>(script: string): T {
+  const run = spawnSync(process.execPath, ["-e", script], { encoding: "utf8", timeout: 20_000 });
+  if (run.status !== 0) throw new Error(run.stderr);
+  return JSON.parse(run.stdout.trim().split("\n").at(-1) ?? "null") as T;
+}
+
 function checkpoint(overrides: Record<string, unknown>) {
   const workspace = {
     volumeId: "vol_w",
@@ -1164,5 +1185,53 @@ describe("reading which hosts keep checkpoints only on the remote", () => {
       if (run.status !== 0) throw new Error(run.stderr);
       expect(JSON.parse(run.stdout.trim().split("\n").at(-1) ?? "null")).toEqual([]);
     }
+  });
+
+  test("one host is read once, concurrent reads share the request, and the answer is reused for 30 seconds", () => {
+    const script = withRemoteStub([
+      `let calls = 0;`,
+      `globalThis.remoteReply = async () => { calls += 1; return { ok: true, status: 200, text: async () => JSON.stringify({ remote: { mode: "only" }, records: 1 }) }; };`,
+      `const { refreshHosts } = await import(${JSON.stringify(join(WEB, "js", "lib", "hosts.js"))});`,
+      `const { onlyHostsNow, forgetOnlyHosts } = await import(${JSON.stringify(join(WEB, "js", "lib", "checkpoint-remotes.js"))});`,
+      `await refreshHosts();`,
+      `let clock = 1_000;`,
+      `const read = async () => [...await onlyHostsNow(() => clock)];`,
+      `const both = await Promise.all([read(), read()]);`,
+      `const afterBoth = calls;`,
+      `const reused = await read();`,
+      `const afterReuse = calls;`,
+      `forgetOnlyHosts();`,
+      `const afterForget = await read();`,
+      `const afterForgetCalls = calls;`,
+      `clock += 30_000;`,
+      `const afterTtl = await read();`,
+      `const afterTtlCalls = calls;`,
+      `console.log(JSON.stringify({ both, afterBoth, reused, afterReuse, afterTtl, afterTtlCalls, afterForget, afterForgetCalls }));`,
+    ]);
+    expect(runScript(script)).toEqual({
+      both: [["local"], ["local"]],
+      afterBoth: 1,
+      reused: ["local"],
+      afterReuse: 1,
+      afterForget: ["local"],
+      afterForgetCalls: 2,
+      afterTtl: ["local"],
+      afterTtlCalls: 3,
+    });
+  });
+
+  test("a failed read is not cached and leaves the host out", () => {
+    const script = withRemoteStub([
+      `let calls = 0;`,
+      `globalThis.remoteReply = async () => { calls += 1; return { ok: false, status: 500, text: async () => "" }; };`,
+      `const { refreshHosts } = await import(${JSON.stringify(join(WEB, "js", "lib", "hosts.js"))});`,
+      `const { onlyHostsNow } = await import(${JSON.stringify(join(WEB, "js", "lib", "checkpoint-remotes.js"))});`,
+      `await refreshHosts();`,
+      `const clock = 1_000;`,
+      `const first = [...await onlyHostsNow(() => clock)];`,
+      `const second = [...await onlyHostsNow(() => clock)];`,
+      `console.log(JSON.stringify({ first, second, calls }));`,
+    ]);
+    expect(runScript(script)).toEqual({ first: [], second: [], calls: 2 });
   });
 });

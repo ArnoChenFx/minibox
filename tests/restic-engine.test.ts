@@ -142,6 +142,17 @@ describe("ResticEngine backup", () => {
     expect(s.helpers.at(-1)?.secrets).toEqual([{ name: "repo.key", value: key }]);
   });
 
+  test("the repository password is handed to the redactor once, even when another backup reads it again", async () => {
+    const s = scripted();
+    await s.rt.createVolume("src", {});
+    const seen: string[] = [];
+    const engine = new ResticEngine({ dataDir: s.dataDir, onSecret: (value) => seen.push(value) });
+    await engine.backup(s.host, "src", []);
+    await engine.backup(s.host, "src", []);
+    const key = readFileSync(join(s.dataDir, "secrets", "checkpoint-repo.key"), "utf8").trim();
+    expect(seen).toEqual([key]);
+  });
+
   test("a partial backup (exit 3) is a failure with restic's output, not a snapshot", async () => {
     const s = scripted();
     await s.rt.createVolume("src", {});
@@ -209,6 +220,24 @@ describe("ResticEngine backup", () => {
     await Promise.all([engine.backup(host, "src", []), engine.backup(host, "other", [])]);
     expect(peak).toBe(1);
     expect(trace.length).toBeGreaterThan(2);
+  });
+});
+
+describe("ResticEngine usage", () => {
+  test("a repository removed behind the engine reads as empty, and the next call probes it again", async () => {
+    const s = scripted();
+    await s.rt.createVolume("src", {});
+    const engine = new ResticEngine({ dataDir: s.dataDir });
+    await engine.backup(s.host, "src", []);
+    expect(commandsOf(s.helpers)).toEqual(["cat", "init", "backup"]);
+
+    // The repository was there for `cat config`, then a `stats` finds it gone. That is zero bytes, not an error.
+    s.next("stats", { exitCode: 10, logs: "Fatal: repository does not exist" });
+    expect(await engine.usage(s.host)).toEqual({ bytes: 0 });
+    s.next("stats", { exitCode: 0, logs: '{"total_size":42}' });
+    expect(await engine.usage(s.host)).toEqual({ bytes: 42 });
+    // The forgotten `ready` mark makes the second reading open the repository again before it asks for its size.
+    expect(commandsOf(s.helpers)).toEqual(["cat", "init", "backup", "stats", "cat", "stats"]);
   });
 });
 

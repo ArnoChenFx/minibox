@@ -4141,7 +4141,7 @@
     "path": "/api/hosts/local/checkpoint-remote",
     "status": 200,
     "contentType": "application/json; charset=utf-8",
-    "body": "{\"remote\":null}"
+    "body": "{\"remote\":null,\"records\":17}"
   },
   {
     "step": "set a remote checkpoint repository on a missing target",

@@ -30871,10 +30871,17 @@
                           "type": "null"
                         }
                       ]
+                    },
+                    "records": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991,
+                      "description": "How many checkpoint records the host holds, recycle bin entries included. A bin entry still names a snapshot in the repository it was taken in, so it locks a remote-only host's position."
                     }
                   },
                   "required": [
-                    "remote"
+                    "remote",
+                    "records"
                   ],
                   "additionalProperties": false
                 }
