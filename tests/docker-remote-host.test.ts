@@ -514,7 +514,11 @@ describe.skipIf(!enabled)("a second engine over a Unix socket, against a real en
       const seen: unknown[] = [];
       socket.addEventListener("message", (event) => seen.push(event.data));
       // The upstream attaches after the socket opens, and a message that arrives before it is dropped, so resend.
-      const poke = setInterval(() => socket.send("ping"), 20);
+      // A socket that is still connecting throws InvalidStateError from send, and a throw inside a timer ends the test
+      // before its finally block runs, which leaks the log sink the test installed.
+      const poke = setInterval(() => {
+        if (socket.readyState === WebSocket.OPEN) socket.send("ping");
+      }, 20);
       try {
         await until(async () => (seen.includes("echo:ping") ? true : null), "the first echo", 30_000);
       } finally {

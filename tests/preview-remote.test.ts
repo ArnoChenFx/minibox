@@ -488,7 +488,11 @@ describe("a preview of a box on another host", () => {
 
       const echoed = new Promise<unknown>((resolve) => socket.addEventListener("message", (e) => resolve(e.data)));
       // The upstream attaches after the socket opens, and a message that arrives before it is dropped, so resend.
-      const poke = setInterval(() => socket.send("ping"), 20);
+      // A socket that is still connecting throws InvalidStateError from send, and a throw inside a timer ends the test
+      // before its finally block runs, which leaks the log sink the test installed.
+      const poke = setInterval(() => {
+        if (socket.readyState === WebSocket.OPEN) socket.send("ping");
+      }, 20);
       try {
         expect(await echoed).toBe("echo:ping");
       } finally {
@@ -519,7 +523,11 @@ describe("a preview of a box on another host", () => {
         headers: { cookie: on.cookie },
       });
       const echoed = new Promise<unknown>((resolve) => socket.addEventListener("message", (e) => resolve(e.data)));
-      const poke = setInterval(() => socket.send("ping"), 20);
+      // A socket that is still connecting throws InvalidStateError from send, and a throw inside a timer ends the test
+      // before its finally block runs, which leaks the log sink the test installed.
+      const poke = setInterval(() => {
+        if (socket.readyState === WebSocket.OPEN) socket.send("ping");
+      }, 20);
       try {
         await opened(socket);
         expect(await echoed).toBe("echo:ping");
