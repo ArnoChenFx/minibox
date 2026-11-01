@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import type { App } from "../src/app";
+import { remoteRepoPassword } from "../src/checkpoints/remote";
 import { CHECKPOINT_VERSION, type CheckpointRecord } from "../src/checkpoints/types";
 import { targetsPath } from "../src/data-dir";
 import type { HostCtx } from "../src/host/registry";
@@ -12,10 +13,12 @@ import { setLogSink } from "../src/lib/logger";
 import { OPERATIONS } from "../src/operations/registry";
 import type { OperationContext } from "../src/operations/types";
 import { OWNER } from "../src/operations/types";
+import { SecretStore } from "../src/secrets/store";
 import * as boxes from "../src/services/boxes";
 import { REMOTE_SYNC_FAILURE_THRESHOLD } from "../src/services/checkpoint-remote";
 import { copyCheckpoint, exportCheckpoint, importPackage } from "../src/services/checkpoint-transfer";
 import { deleteCheckpoint, takeCheckpoint } from "../src/services/checkpoints";
+import { TargetService } from "../src/services/targets";
 import { newBoxId } from "../src/specs/revision";
 import { provisionDefaultMounts } from "../src/volumes/provision";
 import { createTestApp, rejectionOf, silenceLogs } from "./support/app";
@@ -432,6 +435,50 @@ describe("the remote repository operations", () => {
       status: 404,
       key: "checkpoint_remote_not_set",
     });
+  });
+});
+
+describe("the remote repository password and the redactor", () => {
+  test("reading a host's repository twice hands the redactor its password once", async () => {
+    const inst = instanceOf();
+    const targetId = s3Target(inst);
+    inst.app.targets.setRemote("local", { targetId });
+    const password = remoteRepoPassword(inst.dataDir, "local");
+    const seen: string[] = [];
+    // A service of its own over the same data, so the test sees every value this service hands over. The app's own
+    // service is not the one under test here.
+    const service = new TargetService({
+      dataDir: inst.dataDir,
+      secrets: new SecretStore(inst.dataDir),
+      checkpoints: inst.host.checkpoints,
+      backups: inst.app.backups,
+      onSecret: (value) => seen.push(value),
+    });
+    service.start();
+    await service.remoteRepository("local");
+    await service.remoteRepository("local");
+    expect(seen.filter((value) => value === password)).toEqual([password]);
+  });
+
+  test("the app masks the host's remote password in a task log", async () => {
+    const inst = instanceOf();
+    const targetId = s3Target(inst);
+    inst.app.targets.setRemote("local", { targetId });
+    await inst.app.targets.remoteRepository("local");
+    const password = remoteRepoPassword(inst.dataDir, "local");
+    const started = inst.app.tasks.begin({
+      op: "checkpoint.remote.sync",
+      summary: "redaction probe",
+      hostId: "local",
+      principal: OWNER,
+      source: "rest",
+    });
+    if (started.duplicate) throw new Error("the redaction task was not started");
+    started.handle.log(`restic says: ${password}`);
+    inst.app.tasks.finish(started.id, { status: "succeeded" });
+    const task = inst.app.tasks.get(started.id, { output: true });
+    expect(task?.output).toContain("***");
+    expect(task?.output).not.toContain(password);
   });
 });
 

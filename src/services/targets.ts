@@ -320,6 +320,8 @@ export class TargetService {
   private readonly store: TargetStore;
   private readonly busy = new Set<string>();
   private readonly pulling = new Set<string>();
+  /** The credential values already handed to the redactor, so a value read on every copy is registered once. */
+  private readonly reportedSecrets = new Set<string>();
 
   constructor(private readonly options: TargetServiceOptions) {
     this.store = new TargetStore(options.dataDir);
@@ -341,7 +343,7 @@ export class TargetService {
         continue;
       }
       const value = this.options.secrets.value(meta.name);
-      if (value !== null) this.options.onSecret(value);
+      if (value !== null) this.rememberSecret(value);
     }
   }
 
@@ -451,6 +453,7 @@ export class TargetService {
     if (!target) throw notFound(msg("target_not_found", { id: remote.targetId }));
     const path = remotePathFor(remote.path, hostId);
     const password = remoteRepoPassword(this.options.dataDir, hostId);
+    this.rememberSecret(password);
     const secret = (field: TargetSecretField) => this.options.secrets.value(targetSecretName(target.id, field));
     if (target.kind === "s3") {
       const accessKeyId = secret("access-key");
@@ -575,7 +578,7 @@ export class TargetService {
     try {
       for (const { field, value } of credentialsOf(draft)) {
         this.options.secrets.set(targetSecretName(id, field), value, now);
-        this.options.onSecret(value);
+        this.rememberSecret(value);
       }
       const record = recordOf(id, name, draft, now);
       this.store.put(record);
@@ -851,6 +854,13 @@ export class TargetService {
       createdAt: record.createdAt,
       updatedAt: record.updatedAt,
     };
+  }
+
+  /** Hands a credential to the redactor once, however often a copy reads it again. */
+  private rememberSecret(value: string): void {
+    if (this.reportedSecrets.has(value)) return;
+    this.reportedSecrets.add(value);
+    this.options.onSecret(value);
   }
 
   private dropSecrets(id: string): void {

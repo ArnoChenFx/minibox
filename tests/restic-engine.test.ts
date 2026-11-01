@@ -142,6 +142,17 @@ describe("ResticEngine backup", () => {
     expect(s.helpers.at(-1)?.secrets).toEqual([{ name: "repo.key", value: key }]);
   });
 
+  test("the repository password is handed to the redactor once, even when another backup reads it again", async () => {
+    const s = scripted();
+    await s.rt.createVolume("src", {});
+    const seen: string[] = [];
+    const engine = new ResticEngine({ dataDir: s.dataDir, onSecret: (value) => seen.push(value) });
+    await engine.backup(s.host, "src", []);
+    await engine.backup(s.host, "src", []);
+    const key = readFileSync(join(s.dataDir, "secrets", "checkpoint-repo.key"), "utf8").trim();
+    expect(seen).toEqual([key]);
+  });
+
   test("a partial backup (exit 3) is a failure with restic's output, not a snapshot", async () => {
     const s = scripted();
     await s.rt.createVolume("src", {});
