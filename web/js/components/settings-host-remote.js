@@ -1,4 +1,5 @@
 import { api, enc } from "../lib/api.js";
+import { forgetOnlyHosts } from "../lib/checkpoint-remotes.js";
 import { esc } from "../lib/dom.js";
 import { dateTime, relTime } from "../lib/format.js";
 import { t } from "../lib/i18n.js";
@@ -28,11 +29,13 @@ function pendingCount(checkpoints, hostId, targetId) {
 }
 
 /**
- * The checkpoint records a host holds, as the page already read them. The list leaves out recycle bin entries, which
- * the server counts too; the dialog says what it can see, and a save the server refuses says why.
+ * The checkpoint records a host holds. The remote read counts them on the server, recycling bin entries included; an older
+ * reply without `records` falls back to the page's checkpoint list, which leaves those entries out. The dialog says what
+ * it can see, and a save the server refuses says why.
  */
-function recordCount(checkpoints, hostId) {
-  return checkpoints.filter((checkpoint) => checkpoint.hostId === hostId).length;
+function recordCount(checkpoints, hostId, records) {
+  const count = records?.get(hostId);
+  return typeof count === "number" ? count : checkpoints.filter((checkpoint) => checkpoint.hostId === hostId).length;
 }
 
 /** A target the form offers: only S3 and SFTP can hold a checkpoint repository. */
@@ -48,23 +51,24 @@ async function readRemotes(hosts) {
     api("/api/checkpoints"),
     ...hosts.map((host) =>
       api(`/api/hosts/${enc(host.id)}/checkpoint-remote`).then(
-        (reply) => reply.remote,
-        () => null,
+        (reply) => ({ remote: reply?.remote ?? null, records: reply?.records }),
+        () => ({ remote: null, records: undefined }),
       ),
     ),
   ]);
   return {
     targets,
     checkpoints,
-    remotes: new Map(hosts.map((host, index) => [host.id, replies[index] ?? null])),
+    remotes: new Map(hosts.map((host, index) => [host.id, replies[index]?.remote ?? null])),
+    records: new Map(hosts.map((host, index) => [host.id, replies[index]?.records])),
   };
 }
 
 /** One host's row: where its snapshots go, when they last went, what waits, and the controls that change it. */
-function rowHtml(host, remote, targets, checkpoints) {
+function rowHtml(host, remote, targets, checkpoints, records) {
   const target = remote ? targets.find((item) => item.id === remote.targetId) : undefined;
   const only = remote?.mode === "only";
-  const locked = only && recordCount(checkpoints, host.id) > 0;
+  const locked = only && recordCount(checkpoints, host.id, records) > 0;
   const mode = only ? ` <span class="badge badge-accent">${esc(t("st.hostRemoteOnlyBadge"))}</span>` : "";
   const repo = remote
     ? `<strong>${esc(remote.targetName)}</strong> <span class="badge">${esc(t(`st.targetKind.${remote.kind}`))}</span>${mode}
@@ -106,7 +110,9 @@ function bodyHtml(hosts, data) {
   if (hosts.length === 0) {
     return `<tr><td colspan="${COLUMNS}">${emptyState({ iconName: "server", title: t("st.hostRemoteNoHosts") })}</td></tr>`;
   }
-  return hosts.map((host) => rowHtml(host, data.remotes.get(host.id) ?? null, data.targets, data.checkpoints)).join("");
+  return hosts
+    .map((host) => rowHtml(host, data.remotes.get(host.id) ?? null, data.targets, data.checkpoints, data.records))
+    .join("");
 }
 
 /**
@@ -155,7 +161,7 @@ function bind(card, view, hosts, data) {
       const id = button.dataset.remoteSet ?? button.dataset.remoteEdit;
       const host = hostOf(hosts, id);
       if (!host) return;
-      openRemoteDialog(view, host, data.remotes.get(id) ?? null, data.targets, hosts, data.checkpoints);
+      openRemoteDialog(view, host, data.remotes.get(id) ?? null, data.targets, hosts, data.checkpoints, data.records);
     });
   }
   for (const button of card.querySelectorAll("[data-remote-sync]")) {
@@ -206,6 +212,7 @@ async function clearRemote(button, view, hosts) {
       return;
     }
     toast(t("st.hostRemoteCleared"), { message: name });
+    forgetOnlyHosts();
     await loadHostRemote(view, hosts);
   });
 }
@@ -215,13 +222,13 @@ async function clearRemote(button, view, hosts) {
  * hold a restic repository. The folder is the base the server appends the host id to. A host with checkpoint records
  * cannot move to or from the only-remote mode, and one already there cannot change its position or be cleared.
  */
-function openRemoteDialog(view, host, remote, targets, hosts, checkpoints) {
+function openRemoteDialog(view, host, remote, targets, hosts, checkpoints, checkpointRecords) {
   const eligible = targets.filter(usableTarget);
   const selected = remote?.targetId ?? eligible[0]?.id ?? "";
   const folder = remote ? basePathOf(remote.path, host.id, remote.kind) : "";
   const mode = remote?.mode ?? "sync";
   const only = mode === "only";
-  const records = recordCount(checkpoints ?? [], host.id);
+  const records = recordCount(checkpoints ?? [], host.id, checkpointRecords);
   const locked = records > 0;
   // The mode can only change when the host has no records, and a host already in only mode is frozen while it has any.
   const positionLocked = only && locked;
@@ -285,6 +292,7 @@ function openRemoteDialog(view, host, remote, targets, hosts, checkpoints) {
       }
       close();
       toast(t("st.hostRemoteSaved"), { message: host.name });
+      forgetOnlyHosts();
       await loadHostRemote(view, hosts);
     }),
   );
@@ -305,6 +313,7 @@ function openRemoteDialog(view, host, remote, targets, hosts, checkpoints) {
       }
       close();
       toast(t("st.hostRemoteCleared"), { message: host.name });
+      forgetOnlyHosts();
       await loadHostRemote(view, hosts);
     }),
   );

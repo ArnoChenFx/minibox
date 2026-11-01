@@ -1,9 +1,11 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import type { App } from "../src/app";
+import { remoteRepoPassword } from "../src/checkpoints/remote";
+import type { CheckpointStore } from "../src/checkpoints/store";
 import { CHECKPOINT_VERSION, type CheckpointRecord } from "../src/checkpoints/types";
 import { targetsPath } from "../src/data-dir";
 import type { HostCtx } from "../src/host/registry";
@@ -12,10 +14,12 @@ import { setLogSink } from "../src/lib/logger";
 import { OPERATIONS } from "../src/operations/registry";
 import type { OperationContext } from "../src/operations/types";
 import { OWNER } from "../src/operations/types";
+import { SecretStore } from "../src/secrets/store";
 import * as boxes from "../src/services/boxes";
-import { REMOTE_SYNC_FAILURE_THRESHOLD } from "../src/services/checkpoint-remote";
+import { CheckpointRemoteSync, REMOTE_SYNC_FAILURE_THRESHOLD } from "../src/services/checkpoint-remote";
 import { copyCheckpoint, exportCheckpoint, importPackage } from "../src/services/checkpoint-transfer";
 import { deleteCheckpoint, takeCheckpoint } from "../src/services/checkpoints";
+import { TargetService } from "../src/services/targets";
 import { newBoxId } from "../src/specs/revision";
 import { provisionDefaultMounts } from "../src/volumes/provision";
 import { createTestApp, rejectionOf, silenceLogs } from "./support/app";
@@ -435,6 +439,80 @@ describe("the remote repository operations", () => {
   });
 });
 
+describe("the remote repository password and the redactor", () => {
+  test("reading a host's repository twice hands the redactor its password once", async () => {
+    const inst = instanceOf();
+    const targetId = s3Target(inst);
+    inst.app.targets.setRemote("local", { targetId });
+    const password = remoteRepoPassword(inst.dataDir, "local");
+    const seen: string[] = [];
+    // A service of its own over the same data, so the test sees every value this service hands over. The app's own
+    // service is not the one under test here.
+    const service = new TargetService({
+      dataDir: inst.dataDir,
+      secrets: new SecretStore(inst.dataDir),
+      checkpoints: inst.host.checkpoints,
+      backups: inst.app.backups,
+      onSecret: (value) => seen.push(value),
+    });
+    service.start();
+    await service.remoteRepository("local");
+    await service.remoteRepository("local");
+    expect(seen.filter((value) => value === password)).toEqual([password]);
+  });
+
+  test("the app masks the host's remote password in a task log", async () => {
+    const inst = instanceOf();
+    const targetId = s3Target(inst);
+    inst.app.targets.setRemote("local", { targetId });
+    await inst.app.targets.remoteRepository("local");
+    const password = remoteRepoPassword(inst.dataDir, "local");
+    const started = inst.app.tasks.begin({
+      op: "checkpoint.remote.sync",
+      summary: "redaction probe",
+      hostId: "local",
+      principal: OWNER,
+      source: "rest",
+    });
+    if (started.duplicate) throw new Error("the redaction task was not started");
+    started.handle.log(`restic says: ${password}`);
+    inst.app.tasks.finish(started.id, { status: "succeeded" });
+    const task = inst.app.tasks.get(started.id, { output: true });
+    expect(task?.output).toContain("***");
+    expect(task?.output).not.toContain(password);
+  });
+});
+
+describe("the copy a removed host still had pending", () => {
+  test("forgetHost clears the timer and leaves nothing behind that a later request would join", () => {
+    // A service of its own, so no other timer of the app can answer for this one.
+    const sync = new CheckpointRemoteSync(
+      { list: () => [] },
+      {} as CheckpointStore,
+      { remoteOf: () => ({ targetId: "tgt_1", mode: "sync" }) } as unknown as TargetService,
+    );
+    const scheduled = spyOn(globalThis, "setTimeout");
+    const cleared = spyOn(globalThis, "clearTimeout");
+    try {
+      sync.request("local");
+      expect(scheduled).toHaveBeenCalledTimes(1);
+      const timer = scheduled.mock.results[0]?.value;
+      sync.forgetHost("local");
+      expect(cleared).toHaveBeenCalledWith(timer);
+
+      // The host is gone from the pending map too: a request made after forgetting schedules a copy of its own instead of
+      // joining one that will never run.
+      scheduled.mockClear();
+      sync.request("local");
+      expect(scheduled).toHaveBeenCalledTimes(1);
+    } finally {
+      cleared.mockRestore();
+      scheduled.mockRestore();
+      sync.stop();
+    }
+  });
+});
+
 describe("the sync marks when the remote position changes", () => {
   test("a new folder on the same target makes the checkpoint pending again and copies it there", async () => {
     const inst = instanceOf();
@@ -687,7 +765,10 @@ describe("a streak of failed copies", () => {
   test("reading a configured remote reports the count and the last failure, and an unset remote keeps its old shape", async () => {
     const inst = instanceOf();
     const ctx = ctxOf(inst.app);
-    expect(await inst.app.operations.run("checkpoint.remote.get", ctx, { id: "local" })).toEqual({ remote: null });
+    expect(await inst.app.operations.run("checkpoint.remote.get", ctx, { id: "local" })).toEqual({
+      remote: null,
+      records: 0,
+    });
 
     const targetId = s3Target(inst);
     inst.app.targets.setRemote("local", { targetId });
@@ -713,9 +794,12 @@ describe("a streak of failed copies", () => {
 });
 
 /** The remote of a test instance, as the read operation reports it. */
-async function remoteOf(inst: Instance): Promise<{ remote: { mode: string; targetId: string; path: string } | null }> {
+async function remoteOf(
+  inst: Instance,
+): Promise<{ remote: { mode: string; targetId: string; path: string } | null; records: number }> {
   return (await inst.app.operations.run("checkpoint.remote.get", ctxOf(inst.app), { id: "local" })) as {
     remote: { mode: string; targetId: string; path: string } | null;
+    records: number;
   };
 }
 
@@ -797,6 +881,45 @@ describe("a host that keeps its checkpoints only on the remote", () => {
     );
   });
 
+  test("the read reports the host's records, recycling bin included, with or without a remote", async () => {
+    const inst = instanceOf();
+    const ctx = ctxOf(inst.app);
+    // An unset remote keeps the shape of its old answer and still counts the host's records.
+    expect(await inst.app.operations.run("checkpoint.remote.get", ctx, { id: "local" })).toEqual({
+      remote: null,
+      records: 0,
+    });
+
+    const targetId = s3Target(inst);
+    await saveRemote(inst, { targetId, mode: "only" });
+    const { record } = await checkpointOf(inst, "src");
+    const counted = (await inst.app.operations.run("checkpoint.remote.get", ctx, { id: "local" })) as {
+      records: number;
+    };
+    expect(counted.records).toBe(1);
+
+    const now = new Date().toISOString();
+    inst.host.checkpoints.write({
+      ...storedRecord(inst, record.id),
+      trash: {
+        kind: "box",
+        sourceId: "bx_abcdefgh",
+        sourceName: "deleted",
+        deletedAt: now,
+        expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
+      },
+    });
+    // The page's own checkpoint list leaves the recycling bin entry out, so the read has to count it.
+    const listed = (await inst.app.operations.run("checkpoint.list", ctx, {})) as { checkpoints: { id: string }[] };
+    expect(listed.checkpoints.map((checkpoint) => checkpoint.id)).not.toContain(record.id);
+    const trashed = (await inst.app.operations.run("checkpoint.remote.get", ctx, { id: "local" })) as {
+      remote: { mode: string } | null;
+      records: number;
+    };
+    expect(trashed.remote?.mode).toBe("only");
+    expect(trashed.records).toBe(1);
+  });
+
   test("a remote-only host cannot be moved or cleared with records, while a sync host still can", async () => {
     const inst = instanceOf();
     const targetId = s3Target(inst);
@@ -816,7 +939,7 @@ describe("a host that keeps its checkpoints only on the remote", () => {
     const moved = (await saveRemote(inst, { targetId, path: "elsewhere" })) as { remote: { path: string } };
     expect(moved.remote.path).toBe("elsewhere/local");
     inst.app.targets.clearRemote("local");
-    expect(await remoteOf(inst)).toEqual({ remote: null });
+    expect(await remoteOf(inst)).toEqual({ remote: null, records: 0 });
 
     // The same changes on a sync-mode host are not locked by its records.
     const sync = instanceOf();

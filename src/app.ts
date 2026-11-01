@@ -266,7 +266,11 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
   const bus = new Bus<AppTopics>();
   const pulse = new ActivityPulse();
   const checkpoints = new CheckpointStore(cfg.dataDir, { packageMaxBytes: cfg.checkpointPackageMaxMb * MB });
-  const checkpointEngine = deps.checkpointEngine ?? new ResticEngine({ dataDir: cfg.dataDir });
+  // Declared before the engine, so the engine can hand its repository password to the redactor. Token and target
+  // credentials are appended to this same array later.
+  const knownSecrets = [cfg.accessKey, ...(cfg.backupPassphrase ? [cfg.backupPassphrase] : [])];
+  const checkpointEngine =
+    deps.checkpointEngine ?? new ResticEngine({ dataDir: cfg.dataDir, onSecret: (value) => knownSecrets.push(value) });
   const multiHost = () => hosts.list().length > 1;
   const secrets = new SecretStore(cfg.dataDir);
   const egress = new EgressLog((hostId, note) => recordNote(hostId, "system", OWNER, note));
@@ -296,7 +300,6 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
     },
   );
   hosts.add(local);
-  const knownSecrets = [cfg.accessKey, ...(cfg.backupPassphrase ? [cfg.backupPassphrase] : [])];
   const redactor = createRedactor({ knownSecrets });
   const tokens = new TokenStore({
     file: tokensPath(cfg.dataDir),

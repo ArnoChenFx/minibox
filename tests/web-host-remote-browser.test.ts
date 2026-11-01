@@ -283,7 +283,7 @@ describe.skipIf(!executablePath)("the host page's remote checkpoint repository (
       await webExpect(row().locator("[data-remote-pending]")).toHaveText("—");
 
       const reply = await context?.request.get(`${consoleUrl}/api/hosts/local/checkpoint-remote`);
-      expect(await reply?.json()).toEqual({ remote: null });
+      expect(await reply?.json()).toMatchObject({ remote: null });
     },
     TIMEOUT_MS,
   );

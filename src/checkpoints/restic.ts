@@ -86,6 +86,8 @@ export interface ResticOptions {
   image?: string;
   /** The clock the usage cache reads, for tests. Defaults to `Date.now`. */
   now?: () => number;
+  /** Hands a credential to the redactor, so a reason restic prints never carries it. Called once per value. */
+  onSecret?: (value: string) => void;
 }
 
 /** A repository a host's helpers read and write: its restic options, the files those options name, and its environment. */
@@ -133,6 +135,8 @@ export class ResticEngine implements SnapshotEngine {
   private readonly queues = new Map<string, Promise<unknown>>();
   /** The repository identities whose `cat config` has answered since the engine started. */
   private readonly ready = new Set<string>();
+  /** Whether the local repository password has been handed to the redactor. */
+  private secretReported = false;
   /** Remote-only usage readings, by repository identity. Cleared when the repository changes. */
   private readonly usageCache = new Map<string, { bytes: number; at: number }>();
   private readonly now: () => number;
@@ -696,12 +700,23 @@ export class ResticEngine implements SnapshotEngine {
   private password(): string {
     const path = join(this.opts.dataDir, "secrets", KEY_FILE);
     const existing = readSecretFile(path);
-    if (existing) return existing;
+    if (existing) {
+      this.reportSecret(existing);
+      return existing;
+    }
     ensureDataDir(this.opts.dataDir);
     createSecretFile(path, randomBytes(32).toString("hex"));
     const created = readSecretFile(path);
     if (!created) throw new Error("could not create the checkpoint repository key");
+    this.reportSecret(created);
     return created;
+  }
+
+  /** Hands the repository password to the redactor once. A helper that reads it again reports nothing. */
+  private reportSecret(value: string): void {
+    if (this.secretReported) return;
+    this.secretReported = true;
+    this.opts.onSecret?.(value);
   }
 }
 
