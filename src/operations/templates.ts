@@ -32,9 +32,9 @@ import {
   buildBaseTemplate,
   deleteTemplate,
   editTemplate,
-  forkDraftSource,
-  forkOfficialTemplate,
-  forkTemplate,
+  duplicateDraftSource,
+  duplicateOfficialTemplate,
+  duplicateTemplate,
   holdingTemplate,
   holdingTemplateName,
   listTemplateDrafts,
@@ -231,7 +231,7 @@ function assertDraftNameFree(host: HostCtx, name: string): void {
 
 /**
  * Saves a template's source without building it. Nothing is pulled, cloned or built, so this answers at once and the
- * recipe file is all that is written. The name is held through `holdingTemplateName`, so a save, a build or a fork
+ * recipe file is all that is written. The name is held through `holdingTemplateName`, so a save, a build or a duplicate
  * cannot take it while this runs, and a name an image or a draft already holds is refused.
  */
 const templateDraftCreate = defineOperation({
@@ -315,14 +315,14 @@ const templateDraftList = defineOperation({
 });
 
 /** The official template `ref` names as a bare name or as its template tag, when it names one. */
-function officialForkOf(host: HostCtx, ref: string): OfficialTemplate | undefined {
+function officialDuplicateOf(host: HostCtx, ref: string): OfficialTemplate | undefined {
   const prefix = `${host.prefix}-template:`;
   const name = ref.startsWith(prefix) ? ref.slice(prefix.length) : ref;
   return NAME_RE.test(name) ? officialTemplate(name) : undefined;
 }
 
-const templateFork = defineOperation({
-  name: "template.fork",
+const templateDuplicate = defineOperation({
+  name: "template.duplicate",
   tag: "templates",
   summary: "Duplicate a template into a new one that can be changed on its own",
   kind: "write",
@@ -338,13 +338,13 @@ const templateFork = defineOperation({
       .meta({ description: "Host that holds the template to duplicate. Omitted, the first host that holds it." }),
   }),
   output: z.object({ template: PromotedTemplateSchema }),
-  rest: [{ method: "POST", path: "/api/templates/:ref/fork", body: true, query: ["host"], status: 201 }],
-  cli: "template fork",
+  rest: [{ method: "POST", path: "/api/templates/:ref/duplicate", body: true, query: ["host"], status: 201 }],
+  cli: "template duplicate",
   mcp: {
     toolset: "tools",
-    name: "fork_template",
+    name: "duplicate_template",
     description:
-      "Duplicate a template: save a copy under a new name that can be changed on its own while the original stays as it is. A template built from a Dockerfile, a repository, a build context or a devcontainer.json, the bundled base template, and an official template all copy their build source, setup command, forwarded ports and description into a template that is not built yet: nothing is built and no image is made, so the copy has no size and no creation time until rebuild_template builds it. An official template that no host has built yet can be duplicated too, from a copy of the Dockerfile MiniBox ships for it; a Dockerfile that cannot be read fails the call with template_source_unreadable. A template saved from a box has no build source, so its copy is an image copy and cannot be rebuilt. Optional description replaces the one copied. Optional host names the host that holds the template; without it the first host that holds it. Owner only. Returns the new template's ref and name. The operation, route and tool are still named fork.",
+      "Duplicate a template: save a copy under a new name that can be changed on its own while the original stays as it is. A template built from a Dockerfile, a repository, a build context or a devcontainer.json, the bundled base template, and an official template all copy their build source, setup command, forwarded ports and description into a template that is not built yet: nothing is built and no image is made, so the copy has no size and no creation time until rebuild_template builds it. An official template that no host has built yet can be duplicated too, from a copy of the Dockerfile MiniBox ships for it; a Dockerfile that cannot be read fails the call with template_source_unreadable. A template saved from a box has no build source, so its copy is an image copy and cannot be rebuilt. Optional description replaces the one copied. Optional host names the host that holds the template; without it the first host that holds it. Owner only. Returns the new template's ref and name.",
   },
   hostFor: async (ctx, input) => {
     if (input.host !== undefined) return hostById(ctx, input.host);
@@ -364,12 +364,12 @@ const templateFork = defineOperation({
       throw e;
     });
     if (image) return { kind: "image", source: image } as const;
-    const official = officialForkOf(host, input.ref);
+    const official = officialDuplicateOf(host, input.ref);
     if (!official) throw notFound(msg("template_not_found"));
     return { kind: "official", official } as const;
   },
   beforeTask: async ({ host }, input) => assertTemplateNameAvailable(host, input.name),
-  activity: { action: () => "template.fork", target: (input) => input.name },
+  activity: { action: () => "template.duplicate", target: (input) => input.name },
   audit: {
     target: (input) => ({ kind: "template", name: input.name }),
     detail: (input, source) => ({
@@ -380,15 +380,15 @@ const templateFork = defineOperation({
   run: async ({ host, principal }, input, target) => {
     // A duplicate that saves a draft holds its name before it is built, so the names MiniBox builds itself stay out of
     // reach. The image copy a template saved from a box still makes takes no draft, so that path does not check.
-    if (target.kind === "official" || forkDraftSource(host, target.source, input.name) !== null) {
+    if (target.kind === "official" || duplicateDraftSource(host, target.source, input.name) !== null) {
       assertDraftNameFree(host, input.name);
     }
     const wanted = { name: input.name, description: input.description, createdBy: principal.id };
     return {
       template: await holdingTemplateName(host, input.name, async () =>
         target.kind === "official"
-          ? forkOfficialTemplate(host, target.official, wanted)
-          : forkTemplate(host, target.source, wanted),
+          ? duplicateOfficialTemplate(host, target.official, wanted)
+          : duplicateTemplate(host, target.source, wanted),
       ),
     };
   },
@@ -886,7 +886,7 @@ export const templateOperations = [
   // The draft routes are registered before the `:ref` ones, because the router takes the first match.
   templateDraftCreate,
   templateDraftList,
-  templateFork,
+  templateDuplicate,
   templateEdit,
   templateRebuild,
   templateBuild,

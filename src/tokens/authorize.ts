@@ -569,7 +569,7 @@ const RULES: ReadonlyMap<string, Rule> = new Map<string, Rule>([
     },
   ],
   [
-    "template.fork",
+    "template.duplicate",
     async ({ principal, host, input, resolved }) => {
       // The source must be a template the token may use, and the name it copies into must be free: a copy would otherwise
       // move a tag another principal holds.

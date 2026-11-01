@@ -27,8 +27,8 @@ const REPO_FILE_MAX_BYTES = 256 * 1024;
  * Where a declared template's files come from. A Dockerfile is pasted in and kept in the recipe. The other kinds are
  * fetched on every build, so a rebuild picks up the newest commit or archive. Credentials are never stored here:
  * `secretRef` names a secret the clone reads when it runs. An official template's Dockerfile ships with MiniBox, so its
- * recipe keeps only the name, and a rebuild uses the Dockerfile of the running version. A fork of an official template
- * carries a `dockerfile` source instead, the Dockerfile's text at the moment it was forked, so the fork no longer follows
+ * recipe keeps only the name, and a rebuild uses the Dockerfile of the running version. A duplicate of an official template
+ * carries a `dockerfile` source instead, the Dockerfile's text at the moment it was duplicated, so the duplicate no longer follows
  * MiniBox upgrades.
  */
 export type TemplateSource =
@@ -130,21 +130,21 @@ function shippedBaseDockerfile(host: HostCtx): string | null {
 
 /**
  * How a recipe's source is read: the source a caller may rebuild from, and, for an official source under another name
- * whose Dockerfile could not become a fork's own copy, why it kept its official kind.
+ * whose Dockerfile could not become a duplicate's own copy, why it kept its official kind.
  */
 interface ReadSource {
   source: TemplateSource;
-  /** Why the fork kept the official source, which `forkRecipe` logs; `readRecipe` ignores it. */
+  /** Why the duplicate kept the official source, which `duplicateRecipe` logs; `readRecipe` ignores it. */
   kept?: string;
 }
 
 /**
  * The source a recipe is read as. An official template's recipe names the template itself, so an official source under
- * another name is a fork that was written before a fork kept its own copy of the Dockerfile: it reads as the copy a fork
- * writes now, taken from the Dockerfile this MiniBox ships, so the fork can be edited and rebuilt from it without being
- * forked again. A template whose name is the official one stays official, and so does a fork whose Dockerfile this
- * MiniBox cannot read or does not accept as a Dockerfile: the source it has is better than none, and `forkRecipe` logs
- * that case so a fork written now is not silently left official.
+ * another name is a duplicate that was written before a duplicate kept its own copy of the Dockerfile: it reads as the copy a duplicate
+ * writes now, taken from the Dockerfile this MiniBox ships, so the duplicate can be edited and rebuilt from it without being
+ * duplicated again. A template whose name is the official one stays official, and so does a duplicate whose Dockerfile this
+ * MiniBox cannot read or does not accept as a Dockerfile: the source it has is better than none, and `duplicateRecipe` logs
+ * that case so a duplicate written now is not silently left official.
  */
 function sourceAsRead(host: HostCtx, name: string, source: TemplateSource): ReadSource {
   if (source.kind !== "official" || source.name === name) return { source };
@@ -157,7 +157,7 @@ function sourceAsRead(host: HostCtx, name: string, source: TemplateSource): Read
 
 /**
  * The recipe as the host stores it, validated but not interpreted: `copyRecipe` writes this, so a copy holds the source
- * the source host holds, and a fork written before the copy existed stays official on the target as it is on the origin.
+ * the source host holds, and a duplicate written before the copy existed stays official on the target as it is on the origin.
  */
 function readStoredRecipe(host: HostCtx, name: string): TemplateRecipe | null {
   let parsed: unknown;
@@ -310,7 +310,7 @@ export function editDraftRecipe(host: HostCtx, draft: DraftTemplate, edit: Recip
  * copy of the Dockerfile this MiniBox ships (see `sourceAsRead`). When that Dockerfile cannot be read or is not one, the
  * source stays official and a draft cannot name it, so the copy is the image copy it has always been; `missing` says why.
  */
-export function forkRecipeDraftSource(
+export function duplicateRecipeDraftSource(
   host: HostCtx,
   to: string,
   recipe: TemplateRecipe,
@@ -326,7 +326,7 @@ export function forkRecipeDraftSource(
  * Dockerfile this MiniBox cannot read, or does not accept as one, leaves the copy the image copy it has always been;
  * `missing` says why.
  */
-export function forkBaseDraftSource(host: HostCtx): { source: TemplateSource } | { missing: string } {
+export function duplicateBaseDraftSource(host: HostCtx): { source: TemplateSource } | { missing: string } {
   return shippedDockerfileSource(shippedBaseDockerfile(host));
 }
 
@@ -334,7 +334,7 @@ export function forkBaseDraftSource(host: HostCtx): { source: TemplateSource } |
  * The source a duplicate of an official template no host has built yet saves as a draft: a copy of the Dockerfile this
  * MiniBox ships for it. There is no image to fall back to, so the caller refuses the duplicate when `missing` is set.
  */
-export function forkOfficialDraftSource(
+export function duplicateOfficialDraftSource(
   host: HostCtx,
   name: OfficialName,
 ): { source: TemplateSource } | { missing: string } {
@@ -354,7 +354,7 @@ function shippedDockerfileSource(text: string | null): { source: TemplateSource 
  * template records and the copy's own description and creator. Nothing is built, so the copy has no size and no creation
  * time until `buildTemplateDraft` builds it. The caller holds the name through `holdingTemplateName`.
  */
-export function forkDraftRecipe(
+export function duplicateDraftRecipe(
   host: HostCtx,
   input: { name: string; description: string; source: TemplateSource; init?: TemplateInit; createdBy: string },
 ): void {
@@ -390,7 +390,7 @@ export function removeRecipeOfImage(host: HostCtx, name: string, imageId: string
 /**
  * Gives `to` the recipe that built the template `ref` on `from`, when that recipe names `imageId`. A copy of a declared
  * template keeps its setup and can be rebuilt on `to`; a saved or rebuilt image matches no recipe, so it copies none. The
- * source is copied as the source host stores it, not as a read interprets it: a fork written before it kept its own copy
+ * source is copied as the source host stores it, not as a read interprets it: a duplicate written before it kept its own copy
  * of an official Dockerfile stays official on the target too, so both hosts rebuild from the Dockerfile of the MiniBox
  * each runs instead of the target freezing the text the source happened to read at copy time.
  */
@@ -408,14 +408,14 @@ export function copyRecipe(from: HostCtx, to: HostCtx, ref: string, imageId: str
 }
 
 /**
- * Gives `to` the recipe captured with the source image, pointed at the fork's image, for the one duplicate that is still
+ * Gives `to` the recipe captured with the source image, pointed at the duplicate's image, for the one duplicate that is still
  * an image copy although it has a recipe: an official template whose shipped Dockerfile cannot become the copy's own
  * source. A draft cannot name an official template, so the copy keeps the official source, as it always has, and a
  * warning names the template and why: the image is already committed by then, so the copy is kept rather than thrown
  * away. The copy's description and creator belong to the copy and survive its rebuilds. The caller writes this under the
- * name it holds, before it commits the image, only when `forkRecipeDraftSource` could not make a draft source.
+ * name it holds, before it commits the image, only when `duplicateRecipeDraftSource` could not make a draft source.
  */
-export function forkRecipe(
+export function duplicateRecipe(
   host: HostCtx,
   to: string,
   recipe: TemplateRecipe,
@@ -425,7 +425,7 @@ export function forkRecipe(
 ): void {
   const read = sourceAsRead(host, to, recipe.source);
   if (read.kept !== undefined && recipe.source.kind === "official") {
-    log.warn("template.fork_source_kept", { name: to, source: recipe.source.name, reason: read.kept });
+    log.warn("template.duplicate_source_kept", { name: to, source: recipe.source.name, reason: read.kept });
   }
   writeRecipe(host, to, {
     ...recipe,
@@ -476,7 +476,7 @@ export async function templateAndRecipe(host: HostCtx, ref: string): Promise<[De
   if (!NAME_RE.test(name)) throw notFound(msg("template_not_found"));
   const recipe = readRecipe(host, name);
   if (!recipe || recipe.imageId !== image.id) throw badRequest(msg("template_not_declared", { name }));
-  // Older forks copied the source's creator into the recipe. The image's label is the ownership authority.
+  // Older duplicates copied the source's creator into the recipe. The image's label is the ownership authority.
   const createdBy = image.labels[host.keys.createdBy] || recipe.createdBy;
   return [{ name, imageId: image.id, recipe: { ...recipe, imageId: image.id, createdBy } }, image];
 }
@@ -759,7 +759,7 @@ export interface NewTemplate {
 
 /**
  * Saves a template's source as a draft, without building it: no engine call, no network, only the recipe file. The
- * caller holds the name through `holdingTemplateName`, so a save, a build or a fork cannot take it meanwhile.
+ * caller holds the name through `holdingTemplateName`, so a save, a build or a duplicate cannot take it meanwhile.
  */
 export function saveTemplateDraft(host: HostCtx, input: NewTemplate): { ref: string; name: string } {
   writeRecipe(host, input.name, {
