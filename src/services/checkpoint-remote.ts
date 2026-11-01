@@ -271,6 +271,8 @@ export class CheckpointRemoteSync {
 
   /** The records of one host whose data has not been copied to this remote repository yet. A recycle bin entry counts. */
   private pending(hostId: string, targetId: string): CheckpointRecord[] {
+    // A remote-only host has nothing waiting: everything it has is already on the remote.
+    if (this.isRemoteOnly(hostId)) return [];
     return this.checkpoints
       .list()
       .filter(
