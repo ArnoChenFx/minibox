@@ -490,6 +490,57 @@ describe("the sync marks when the remote position changes", () => {
     expect(engineOf(inst).remoteCopies).toHaveLength(1);
   });
 
+  test("a copy that fails after the position changes records nothing on the new position and starts no backoff", async () => {
+    const inst = instanceOf();
+    const targetId = s3Target(inst);
+    const ctx = ctxOf(inst.app);
+    await inst.app.operations.run("checkpoint.remote.set", ctx, { id: "local", targetId, path: "first" });
+    const { record } = await checkpointOf(inst, "src");
+    const gate = engineOf(inst).holdRemote();
+    const copying = inst.app.checkpointRemote.syncHost(inst.host);
+    while (gate.blocked() === 0) await Bun.sleep(1);
+
+    await inst.app.operations.run("checkpoint.remote.set", ctx, { id: "local", targetId, path: "second" });
+    engineOf(inst).failRemoteCopy = true;
+    gate.release();
+
+    // The copy to the old folder really failed, and the caller is told so.
+    const error = await rejectionOf(copying);
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toContain("unreachable");
+    // The failure belongs to the folder the copy went to, not to the one the host now points at.
+    expect(storedRecord(inst, record.id).remoteFailure).toBeUndefined();
+    expect(inst.app.targets.remoteOf("local")?.lastError).toBeNull();
+    expect(inst.app.checkpointRemote.stateOf("local")).toEqual({ failures: 0, lastFailure: null });
+
+    // No retry delay from the old position holds the next pass back: the copy goes to the folder now set.
+    engineOf(inst).failRemoteCopy = false;
+    expect(await inst.app.checkpointRemote.run()).toHaveLength(1);
+    expect(storedRecord(inst, record.id).remoteSync?.[targetId]).toBeString();
+  });
+
+  test("a copy still running when the host switches to remote-only marks nothing", async () => {
+    const inst = instanceOf();
+    const targetId = s3Target(inst);
+    const ctx = ctxOf(inst.app);
+    await inst.app.operations.run("checkpoint.remote.set", ctx, { id: "local", targetId });
+    const { record } = await checkpointOf(inst, "src");
+    const gate = engineOf(inst).holdRemote();
+    const copying = inst.app.checkpointRemote.syncHost(inst.host);
+    while (gate.blocked() === 0) await Bun.sleep(1);
+
+    // The mode can only change with no records, so the record the copy is for is deleted while it still runs.
+    inst.host.checkpoints.remove(record.id);
+    await inst.app.operations.run("checkpoint.remote.set", ctx, { id: "local", targetId, mode: "only" });
+    gate.release();
+    expect(await copying).toMatchObject({ checkpoints: 0 });
+
+    // The copy went to a repository the host no longer uses the same way, so it is not reported as synced.
+    const remote = inst.app.targets.remoteOf("local");
+    expect(remote).toMatchObject({ mode: "only", targetId });
+    expect(remote?.lastSyncAt).toBeNull();
+  });
+
   test("a copy still running when the position changes marks nothing, since it went to the old position", async () => {
     const inst = instanceOf();
     const targetId = s3Target(inst);
