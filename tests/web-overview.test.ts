@@ -39,6 +39,7 @@ const SERVER_PARAMS: Record<string, Record<string, string | number>> = {
     detail: "iptables FORWARD policy is DROP",
     cause: "policy",
   },
+  "host.remote_sync_failing": { target: "archive", failures: 3, detail: "the target is unreachable" },
 };
 
 function itemOf(
@@ -215,6 +216,9 @@ describe("where an attention item leads", () => {
     expect(attentionHref(itemOf("host.disk_low", {}, { box: null }))).toBe("#/settings/hosts");
     expect(attentionHref(itemOf("host.cpu_overcommit", {}, { box: null }))).toBe("#/settings/hosts");
     expect(attentionHref(itemOf("host.memory_overcommit", {}, { box: null }))).toBe("#/settings/hosts");
+    expect(
+      attentionHref(itemOf("host.remote_sync_failing", SERVER_PARAMS["host.remote_sync_failing"], { box: null })),
+    ).toBe("#/settings/hosts");
   });
 
   test("a box condition opens the box tab that shows it", () => {

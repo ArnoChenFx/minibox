@@ -32,7 +32,13 @@ export interface CheckpointRow {
   createdAt: string;
   system: unknown;
   data: readonly CheckpointLayer[];
+  remoteSync?: Readonly<Record<string, string>>;
+  remoteFailure?: { targetId: string; at: string; message: string };
 }
+
+export type RemoteMark =
+  | { readonly kind: "synced"; readonly targets: readonly string[] }
+  | { readonly kind: "failed"; readonly detail: string };
 
 export interface RuleResult {
   allowed: boolean;
@@ -63,6 +69,13 @@ export declare const isVolumeSnapshot: (checkpoint: { boxId?: string | null }) =
 export declare function kindsOf(checkpoint: CheckpointRow): string[];
 export declare function contentsOf(checkpoint: CheckpointRow): { roles: string[]; others: number; system: boolean };
 export declare function rowActions(checkpoint: CheckpointRow, state?: RowState): RowActions;
+export declare function targetNamesOf(
+  reply: { targets?: readonly { id: string; name: string }[] | null } | null | undefined,
+): Map<string, string>;
+export declare function remoteMarksOf(
+  checkpoint: Pick<CheckpointRow, "remoteSync" | "remoteFailure">,
+  targetNames?: ReadonlyMap<string, string>,
+): RemoteMark[];
 export declare function passphraseOk(value: string): boolean;
 export declare function scheduleZone(
   schedule: { timezone?: string | null; timezoneUnknown?: boolean } | null | undefined,

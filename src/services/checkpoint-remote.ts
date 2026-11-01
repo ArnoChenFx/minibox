@@ -9,6 +9,12 @@ import type { TargetService } from "./targets";
 
 /** The fallback pass's interval. A checkpoint also asks for a copy as soon as it is written, so this only catches what a restart or a failure left behind. */
 export const REMOTE_SYNC_EVERY_MS = 60 * 60 * 1000;
+/**
+ * How many copies in a row may fail before the overview lists the host. A successful copy clears the count, and the
+ * count lives in memory only: a restart starts it again at zero. The remote repository's `lastError` is the durable
+ * record of the last failure.
+ */
+export const REMOTE_SYNC_FAILURE_THRESHOLD = 3;
 /** How long a written checkpoint waits before its copy starts, so a batch of writes makes one copy. */
 const SYNC_REQUEST_DELAY_MS = 5 * 1000;
 /** The first retry after a failed copy, doubled for each failure after it up to `RETRY_MAX_MS`. */
@@ -43,9 +49,23 @@ export interface RemoteSyncSummary {
   readonly snapshots: number;
 }
 
+/** The last failed copy of one host's checkpoints, as the host's state reports it. */
+interface RemoteSyncFailure {
+  readonly targetId: string;
+  readonly at: string;
+  readonly message: string;
+}
+
+/** What one host's copies have done since the last success. */
+interface RemoteSyncState {
+  readonly failures: number;
+  readonly lastFailure: RemoteSyncFailure | null;
+}
+
 interface Retry {
   readonly failures: number;
   readonly nextAt: number;
+  readonly lastFailure: RemoteSyncFailure;
 }
 
 /**
@@ -74,6 +94,16 @@ export class CheckpointRemoteSync {
     private readonly everyMs = REMOTE_SYNC_EVERY_MS,
     private readonly clock: () => Date = () => new Date(),
   ) {}
+
+  /**
+   * How many copies in a row failed for one host, and why the last one did. A successful copy clears both, and the
+   * count is kept in memory only: a restart starts it at zero. Read-only, so a caller that lists the hosts' state never
+   * changes it.
+   */
+  stateOf(hostId: string): RemoteSyncState {
+    const retry = this.retries.get(hostId);
+    return retry ? { failures: retry.failures, lastFailure: retry.lastFailure } : { failures: 0, lastFailure: null };
+  }
 
   start(): void {
     if (this.timer) return;
@@ -225,7 +255,13 @@ export class CheckpointRemoteSync {
     this.targets.recordRemoteResult(hostId, { at, error: message });
     const failures = (this.retries.get(hostId)?.failures ?? 0) + 1;
     const delay = Math.min(RETRY_BASE_MS * 2 ** Math.min(failures - 1, 10), RETRY_MAX_MS);
-    this.retries.set(hostId, { failures, nextAt: now.getTime() + delay });
+    const lastFailure = { targetId, at, message };
+    // The line marks the moment the overview starts listing the host. A later failure in the same streak changes the
+    // count but not the state, so it does not log again; a success clears the streak and lets a new one log once more.
+    if (failures === REMOTE_SYNC_FAILURE_THRESHOLD) {
+      log.warn("checkpoint.remote_sync_failing", { host: hostId, target: targetId, failures });
+    }
+    this.retries.set(hostId, { failures, nextAt: now.getTime() + delay, lastFailure });
   }
 
   /**

@@ -23,6 +23,7 @@ export const ATTENTION_LABEL = Object.freeze({
   "host.cpu_overcommit": "ov.attn.cpu_overcommit",
   "host.memory_overcommit": "ov.attn.memory_overcommit",
   "host.forward_blocked": "ov.attn.forward_blocked",
+  "host.remote_sync_failing": "ov.attn.remote_sync_failing",
 });
 
 /**
@@ -57,6 +58,7 @@ const PAGE_OF = Object.freeze({
   "host.cpu_overcommit": "#/settings/hosts",
   "host.memory_overcommit": "#/settings/hosts",
   "host.forward_blocked": "#/settings/hosts",
+  "host.remote_sync_failing": "#/settings/hosts",
 });
 
 /** The box tab, and the settings section on the settings tab, that shows each box condition. */
@@ -114,6 +116,13 @@ export function attentionText(item, { bytes = String, cpus = String } = {}) {
       const key = FORWARD_NOTE[p.cause] ? "ov.text.forward_blocked" : "ov.text.forward_blocked_unclear";
       return { key, params: { count: p.count, boxes: p.boxes, bridge: p.bridge } };
     }
+    case "host.remote_sync_failing":
+      return p.detail
+        ? {
+            key: "ov.text.remote_sync_failing_detail",
+            params: { target: p.target, failures: p.failures, detail: p.detail },
+          }
+        : { key: "ov.text.remote_sync_failing", params: { target: p.target, failures: p.failures } };
     default:
       return null;
   }

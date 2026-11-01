@@ -34,6 +34,7 @@ export default {
   "ov.attn.cpu_overcommit": "Host CPU overcommitted",
   "ov.attn.memory_overcommit": "Host memory overcommitted",
   "ov.attn.forward_blocked": "Proxy-only boxes have no internet",
+  "ov.attn.remote_sync_failing": "Remote checkpoint copies are failing",
   "ov.text.oom": "The box ran out of memory and the kernel ended a process in it.",
   "ov.text.checkpoint_failed": "The checkpoint did not complete.",
   "ov.text.checkpoint_failed_detail": "The checkpoint did not complete: {detail}",
@@ -63,6 +64,9 @@ export default {
     "The host's FORWARD rules drop the egress uplink ({bridge}), so its {count} proxy-only box(es) ({boxes}) cannot reach the internet. Open boxes are unaffected.",
   "ov.text.forward_blocked_unclear":
     "The egress uplink ({bridge}) looks dropped on this host, so its {count} proxy-only box(es) ({boxes}) may have no internet. Open boxes are unaffected.",
+  "ov.text.remote_sync_failing": "{failures} copies in a row to {target} failed. The local checkpoints are unaffected.",
+  "ov.text.remote_sync_failing_detail":
+    "{failures} copies in a row to {target} failed: {detail}. The local checkpoints are unaffected.",
   "ov.note.forward_policy":
     "No rule in FORWARD accepts that traffic, so the chain's policy drops it. Confirm to let MiniBox add the rule, or add it by hand.",
   "ov.note.forward_rule":

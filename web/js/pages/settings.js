@@ -28,7 +28,13 @@ const PANELS = {
         </div>`,
     load: loadBackups,
   },
-  hosts: { html: () => `<div class="card" id="stHosts"></div>`, load: loadHosts },
+  hosts: {
+    html: () => `<div class="stack" id="stHostsPanel">
+          <div class="card" id="stHosts"></div>
+          <div class="card" id="stHostRemote"></div>
+        </div>`,
+    load: loadHosts,
+  },
   runtime: {
     html: () => `<div class="card" id="stRuntime">
           <div class="card-head"><h3>${t("st.runtime")}</h3>${icon("settings")}</div>

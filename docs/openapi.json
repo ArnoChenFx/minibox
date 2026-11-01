@@ -30804,6 +30804,43 @@
                             },
                             "updatedAt": {
                               "type": "string"
+                            },
+                            "failures": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991,
+                              "description": "How many copies in a row have failed. Zero after a success."
+                            },
+                            "lastFailure": {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "targetId": {
+                                      "type": "string",
+                                      "description": "The target the failed copy was sent to."
+                                    },
+                                    "at": {
+                                      "type": "string",
+                                      "description": "When that copy failed, ISO 8601."
+                                    },
+                                    "message": {
+                                      "type": "string",
+                                      "description": "Why it failed, as the engine or the target reported it."
+                                    }
+                                  },
+                                  "required": [
+                                    "targetId",
+                                    "at",
+                                    "message"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "description": "The last failed copy, or null when the last copy succeeded or none has run."
                             }
                           },
                           "required": [
@@ -30815,7 +30852,9 @@
                             "lastSyncAt",
                             "lastError",
                             "createdAt",
-                            "updatedAt"
+                            "updatedAt",
+                            "failures",
+                            "lastFailure"
                           ],
                           "additionalProperties": false
                         },
@@ -40759,7 +40798,8 @@
                               "host.disk_low",
                               "host.cpu_overcommit",
                               "host.memory_overcommit",
-                              "host.forward_blocked"
+                              "host.forward_blocked",
+                              "host.remote_sync_failing"
                             ]
                           },
                           "severity": {

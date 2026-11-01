@@ -1,6 +1,6 @@
 import { api, enc } from "../lib/api.js";
 import { groupCheckpoints } from "../lib/checkpoint-groups.js";
-import { kindsOf, rowActions } from "../lib/checkpoint-state.js";
+import { kindsOf, rowActions, targetNamesOf } from "../lib/checkpoint-state.js";
 import { esc } from "../lib/dom.js";
 import { bytes, dateTime, relTime } from "../lib/format.js";
 import { boxOnAgentHost, hostOfBox } from "../lib/host-list.js";
@@ -15,6 +15,7 @@ import {
   forkCheckpoint,
   importCheckpoint,
   KIND_CLASS,
+  remoteBadgesHtml,
   removeCheckpoint,
   rollBack,
   setPinned,
@@ -48,7 +49,7 @@ function actionButton(action, checkpoint, iconName, label, rule, { danger = fals
   return `<button type="button" class="icon-btn${danger ? " danger" : ""}" data-action="${action}" data-id="${esc(checkpoint.id)}" title="${esc(title)}" aria-label="${esc(label)}"${rule.allowed ? "" : " disabled"}>${icon(iconName)}</button>`;
 }
 
-function rowHtml(checkpoint, group) {
+function rowHtml(checkpoint, group, targetNames) {
   const elsewhere = group.box ? checkpoint.hostId !== hostOfBox(group.box) : false;
   const rules = rowActions(checkpoint, {
     held: group.pending?.safetyCheckpointId === checkpoint.id,
@@ -61,6 +62,7 @@ function rowHtml(checkpoint, group) {
   const kinds = kindsOf(checkpoint)
     .map((kind) => `<span class="badge ${KIND_CLASS[kind]}">${esc(t(`ck.kind.${kind}`))}</span>`)
     .join("");
+  const remote = remoteBadgesHtml(checkpoint, targetNames);
   const contents = contentsText(checkpoint);
   // `data-label` names the contents on a phone, where the row is a card and the column header is gone. The other fields
   // name themselves there: a date, a size and a kind badge read as what they are. Contents that hold nothing are marked
@@ -69,7 +71,7 @@ function rowHtml(checkpoint, group) {
   return `<tr>
     <td class="sck-time nowrap" title="${esc(dateTime(checkpoint.createdAt))}">${esc(dateTime(checkpoint.createdAt))}<div class="subtle">${esc(relTime(checkpoint.createdAt))}</div></td>
     <td class="sck-label"><div class="truncate" title="${esc(checkpoint.label)}">${esc(checkpoint.label)}</div>${checkpoint.reason ? `<div class="subtle truncate" title="${esc(checkpoint.reason)}">${esc(checkpoint.reason)}</div>` : ""}</td>
-    <td class="sck-kind-cell"><div class="ck-badges sck-kinds">${kinds}</div></td>
+    <td class="sck-kind-cell"><div class="ck-badges sck-kinds">${kinds}${remote}</div></td>
     <td class="${contentsClass}" data-label="${esc(t("ck.colContents"))}"><div class="truncate" title="${esc(contents)}">${esc(contents)}</div></td>
     <td class="sck-size num nowrap">${esc(bytes(checkpoint.bytes))}</td>
     <td class="sck-actions"><div class="actions">
@@ -118,6 +120,8 @@ export function mountStorageCheckpoints(root, { focus = "" } = {}) {
   let usage = null;
   /** The host list, read with the checkpoints so a box on an agent host says why its take button is off. */
   let hosts = [];
+  /** The target names the remote copy badges use, read with the checkpoints. */
+  let targetNames = new Map();
 
   const draw = () => {
     const shown = focus ? groups.filter((group) => group.id === focus) : groups;
@@ -142,7 +146,9 @@ export function mountStorageCheckpoints(root, { focus = "" } = {}) {
               keep: (row) => row.pinned,
             });
             const more = toggle ? `<tr class="toggle-row"><td colspan="${COLUMNS}">${toggle}</td></tr>` : "";
-            return groupHeadHtml(group, false, hosts) + rows.map((row) => rowHtml(row, group)).join("") + more;
+            return (
+              groupHeadHtml(group, false, hosts) + rows.map((row) => rowHtml(row, group, targetNames)).join("") + more
+            );
           })
           .join("")
       : `<tr><td colspan="${COLUMNS}">${emptyState({ iconName: "history", title: t("ck.noneAnywhere"), text: esc(t("ck.noneAnywhereText")) })}</td></tr>`;
@@ -173,7 +179,7 @@ export function mountStorageCheckpoints(root, { focus = "" } = {}) {
     try {
       // The host list decides whether a box sits on an agent host, so it is read before the groups draw, alongside the
       // other reads rather than ahead of them.
-      const [, { checkpoints }, { boxes }, usageBody, pendingBody] = await Promise.all([
+      const [, { checkpoints }, { boxes }, usageBody, pendingBody, targets] = await Promise.all([
         refreshHosts(),
         api("/api/checkpoints"),
         api("/api/boxes?stats=false"),
@@ -181,10 +187,12 @@ export function mountStorageCheckpoints(root, { focus = "" } = {}) {
         // Every box's waiting rollback comes in one read. A read that fails shows no pending line, as a box that could not
         // answer used to.
         api("/api/rollbacks").catch(() => ({ rollbacks: [] })),
+        api("/api/targets").catch(() => ({ targets: [] })),
       ]);
       if (disposed || token !== seq) return;
       hosts = hostsNow();
       usage = usageBody;
+      targetNames = targetNamesOf(targets);
       const pendings = (pendingBody.rollbacks ?? []).map((entry) => [entry.box.boxId, entry.rollback]);
       groups = groupCheckpoints(checkpoints, boxes, new Map(pendings));
       draw();
