@@ -1,4 +1,4 @@
-FROM python:3.14-slim-bookworm
+FROM python:3.15-slim-bookworm
 
 # Box user convention, the same as templates/base. Change these only together with the volumes that already use them.
 ARG DEV_UID=1000
