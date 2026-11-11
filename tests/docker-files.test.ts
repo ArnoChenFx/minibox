@@ -21,6 +21,7 @@ import { createDockerRuntime } from "../src/docker/runtime";
 import { createLocalHost, type HostCtx } from "../src/host/registry";
 import type { RawBody } from "../src/lib/body";
 import type { Runtime } from "../src/runtime";
+import { createBox } from "../src/services/boxes";
 import {
   deletePath,
   listFiles,
@@ -30,7 +31,7 @@ import {
   streamDownload,
   streamUpload,
 } from "../src/services/files";
-import { parseTar } from "../src/services/files-tar";
+import { fileArchive, parseTar } from "../src/services/files-tar";
 import { createVolume, type VolumeView } from "../src/services/volumes";
 import { rejectionOf, silenceLogs, testConfig } from "./support/app";
 
@@ -110,6 +111,41 @@ describe.skipIf(!enabled)("the file browser's volume operations on a real engine
       expect([read.type, read.size, read.content]).toEqual(["file", 6, "hello\n"]);
       expect(await ownerOf("notes/todo.txt")).toBe(`${DEV_UID}:${DEV_UID}`);
       expect(await ownerOf("notes")).toBe(`${DEV_UID}:${DEV_UID}`);
+    },
+    LONG,
+  );
+
+  test(
+    "a running box lists fresh files without a helper, including a symlinked folder",
+    async () => {
+      await streamUpload(host, vol.id, {
+        path: "fast/nested.txt",
+        overwrite: false,
+        body: bodyOf("fresh"),
+        maxBytes: LIMIT,
+      });
+      await inVolume(`ln -s fast ${MOUNT}/fast-link`);
+      const box = await createBox(host, {
+        name: `${prefix}-listing`,
+        image: HELPER_IMAGE,
+        cpus: 0.5,
+        memoryMb: 128,
+        mounts: [{ volume: vol.id, path: "/workspace", mode: "rw" }],
+      });
+      const runHelper = runtime.runHelper;
+      runtime.runHelper = async () => {
+        throw new Error("a running-box listing must not need a helper");
+      };
+      try {
+        const first = await listFiles(host, vol.id, { path: "fast-link", maxDepth: 1 });
+        expect(first.entries).toContainEqual(expect.objectContaining({ path: "fast-link/nested.txt", size: 5 }));
+        await runtime.putArchive(box.id, "/workspace/fast", fileArchive("new.txt", Buffer.from("new")));
+        const refreshed = await listFiles(host, vol.id, { path: "fast-link", maxDepth: 1 });
+        expect(refreshed.entries).toContainEqual(expect.objectContaining({ path: "fast-link/new.txt", size: 3 }));
+      } finally {
+        runtime.runHelper = runHelper;
+        await runtime.removeContainer(box.id, { force: true });
+      }
     },
     LONG,
   );
