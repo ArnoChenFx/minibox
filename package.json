@@ -44,7 +44,7 @@
     "knip": "6.44.1",
     "openapi-types": "^12.1.3",
     "oxfmt": "^0.77.0",
-    "oxlint": "^1.90.0",
+    "oxlint": "^1.92.0",
     "typescript": "^7.0.2"
   },
   "engines": {
