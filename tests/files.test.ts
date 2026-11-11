@@ -3,6 +3,8 @@ import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:tes
 import type { HostCtx } from "../src/host/registry";
 import { AppError } from "../src/lib/errors";
 import type { OperationContext, Principal } from "../src/operations/types";
+import { RuntimeError } from "../src/runtime";
+import { createBox, stopBox } from "../src/services/boxes";
 import { copyFiles, downloadArchive, listFiles, readFile, uploadArchive, writeFile } from "../src/services/files";
 import { jailPath, splitLinkTarget } from "../src/services/files-path";
 import { fileArchive } from "../src/services/files-tar";
@@ -184,6 +186,71 @@ describe("symlink resolution (B1c/B1d/B1e)", () => {
 });
 
 describe("volume file API", () => {
+  test("a running box lists its mounted volume without starting a helper or checking the helper image", async () => {
+    const box = await createBox(host, { name: "listing", cpus: 1, memoryMb: 256 });
+    const spec = host.specs.list().find((item) => item.containerId === box.id)!;
+    const mount = spec.mounts.find((item) => item.path === "/workspace")!;
+    const vol = host.volumes.resolve(mount.volume, host.host.id)!;
+    runtime.execScript = {
+      stdout: "d\t0\t1700000000.0\t/workspace/src\0f\t3\t1700000000.0\t/workspace/src/a\tb\nc.txt\0",
+      stderr: "",
+      code: 0,
+    };
+    const helpers = runtime.callsTo("runHelper").length;
+    const images = runtime.callsTo("inspectImage").length;
+    const containers = runtime.callsTo("createContainer").length;
+    runtime.seedVolumeFile(vol.engineName, "src", { type: "dir" });
+    const listed = await listFiles(host, vol.id, { path: "src", maxDepth: 1 });
+    expect(listed.entries).toEqual([
+      { path: "src", type: "dir", size: null, mtime: "2023-11-14T22:13:20.000Z" },
+      { path: "src/a\tb\nc.txt", type: "file", size: 3, mtime: "2023-11-14T22:13:20.000Z" },
+    ]);
+    expect(runtime.callsTo("runHelper")).toHaveLength(helpers);
+    expect(runtime.callsTo("inspectImage")).toHaveLength(images);
+    expect(runtime.callsTo("createContainer")).toHaveLength(containers);
+  });
+
+  test("an unavailable find exec falls back, and a stopped box is never started for a listing", async () => {
+    const box = await createBox(host, { name: "fallback", cpus: 1, memoryMb: 256 });
+    const spec = host.specs.list().find((item) => item.containerId === box.id)!;
+    const mount = spec.mounts.find((item) => item.path === "/workspace")!;
+    const vol = host.volumes.resolve(mount.volume, host.host.id)!;
+    runtime.seedVolumeFile(vol.engineName, "hello.txt", { type: "file", content: Buffer.from("hello") });
+    runtime.fail("startExec", new RuntimeError("engine", "find is not installed"));
+    expect((await listFiles(host, vol.id, { maxDepth: 1 })).entries).toContainEqual(
+      expect.objectContaining({ path: "hello.txt", size: 5 }),
+    );
+    await stopBox(host, box.boxId);
+    const starts = runtime.callsTo("startContainer").length;
+    const execs = runtime.callsTo("startExec").length;
+    expect((await listFiles(host, vol.id, { maxDepth: 1 })).entries).toContainEqual(
+      expect.objectContaining({ path: "hello.txt", size: 5 }),
+    );
+    expect(runtime.callsTo("startContainer")).toHaveLength(starts);
+    expect(runtime.callsTo("startExec")).toHaveLength(execs);
+  });
+
+  test("a nested mount cannot replace the volume's own children in a listing", async () => {
+    const vol = await volume();
+    const nested = await createVolume(host, { name: "nested", role: null, createdBy: "owner" });
+    await createBox(host, {
+      name: "nested-listing",
+      cpus: 1,
+      memoryMb: 256,
+      mounts: [
+        { volume: vol.id, path: "/workspace", mode: "rw" },
+        { volume: nested.id, path: "/workspace/private", mode: "rw" },
+      ],
+    });
+    runtime.seedVolumeFile(vol.engineName, "private/own.txt", { type: "file", content: Buffer.from("own") });
+    runtime.seedVolumeFile(nested.engineName, "different.txt", { type: "file", content: Buffer.from("other") });
+    const execs = runtime.callsTo("startExec").length;
+    const listed = await listFiles(host, vol.id, { maxDepth: 2 });
+    expect(listed.entries.map((entry) => entry.path)).toContain("private/own.txt");
+    expect(listed.entries.map((entry) => entry.path)).not.toContain("private/different.txt");
+    expect(runtime.callsTo("startExec")).toHaveLength(execs);
+  });
+
   test("writes and reads a file when no box is running (helper + archive)", async () => {
     const vol = await volume();
     await writeFile(host, vol.id, { path: "hello.txt", content: "hi agent\n" });

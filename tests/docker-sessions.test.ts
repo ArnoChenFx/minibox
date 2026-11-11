@@ -8,12 +8,14 @@
  * file directly: MINIBOX_TEST_DOCKER=1 MINIBOX_TEST_PREFIX=mbit<id> bun test tests/docker-sessions.test.ts
  *
  * Boxes run the image built from tests/fixtures/tmux: bash, tmux and a dev user on uid 1000, as templates/base has.
+ * MINIBOX_TEST_TMUX_IMAGE can name an existing image with those tools and user to skip the fixture build.
  */
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { chromium, expect as webExpect } from "@playwright/test";
 import type { Server, Socket } from "bun";
 import Docker from "dockerode";
 
@@ -31,13 +33,14 @@ import { ContainerWatch } from "../src/services/container-watch";
 import { SESSIONS_PER_BOX_MAX, TerminalService, VIEWER_ATTACHES_MAX } from "../src/services/terminals";
 import type { TerminalData } from "../src/ws/terminal";
 import { rejectionOf, TEST_KEY, testConfig } from "./support/app";
+import { chromiumFor } from "./support/chromium";
 
 const enabled = process.env.MINIBOX_TEST_DOCKER === "1";
 const SOCKET = process.env.DOCKER_SOCKET ?? "/var/run/docker.sock";
 const PREFIX_PATTERN = /^mbit[a-z0-9-]{3,40}$/;
 const prefix = process.env.MINIBOX_TEST_PREFIX ?? `mbit${Date.now().toString(36)}`;
 if (enabled && !PREFIX_PATTERN.test(prefix)) throw new Error(`MINIBOX_TEST_PREFIX must match ${PREFIX_PATTERN}`);
-const FIXTURE = `${prefix}-tmux:fixture`;
+const FIXTURE = process.env.MINIBOX_TEST_TMUX_IMAGE ?? `${prefix}-tmux:fixture`;
 /** An image with neither tmux nor a dev user, as a box from before the base template has. */
 const BARE_IMAGE = process.env.MINIBOX_TEST_IMAGE ?? "alpine:3.20";
 const owned = { [prefix]: "true" };
@@ -62,12 +65,14 @@ beforeAll(async () => {
   });
   app = createApp(cfg, "0.0.0-test", { runtime, eventsPath: ":memory:" });
   host = app.hosts.get();
-  await runtime.buildImage({
-    contextDir: join(import.meta.dir, "fixtures", "tmux"),
-    dockerfile: "Dockerfile",
-    tag: FIXTURE,
-    labels: owned,
-  });
+  if (!process.env.MINIBOX_TEST_TMUX_IMAGE) {
+    await runtime.buildImage({
+      contextDir: join(import.meta.dir, "fixtures", "tmux"),
+      dockerfile: "Dockerfile",
+      tag: FIXTURE,
+      labels: owned,
+    });
+  }
   server = startServer(app);
   base = `http://127.0.0.1:${server.port}`;
 }, 300_000);
@@ -295,6 +300,65 @@ describe.skipIf(!enabled)("terminal sessions against a real engine", () => {
       const recorded = app.events.list({ box: "refresh" }, { limit: 100 }).events;
       expect(recorded.map((event) => event.op)).toEqual(expect.arrayContaining(["terminal.open", "terminal.close"]));
       expect(JSON.stringify(recorded)).not.toContain("20+1");
+    },
+    LONG,
+  );
+
+  test(
+    "the browser wheel reads tmux history and returns to the live prompt in an existing session",
+    async () => {
+      const executablePath = chromiumFor("The terminal scroll test");
+      if (!executablePath) return;
+      const cookie = await signIn();
+      const box = await newBox("wheel");
+      await app.terminals.start(host, box, "scroll", "ui");
+      // Simulate a session created before mouse support was enabled.
+      await shell(box.id, "tmux -u set-option -t '=scroll:' mouse off");
+      const browser = await chromium.launch({ executablePath, args: ["--no-sandbox"] });
+      try {
+        const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+        await context.addCookies([{ name: COOKIE_NAME, value: cookie, url: base }]);
+        const page = await context.newPage();
+        let networkChanged = false;
+        page.on("requestfailed", (request) => {
+          if (request.failure()?.errorText === "net::ERR_NETWORK_CHANGED") networkChanged = true;
+        });
+        await page.goto(`${base}/#/boxes/${box.boxId}/terminal/scroll`);
+        // Docker's new bridge can notify Chromium while it imports the page's modules. Retry that startup once;
+        // terminal assertions below still exercise the real browser, WebSocket and tmux without interception.
+        try {
+          await webExpect(page.locator("#tStatus")).toHaveClass(/on/, { timeout: 10_000 });
+        } catch (error) {
+          if (!networkChanged) throw error;
+          await page.reload();
+        }
+        await webExpect(page.locator("#tStatus")).toHaveClass(/on/, { timeout: 30_000 });
+        await page
+          .locator(".xterm-helper-textarea")
+          .pressSequentially("for i in $(seq 1 150); do printf 'history-line-%03d\\n' \"$i\"; done");
+        await page.keyboard.press("Enter");
+        await waitFor(() => paneHas(box, "scroll", "history-line-150"), "the output to exceed the screen");
+        expect(await shell(box.id, "tmux -u show-options -v -t '=scroll:' mouse")).toBe("on");
+        const screen = page.locator(".xterm-screen");
+        await screen.hover();
+        for (let turn = 0; turn < 20; turn += 1) await page.mouse.wheel(0, -120);
+        await waitFor(
+          async () => (await shell(box.id, "tmux -u display-message -p -t '=scroll:' '#{pane_in_mode}'")) === "1",
+          "the wheel to enter tmux history",
+        );
+        await webExpect(page.locator(".xterm-rows")).not.toContainText("history-line-150");
+        await webExpect(page.locator(".xterm-rows")).toContainText(/history-line-0\d\d/);
+        for (let turn = 0; turn < 40; turn += 1) await page.mouse.wheel(0, 120);
+        await waitFor(
+          async () => (await shell(box.id, "tmux -u display-message -p -t '=scroll:' '#{pane_in_mode}'")) === "0",
+          "scrolling down to return to the prompt",
+        );
+        await page.keyboard.type("echo wheel-input-still-works");
+        await page.keyboard.press("Enter");
+        await waitFor(() => paneHas(box, "scroll", "wheel-input-still-works"), "typing after scrolling");
+      } finally {
+        await browser.close();
+      }
     },
     LONG,
   );

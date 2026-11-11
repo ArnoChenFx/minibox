@@ -250,6 +250,10 @@ export class TerminalService {
     tracked.opening[kind] += 1;
     let exec: ExecSession;
     try {
+      // tmux uses the terminal's alternate screen, so xterm's own scrollback stays empty. Mouse reporting lets
+      // tmux's default wheel bindings enter copy mode and scroll the pane's history, including existing sessions.
+      const mouse = await runTmux(host, box.id, ["set-option", "-t", paneTarget(name), "mouse", "on"]);
+      if (mouse.code !== 0) throw this.failure(mouse, box.id, name);
       exec = await startInBox(host, box.id, {
         cmd: attachCommand(name, options.source),
         env: TMUX_ENV,

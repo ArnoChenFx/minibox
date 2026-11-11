@@ -3,7 +3,7 @@ import { randomBytes } from "node:crypto";
 import type { HostCtx } from "../host/registry";
 import { notFound } from "../lib/errors";
 import { msg } from "../lib/messages";
-import { isRuntimeError, type HelperSpec, type HelperResult } from "../runtime";
+import { isRuntimeError, type ContainerInfo, type HelperSpec, type HelperResult } from "../runtime";
 import type { VolumeRecord } from "../volumes/types";
 import { ensureBaseImage } from "./base-template";
 import { FILE_MOUNT } from "./files-model";
@@ -21,6 +21,8 @@ export function requireHelperImage(host: HostCtx): Promise<string> {
 
 export interface MountAccess {
   containerId: string;
+  /** The inspect already read while opening an existing mount. Null for an archive-only helper. */
+  container: ContainerInfo | null;
   /** Absolute path of the volume root inside the container. */
   mountPath: string;
   /** Whether this service created the container and must remove it. */
@@ -38,8 +40,8 @@ export async function openMount(host: HostCtx, volume: VolumeRecord, mode: "rw" 
     if (!mount) continue;
     if (mode === "rw" && mount.mode === "ro") continue;
     try {
-      await host.runtime.inspectContainer(spec.containerId);
-      return { containerId: spec.containerId, mountPath: mount.path, ephemeral: false };
+      const container = await host.runtime.inspectContainer(spec.containerId);
+      return { containerId: spec.containerId, container, mountPath: mount.path, ephemeral: false };
     } catch (e) {
       if (isRuntimeError(e, "not_found")) continue;
       throw e;
@@ -64,7 +66,7 @@ export async function openMount(host: HostCtx, volume: VolumeRecord, mode: "rw" 
     tmpfs: { "/tmp": "rw,noexec,nosuid,nodev,size=16m" },
     hardening: { capDrop: ["ALL"], noNewPrivileges: true, pidsLimit: 64 },
   });
-  return { containerId: created.id, mountPath: FILE_MOUNT, ephemeral: true };
+  return { containerId: created.id, container: null, mountPath: FILE_MOUNT, ephemeral: true };
 }
 
 export async function closeMount(host: HostCtx, access: MountAccess): Promise<void> {
