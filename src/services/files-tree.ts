@@ -4,7 +4,7 @@ import { msg } from "../lib/messages";
 import type { FirstEntry } from "../lib/tar";
 import { isRuntimeError } from "../runtime";
 import { mtimeOf } from "./files-content";
-import { listingCommand, listInMount } from "./files-listing";
+import { listingCommand, listInMount, nestedMounts } from "./files-listing";
 import { resolveInVolume, entryType, childOf, lookupPath } from "./files-lookup";
 import {
   type ListFilesResult,
@@ -55,22 +55,30 @@ export async function listFiles(
   const limit = clampInt(input.limit, 1, LIST_MAX_LIMIT, LIST_DEFAULT_LIMIT);
   // find -P does not follow links, so a symlinked directory must be resolved first. The listing runs on the physical
   // path and its output is mapped back under the logical path the caller asked for.
-  const { result, search } = await withArchive(host, volume, "ro", async (access) => {
-    const physical = await resolveInVolume(host, access, relative, { followFinal: true });
-    const listed = await listInMount(host, volume, access, physical.path, maxDepth);
-    if (listed) return { result: { exitCode: 0, logs: listed.logs }, search: listed.search };
-    const image = await requireHelperImage(host);
-    const search = containerPath(FILE_MOUNT, physical.path);
-    const result = await runVolumeHelper(host, volume, {
-      image,
-      user: "1000:1000",
-      capAdd: ["DAC_READ_SEARCH"],
-      cmd: listingCommand(search, maxDepth),
-      mounts: [{ source: volume.engineName, target: FILE_MOUNT, mode: "ro" }],
-      timeoutSec: 30,
-      labels: { [host.keys.internal]: "true" },
-    });
-    return { result, search };
+  const { result, search, boundary } = await withArchive(host, volume, "ro", async (access) => {
+    const list = async (metadata: MountAccess) => {
+      const physical = await resolveInVolume(host, metadata, relative, { followFinal: true });
+      const listed = await listInMount(host, volume, access, physical.path, maxDepth, metadata);
+      if (listed)
+        return { result: { exitCode: 0, logs: listed.logs }, search: listed.search, boundary: listed.boundary };
+      const image = await requireHelperImage(host);
+      const search = containerPath(FILE_MOUNT, physical.path);
+      const result = await runVolumeHelper(host, volume, {
+        image,
+        user: "1000:1000",
+        capAdd: ["DAC_READ_SEARCH"],
+        cmd: listingCommand(search, maxDepth),
+        mounts: [{ source: volume.engineName, target: FILE_MOUNT, mode: "ro" }],
+        timeoutSec: 30,
+        labels: { [host.keys.internal]: "true" },
+      });
+      return { result, search, boundary: null };
+    };
+    // Resolving a path through a covering mount could inspect the wrong volume's symlinks. Use a non-started,
+    // unshadowed archive mount for both resolution and boundary metadata; the find exec still runs in the box.
+    return nestedMounts(access).length > 0
+      ? withArchive(host, volume, "ro", list, { isolated: true, mountPath: access.mountPath })
+      : list(access);
   });
   if (result.exitCode !== 0) {
     const detail = result.logs.trim().slice(0, 400);
@@ -101,12 +109,15 @@ export async function listFiles(
     const type: FileEntry["type"] = kind === "f" ? "file" : kind === "d" ? "dir" : kind === "l" ? "symlink" : "other";
     const within = full === search ? "" : full.slice(search.length + 1);
     const logical = within === "" ? relative : childOf(relative, within);
-    const size = type === "file" ? Number(sizeText) : null;
+    const stat = boundary?.get(full);
+    if (boundary?.has(full) && (!stat || stat.type === "other")) continue;
+    const actualType = stat?.type ?? type;
+    const size = actualType === "file" ? (stat?.size ?? Number(sizeText)) : null;
     entries.push({
       path: logical === "" ? "/" : logical,
-      type,
+      type: actualType,
       size: size !== null && Number.isFinite(size) ? size : null,
-      mtime: mtimeOf(mtimeText),
+      mtime: stat ? (stat.mtime ?? null) : mtimeOf(mtimeText),
     });
     if (entries.length >= limit) {
       truncated = true;

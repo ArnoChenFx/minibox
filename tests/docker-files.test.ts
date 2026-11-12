@@ -94,6 +94,8 @@ describe.skipIf(!enabled)("the file browser's volume operations on a real engine
 
   afterAll(async () => {
     await runtime.removeVolume(vol?.engineName ?? "").catch(() => {});
+    await runtime.removeImage(`${prefix}-file-metadata:internal`, { force: true }).catch(() => {});
+    await runtime.removeNetwork(host.security.network).catch(() => {});
     restoreLogs?.();
   });
 
@@ -145,6 +147,60 @@ describe.skipIf(!enabled)("the file browser's volume operations on a real engine
       } finally {
         runtime.runHelper = runHelper;
         await runtime.removeContainer(box.id, { force: true });
+      }
+    },
+    LONG,
+  );
+
+  test(
+    "the home/cache layout lists the home root quickly without mixing cache metadata or contents",
+    async () => {
+      const home = await createVolume(host, { name: `${prefix}-home`, role: null, createdBy: "owner" });
+      const cache = await createVolume(host, { name: `${prefix}-cache`, role: null, createdBy: "owner" });
+      let containerId: string | undefined;
+      const runHelper = runtime.runHelper;
+      const startContainer = runtime.startContainer;
+      try {
+        for (const path of ["profile.txt", ".cache/own.txt", ".config/settings.txt"]) {
+          await streamUpload(host, home.id, { path, overwrite: false, body: bodyOf("home"), maxBytes: LIMIT });
+        }
+        const expected = await listFiles(host, home.id, { maxDepth: 1 });
+        const box = await createBox(host, {
+          name: `${prefix}-home-box`,
+          image: HELPER_IMAGE,
+          cpus: 0.5,
+          memoryMb: 128,
+          mounts: [
+            { volume: home.id, path: "/home/dev", mode: "rw" },
+            { volume: cache.id, path: "/home/dev/.cache", mode: "rw" },
+          ],
+        });
+        containerId = box.id;
+        await runtime.putArchive(box.id, "/home/dev/.cache", fileArchive("foreign.txt", Buffer.from("cache")));
+        runtime.runHelper = async () => {
+          throw new Error("a shallow home listing must not run a helper");
+        };
+        runtime.startContainer = async () => {
+          throw new Error("archive-only containers must never start");
+        };
+        const first = await listFiles(host, home.id, { maxDepth: 1 });
+        expect(first.entries.toSorted((a, b) => a.path.localeCompare(b.path))).toEqual(
+          expected.entries.toSorted((a, b) => a.path.localeCompare(b.path)),
+        );
+        const config = await listFiles(host, home.id, { path: ".config", maxDepth: 1 });
+        expect(config.entries.map((entry) => entry.path)).toContain(".config/settings.txt");
+        const cacheListing = await listFiles(host, cache.id, { maxDepth: 1 });
+        expect(cacheListing.entries.map((entry) => entry.path)).toContain("foreign.txt");
+        runtime.runHelper = runHelper;
+        runtime.startContainer = startContainer;
+        const covered = await listFiles(host, home.id, { path: ".cache", maxDepth: 1 });
+        expect(covered.entries.map((entry) => entry.path)).toEqual([".cache", ".cache/own.txt"]);
+      } finally {
+        runtime.runHelper = runHelper;
+        runtime.startContainer = startContainer;
+        if (containerId) await runtime.removeContainer(containerId, { force: true });
+        await runtime.removeVolume(home.engineName);
+        await runtime.removeVolume(cache.engineName);
       }
     },
     LONG,

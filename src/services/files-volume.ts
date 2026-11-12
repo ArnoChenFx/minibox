@@ -6,6 +6,7 @@ import { msg } from "../lib/messages";
 import { isRuntimeError, type ContainerInfo, type HelperSpec, type HelperResult } from "../runtime";
 import type { VolumeRecord } from "../volumes/types";
 import { ensureBaseImage } from "./base-template";
+import { metadataImage } from "./files-metadata-image";
 import { FILE_MOUNT } from "./files-model";
 
 export function requireVolume(host: HostCtx, ref: string): VolumeRecord {
@@ -33,8 +34,13 @@ export interface MountAccess {
  * A container that already mounts the volume (a box, running or stopped), or a freshly created helper that is not
  * started. Archive APIs work on created containers.
  */
-export async function openMount(host: HostCtx, volume: VolumeRecord, mode: "rw" | "ro"): Promise<MountAccess> {
-  for (const spec of host.specs.list()) {
+export async function openMount(
+  host: HostCtx,
+  volume: VolumeRecord,
+  mode: "rw" | "ro",
+  opts: { isolated?: boolean; mountPath?: string } = {},
+): Promise<MountAccess> {
+  for (const spec of opts.isolated ? [] : host.specs.list()) {
     if (spec.hostId !== host.host.id || !spec.containerId) continue;
     const mount = spec.mounts.find((item) => item.volume === volume.engineName);
     if (!mount) continue;
@@ -48,7 +54,11 @@ export async function openMount(host: HostCtx, volume: VolumeRecord, mode: "rw" 
     }
   }
 
-  const image = await requireHelperImage(host);
+  // A host that forbids image builds can still use its existing base template for archive access.
+  const image = opts.isolated
+    ? await metadataImage(host).catch(() => requireHelperImage(host))
+    : await requireHelperImage(host);
+  const mountPath = opts.mountPath ?? FILE_MOUNT;
   const name = `${host.prefix}-file-${randomBytes(4).toString("hex")}`;
   // Mirror runHelper hardening (NoCopy, ReadonlyRootfs, /tmp tmpfs, memory/pids, CapDrop, no network).
   // AutoRemove is omitted on purpose: archive helpers are created but never started, so the engine would never
@@ -57,7 +67,7 @@ export async function openMount(host: HostCtx, volume: VolumeRecord, mode: "rw" 
     image,
     name,
     cmd: ["true"],
-    mounts: [{ source: volume.engineName, target: FILE_MOUNT, mode, noCopy: true }],
+    mounts: [{ source: volume.engineName, target: mountPath, mode, noCopy: true }],
     network: "none",
     labels: { [host.keys.internal]: "true" },
     memoryBytes: 256 * 1024 * 1024,
@@ -66,7 +76,7 @@ export async function openMount(host: HostCtx, volume: VolumeRecord, mode: "rw" 
     tmpfs: { "/tmp": "rw,noexec,nosuid,nodev,size=16m" },
     hardening: { capDrop: ["ALL"], noNewPrivileges: true, pidsLimit: 64 },
   });
-  return { containerId: created.id, container: null, mountPath: FILE_MOUNT, ephemeral: true };
+  return { containerId: created.id, container: null, mountPath, ephemeral: true };
 }
 
 export async function closeMount(host: HostCtx, access: MountAccess): Promise<void> {
@@ -110,9 +120,10 @@ export async function withArchive<T>(
   volume: VolumeRecord,
   mode: "rw" | "ro",
   run: (access: MountAccess) => Promise<T>,
+  opts: { isolated?: boolean; mountPath?: string } = {},
 ): Promise<T> {
   return whileVolumeInUse(host, volume, async () => {
-    const access = await openMount(host, volume, mode);
+    const access = await openMount(host, volume, mode, opts);
     try {
       return await run(access);
     } finally {

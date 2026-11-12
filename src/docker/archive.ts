@@ -67,7 +67,7 @@ const MODE_OTHER = [2 ** 26, 2 ** 25, 2 ** 24, 2 ** 21, 2 ** 19];
 /** Decodes the engine's base64 JSON `X-Docker-Container-Path-Stat` header. */
 export function parsePathStat(header: string | string[] | undefined, path: string): PathStat {
   const value = Array.isArray(header) ? header[0] : header;
-  let raw: { name?: unknown; size?: unknown; mode?: unknown; linkTarget?: unknown };
+  let raw: { name?: unknown; size?: unknown; mode?: unknown; linkTarget?: unknown; mtime?: unknown };
   try {
     if (!value) throw new Error("missing");
     raw = JSON.parse(Buffer.from(value, "base64").toString("utf8")) as typeof raw;
@@ -90,6 +90,10 @@ export function parsePathStat(header: string | string[] | undefined, path: strin
     type,
     size: typeof raw.size === "number" && Number.isFinite(raw.size) ? raw.size : 0,
     mode,
+    mtime:
+      typeof raw.mtime === "string" && Number.isFinite(Date.parse(raw.mtime))
+        ? new Date(raw.mtime).toISOString()
+        : null,
     linkTarget: typeof raw.linkTarget === "string" ? raw.linkTarget : "",
   };
 }

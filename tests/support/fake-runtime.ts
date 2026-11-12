@@ -1123,6 +1123,7 @@ export class FakeRuntime implements Runtime {
       type: entry.type,
       size: entry.type === "file" ? (entry.content?.length ?? 0) : 0,
       mode: typeBits + (entry.mode ?? 0o644),
+      mtime: new Date((entry.mtime ?? FAKE_MTIME) * 1000).toISOString(),
       linkTarget: entry.type === "symlink" ? (entry.target ?? "") : "",
     };
   }
