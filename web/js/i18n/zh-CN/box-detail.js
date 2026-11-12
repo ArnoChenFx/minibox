@@ -178,6 +178,16 @@ export default {
   "bd.expiredTitle": "TTL 已到期",
   "bd.expiredText": "此 Box 已达到 TTL 并保持停止。在通过 API 或 CLI 清除或延长 TTL 之前，它无法再次启动。",
   "bd.reconnect": "重新连接",
+  "bd.termClipboard": "终端剪贴板",
+  "bd.termCopy": "复制",
+  "bd.termPaste": "粘贴",
+  "bd.termSelectAll": "全选",
+  "bd.termCopyFailed": "未能复制所选文本",
+  "bd.termPasteText": "要粘贴的文本",
+  "bd.termPasteHelp": "先在这里使用键盘快捷键或浏览器右键菜单粘贴，再点击「粘贴」发送到终端。",
+  "bd.termClipboardHelp":
+    "按住 Shift 拖动选择文本；Ctrl+C 或 Ctrl+Shift+C 复制，Ctrl+V 或 Ctrl+Shift+V 粘贴。右键可打开操作菜单。",
+  "bd.termClipboardMac": "按住 Option 拖动选择文本；⌘C 复制，⌘V 粘贴。右键可打开操作菜单。",
   "bd.termHelp":
     "会话在 Box 内的 tmux 中运行。关闭此页面后会话继续运行，重新打开即可接回。Agent 的会话默认只读，接管后才能输入。",
   "bd.sessions": "会话",
