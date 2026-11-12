@@ -20,6 +20,7 @@ import {
 } from "../lib/terminal-height.js";
 import { ctrlChar, keyBytes, keysReveal, TERM_KEYS } from "../lib/terminal-keys.js";
 import { confirmDialog, emptyState, promptDialog, toast, toastError } from "../lib/ui.js";
+import { mountTerminalClipboard } from "./terminal-clipboard.js";
 
 const DEFAULT_NAME = DEFAULT_SESSION_NAME;
 const POLL_MS = 10_000;
@@ -194,6 +195,10 @@ function mountLive(root, b, session) {
 
   root.innerHTML = `<div class="session-bar">
       <div class="session-list" id="tSessions" role="group" aria-label="${esc(t("bd.sessions"))}"></div>
+      <div class="term-clipboard-actions" role="group" aria-label="${esc(t("bd.termClipboard"))}">
+        <button type="button" class="btn btn-sm" id="tCopy" disabled>${icon("copy")}${esc(t("bd.termCopy"))}</button>
+        <button type="button" class="btn btn-sm" id="tPaste" disabled>${esc(t("bd.termPaste"))}</button>
+      </div>
       <button class="btn btn-sm" id="tNew">${icon("plus")}${t("bd.newSession")}</button>
     </div>
     <div class="terminal-frame">
@@ -204,7 +209,7 @@ function mountLive(root, b, session) {
       ${grabberHtml()}
       <div class="terminal" id="term"></div>
       ${keysRowHtml()}</div>
-    <p class="help" style="margin-top:8px">${t("bd.termHelp")}</p>`;
+    <p class="help" style="margin-top:8px">${t("bd.termHelp")} <span id="tClipboardHint"></span></p>`;
 
   const list = root.querySelector("#tSessions");
   const control = root.querySelector("#tControl");
@@ -219,6 +224,7 @@ function mountLive(root, b, session) {
     fontFamily: '"JetBrains Mono", "SF Mono", Menlo, Consolas, monospace',
     theme: { background: "#0b0b0e", foreground: "#e4e4e7", cursor: "#a5a2ff", selectionBackground: "#3f3f7a" },
     scrollback: 5000,
+    macOptionClickForcesSelection: true,
   });
   const fit = new window.FitAddon.FitAddon();
   xterm.loadAddon(fit);
@@ -302,6 +308,28 @@ function mountLive(root, b, session) {
   let view = null;
   let ws = null;
   let disposed = false;
+  const clipboard = mountTerminalClipboard(root, {
+    xterm,
+    screen,
+    onPaste: () => setCtrl(false),
+    getPasteTarget: () => {
+      const socket = ws;
+      const name = current;
+      const isActive = () =>
+        !disposed && socket === ws && name === current && view?.canType && socket?.readyState === 1;
+      return isActive()
+        ? {
+            isActive,
+            paste(text) {
+              if (!isActive()) return;
+              setCtrl(false);
+              xterm.paste(text);
+              xterm.focus();
+            },
+          }
+        : null;
+    },
+  });
 
   const setStatus = (on, text) => {
     status.classList.toggle("on", on);
@@ -320,6 +348,7 @@ function mountLive(root, b, session) {
     if (!view) {
       control.innerHTML = "";
       xterm.options.disableStdin = true;
+      clipboard.update();
       setKeysEnabled(false);
       syncHeight();
       return;
@@ -332,6 +361,7 @@ function mountLive(root, b, session) {
       <span class="control-help">${esc(human ? humanHelp(view) : t("bd.ctlAgentHelp"))}</span>
       <span class="control-actions">${action}<button class="btn btn-sm btn-ghost" data-control="close">${icon("x")}${t("bd.closeSession")}</button></span>`;
     xterm.options.disableStdin = !view.canType;
+    clipboard.update();
     setKeysEnabled(view.canType);
     syncHeight();
   };
@@ -706,6 +736,7 @@ function mountLive(root, b, session) {
     window.removeEventListener("resize", onWin);
     window.visualViewport?.removeEventListener("resize", onViewport);
     root.removeEventListener("focusin", onFocusIn);
+    clipboard.dispose();
     dataSub.dispose();
     resizeSub.dispose();
     ws?.close();

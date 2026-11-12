@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### 修复
+
+- **终端复制和粘贴**：新增复制、粘贴按钮和右键菜单，支持 Windows/Linux 的 Ctrl+C、Ctrl+Shift+C、Ctrl+V、Ctrl+Shift+V 以及 macOS 的 ⌘C、⌘V；未选中文本时 Ctrl+C 仍用于中断命令。提示使用 Shift（macOS 为 Option）拖选文本，保留 tmux 滚轮历史浏览。普通 HTTP 或剪贴板读取被拒绝时，可通过多行输入框完成粘贴；只读会话仍可复制，切换会话后完成的剪贴板读取不会误输入到新会话。
+
 ## [0.7.5] - 2026-11-11
 
 ### 修复
