@@ -23,6 +23,11 @@ const screenText = (page: Page, text: string) =>
 /** Real pointer selection, with tmux-style mouse reporting active in xterm. */
 async function selectByDrag(page: Page, text: string, modifier: "Shift" | "Alt" = "Shift") {
   await screenText(page, text);
+  // Parsing finishes before xterm renders and relocates its textarea. On a phone, focusing that old position can
+  // scroll the page during the drag. Render, reveal and focus first, then measure the pointer coordinates.
+  await webExpect(page.locator(".xterm-rows")).toContainText(text);
+  await page.locator(".xterm-screen").scrollIntoViewIfNeeded();
+  await page.locator(".xterm-helper-textarea").focus();
   const screen = await page.locator(".xterm-screen").boundingBox();
   const size = await page.evaluate<{ cols: number; rows: number }>(
     "({cols: testTerminal.cols, rows: testTerminal.rows})",
