@@ -190,6 +190,18 @@ export default {
   "bd.expiredText":
     "This box reached its TTL and stays stopped. It cannot start again until its TTL is cleared or extended through the API or the CLI.",
   "bd.reconnect": "Reconnect",
+  "bd.termClipboard": "Terminal clipboard",
+  "bd.termCopy": "Copy",
+  "bd.termPaste": "Paste",
+  "bd.termSelectAll": "Select all",
+  "bd.termCopyFailed": "Could not copy the selected text",
+  "bd.termPasteText": "Text to paste",
+  "bd.termPasteHelp":
+    "Paste here with your keyboard or the browser's right-click menu, then choose Paste to send it to the terminal.",
+  "bd.termClipboardHelp":
+    "Hold Shift while dragging to select text. Copy with Ctrl+C or Ctrl+Shift+C; paste with Ctrl+V or Ctrl+Shift+V. Right-click for more actions.",
+  "bd.termClipboardMac":
+    "Hold Option while dragging to select text. Copy with ⌘C and paste with ⌘V. Right-click for more actions.",
   "bd.termHelp":
     "Sessions run in tmux inside the box. They keep running when you close this page, and opening the page again reattaches to them. An agent's session is read-only until you take it over.",
   "bd.sessions": "Sessions",
