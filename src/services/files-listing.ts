@@ -1,10 +1,19 @@
 import { finished } from "node:stream/promises";
 
 import type { HostCtx } from "../host/registry";
+import { isRuntimeError, type PathStat } from "../runtime";
 import type { VolumeRecord } from "../volumes/types";
 import { containerPath } from "./files-path";
 import type { MountAccess } from "./files-volume";
 import { within } from "./tmux-exec";
+
+/** Mounts whose contents hide part of the volume as seen from this box. */
+export function nestedMounts(access: MountAccess): string[] {
+  const prefix = access.mountPath === "/" ? "/" : `${access.mountPath}/`;
+  return (access.container?.mounts ?? [])
+    .filter((mount) => mount.target !== access.mountPath && mount.target.startsWith(prefix))
+    .map((mount) => mount.target);
+}
 
 /** GNU find's NUL-delimited format keeps tabs and newlines in file names intact. */
 export function listingCommand(search: string, maxDepth: number): string[] {
@@ -31,8 +40,9 @@ export function listingCommand(search: string, maxDepth: number): string[] {
 
 /**
  * A running box already has the volume mounted. Reading there avoids creating, starting and removing a container
- * for every refresh. Stopped boxes, images without GNU find, and mounts shadowed by another mount use the isolated
- * helper instead. No box is started and no helper image is needed on the fast path.
+ * for every refresh. A nested mount beyond the requested depth does not affect a listing. At the depth boundary,
+ * only its metadata is visible: read that metadata from the volume's isolated archive mount instead of the covering
+ * volume. Queries inside or through a nested mount still use the find helper. Archive mounts are never started.
  */
 export async function listInMount(
   host: HostCtx,
@@ -40,15 +50,39 @@ export async function listInMount(
   access: MountAccess,
   physical: string,
   maxDepth: number,
-): Promise<{ logs: string; search: string } | null> {
+  metadata: MountAccess = access,
+): Promise<{ logs: string; search: string; boundary: Map<string, PathStat | null> } | null> {
   const info = access.container;
   if (!info?.running) return null;
   if (!info.mounts.some((mount) => mount.source === volume.engineName && mount.target === access.mountPath))
     return null;
-  const prefix = access.mountPath === "/" ? "/" : `${access.mountPath}/`;
-  if (info.mounts.some((mount) => mount.target !== access.mountPath && mount.target.startsWith(prefix))) return null;
-
   const search = containerPath(access.mountPath, physical);
+  const boundaryPaths: string[] = [];
+  for (const path of nestedMounts(access)) {
+    if (search === path || search.startsWith(`${path}/`)) return null;
+    if (!path.startsWith(`${search}/`)) continue;
+    const depth = path.slice(search.length + 1).split("/").length;
+    if (depth < maxDepth) return null;
+    if (depth === maxDepth) boundaryPaths.push(path);
+  }
+  // A covering mount must never supply even the boundary entry's type or modification time.
+  if (boundaryPaths.length > 0 && metadata.containerId === access.containerId) return null;
+  const boundary = new Map<string, PathStat | null>(
+    await Promise.all(
+      boundaryPaths.map(async (path) => {
+        const relative = path.slice(access.mountPath.length + 1);
+        try {
+          return [
+            path,
+            await host.runtime.statPath(metadata.containerId, containerPath(metadata.mountPath, relative)),
+          ] as const;
+        } catch (e) {
+          if (isRuntimeError(e, "not_found")) return [path, null] as const;
+          throw e;
+        }
+      }),
+    ),
+  );
   let exec;
   try {
     exec = await host.runtime.startExec(access.containerId, {
@@ -87,7 +121,7 @@ export async function listInMount(
     const status = await exec.inspect();
     if (!status.running) {
       return status.exitCode === 0 && bytes > 0 && bytes <= maxBytes
-        ? { logs: Buffer.concat(chunks).toString("utf8"), search }
+        ? { logs: Buffer.concat(chunks).toString("utf8"), search, boundary }
         : null;
     }
     if (Date.now() >= deadline) {

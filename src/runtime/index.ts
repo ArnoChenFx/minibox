@@ -281,6 +281,8 @@ export interface PathStat {
   size: number;
   /** Go `os.FileMode` bits as the engine reports them. */
   mode: number;
+  /** Modification time from the archive HEAD response. Older runtimes may omit it. */
+  mtime?: string | null;
   /**
    * For a symlink, the engine's fully evaluated container path of its target (not the raw `readlink` text). Empty
    * otherwise. Read the raw target from the first archive entry when the literal link text matters.

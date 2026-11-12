@@ -45,6 +45,14 @@ async function volume() {
   return createVolume(host, { name: "notes", role: null, createdBy: "owner" });
 }
 
+async function homeBox() {
+  const box = await createBox(host, { name: "home-listing", cpus: 1, memoryMb: 256 });
+  const mounts = host.specs.list().find((spec) => spec.containerId === box.id)!.mounts;
+  const home = host.volumes.resolve(mounts.find((mount) => mount.path === "/home/dev")!.volume, host.host.id)!;
+  const cache = host.volumes.resolve(mounts.find((mount) => mount.path === "/home/dev/.cache")!.volume, host.host.id)!;
+  return { box, home, cache };
+}
+
 describe("path jail", () => {
   test("rejects escapes and accepts nested paths", () => {
     expect(jailPath("a/b")).toBe("a/b");
@@ -186,6 +194,106 @@ describe("symlink resolution (B1c/B1d/B1e)", () => {
 });
 
 describe("volume file API", () => {
+  test("the default home/cache layout lists the home root without starting a helper and keeps home metadata", async () => {
+    const { box, home, cache } = await homeBox();
+    runtime.seedVolumeFile(home.engineName, ".cache", { type: "dir", mtime: 1_600_000_000 });
+    runtime.seedVolumeFile(cache.engineName, "foreign.txt", { type: "file", content: Buffer.from("cache") });
+    runtime.execScript = {
+      stdout:
+        "d\t0\t1700000000.0\t/home/dev\0d\t0\t1900000000.0\t/home/dev/.cache\0f\t3\t1700000000.0\t/home/dev/profile.txt\0",
+      stderr: "",
+      code: 0,
+    };
+    const helpers = runtime.callsTo("runHelper").length;
+    const starts = runtime.callsTo("startContainer").length;
+    const creates = runtime.callsTo("createContainer").length;
+    const removes = runtime.callsTo("removeContainer").length;
+    const archives = runtime.callsTo("getArchive").length;
+    const listed = await listFiles(host, home.id, { maxDepth: 1 });
+    expect(listed.entries).toContainEqual({
+      path: ".cache",
+      type: "dir",
+      size: null,
+      mtime: "2020-09-13T12:26:40.000Z",
+    });
+    expect(listed.entries.map((entry) => entry.path)).toEqual(["/", ".cache", "profile.txt"]);
+    expect(runtime.callsTo("runHelper")).toHaveLength(helpers);
+    expect(runtime.callsTo("startContainer")).toHaveLength(starts);
+    expect(runtime.callsTo("getArchive")).toHaveLength(archives);
+    expect(runtime.callsTo("createContainer")).toHaveLength(creates + 1);
+    expect(runtime.callsTo("removeContainer")).toHaveLength(removes + 1);
+    const metadata = runtime.callsTo("statPath").at(-1)!;
+    expect(metadata.args[0]).not.toBe(box.id);
+    expect(metadata.args[1]).toBe("/home/dev/.cache");
+  });
+
+  test("a sibling mount does not slow an unrelated home directory or its absolute symlink", async () => {
+    const { home } = await homeBox();
+    runtime.seedVolumeFile(home.engineName, ".config/settings.txt", { type: "file", content: Buffer.from("cfg") });
+    runtime.seedVolumeFile(home.engineName, "config-link", { type: "symlink", target: "/home/dev/.config" });
+    runtime.execScript = {
+      stdout: "d\t0\t1700000000.0\t/home/dev/.config\0f\t3\t1700000000.0\t/home/dev/.config/settings.txt\0",
+      stderr: "",
+      code: 0,
+    };
+    const helpers = runtime.callsTo("runHelper").length;
+    const listed = await listFiles(host, home.id, { path: "config-link", maxDepth: 1 });
+    expect(listed.entries.map((entry) => entry.path)).toEqual(["config-link", "config-link/settings.txt"]);
+    expect(runtime.callsTo("runHelper")).toHaveLength(helpers);
+  });
+
+  test("a boundary mount cannot fabricate an entry that does not exist in the home volume", async () => {
+    const { home } = await homeBox();
+    runtime.execScript = {
+      stdout: "d\t0\t1700000000.0\t/home/dev\0d\t0\t1900000000.0\t/home/dev/.cache\0",
+      stderr: "",
+      code: 0,
+    };
+    const helpers = runtime.callsTo("runHelper").length;
+    expect((await listFiles(host, home.id, { maxDepth: 1 })).entries.map((entry) => entry.path)).toEqual(["/"]);
+    expect(runtime.callsTo("runHelper")).toHaveLength(helpers);
+  });
+
+  test("a home path inside the cache mount resolves in the home volume and uses the isolated listing", async () => {
+    const { home, cache } = await homeBox();
+    runtime.seedVolumeFile(home.engineName, ".cache/own.txt", { type: "file", content: Buffer.from("home") });
+    runtime.seedVolumeFile(cache.engineName, "foreign.txt", { type: "file", content: Buffer.from("cache") });
+    runtime.seedVolumeFile(home.engineName, "cache-link", { type: "symlink", target: "/home/dev/.cache" });
+    const execs = runtime.callsTo("startExec").length;
+    const listed = await listFiles(host, home.id, { path: "cache-link", maxDepth: 1 });
+    expect(listed.entries.map((entry) => entry.path)).toEqual(["cache-link", "cache-link/own.txt"]);
+    expect(runtime.callsTo("startExec")).toHaveLength(execs);
+  });
+
+  test("a covering cache mount cannot hide a symlink that escapes the home volume", async () => {
+    const { home } = await homeBox();
+    runtime.seedVolumeFile(home.engineName, ".cache", { type: "symlink", target: "/etc" });
+    const error = await rejectionOf(listFiles(host, home.id, { path: ".cache", maxDepth: 1 }));
+    expect(error).toMatchObject({ status: 400 });
+    expect(runtime.callsTo("startExec")).toHaveLength(0);
+  });
+
+  test("concurrent home listings share the archive-image build and recreate it after image pruning", async () => {
+    const { home } = await homeBox();
+    runtime.execScript = { stdout: "d\t0\t1700000000.0\t/home/dev\0", stderr: "", code: 0 };
+    const builds = runtime.callsTo("buildImage").length;
+    await Promise.all([listFiles(host, home.id, { maxDepth: 1 }), listFiles(host, home.id, { maxDepth: 1 })]);
+    expect(runtime.callsTo("buildImage")).toHaveLength(builds + 1);
+    await listFiles(host, home.id, { maxDepth: 1 });
+    expect(runtime.callsTo("buildImage")).toHaveLength(builds + 1);
+    await runtime.removeImage(`${host.prefix}-file-metadata:internal`, { force: true });
+    await listFiles(host, home.id, { maxDepth: 1 });
+    expect(runtime.callsTo("buildImage")).toHaveLength(builds + 2);
+  });
+
+  test("a host that cannot build the archive image can still list home using its existing base image", async () => {
+    const { home } = await homeBox();
+    runtime.execScript = { stdout: "d\t0\t1700000000.0\t/home/dev\0", stderr: "", code: 0 };
+    runtime.fail("buildImage", new RuntimeError("unsupported", "image builds are disabled"));
+    expect((await listFiles(host, home.id, { maxDepth: 1 })).entries.map((entry) => entry.path)).toEqual(["/"]);
+    expect(runtime.callsTo("createContainer").at(-1)!.args[0]).toMatchObject({ image: host.baseTemplateTag });
+  });
+
   test("a running box lists its mounted volume without starting a helper or checking the helper image", async () => {
     const box = await createBox(host, { name: "listing", cpus: 1, memoryMb: 256 });
     const spec = host.specs.list().find((item) => item.containerId === box.id)!;
@@ -553,5 +661,9 @@ describe("tar first entry and engine path stat", () => {
     });
     expect(parsePathStat(enc({ name: "p", size: 0, mode: 2 ** 25 + 0o644 }), "/v/p").type).toBe("other");
     expect(() => parsePathStat(undefined, "/v/x")).toThrow();
+    expect(parsePathStat(enc({ mode: 0o644, mtime: "2020-09-13T12:26:40.123456789Z" }), "/v/f").mtime).toBe(
+      "2020-09-13T12:26:40.123Z",
+    );
+    expect(parsePathStat(enc({ mode: 0o644, mtime: "bad" }), "/v/f").mtime).toBeNull();
   });
 });
