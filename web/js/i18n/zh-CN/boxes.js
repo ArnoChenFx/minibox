@@ -23,6 +23,7 @@ export default {
   "act.template.delete": "删除模板",
   "act.template.save": "已将 Box 存为模板",
   "act.token.create": "创建令牌",
+  "act.token.update": "更新令牌权限",
   "act.token.revoke": "吊销令牌",
   "act.token.delete": "删除令牌",
   "act.token.prune": "清理已失效令牌",

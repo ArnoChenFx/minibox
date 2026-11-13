@@ -340,6 +340,10 @@ const SAMPLES: Record<string, (boxId: string, app: App) => unknown> = {
   "overview.get": () => ({}),
   "token.list": () => ({}),
   "token.create": () => ({ name: "ci", preset: "readonly" }),
+  "token.update": (_boxId, app) => ({
+    id: app.tokens.create(compileToken({ name: "editable", preset: "readonly" }), "owner").record.id,
+    preset: "operator",
+  }),
   "token.revoke": (_boxId, app) => ({
     id: app.tokens.create(compileToken({ name: "gone", preset: "readonly" }), "owner").record.id,
   }),

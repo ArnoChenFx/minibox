@@ -114,7 +114,7 @@ export class DirectSshServer {
         release();
         const principal = connection.principal;
         if (principal?.type === "token") {
-          stopWatching = this.deps.tokens.watch(principal.id, () => connection.disconnect("token revoked"));
+          stopWatching = this.deps.tokens.watchPrincipal(principal, () => connection.disconnect("token revoked"));
         }
       },
       onEnd: () => {

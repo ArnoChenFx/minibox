@@ -1391,6 +1391,11 @@ async function recordScenario(): Promise<Exchange[]> {
       {},
     );
     await send("read the remote repository of a host that is not added", "GET", "/api/hosts/nowhere/checkpoint-remote");
+    const editable = await post("create a token to edit", "/api/tokens", { name: "editable", preset: "operator" });
+    const editableId = String((editable.json?.record as { id?: string } | undefined)?.id ?? "");
+    await put("narrow an existing token's permissions", `/api/tokens/${editableId}`, { preset: "readonly" });
+    await put("refuse an empty permission policy", `/api/tokens/${editableId}`, { scopes: [] });
+    await put("edit a missing token", "/api/tokens/missing", { preset: "readonly" });
   } finally {
     server.stop(true);
     app.throttle.stop();

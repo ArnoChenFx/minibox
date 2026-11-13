@@ -31,7 +31,7 @@ export function sshHandlers(deps: { tokens: TokenStore; ssh: SshGateway }) {
       const stops: (() => void)[] = [];
       const principal = data.lease.target.principal;
       if (principal.type === "token") {
-        stops.push(tokens.watch(principal.id, () => ws.close(1008, "token revoked")));
+        stops.push(tokens.watchPrincipal(principal, () => ws.close(1008, "token revoked")));
       }
       data.stopWatching = () => {
         for (const stop of stops) stop();

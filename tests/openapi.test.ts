@@ -216,6 +216,7 @@ describe("OpenAPI document", () => {
       "token.list",
       "token.prune",
       "token.revoke",
+      "token.update",
       "tool.catalog",
       "tool.custom.delete",
       "tool.custom.list",

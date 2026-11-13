@@ -270,72 +270,78 @@ const TokenInfoSchema = z.object({
   revokedAt: z.string().nullable(),
 });
 
-const tokenCreateInput = z
-  .object({
-    name: field(
-      (value) => {
-        if (typeof value !== "string" || !value.trim())
-          return reject(msg("field_required", { label: "tokenName" }), "name");
-        const name = value.trim();
-        if (!NAME_RE.test(name)) return reject(msg("name_invalid", { label: "tokenName" }), "name");
-        return accept(name);
-      },
-      {
-        type: "string",
-        minLength: 1,
-        maxLength: 63,
-        pattern: NAME_RE.source,
-        description: "Name shown in Settings. Letters, digits, dots, underscores and hyphens.",
-      },
-    ),
-    preset: field(checkPreset, {
+const tokenFields = z.object({
+  name: field(
+    (value) => {
+      if (typeof value !== "string" || !value.trim())
+        return reject(msg("field_required", { label: "tokenName" }), "name");
+      const name = value.trim();
+      if (!NAME_RE.test(name)) return reject(msg("name_invalid", { label: "tokenName" }), "name");
+      return accept(name);
+    },
+    {
       type: "string",
-      enum: [...PRESET_NAMES],
-      description:
-        "readonly, operator, sandboxed-agent or admin. Overrides below replace the preset's matching part. Omit it to send scopes yourself.",
-    }).optional(),
-    scopes: field(checkScopes, {
-      type: "array",
-      items: { type: "string", enum: [...SCOPES] },
-      maxItems: SCOPE_MAX,
-      description: `Replaces the preset's scopes. One or more of ${SCOPES.join(", ")}.`,
-    }).optional(),
-    boxes: field(checkBoxes, {
-      description:
-        'Which boxes this token may use. "created-by-me" (the default), "*" for every box, {"ids":["bx_…"]}, or {"tags":["env=prod"]}. A tag is a label key, or key=value.',
-    }).optional(),
-    volumes: field(checkVolumes, {
-      description:
-        'Volumes the token may attach, by volume id (vol_…). "*" or a list. Empty grants nothing. Naming a volume also grants volume:attach.',
-    }).optional(),
-    hosts: field(checkHosts, {
-      description:
-        'Host ids this token may use. "*" or a list. Omitted, a preset chooses: local, or every host for admin.',
-    }).optional(),
-    quotas: field(checkQuotas, {
-      type: "object",
-      description:
-        "maxBoxes, maxCpus and maxMemoryMb cap what the token can create, as a total across its boxes. maxTtlSec caps the TTL stored on a box, and the box stops when that TTL elapses. maxCheckpoints caps the checkpoints the token takes, as a total across its boxes; automatic checkpoints are kept by the retention policy and not counted. rateLimit is requests per rateWindowSec (default 60). Null clears a preset's limit.",
-      properties: {
-        maxBoxes: { type: ["integer", "null"] },
-        maxCpus: { type: ["number", "null"] },
-        maxMemoryMb: { type: ["integer", "null"] },
-        maxTtlSec: { type: ["integer", "null"] },
-        rateLimit: { type: ["integer", "null"] },
-        rateWindowSec: { type: ["integer", "null"] },
-        maxCheckpoints: { type: ["integer", "null"] },
-      },
-    }).optional(),
-    expiresInSec: field(checkExpiry, {
-      description: `Seconds until the token stops working, up to ${EXPIRY_MAX}. Null or omitted means it does not expire.`,
-      anyOf: [{ type: "integer", minimum: 1, maximum: EXPIRY_MAX }, { type: "null" }],
-    }).optional(),
-  })
-  .superRefine((input, ctx) => {
-    if (!input.preset && (!input.scopes || input.scopes.length === 0)) {
-      addFailure(ctx, { message: msg("token_scope_required"), field: "scopes" });
-    }
-  });
+      minLength: 1,
+      maxLength: 63,
+      pattern: NAME_RE.source,
+      description: "Name shown in Settings. Letters, digits, dots, underscores and hyphens.",
+    },
+  ),
+  preset: field(checkPreset, {
+    type: "string",
+    enum: [...PRESET_NAMES],
+    description:
+      "readonly, operator, sandboxed-agent or admin. Overrides below replace the preset's matching part. Omit it to send scopes yourself.",
+  }).optional(),
+  scopes: field(checkScopes, {
+    type: "array",
+    items: { type: "string", enum: [...SCOPES] },
+    maxItems: SCOPE_MAX,
+    description: `Replaces the preset's scopes. One or more of ${SCOPES.join(", ")}.`,
+  }).optional(),
+  boxes: field(checkBoxes, {
+    description:
+      'Which boxes this token may use. "created-by-me" (the default), "*" for every box, {"ids":["bx_…"]}, or {"tags":["env=prod"]}. A tag is a label key, or key=value.',
+  }).optional(),
+  volumes: field(checkVolumes, {
+    description:
+      'Volumes the token may attach, by volume id (vol_…). "*" or a list. Empty grants nothing. Naming a volume also grants volume:attach.',
+  }).optional(),
+  hosts: field(checkHosts, {
+    description:
+      'Host ids this token may use. "*" or a list. Omitted, a preset chooses: local, or every host for admin.',
+  }).optional(),
+  quotas: field(checkQuotas, {
+    type: "object",
+    description:
+      "maxBoxes, maxCpus and maxMemoryMb cap what the token can create, as a total across its boxes. maxTtlSec caps the TTL stored on a box, and the box stops when that TTL elapses. maxCheckpoints caps the checkpoints the token takes, as a total across its boxes; automatic checkpoints are kept by the retention policy and not counted. rateLimit is requests per rateWindowSec (default 60). Null clears a preset's limit.",
+    properties: {
+      maxBoxes: { type: ["integer", "null"] },
+      maxCpus: { type: ["number", "null"] },
+      maxMemoryMb: { type: ["integer", "null"] },
+      maxTtlSec: { type: ["integer", "null"] },
+      rateLimit: { type: ["integer", "null"] },
+      rateWindowSec: { type: ["integer", "null"] },
+      maxCheckpoints: { type: ["integer", "null"] },
+    },
+  }).optional(),
+  expiresInSec: field(checkExpiry, {
+    description: `Seconds until the token stops working, up to ${EXPIRY_MAX}. Null or omitted means it does not expire.`,
+    anyOf: [{ type: "integer", minimum: 1, maximum: EXPIRY_MAX }, { type: "null" }],
+  }).optional(),
+});
+
+function requireScopes(input: { preset?: PresetName; scopes?: Scope[] }, ctx: z.RefinementCtx) {
+  if (!input.preset && (!input.scopes || input.scopes.length === 0)) {
+    addFailure(ctx, { message: msg("token_scope_required"), field: "scopes" });
+  }
+}
+
+const tokenCreateInput = tokenFields.superRefine(requireScopes);
+const tokenUpdateInput = tokenFields
+  .omit({ name: true, expiresInSec: true })
+  .extend({ id: z.string().min(1) })
+  .superRefine(requireScopes);
 
 function draftOf(input: z.output<typeof tokenCreateInput>): TokenCreateInput {
   return {
@@ -389,6 +395,34 @@ const tokenCreate = defineOperation({
     }
     const created = tokens.create(compileToken({ ...draftOf(input), boxes }), principal.id);
     return { token: created.secret, record: created.record };
+  },
+});
+
+/** Replaces the permission policy; identity, bearer secret and expiry stay unchanged. */
+const tokenUpdate = defineOperation({
+  name: "token.update",
+  tag: "tokens",
+  summary: "Replace an agent API token's permissions",
+  kind: "write",
+  scope: "token:manage",
+  async: false,
+  input: tokenUpdateInput,
+  output: z.object({ record: TokenInfoSchema }),
+  rest: [{ method: "PUT", path: "/api/tokens/:id", body: true }],
+  activity: { action: () => "token.update", target: (input) => input.id },
+  audit: {
+    target: ({ id }, _resolved, result) => ({ kind: "token", id, name: result?.record.name ?? id }),
+    detail: ({ id, ...policy }) => ({ id, ...policy }),
+  },
+  run: async ({ tokens, host, boxViews }, input) => {
+    let boxes = input.boxes;
+    if (boxes?.type === "ids") {
+      boxes = { type: "ids", ids: resolveBoxRefs(boxes.ids, boxViews?.() ?? specViews(host.specs.list())) };
+    }
+    const draft = compileToken({ ...input, boxes, name: "" });
+    const record = tokens.update(input.id, draft);
+    if (!record) throw notFound(msg("token_not_found"));
+    return { record };
   },
 });
 
@@ -531,4 +565,4 @@ const tokenPrune = defineOperation({
   run: async ({ tokens }) => ({ deleted: tokens.prune().map(({ id, name }) => ({ id, name })) }),
 });
 
-export const tokenOperations = [tokenList, tokenCreate, tokenRevoke, tokenDelete, tokenPrune];
+export const tokenOperations = [tokenList, tokenCreate, tokenUpdate, tokenRevoke, tokenDelete, tokenPrune];

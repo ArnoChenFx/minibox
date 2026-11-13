@@ -184,6 +184,19 @@ export default {
   "st.tokens": "Agent API 令牌",
   "st.tokensHelp":
     "供脚本和 Agent 使用。明文只显示一次，服务端只保存哈希。吊销后立即失效。更换访问密钥不会吊销这些令牌。",
+  "st.tokenEdit": "编辑权限",
+  "st.tokenEditHelp":
+    "保存后立即生效。使用此令牌的终端、SSH、MCP 会话和事件流会关闭，需要重新连接。密钥和有效期保持不变。",
+  "st.tokenNumbersInvalid": "配额和有效期必须为有效的正数。",
+  "st.tokenUpdateFailed": "更新令牌权限失败",
+  "st.tokenUpdated": "已更新令牌权限",
+  "st.tokenHostsIds": "指定宿主机",
+  "st.tokenHostList": "宿主机 id",
+  "st.tokenHostListHelp": "每行一个宿主机 id，例如 local 或 lab。",
+  "st.tokenQuotaRequests": "每个时间窗口的请求数",
+  "st.tokenQuotaWindow": "限流窗口（秒）",
+  "st.tokenQuotaEditHelp":
+    "已填入当前配额，留空表示不限制。CPU 和内存是此令牌全部 Box 的合计；TTL 限制应用于后续 Box 变更。",
   "st.tokenCreate": "新建令牌",
   "st.tokenPreset": "预设",
   "st.preset.readonly": "只读",

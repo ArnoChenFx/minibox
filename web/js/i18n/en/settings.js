@@ -197,6 +197,19 @@ export default {
   "st.tokens": "Agent API tokens",
   "st.tokensHelp":
     "For scripts and agents. The secret is shown once; the server keeps only its hash. Revoking a token stops it at once. Changing the access key does not revoke these tokens.",
+  "st.tokenEdit": "Edit permissions",
+  "st.tokenEditHelp":
+    "Changes take effect immediately. Existing terminals, SSH, MCP sessions and event streams using this token close and must reconnect. The secret and expiry stay the same.",
+  "st.tokenNumbersInvalid": "Quotas and expiry must be valid positive numbers.",
+  "st.tokenUpdateFailed": "Could not update token permissions",
+  "st.tokenUpdated": "Token permissions updated",
+  "st.tokenHostsIds": "Specific hosts",
+  "st.tokenHostList": "Host ids",
+  "st.tokenHostListHelp": "One host id per line, for example local or lab.",
+  "st.tokenQuotaRequests": "Requests per window",
+  "st.tokenQuotaWindow": "Rate window (seconds)",
+  "st.tokenQuotaEditHelp":
+    "Current limits are filled in. Empty removes the limit. CPU and memory are totals across this token’s boxes; TTL applies to future Box changes.",
   "st.tokenCreate": "New token",
   "st.tokenPreset": "Preset",
   "st.preset.readonly": "Read only",
