@@ -26,6 +26,8 @@ When an agent token creates a box without `template`, it uses the configured bas
 
 For API and MCP creates, `template` is the full image reference from the list's `ref` field, not its display `name`. For example, use `"template": "minibox-template:base-arno"`, not `"template": "base-arno"`. Read `GET /api/templates` or `list_templates` (in the MCP tools toolset) to get the reference and the host that holds it.
 
+If the bot's default MCP connection does not offer `list_templates`, change its server URL to `/mcp?toolsets=core,meta,tools`, reconnect, and refresh the tool list. This keeps the default tools and enables template discovery with the same token.
+
 ## Official templates
 
 MiniBox ships four official templates. Each comes from a Dockerfile in the MiniBox source, and each has the common tools of the base template:

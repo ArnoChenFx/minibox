@@ -115,7 +115,7 @@ This box has a MiniBox self token when `/run/minibox/self-token` exists. It reac
 
 Use the MiniBox MCP server (`/mcp`, Bearer agent token) to work inside a box.
 
-- The template parameter of create_box is a full image reference, not a display name: use `minibox-template:base-arno`, not `base-arno`. Read the `ref` field from `GET /api/templates` or list_templates (in the tools toolset). Omitting template selects the configured base image; if it is not built, ask the owner to build it or choose another built template. A created-by-me Box grant allows creating new boxes.
+- The template parameter of create_box is a full image reference, not a display name: use `minibox-template:base-arno`, not `base-arno`. Read the `ref` field from `GET /api/templates` or list_templates (in the tools toolset). If list_templates is not exposed, reconnect to `/mcp?toolsets=core,meta,tools` and refresh the client tool list. Omitting template selects the configured base image; if it is not built, ask the owner to build it or choose another built template. A created-by-me Box grant allows creating new boxes.
 - list_boxes or create_box before doing work. exec starts a stopped box, which changes its revision, unless the box's TTL has passed: then exec fails with box_ttl_expired. Read the revision again before an update that sends expectedRevision.
 - exec takes argv (no shell) or cmd (via /bin/sh -c). Default user is dev, default directory is /workspace. A strict box allows only dev or 1000 as the user. The box needs /bin/sh, cat, rm and sleep.
 - Pass secrets in env, not in argv or cmd. The audit log keeps commands and argv, but never env values.
