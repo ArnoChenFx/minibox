@@ -28,6 +28,8 @@ http://127.0.0.1:3920/mcp?toolsets=core,session
 
 The default is `core,meta`. The `minibox mcp` command takes the same list with `--toolsets`, or with the `MINIBOX_TOOLSETS` environment variable.
 
+`list_templates` belongs to `tools`, so the default connection does not expose it. To discover templates and keep the default tools, set the client's server URL to `/mcp?toolsets=core,meta,tools`, then reconnect and refresh its tool list. The query selects the complete toolset list; keep `core,meta` if you still need those tools. The same agent token works, and its permission checks still apply.
+
 | Toolset | What it is for |
 |---|---|
 | `core` | Boxes, commands and files in volumes. On by default. |
@@ -36,7 +38,7 @@ The default is `core,meta`. The `minibox mcp` command takes the same list with `
 | `rebuild` | Rebuilding a box. Not on by default. Enable it with `toolsets=rebuild`. |
 | `move` | Moving a box to another host. Not on by default. Enable it with `toolsets=move`. |
 | `storage` | Volumes, storage pools, the owner's recycle bin, the owner's checkpoint export, import, copy and schedules, and the owner's backups and off-site targets |
-| `tools` | Installing tools, custom tools, saving templates, reading, editing, building, duplicating and rebuilding templates, building official templates, pulling images, and copying templates to another host |
+| `tools` | Discovering templates (`list_templates`), installing tools, custom tools, saving templates, reading, editing, building, duplicating and rebuilding templates, building official templates, pulling images, and copying templates to another host |
 | `network` | Preview ports |
 | `self` | A box's own agent, with its self token. Only that agent is offered it, and it is its default. See [Connecting AI agents](../user-guide/agents.md#a-boxs-own-agent). |
 

@@ -4,9 +4,15 @@
 
 ## [Unreleased]
 
+## [0.7.7] - 2026-11-13
+
+### 修复
+
+- **模板使用指引与缺失提示**（[#344](https://github.com/ArnoChenFx/minibox/pull/344)）：Agent API 令牌创建 Box 时，默认基础模板尚未构建会返回明确的 `400 template_image_missing` 与构建指引，避免误报 `template_out_of_scope`。操作者的「此令牌创建的 Box」范围不妨碍创建新 Box；也可以显式选择其它已构建的可用模板。Agent 指引与工具参数说明明确 `template` 必须使用模板列表的 `ref`（如 `minibox-template:base-arno`），不能使用显示名称（如 `base-arno`）。默认 MCP 连接没有 `list_templates` 时，使用 `/mcp?toolsets=core,meta,tools` 并重新连接、刷新工具列表，保留原令牌即可查询模板。
+
 ### 新增
 
-- 管理员可在设置中的 Agent API 令牌列表编辑有效令牌的预设、单项权限、Box/卷/宿主机范围和配额，保留原密钥、id 与有效期。保存后关闭旧权限下的终端、SSH、MCP 会话和事件流，后续请求使用新权限。新增仅管理员可用的 `PUT /api/tokens/{id}` 接口。
+- **编辑 Agent API 令牌权限**（[#343](https://github.com/ArnoChenFx/minibox/pull/343)）：管理员可在设置中的 Agent API 令牌列表编辑有效令牌的预设、单项权限、Box/卷/宿主机范围和配额，保留原密钥、id 与有效期。保存后关闭旧权限下的终端、SSH、MCP 会话和事件流，后续请求使用新权限。新增仅管理员可用的 `PUT /api/tokens/{id}` 接口。
 
 ## [0.7.6] - 2026-11-12
 

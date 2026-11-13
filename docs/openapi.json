@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "MiniBox API",
-    "version": "0.7.6",
+    "version": "0.7.7",
     "description": "Generated from the operation registry: boxes, volumes, storage pools, snapshots, checkpoints and their schedules, templates, tasks and the event log. Sign-in, host and activity routes, the package upload and download (POST /api/packages and GET /api/packages/{id}/download, raw application/octet-stream), and the streams (GET /api/events/stream, GET /api/tasks/{id}/events and GET /api/boxes/{id}/logs/stream, text/event-stream), are not listed yet.",
     "license": {
       "name": "Apache-2.0"
@@ -711,7 +711,7 @@
                   "template": {
                     "type": "string",
                     "maxLength": 255,
-                    "description": "Template image: repository[:tag] or a sha256 digest. Omitted, the bundled base template is used."
+                    "description": "Template image: the full repository[:tag] reference or a sha256 digest, not the template display name. Use ref from GET /api/templates (or list_templates), for example minibox-template:base-arno rather than base-arno. Omitted, the bundled base template is used."
                   },
                   "cpus": {
                     "type": "number",
@@ -2456,7 +2456,7 @@
                   "template": {
                     "type": "string",
                     "maxLength": 255,
-                    "description": "Template image: repository[:tag] or a sha256 digest. Omitted, the bundled base template is used."
+                    "description": "Template image: the full repository[:tag] reference or a sha256 digest, not the template display name. Use ref from GET /api/templates (or list_templates), for example minibox-template:base-arno rather than base-arno. Omitted, the bundled base template is used."
                   },
                   "mounts": {
                     "type": "array",
@@ -5521,7 +5521,7 @@
                   "template": {
                     "type": "string",
                     "maxLength": 255,
-                    "description": "Template image: repository[:tag] or a sha256 digest. Omitted, the bundled base template is used."
+                    "description": "Template image: the full repository[:tag] reference or a sha256 digest, not the template display name. Use ref from GET /api/templates (or list_templates), for example minibox-template:base-arno rather than base-arno. Omitted, the bundled base template is used."
                   },
                   "mounts": {
                     "type": "array",
@@ -7624,7 +7624,7 @@
                   "template": {
                     "type": "string",
                     "maxLength": 255,
-                    "description": "Template image: repository[:tag] or a sha256 digest. Omitted, the bundled base template is used."
+                    "description": "Template image: the full repository[:tag] reference or a sha256 digest, not the template display name. Use ref from GET /api/templates (or list_templates), for example minibox-template:base-arno rather than base-arno. Omitted, the bundled base template is used."
                   },
                   "mounts": {
                     "type": "array",

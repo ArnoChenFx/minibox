@@ -254,7 +254,8 @@ export const templateImage = () =>
     {
       type: "string",
       maxLength: IMAGE_REF_MAX_LENGTH,
-      description: "Template image: repository[:tag] or a sha256 digest. Omitted, the bundled base template is used.",
+      description:
+        "Template image: the full repository[:tag] reference or a sha256 digest, not the template display name. Use ref from GET /api/templates (or list_templates), for example minibox-template:base-arno rather than base-arno. Omitted, the bundled base template is used.",
     },
   ).optional();
 

@@ -133,6 +133,8 @@ All paths are jailed inside the volume. `{id}` is a `vol_…` or a volume name; 
 
 ## Tools and templates
 
+For `POST /api/boxes`, `template` is the full image reference from the `ref` field of `GET /api/templates`, for example `minibox-template:base-arno`. The display `name` (`base-arno`) is not an image reference. Omitting `template` selects the configured base image; if it has not been built, ask the owner to build it or choose another built template. A `created-by-me` Box grant still permits creating new boxes.
+
 | Method | Path | Scope | Notes |
 |---|---|---|---|
 | `GET` | `/api/tools` | `box:read` | Catalog with install status |

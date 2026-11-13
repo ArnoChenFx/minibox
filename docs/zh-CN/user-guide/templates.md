@@ -22,6 +22,12 @@ MiniBox 镜像不包含基础模板。在控制台中构建一次：
 
 要跟踪构建，点击顶栏的 **任务**。需要更新时随时重新 **构建基础模板**。
 
+Agent 令牌创建 Box 时不填写 `template`，会使用配置的基础模板镜像（通常为 `minibox-template:base`）。请先由管理员在目标宿主机上构建它；缺失时 API 返回 `400 template_image_missing` 并给出构建指引。Box 范围选 **此令牌创建的** 仍允许创建新 Box，它限制的是令牌能操作哪些已有 Box。也可以显式指定另一个已构建且令牌有权使用的模板。其它模板不要求以 base 为父镜像；卷初始化、工具安装等辅助操作仍可能按需单独准备 base。
+
+通过 API 或 MCP 创建 Box 时，`template` 要填模板列表的 `ref` 字段，即完整镜像引用，而不是显示名称 `name`。例如应传 `"template": "minibox-template:base-arno"`，不能只传 `"template": "base-arno"`。先调用 `GET /api/templates` 或 MCP tools 工具集中的 `list_templates`，取得引用及其所在宿主机。
+
+如果 bot 的默认 MCP 连接没有 `list_templates`，请把服务器地址改为 `/mcp?toolsets=core,meta,tools`，重新连接并刷新工具列表。这样会保留默认工具并开放模板查询，仍可使用原令牌。
+
 ## 官方模板
 
 MiniBox 提供四个官方模板。每个模板都来自 MiniBox 源码中的一份 Dockerfile，并包含基础模板的常用工具：
