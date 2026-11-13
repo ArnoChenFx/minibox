@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### 修复
+
+- Agent API 令牌创建 Box 时，默认基础模板尚未构建会返回明确的 `400 template_image_missing` 与构建指引，避免误报 `template_out_of_scope`。操作者的「此令牌创建的 Box」范围不妨碍创建新 Box；也可以显式选择其它已构建的可用模板。
+
 ### 新增
 
 - 管理员可在设置中的 Agent API 令牌列表编辑有效令牌的预设、单项权限、Box/卷/宿主机范围和配额，保留原密钥、id 与有效期。保存后关闭旧权限下的终端、SSH、MCP 会话和事件流，后续请求使用新权限。新增仅管理员可用的 `PUT /api/tokens/{id}` 接口。

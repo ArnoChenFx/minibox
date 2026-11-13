@@ -1,5 +1,5 @@
 import type { HostCtx } from "../host/registry";
-import { notFound } from "../lib/errors";
+import { badRequest, notFound } from "../lib/errors";
 import { msg } from "../lib/messages";
 import type { AuthorizeRequest } from "../operations/executor";
 import type { TokenPrincipal } from "../operations/types";
@@ -313,7 +313,7 @@ async function imageOrNull(host: HostCtx, ref: string) {
  * The image a ref names, resolved by the engine so a short id, a digest or a tag all reach the same label check. A
  * template must be visible to the token (the owner's, or one it promoted itself). A snapshot must be visible to it.
  * Anything else, and a ref that names nothing, is refused with the same message, so a refusal does not reveal which
- * images exist.
+ * images exist. The configured default is public configuration, so its absence reports how to build it instead.
  */
 async function assertImageUsable(
   principal: TokenPrincipal,
@@ -323,7 +323,14 @@ async function assertImageUsable(
 ): Promise<void> {
   const refusedAs = kind === "snapshot" ? "snapshot_out_of_scope" : "template_out_of_scope";
   const info = await imageOrNull(host, ref);
-  if (!info) throw refusal(refusedAs);
+  if (!info) {
+    // A token may create from the shared default, but cannot start a template build. Its absence is a missing
+    // prerequisite, not an ownership refusal. Other image references keep the same default-deny response.
+    if (kind === "template" && ref === host.baseTemplateTag) {
+      throw badRequest(msg("template_image_missing", { image: ref }), { field: "template" });
+    }
+    throw refusal(refusedAs);
+  }
   const labels = info.labels;
   if (labels[host.keys.template] === "true") {
     if (templateVisible(principal, imageViewOf(host, labels))) return;

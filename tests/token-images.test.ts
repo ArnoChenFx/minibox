@@ -24,6 +24,61 @@ async function createBox(token: string, name: string, extra: Record<string, unkn
 }
 
 describe("templates a token may build from", () => {
+  test("an operator with created-by-me gets build guidance for a missing default, then creates with the same token once it is built", async () => {
+    const host = harness.app.hosts.get();
+    await harness.runtime.removeImage(host.baseTemplateTag, { force: true });
+    const issued = await call(harness.base, "/api/tokens", {
+      body: { name: "operator", preset: "operator", boxes: "created-by-me" },
+    });
+    expect(issued.status).toBe(201);
+    const token = issued.json.token ?? "";
+    for (const extra of [{}, { template: host.baseTemplateTag }]) {
+      const missing = await createBox(token, "first", extra);
+      expect(refused(missing)).toEqual({ status: 400, key: "template_image_missing" });
+      expect(missing.json.error?.details).toEqual({ field: "template" });
+      expect(missing.json.error?.message).toContain(host.baseTemplateTag);
+    }
+    expect(harness.runtime.callsTo("createContainer")).toHaveLength(0);
+    expect(harness.runtime.callsTo("createVolume")).toHaveLength(0);
+    expect(harness.runtime.callsTo("buildImage")).toHaveLength(0);
+    expect(harness.app.hosts.get().specs.list()).toHaveLength(0);
+    const build = await call(harness.base, "/api/templates/base/build", { body: {} });
+    expect(build.status).toBe(202);
+    expect((await finishedTask(harness.base, build.json.taskId ?? "")).status).toBe("succeeded");
+    const created = await createBox(token, "first");
+    expect(created.status).toBe(201);
+    expect(created.json.box?.createdBy).toBe(issued.json.record?.id);
+    expect((await call(harness.base, `/api/boxes/${created.json.box?.boxId}`, { token })).status).toBe(200);
+  });
+
+  test("an operator can choose another built template while the default is missing", async () => {
+    const host = harness.app.hosts.get();
+    await harness.runtime.removeImage(host.baseTemplateTag, { force: true });
+    const agent = mint(harness.app, { name: "operator", preset: "operator" });
+    harness.runtime.seedImage("mbtest-template:other", {
+      [host.keys.template]: "true",
+      [host.keys.templateName]: "other",
+      [host.keys.createdBy]: "owner",
+    });
+    const created = await createBox(agent.secret, "other", { template: "mbtest-template:other" });
+    expect(created.status).toBe(201);
+    expect(created.json.box?.createdBy).toBe(agent.id);
+    expect(harness.runtime.callsTo("buildImage")).toHaveLength(0);
+  });
+
+  test("a default tag belonging to another token remains forbidden, even though a missing default has build guidance", async () => {
+    const host = harness.app.hosts.get();
+    const agent = mint(harness.app, { name: "operator", preset: "operator" });
+    const other = mint(harness.app, { name: "other", preset: "operator" });
+    harness.runtime.moveTag(host.baseTemplateTag, {
+      [host.keys.template]: "true",
+      [host.keys.templateName]: "base",
+      [host.keys.createdBy]: other.id,
+    });
+    expect(refused(await createBox(agent.secret, "refused"))).toEqual({ status: 403, key: "template_out_of_scope" });
+    expect(harness.runtime.callsTo("createContainer")).toHaveLength(0);
+  });
+
   test("a token creates from an owner template or its own, and not from another token's, by name or by image id", async () => {
     const keys = harness.app.hosts.get().keys;
     const maker = mint(harness.app, { name: "maker", preset: "operator" });
