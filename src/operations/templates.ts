@@ -95,7 +95,7 @@ const templateList = defineOperation({
     toolset: "tools",
     name: "list_templates",
     description:
-      "List the templates on every host, each with the hostId that holds it, so a template present on one host and missing from another shows. A template built from a devcontainer.json also names its setup: postCreate as the command a created box runs once, and forwardPorts as the TCP ports it opens. Pass host to list one host. Returns the base template's tag too.",
+      "List the templates on every host, each with the hostId that holds it, so a template present on one host and missing from another shows. To create a box from a listed template, pass its full ref as create_box.template, not its display name; for example minibox-template:base-arno rather than base-arno. A template built from a devcontainer.json also names its setup: postCreate as the command a created box runs once, and forwardPorts as the TCP ports it opens. Pass host to list one host. Returns the base template's tag too.",
   },
   run: async (ctx, input) => {
     const { principal, host } = ctx;

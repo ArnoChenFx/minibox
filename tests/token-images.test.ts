@@ -60,7 +60,15 @@ describe("templates a token may build from", () => {
       [host.keys.templateName]: "other",
       [host.keys.createdBy]: "owner",
     });
-    const created = await createBox(agent.secret, "other", { template: "mbtest-template:other" });
+    const listed = await call(harness.base, "/api/templates", { token: agent.secret });
+    expect(listed.status).toBe(200);
+    const selected = listed.json.templates?.find((template) => template.name === "other");
+    expect(selected?.ref).toBe("mbtest-template:other");
+    expect(refused(await createBox(agent.secret, "by-name", { template: selected?.name }))).toEqual({
+      status: 403,
+      key: "template_out_of_scope",
+    });
+    const created = await createBox(agent.secret, "other", { template: selected?.ref });
     expect(created.status).toBe(201);
     expect(created.json.box?.createdBy).toBe(agent.id);
     expect(harness.runtime.callsTo("buildImage")).toHaveLength(0);

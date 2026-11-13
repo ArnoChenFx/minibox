@@ -24,6 +24,8 @@ To follow the build, click **Tasks** in the top bar. Build the base template aga
 
 When an agent token creates a box without `template`, it uses the configured base image (normally `minibox-template:base`). The owner must build that template on the target host first. If it is missing, the API returns `400 template_image_missing` with build guidance. The token's **Created by this token** Box grant still allows it to create new boxes; it restricts which existing boxes it may use. Alternatively, specify another built template the token may use. Choosing another template does not require base as its parent image, although volume and tool helpers may prepare base separately when needed.
 
+For API and MCP creates, `template` is the full image reference from the list's `ref` field, not its display `name`. For example, use `"template": "minibox-template:base-arno"`, not `"template": "base-arno"`. Read `GET /api/templates` or `list_templates` (in the MCP tools toolset) to get the reference and the host that holds it.
+
 ## Official templates
 
 MiniBox ships four official templates. Each comes from a Dockerfile in the MiniBox source, and each has the common tools of the base template:

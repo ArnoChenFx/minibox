@@ -6,7 +6,7 @@
 
 ### 修复
 
-- Agent API 令牌创建 Box 时，默认基础模板尚未构建会返回明确的 `400 template_image_missing` 与构建指引，避免误报 `template_out_of_scope`。操作者的「此令牌创建的 Box」范围不妨碍创建新 Box；也可以显式选择其它已构建的可用模板。
+- Agent API 令牌创建 Box 时，默认基础模板尚未构建会返回明确的 `400 template_image_missing` 与构建指引，避免误报 `template_out_of_scope`。操作者的「此令牌创建的 Box」范围不妨碍创建新 Box；也可以显式选择其它已构建的可用模板。Agent 指引与工具参数说明明确 `template` 必须使用模板列表的 `ref`（如 `minibox-template:base-arno`），不能使用显示名称（如 `base-arno`）。
 
 ### 新增
 
