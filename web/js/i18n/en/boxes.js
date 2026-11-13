@@ -23,6 +23,7 @@ export default {
   "act.template.delete": "Deleted template",
   "act.template.save": "Saved box as template",
   "act.token.create": "Created token",
+  "act.token.update": "Updated token permissions",
   "act.token.revoke": "Revoked token",
   "act.token.delete": "Deleted token",
   "act.token.prune": "Deleted ended tokens",

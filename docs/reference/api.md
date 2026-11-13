@@ -384,6 +384,7 @@ An entry is kept for `TRASH_RETENTION_DAYS` days, see [Configuration](configurat
 | `GET` | `/api/tokens/presets` | List the permission groups and what each token preset grants (owner only) |
 | `GET` | `/api/tokens` | List agent API tokens |
 | `POST` | `/api/tokens` | Create an agent API token |
+| `PUT` | `/api/tokens/{id}` | Replace a live token’s permission policy (owner only). Keeps the secret, id and expiry; closes existing streams, terminals, SSH and MCP sessions. Returns the public `record` |
 | `DELETE` | `/api/tokens/{id}` | Revoke an agent API token |
 
 ### hosts

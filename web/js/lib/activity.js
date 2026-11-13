@@ -85,6 +85,7 @@ export const ACTION_ICON = {
   "trash.purge": "trash",
   "trash.empty": "trash",
   "token.create": "key",
+  "token.update": "sliders",
   "token.revoke": "trash",
   "token.delete": "trash",
   "token.prune": "trash",

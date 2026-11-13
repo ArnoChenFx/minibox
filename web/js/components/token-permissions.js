@@ -62,7 +62,7 @@ const withoutDeletion = (scopes) => scopes.filter((scope) => scope !== "volume:d
  * Connects the preset list and the permission checkboxes under `root`. Choosing a preset ticks its scopes and calls
  * `onPreset(preset)`; ticking a scope by hand makes the token custom. Returns what the form submits.
  */
-export function bindPermissions(root, catalog, { onPreset = () => {} } = {}) {
+export function bindPermissions(root, catalog, { onPreset = () => {}, initialScopes } = {}) {
   bindFoldSections(root);
   const buttons = [...root.querySelectorAll("[data-preset]")];
   const boxes = [...root.querySelectorAll("input[name=scope]")];
@@ -123,6 +123,9 @@ export function bindPermissions(root, catalog, { onPreset = () => {} } = {}) {
   for (const box of boxes) box.addEventListener("change", paint);
   root.querySelector("#stTokenForm")?.addEventListener("change", paint);
   root.querySelector("#stPermReset").addEventListener("click", () => apply(current));
-  apply(current);
+  if (initialScopes) {
+    for (const box of boxes) box.checked = initialScopes.includes(box.value);
+    paint();
+  } else apply(current);
   return { preset: () => current, scopes: chosen };
 }

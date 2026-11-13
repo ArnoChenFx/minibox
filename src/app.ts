@@ -67,7 +67,6 @@ import { TaskManager, type TaskSubject } from "./tasks/manager";
 import { TaskStore } from "./tasks/store";
 import type { TaskStreamEvent } from "./tasks/types";
 import { authorizeOperation } from "./tokens/authorize";
-import { isTokenId } from "./tokens/model";
 import { SelfTokenStore } from "./tokens/self-store";
 import { TokenStore } from "./tokens/store";
 import { VolumeStore } from "./volumes/store";
@@ -495,8 +494,8 @@ export function createApp(cfg: Config, version: string, deps: AppDeps = {}): App
     containers,
     startups,
     recordNote,
-    mcpSessions: new McpSessions((id, listener) =>
-      isTokenId(id) ? tokens.watch(id, listener) : selfTokens.watch(id, listener),
+    mcpSessions: new McpSessions((id, listener, principal) =>
+      principal.type === "token" ? tokens.watchPrincipal(principal, listener) : selfTokens.watch(id, listener),
     ),
     bus,
     retention,

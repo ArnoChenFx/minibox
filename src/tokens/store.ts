@@ -145,6 +145,23 @@ export class TokenStore {
     return { secret, record: toInfo(record) };
   }
 
+  /** Replaces a live token's grants and closes sessions that captured the old policy. The secret is retained. */
+  update(id: string, policy: Omit<TokenDraft, "name" | "expiresInSec">, now = this.now()): TokenInfo | null {
+    const record = this.records.find((item) => item.id === id && this.isLive(item, now));
+    if (!record) return null;
+    record.preset = policy.preset;
+    record.scopes = [...policy.scopes];
+    record.boxes = cloneBoxes(policy.boxes);
+    record.volumes = cloneVolumes(policy.volumes);
+    record.hosts = cloneHosts(policy.hosts);
+    record.quotas = { ...policy.quotas };
+    record.audit = policy.audit;
+    this.save();
+    this.notify(id);
+    log.info("token.updated", { tokenId: id, preset: record.preset });
+    return toInfo(record);
+  }
+
   /** Every token, newest first, including revoked and expired ones. Secrets are not included. */
   list(): TokenInfo[] {
     return this.records.toSorted((a, b) => b.createdAt - a.createdAt).map(toInfo);
@@ -213,8 +230,19 @@ export class TokenStore {
     return removed;
   }
 
+  /** Rejects a connection whose authenticated policy was replaced before it could start watching. */
+  watchPrincipal(principal: TokenPrincipal, listener: () => void): () => void {
+    const record = this.records.find((item) => item.id === principal.id);
+    // Authentication hands out the record's scope array; updating the policy always replaces that array.
+    if (!record || principal.grants.scopes !== record.scopes) {
+      listener();
+      return () => {};
+    }
+    return this.watch(principal.id, listener);
+  }
+
   /**
-   * Calls `listener` once, when the token is revoked or expires. A token that is already over calls it straight away.
+   * Calls `listener` once, when the token is revoked, expires or its permissions change. A token that is already over calls it straight away.
    * Returns a function that stops watching.
    */
   watch(id: string, listener: () => void, now = this.now()): () => void {
@@ -289,13 +317,17 @@ export class TokenStore {
     this.live.delete(record.tokenHash);
     if (revoked) record.revokedAt = now;
     this.hits.delete(record.id);
-    const listeners = this.watchers.get(record.id);
-    this.watchers.delete(record.id);
+    this.notify(record.id);
+  }
+
+  private notify(id: string): void {
+    const listeners = this.watchers.get(id);
+    this.watchers.delete(id);
     for (const listener of listeners ?? []) {
       try {
         listener();
       } catch (e) {
-        log.warn("token.listener_failed", { tokenId: record.id, error: String(e) });
+        log.warn("token.listener_failed", { tokenId: id, error: String(e) });
       }
     }
   }

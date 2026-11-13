@@ -97,6 +97,22 @@ function reachableTools(principal: TokenPrincipal): string[] {
 }
 
 describe("MCP for an agent token", () => {
+  test("updating permissions discards the old MCP session and reconnects with the new tool list", async () => {
+    const agent = mint(harness.app, { name: "editable", preset: "operator" });
+    const principal = principalOf(harness.app, agent.secret);
+    const session = await openMcp(agent.secret);
+    expect(harness.app.mcpSessions.get(session, principal)).toBeDefined();
+    expect(
+      (await call(harness.base, `/api/tokens/${agent.id}`, { method: "PUT", body: { preset: "readonly" } })).status,
+    ).toBe(200);
+    expect(harness.app.mcpSessions.get(session, principal)).toBeUndefined();
+    const fresh = await openMcp(agent.secret);
+    const reply = (await (await rpc(agent.secret, "tools/list", {}, fresh)).json()) as RpcReply;
+    const names = (reply.result?.tools ?? []).map((tool) => tool.name);
+    expect(names).toContain("list_boxes");
+    expect(names).not.toContain("create_box");
+  });
+
   test("tools/list offers a token exactly the tools its scopes reach", async () => {
     const reader = mint(harness.app, { name: "reader", preset: "readonly" });
     const session = await openMcp(reader.secret);

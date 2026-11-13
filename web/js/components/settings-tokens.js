@@ -102,6 +102,14 @@ function drawTokens(view, card, { tokens, catalog }) {
   card.querySelectorAll("[data-delete-token]").forEach((btn) => {
     btn.addEventListener("click", () => deleteToken(view, btn.dataset.deleteToken, btn.dataset.tokenName));
   });
+  card.querySelectorAll("[data-edit-token]").forEach((btn) => {
+    btn.addEventListener("click", () =>
+      createToken(
+        view,
+        tokens.find((token) => token.id === btn.dataset.editToken),
+      ),
+    );
+  });
   bindToggles(view, card, () => drawTokens(view, card, { tokens, catalog }));
 }
 
@@ -119,27 +127,28 @@ function tokenRow(token, catalog) {
     <td class="hide-sm">${scopeSummary(token, catalog)}</td>
     <td class="hide-sm subtle nowrap">${token.expiresAt ? esc(dateTime(token.expiresAt)) : t("st.tokenNever")}</td>
     <td class="subtle nowrap">${used}</td>
-    <td class="nowrap"><div class="actions">${action}</div></td>
+    <td class="nowrap"><div class="actions">${!isEnded(token) ? `<button class="btn btn-sm" data-edit-token="${esc(token.id)}">${icon("pencil")}${t("st.tokenEdit")}</button>` : ""}${action}</div></td>
   </tr>`;
 }
 
-async function createToken(view) {
+async function createToken(view, token) {
+  const editing = Boolean(token);
   let catalog;
   try {
     catalog = await api("/api/tokens/presets");
   } catch (e) {
-    toastError(t("st.tokenCreateFailed"), e);
+    toastError(t(editing ? "st.tokenUpdateFailed" : "st.tokenCreateFailed"), e);
     return;
   }
   const { root, close } = openDialog({
-    title: t("st.tokenCreate"),
-    description: t("st.tokenPresetHelp"),
+    title: t(editing ? "st.tokenEdit" : "st.tokenCreate"),
+    description: t(editing ? "st.tokenEditHelp" : "st.tokenPresetHelp"),
     iconName: "key",
     wide: true,
     body: `
       <form id="stTokenForm" class="stack">
-        <label class="field">${t("label.tokenName")}<input class="input" name="name" autocomplete="off" required /></label>
-        ${presetFieldHtml(catalog, catalog.presets[0].name)}
+        ${editing ? `<div><strong>${esc(token.name)}</strong> <code>${esc(token.prefix)}</code></div>` : `<label class="field">${t("label.tokenName")}<input class="input" name="name" autocomplete="off" required /></label>`}
+        ${presetFieldHtml(catalog, token?.preset ?? catalog.presets[0].name)}
         ${permissionsHtml(catalog)}
         <label class="field">${t("st.tokenBoxes")}
           <select class="select" name="boxes">
@@ -157,23 +166,45 @@ async function createToken(view) {
           <select class="select" name="hosts">
             <option value="local">${esc(t("st.tokenHostsLocal"))}</option>
             <option value="*">${esc(t("st.tokenHostsAll"))}</option>
+            <option value="ids">${esc(t("st.tokenHostsIds"))}</option>
           </select>
         </label>
-        <label class="field">${t("st.tokenExpiry")}<input class="input" name="days" inputmode="numeric" /><span class="help">${t("st.tokenExpiryHelp")}</span></label>
-        <div class="field"><strong>${t("st.tokenQuotas")}</strong><span class="help">${t("st.tokenQuotaHelp")}</span></div>
+        <label class="field" data-host-ids hidden>${t("st.tokenHostList")}<textarea class="textarea token-lines" name="hostIds"></textarea><span class="help">${t("st.tokenHostListHelp")}</span></label>
+        ${editing ? "" : `<label class="field">${t("st.tokenExpiry")}<input class="input" name="days" inputmode="numeric" /><span class="help">${t("st.tokenExpiryHelp")}</span></label>`}
+        <div class="field"><strong>${t("st.tokenQuotas")}</strong><span class="help">${t(editing ? "st.tokenQuotaEditHelp" : "st.tokenQuotaHelp")}</span></div>
         <div class="grid grid-2 form-grid">
           <label class="field">${t("st.tokenQuotaBoxes")}<input class="input" name="maxBoxes" inputmode="numeric" /></label>
           <label class="field">${t("st.tokenQuotaCpus")}<input class="input" name="maxCpus" inputmode="decimal" /></label>
           <label class="field">${t("st.tokenQuotaMemory")}<input class="input" name="maxMemoryMb" inputmode="numeric" /></label>
           <label class="field">${t("st.tokenQuotaTtl")}<input class="input" name="maxTtlHours" inputmode="numeric" /></label>
-          <label class="field">${t("st.tokenQuotaRate")}<input class="input" name="rateLimit" inputmode="numeric" /></label>
+          <label class="field">${t("st.tokenQuotaRequests")}<input class="input" name="rateLimit" inputmode="numeric" /></label>
+          <label class="field">${t("st.tokenQuotaWindow")}<input class="input" name="rateWindowSec" inputmode="numeric" placeholder="60" /></label>
           <label class="field">${t("st.tokenQuotaCheckpoints")}<input class="input" name="maxCheckpoints" inputmode="numeric" /></label>
         </div>
       </form>`,
-    footer: `<button class="btn" data-close type="button">${t("common.cancel")}</button><button class="btn btn-primary" id="stTokenSave" type="button">${t("st.tokenCreate")}</button>`,
+    footer: `<button class="btn" data-close type="button">${t("common.cancel")}</button><button class="btn btn-primary" id="stTokenSave" type="button">${t(editing ? "common.save" : "st.tokenCreate")}</button>`,
   });
   const form = root.querySelector("#stTokenForm");
   const boxes = form.elements.boxes;
+  const hosts = form.elements.hosts;
+  if (editing) {
+    boxes.value = token.boxes.type === "all" ? "*" : token.boxes.type;
+    form.elements.boxIds.value = token.boxes.ids?.join("\n") ?? "";
+    form.elements.boxTags.value = token.boxes.tags?.join("\n") ?? "";
+    form.elements.volumesAll.checked = token.volumes.type === "all";
+    form.elements.volumes.value = token.volumes.ids?.join("\n") ?? "";
+    hosts.value =
+      token.hosts.type === "all"
+        ? "*"
+        : token.hosts.ids.length === 1 && token.hosts.ids[0] === "local"
+          ? "local"
+          : "ids";
+    form.elements.hostIds.value = token.hosts.ids?.join("\n") ?? "";
+    for (const key of ["maxBoxes", "maxCpus", "maxMemoryMb", "rateLimit", "rateWindowSec", "maxCheckpoints"]) {
+      form.elements[key].value = token.quotas[key] ?? "";
+    }
+    form.elements.maxTtlHours.value = token.quotas.maxTtlSec === null ? "" : token.quotas.maxTtlSec / 3600;
+  }
   const storageNote = document.createElement("p");
   storageNote.className = "help";
   storageNote.textContent = t("st.storageAdminPolicy");
@@ -183,20 +214,29 @@ async function createToken(view) {
     root.querySelector("[data-box-tags]").hidden = boxes.value !== "tags";
   };
   boxes.addEventListener("change", syncBoxes);
-  const hosts = form.elements.hosts;
+  syncBoxes();
+  const syncHosts = () => {
+    root.querySelector("[data-host-ids]").hidden = hosts.value !== "ids";
+  };
+  hosts.addEventListener("change", syncHosts);
+  syncHosts();
   // A preset starts the box and host scope from its own: admin takes every box and host. A choice made by hand stays.
   const touched = new Set();
   for (const select of [boxes, hosts]) select.addEventListener("change", () => touched.add(select.name));
+  let presetChanged = false;
   const permissions = bindPermissions(root, catalog, {
+    initialScopes: token?.scopes,
     onPreset: (preset) => {
+      presetChanged = true;
       if (!touched.has("boxes")) boxes.value = preset.boxes === "all" ? "*" : "created-by-me";
       if (!touched.has("hosts")) hosts.value = preset.hosts === "all" ? "*" : "local";
       syncBoxes();
+      syncHosts();
     },
   });
   root
     .querySelector("#stTokenSave")
-    .addEventListener("click", () => submitToken(view, form, close, permissions, catalog));
+    .addEventListener("click", () => submitToken(view, form, close, permissions, catalog, token, presetChanged));
 }
 
 function numberOrSkip(value) {
@@ -206,20 +246,27 @@ function numberOrSkip(value) {
   return Number.isFinite(n) ? n : Number.NaN;
 }
 
-async function submitToken(view, form, close, permissions, catalog) {
+async function submitToken(view, form, close, permissions, catalog, token, presetChanged) {
+  const editing = Boolean(token);
+  const failed = t(editing ? "st.tokenUpdateFailed" : "st.tokenCreateFailed");
   const data = new FormData(form);
   const name = String(data.get("name") ?? "").trim();
-  const invalid = nameError(name, "tokenName");
+  const invalid = editing ? null : nameError(name, "tokenName");
   if (invalid) {
-    toast(t("st.tokenCreateFailed"), { type: "error", message: invalid });
+    toast(failed, { type: "error", message: invalid });
     return;
   }
   const scopes = permissions.scopes();
   if (scopes.length === 0) {
-    toast(t("st.tokenCreateFailed"), { type: "error", message: t("st.tokenScopesEmpty") });
+    toast(failed, { type: "error", message: t("st.tokenScopesEmpty") });
     return;
   }
-  const body = { name, ...scopeRequest(permissions.preset(), scopes, catalog) };
+  const body = { ...(!editing ? { name } : {}), ...scopeRequest(permissions.preset(), scopes, catalog) };
+  // Keep an explicitly scoped admin or a token without a preset scoped until the owner chooses a preset.
+  if (editing && !presetChanged && (token.preset === null || (token.preset === "admin" && token.audit === "scoped"))) {
+    body.scopes = scopes;
+    if (token.preset === null) delete body.preset;
+  }
   const boxes = String(data.get("boxes"));
   if (boxes === "*") body.boxes = "*";
   else if (boxes === "ids") body.boxes = { ids: linesOf(String(data.get("boxIds") ?? "")) };
@@ -228,34 +275,68 @@ async function submitToken(view, form, close, permissions, catalog) {
   if (data.get("volumesAll")) body.volumes = "*";
   else {
     const volumes = linesOf(String(data.get("volumes") ?? ""));
-    if (volumes.length) body.volumes = volumes;
+    if (editing || volumes.length) body.volumes = volumes;
   }
-  if (String(data.get("hosts")) === "*") body.hosts = "*";
+  body.hosts =
+    String(data.get("hosts")) === "*"
+      ? "*"
+      : String(data.get("hosts")) === "ids"
+        ? linesOf(String(data.get("hostIds") ?? ""))
+        : ["local"];
   const days = numberOrSkip(String(data.get("days") ?? ""));
-  if (days !== undefined) body.expiresInSec = Math.round(days * 86_400);
+  if (!editing && days !== undefined) body.expiresInSec = Math.round(days * 86_400);
   const quotas = {};
   const maxBoxes = numberOrSkip(String(data.get("maxBoxes") ?? ""));
   const maxCpus = numberOrSkip(String(data.get("maxCpus") ?? ""));
   const maxMemoryMb = numberOrSkip(String(data.get("maxMemoryMb") ?? ""));
   const maxTtlHours = numberOrSkip(String(data.get("maxTtlHours") ?? ""));
   const rateLimit = numberOrSkip(String(data.get("rateLimit") ?? ""));
+  const rateWindowSec = numberOrSkip(String(data.get("rateWindowSec") ?? ""));
   const maxCheckpoints = numberOrSkip(String(data.get("maxCheckpoints") ?? ""));
   if (maxBoxes !== undefined) quotas.maxBoxes = maxBoxes;
   if (maxCpus !== undefined) quotas.maxCpus = maxCpus;
   if (maxMemoryMb !== undefined) quotas.maxMemoryMb = maxMemoryMb;
   if (maxTtlHours !== undefined) quotas.maxTtlSec = Math.round(maxTtlHours * 3600);
   if (rateLimit !== undefined) quotas.rateLimit = rateLimit;
+  if (rateWindowSec !== undefined) quotas.rateWindowSec = rateWindowSec;
   if (maxCheckpoints !== undefined) quotas.maxCheckpoints = maxCheckpoints;
+  if (editing) {
+    for (const key of [
+      "maxBoxes",
+      "maxCpus",
+      "maxMemoryMb",
+      "maxTtlSec",
+      "rateLimit",
+      "rateWindowSec",
+      "maxCheckpoints",
+    ]) {
+      if (!(key in quotas)) quotas[key] = null;
+    }
+    if (quotas.rateLimit === null) quotas.rateWindowSec = null;
+  }
+  if (
+    Object.values(quotas).some((value) => typeof value === "number" && (!Number.isFinite(value) || value <= 0)) ||
+    (days !== undefined && (!Number.isFinite(days) || days <= 0))
+  ) {
+    toast(failed, { type: "error", message: t("st.tokenNumbersInvalid") });
+    return;
+  }
   if (Object.keys(quotas).length) body.quotas = quotas;
   let created;
   try {
-    created = await api("/api/tokens", { method: "POST", body });
+    form.closest(".dialog").querySelector("#stTokenSave").disabled = true;
+    created = await api(editing ? `/api/tokens/${enc(token.id)}` : "/api/tokens", {
+      method: editing ? "PUT" : "POST",
+      body,
+    });
   } catch (e) {
-    toastError(t("st.tokenCreateFailed"), e);
+    form.closest(".dialog").querySelector("#stTokenSave").disabled = false;
+    toastError(failed, e);
     return;
   }
   close();
-  showTokenSecret(created.token);
+  if (editing) toast(t("st.tokenUpdated"), { message: token.name });
+  else showTokenSecret(created.token);
   loadTokens(view);
 }
 

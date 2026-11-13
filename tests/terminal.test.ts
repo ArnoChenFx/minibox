@@ -652,6 +652,29 @@ describe("terminal with a browser session", () => {
 });
 
 describe("terminal with an agent token", () => {
+  test("editing away exec closes the old terminal, tears down its attach and refuses reconnect", async () => {
+    const id = await createBox("alpha");
+    await startSession(id, "work", "rest");
+    const token = mint(app, { name: "editable", preset: "operator", boxes: { type: "all" } });
+    const term = connect(`/api/boxes/${id}/terminal?session=work`, bearer(token.secret));
+    await term.opened;
+    await waitFor(() => lastState(term) !== undefined, "the state frame");
+    const attach = attachExec();
+    if (!attach) throw new Error("no attach exec was started");
+    const response = await fetch(`${base}/api/tokens/${token.id}`, {
+      method: "PUT",
+      headers: { ...AUTH, "content-type": "application/json" },
+      body: JSON.stringify({ preset: "readonly", boxes: "*" }),
+    });
+    expect(response.status).toBe(200);
+    expect((await term.closed).code).toBe(1008);
+    await waitFor(() => attach.killed, "the attach exec to be killed");
+    const refused = await fetch(`${base}/api/boxes/${id}/terminal?session=work`, {
+      headers: { ...UPGRADE, ...bearer(token.secret) },
+    });
+    expect(refused.status).toBe(403);
+  });
+
   test("a token without exec is refused the terminal before any exec starts", async () => {
     const id = await createBox("alpha");
     await startSession(id, "work", "rest");

@@ -97,6 +97,14 @@ Only the owner and an **unmodified admin token** can select, list or configure s
 
 When no pool is specified, the server provisions default role volumes for an authorized Box create. Deleting a Box together with its volumes (`deleteVolume=true`) is explicit volume deletion: a token without storage administrator identity gets `403 storage_admin_required` and the Box is not deleted either. Deleting a Box without that flag keeps its volumes. A rebuild or mount change that names a volume with no record yet creates an independent volume, so it gets `403 storage_admin_required` too. A Box create never makes a volume from a name, so a create that names a volume with no record gets `404 volume_not_found`, whichever token asks. No token can create a tools volume, not even an unmodified admin token: only the owner can (`403 volume_tools_create_forbidden`). Files, terminals, ports, checkpoints and activity use their own scopes on authorized boxes; SSH requires `box:ssh`. Token management and other owner-only operations require the owner.
 
+### Edit a token's permissions
+
+In **Settings → Agent API tokens**, click **Edit permissions** next to a live token. The dialog starts with its current scopes, Box/volume/host grants and quotas. Choose a preset or adjust individual permissions, then save. Empty quota fields remove those limits. The bearer secret, token id, ownership of existing boxes and expiry stay the same, so the agent can keep its existing configuration.
+
+Changes take effect on the next request. Existing terminals, SSH connections, MCP sessions and event streams using this token close; reconnect to use the new permissions. Updating a quota does not resize or stop existing boxes. Only the owner may edit permissions; revoked or expired tokens cannot be edited.
+
+The REST endpoint is `PUT /api/tokens/{id}`. It replaces the permission policy using the same `preset`, `scopes`, `boxes`, `volumes`, `hosts` and `quotas` fields as creation; omitted fields take their preset defaults. It returns the public `record`, never the secret. Name and expiry are not editable through this endpoint.
+
 ### Revoke a token
 
 Click **Revoke** on the token, and confirm. Scripts that use the token stop at once. Any open terminal or event stream that uses it closes too.

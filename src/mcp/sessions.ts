@@ -9,7 +9,7 @@ interface Session {
 }
 
 /** Subscribes to a credential's end: called once when it is revoked, replaced or expires. Returns a function that stops listening. */
-export type CredentialWatch = (id: string, listener: () => void) => () => void;
+export type CredentialWatch = (id: string, listener: () => void, principal: Principal) => () => void;
 
 const MAX_SESSIONS = 1000;
 
@@ -26,7 +26,7 @@ export class McpSessions {
   open(principal: Principal, toolsets: readonly string[], protocol: string): string {
     const id = `mcp${ulid()}`;
     this.sessions.set(id, { principalId: principal.id, toolsets, protocol });
-    if (principal.type === "token" || principal.type === "box-self") this.endWithCredential(principal.id);
+    if (principal.type === "token" || principal.type === "box-self") this.endWithCredential(principal);
     while (this.sessions.size > MAX_SESSIONS) {
       const oldest = this.sessions.keys().next().value;
       if (oldest === undefined) break;
@@ -44,14 +44,19 @@ export class McpSessions {
     if (this.get(id, principal)) this.sessions.delete(id);
   }
 
-  private endWithCredential(credentialId: string): void {
+  private endWithCredential(principal: Principal): void {
+    const credentialId = principal.id;
     if (!this.watchCredential || this.watched.has(credentialId)) return;
     this.watched.add(credentialId);
-    this.watchCredential(credentialId, () => {
-      this.watched.delete(credentialId);
-      for (const [id, session] of this.sessions) {
-        if (session.principalId === credentialId) this.sessions.delete(id);
-      }
-    });
+    this.watchCredential(
+      credentialId,
+      () => {
+        this.watched.delete(credentialId);
+        for (const [id, session] of this.sessions) {
+          if (session.principalId === credentialId) this.sessions.delete(id);
+        }
+      },
+      principal,
+    );
   }
 }

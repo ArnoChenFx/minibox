@@ -92,7 +92,7 @@ export function abortWhenEnded(app: App, caller: Caller | null, controller: Abor
   const stops: (() => void)[] = [];
   if (caller?.sessionId) stops.push(app.sessions.watch(caller.sessionId, () => controller.abort()));
   if (caller?.principal.type === "token") {
-    stops.push(app.tokens.watch(caller.principal.id, () => controller.abort()));
+    stops.push(app.tokens.watchPrincipal(caller.principal, () => controller.abort()));
   }
   if (caller?.principal.type === "box-self") {
     stops.push(app.selfTokens.watch(caller.principal.id, () => controller.abort()));

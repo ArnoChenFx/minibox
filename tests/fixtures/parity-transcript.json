@@ -4174,5 +4174,37 @@
     "status": 404,
     "contentType": "application/json; charset=utf-8",
     "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Host “nowhere” was not found.\",\"retryable\":false,\"key\":\"host_not_found\",\"params\":{\"host\":\"nowhere\"}}}"
+  },
+  {
+    "step": "create a token to edit",
+    "method": "POST",
+    "path": "/api/tokens",
+    "status": 201,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"token\":\"<token>\",\"record\":{\"id\":\"<tokenId>\",\"name\":\"editable\",\"prefix\":\"<prefix>\",\"preset\":\"operator\",\"scopes\":[\"box:read\",\"box:write\",\"box:delete\",\"exec\",\"box:ssh\",\"files:read\",\"files:write\",\"port:expose\",\"checkpoint:create\",\"checkpoint:restore\",\"volume:read\",\"volume:write\",\"volume:attach\",\"tool:install\"],\"boxes\":{\"type\":\"created-by-me\"},\"volumes\":{\"type\":\"list\",\"ids\":[]},\"hosts\":{\"type\":\"list\",\"ids\":[\"local\"]},\"quotas\":{\"maxBoxes\":null,\"maxCpus\":null,\"maxMemoryMb\":null,\"maxTtlSec\":null,\"rateLimit\":null,\"rateWindowSec\":null,\"maxCheckpoints\":null},\"audit\":\"scoped\",\"createdAt\":\"<time>\",\"expiresAt\":null,\"lastUsedAt\":null,\"lastUsedIp\":null,\"createdBy\":\"owner\",\"revokedAt\":null}}"
+  },
+  {
+    "step": "narrow an existing token's permissions",
+    "method": "PUT",
+    "path": "/api/tokens/<tokenId>",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"record\":{\"id\":\"<tokenId>\",\"name\":\"editable\",\"prefix\":\"<prefix>\",\"preset\":\"readonly\",\"scopes\":[\"box:read\",\"files:read\"],\"boxes\":{\"type\":\"created-by-me\"},\"volumes\":{\"type\":\"list\",\"ids\":[]},\"hosts\":{\"type\":\"list\",\"ids\":[\"local\"]},\"quotas\":{\"maxBoxes\":null,\"maxCpus\":null,\"maxMemoryMb\":null,\"maxTtlSec\":null,\"rateLimit\":null,\"rateWindowSec\":null,\"maxCheckpoints\":null},\"audit\":\"scoped\",\"createdAt\":\"<time>\",\"expiresAt\":null,\"lastUsedAt\":null,\"lastUsedIp\":null,\"createdBy\":\"owner\",\"revokedAt\":null}}"
+  },
+  {
+    "step": "refuse an empty permission policy",
+    "method": "PUT",
+    "path": "/api/tokens/<tokenId>",
+    "status": 400,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"validation_failed\",\"message\":\"Scopes must be a list of known scope names, with at most 17 entries.\",\"retryable\":false,\"key\":\"token_scope_invalid\",\"params\":{\"max\":17},\"details\":{\"field\":\"scopes\"}}}"
+  },
+  {
+    "step": "edit a missing token",
+    "method": "PUT",
+    "path": "/api/tokens/missing",
+    "status": 404,
+    "contentType": "application/json; charset=utf-8",
+    "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"Token not found.\",\"retryable\":false,\"key\":\"token_not_found\"}}"
   }
 ]

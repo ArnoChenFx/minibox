@@ -196,6 +196,21 @@ describe("direct SSH login", () => {
     expect((await getBox(app.hosts.get(), box.boxId)).running).toBe(true);
   });
 
+  test("editing away SSH ends the connection and refuses the same secret on reconnect", async () => {
+    const box = await makeBox("editable");
+    const token = mint(app, { name: "editable", scopes: ["box:ssh"], boxes: { type: "all" } });
+    const client = await connect({ username: box.name, password: token.secret });
+    const closed = new Promise<void>((resolve) => client.on("close", () => resolve()));
+    const reply = await call(base, `/api/tokens/${token.id}`, {
+      method: "PUT",
+      token: STRONG_KEY,
+      body: { preset: "readonly", boxes: "*" },
+    });
+    expect(reply.status).toBe(200);
+    await closed;
+    await expect(connect({ username: box.name, password: token.secret })).rejects.toThrow();
+  });
+
   test("revoking the token ends its connection", async () => {
     const box = await makeBox("india");
     const token = mint(app, { name: "revoked", scopes: ["box:ssh"], boxes: { type: "all" } });

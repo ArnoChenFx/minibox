@@ -41973,6 +41973,555 @@
       }
     },
     "/api/tokens/{id}": {
+      "put": {
+        "operationId": "token.update",
+        "tags": [
+          "tokens"
+        ],
+        "summary": "Replace an agent API token's permissions",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "X-Minibox-Run",
+            "in": "header",
+            "required": false,
+            "description": "Groups the audit events of one client session. 1 to 64 letters, digits, dots, colons, underscores or hyphens, starting with a letter or digit.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "preset": {
+                    "type": "string",
+                    "enum": [
+                      "readonly",
+                      "operator",
+                      "sandboxed-agent",
+                      "admin"
+                    ],
+                    "description": "readonly, operator, sandboxed-agent or admin. Overrides below replace the preset's matching part. Omit it to send scopes yourself."
+                  },
+                  "scopes": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "box:read",
+                        "box:write",
+                        "box:delete",
+                        "exec",
+                        "box:ssh",
+                        "files:read",
+                        "files:write",
+                        "port:expose",
+                        "checkpoint:create",
+                        "checkpoint:restore",
+                        "volume:read",
+                        "volume:write",
+                        "volume:attach",
+                        "volume:delete",
+                        "tool:install",
+                        "secret:use",
+                        "trash:skip"
+                      ]
+                    },
+                    "maxItems": 17,
+                    "description": "Replaces the preset's scopes. One or more of box:read, box:write, box:delete, exec, box:ssh, files:read, files:write, port:expose, checkpoint:create, checkpoint:restore, volume:read, volume:write, volume:attach, volume:delete, tool:install, secret:use, trash:skip."
+                  },
+                  "boxes": {
+                    "description": "Which boxes this token may use. \"created-by-me\" (the default), \"*\" for every box, {\"ids\":[\"bx_…\"]}, or {\"tags\":[\"env=prod\"]}. A tag is a label key, or key=value."
+                  },
+                  "volumes": {
+                    "description": "Volumes the token may attach, by volume id (vol_…). \"*\" or a list. Empty grants nothing. Naming a volume also grants volume:attach."
+                  },
+                  "hosts": {
+                    "description": "Host ids this token may use. \"*\" or a list. Omitted, a preset chooses: local, or every host for admin."
+                  },
+                  "quotas": {
+                    "type": "object",
+                    "description": "maxBoxes, maxCpus and maxMemoryMb cap what the token can create, as a total across its boxes. maxTtlSec caps the TTL stored on a box, and the box stops when that TTL elapses. maxCheckpoints caps the checkpoints the token takes, as a total across its boxes; automatic checkpoints are kept by the retention policy and not counted. rateLimit is requests per rateWindowSec (default 60). Null clears a preset's limit.",
+                    "properties": {
+                      "maxBoxes": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "maxCpus": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "maxMemoryMb": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "maxTtlSec": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "rateLimit": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "rateWindowSec": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "maxCheckpoints": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "record": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "prefix": {
+                          "type": "string"
+                        },
+                        "preset": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "readonly",
+                                "operator",
+                                "sandboxed-agent",
+                                "admin"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "scopes": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "enum": [
+                              "box:read",
+                              "box:write",
+                              "box:delete",
+                              "exec",
+                              "box:ssh",
+                              "files:read",
+                              "files:write",
+                              "port:expose",
+                              "checkpoint:create",
+                              "checkpoint:restore",
+                              "volume:read",
+                              "volume:write",
+                              "volume:attach",
+                              "volume:delete",
+                              "tool:install",
+                              "secret:use",
+                              "trash:skip"
+                            ]
+                          }
+                        },
+                        "boxes": {
+                          "oneOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "type": {
+                                  "type": "string",
+                                  "const": "created-by-me"
+                                }
+                              },
+                              "required": [
+                                "type"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "type": {
+                                  "type": "string",
+                                  "const": "ids"
+                                },
+                                "ids": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                }
+                              },
+                              "required": [
+                                "type",
+                                "ids"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "type": {
+                                  "type": "string",
+                                  "const": "tags"
+                                },
+                                "tags": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                }
+                              },
+                              "required": [
+                                "type",
+                                "tags"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "type": {
+                                  "type": "string",
+                                  "const": "all"
+                                }
+                              },
+                              "required": [
+                                "type"
+                              ],
+                              "additionalProperties": false
+                            }
+                          ]
+                        },
+                        "volumes": {
+                          "oneOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "type": {
+                                  "type": "string",
+                                  "const": "list"
+                                },
+                                "ids": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                }
+                              },
+                              "required": [
+                                "type",
+                                "ids"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "type": {
+                                  "type": "string",
+                                  "const": "all"
+                                }
+                              },
+                              "required": [
+                                "type"
+                              ],
+                              "additionalProperties": false
+                            }
+                          ]
+                        },
+                        "hosts": {
+                          "oneOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "type": {
+                                  "type": "string",
+                                  "const": "list"
+                                },
+                                "ids": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                }
+                              },
+                              "required": [
+                                "type",
+                                "ids"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "type": {
+                                  "type": "string",
+                                  "const": "all"
+                                }
+                              },
+                              "required": [
+                                "type"
+                              ],
+                              "additionalProperties": false
+                            }
+                          ]
+                        },
+                        "quotas": {
+                          "type": "object",
+                          "properties": {
+                            "maxBoxes": {
+                              "type": [
+                                "number",
+                                "null"
+                              ]
+                            },
+                            "maxCpus": {
+                              "type": [
+                                "number",
+                                "null"
+                              ]
+                            },
+                            "maxMemoryMb": {
+                              "type": [
+                                "number",
+                                "null"
+                              ]
+                            },
+                            "maxTtlSec": {
+                              "type": [
+                                "number",
+                                "null"
+                              ]
+                            },
+                            "rateLimit": {
+                              "type": [
+                                "number",
+                                "null"
+                              ]
+                            },
+                            "rateWindowSec": {
+                              "type": [
+                                "number",
+                                "null"
+                              ]
+                            },
+                            "maxCheckpoints": {
+                              "type": [
+                                "number",
+                                "null"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "maxBoxes",
+                            "maxCpus",
+                            "maxMemoryMb",
+                            "maxTtlSec",
+                            "rateLimit",
+                            "rateWindowSec",
+                            "maxCheckpoints"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "audit": {
+                          "type": "string",
+                          "enum": [
+                            "all",
+                            "scoped"
+                          ]
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "expiresAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "lastUsedAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "lastUsedIp": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "createdBy": {
+                          "type": "string"
+                        },
+                        "revokedAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "name",
+                        "prefix",
+                        "preset",
+                        "scopes",
+                        "boxes",
+                        "volumes",
+                        "hosts",
+                        "quotas",
+                        "audit",
+                        "createdAt",
+                        "expiresAt",
+                        "lastUsedAt",
+                        "lastUsedIp",
+                        "createdBy",
+                        "revokedAt"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "record"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a malformed X-Minibox-Run header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the access key is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: a cross-site write, or an operation this credential may not run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The box, checkpoint, snapshot, template, task, exec, volume or pool named in the path does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request declares a body that is not JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Docker returned an error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Docker is unavailable, or a storage pool backing the request cannot be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-kind": "write",
+        "x-scope": "token:manage",
+        "x-async": false
+      },
       "delete": {
         "operationId": "token.revoke",
         "tags": [

@@ -99,7 +99,7 @@ export function terminalHandlers(deps: { sessions: SessionStore; tokens: TokenSt
       }
       if (data.principal.type === "token") {
         stops.push(
-          tokens.watch(data.principal.id, () => {
+          tokens.watchPrincipal(data.principal, () => {
             data.closed = true;
             ws.close(1008, "token revoked");
           }),
