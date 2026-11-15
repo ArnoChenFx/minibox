@@ -14,7 +14,7 @@
 <p align="center"><b>English</b> | <a href="README-zh.md">简体中文</a></p>
 
 <p align="center">
-  <img src="https://media.arnopub.dpdns.org/minibox/promo-en.webp" alt="MiniBox intro" width="720" />
+  <img src="https://media.arnopub.dpdns.org/minibox/promo-en.webp?v=2" alt="MiniBox intro" width="720" />
 </p>
 
 <img src="docs/screenshots/en/overview-light.png" alt="The MiniBox overview page" />
