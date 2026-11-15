@@ -14,10 +14,8 @@
 <p align="center"><b>English</b> | <a href="README-zh.md">简体中文</a></p>
 
 <p align="center">
-  <a href="https://media.arnopub.dpdns.org/minibox/promo-en.mp4"><img src="https://media.arnopub.dpdns.org/minibox/promo-poster-en.jpg" alt="MiniBox promo video" width="720" /></a>
+  <img src="https://media.arnopub.dpdns.org/minibox/promo-en.webp" alt="MiniBox intro" width="720" />
 </p>
-
-<p align="center"><a href="https://media.arnopub.dpdns.org/minibox/promo-en.mp4">▶ Watch the 44-second intro</a></p>
 
 <img src="docs/screenshots/en/overview-light.png" alt="The MiniBox overview page" />
 
