@@ -13,6 +13,12 @@
 
 <p align="center"><a href="README.md">English</a> | <b>简体中文</b></p>
 
+<p align="center">
+  <a href="https://media.arnopub.dpdns.org/minibox/promo-zh.mp4"><img src="https://media.arnopub.dpdns.org/minibox/promo-poster-zh.jpg" alt="MiniBox 宣传视频" width="720" /></a>
+</p>
+
+<p align="center"><a href="https://media.arnopub.dpdns.org/minibox/promo-zh.mp4">▶ 观看 44 秒介绍视频</a></p>
+
 <img src="docs/screenshots/zh-CN/overview-light.png" alt="MiniBox 概览页" />
 
 ## 什么是 MiniBox？
