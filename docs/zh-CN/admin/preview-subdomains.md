@@ -2,6 +2,8 @@
 
 默认情况下，端口预览位于控制台自身地址上的 `/box/<name>/<port>/`。此时预览与控制台共享同一个源，其隔离依赖浏览器的行为：预览运行在沙箱中，控制台的登录 cookie 为 `HttpOnly` 且 `SameSite=Strict`。对于单一可信用户，这已经足够，并且不需要 DNS 或证书。
 
+路径模式会给预览响应加上 `access-control-allow-origin: *`。沙箱让页面拥有不透明源，而构建工具会给 CSS 与 JavaScript 加上 `crossorigin`，没有这个响应头浏览器就会拒绝加载它们。通配符不会放开控制台 API：登录 cookie 的 `SameSite=Strict` 与沙箱仍然把预览挡在外面。子域名模式不会添加这个头，因为那里的预览有自己的源，由应用自己决定跨域策略。
+
 设置 `PREVIEW_BASE_DOMAIN`，即可让每个预览拥有自己的源：
 
 ```
