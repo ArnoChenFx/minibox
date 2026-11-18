@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### 修复
+
+- **路径模式预览补上 CORS 头，带 `crossorigin` 的 CSS 与模块不再被浏览器拦截**：路径模式的预览文档运行在 `sandbox` 中且没有 `allow-same-origin`，页面是不透明源，请求的 `Origin` 为 `null`；Vite 一类构建工具给 CSS 和 JavaScript 加上 `crossorigin` 属性，浏览器按 CORS 取这些资源，而上游服务未必发 `access-control-allow-origin`，于是 CSS 被拦（页面无样式）或 ES 模块被拦（应用白屏）。现在 `filterResponseHeaders` 在路径模式下把响应的 `access-control-allow-origin` 设为 `*`（覆盖上游可能给的值）；子域名模式不添加，那里由 Box 自己决定跨域策略。只发 `*`：不透明源下带凭据的 CORS 请求本来就不接受它，因此不回显请求的 `Origin`，也不加 `access-control-allow-credentials`。代理不合成 OPTIONS 响应，也不补 `access-control-allow-methods` / `access-control-allow-headers`，这一步只解决响应缺 ACAO。控制台 API 仍靠 cookie 的 `SameSite=Strict` 与沙箱隔离。测试：`tests/preview-proxy.test.ts` 新增路径模式请求上游 200 且不带 ACAO 时得到 `*`、CSP 仍是 `PREVIEW_CSP`；`tests/preview-headers.test.ts` 钉住 `path` 有、`subdomain` 无。文档见[子域名预览](docs/admin/preview-subdomains.md)（[中文](docs/zh-CN/admin/preview-subdomains.md)）与[安全](docs/admin/security.md#port-previews)。
+
 ## [0.7.7] - 2026-11-13
 
 ### 修复

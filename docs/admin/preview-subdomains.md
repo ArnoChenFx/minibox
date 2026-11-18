@@ -2,6 +2,8 @@
 
 By default a port preview opens at `/box/<name>/<port>/` on the console's own address. The preview then shares the console's origin, so its isolation relies on browser behaviour: the preview runs in a sandbox, and the console's sign-in cookie is `HttpOnly` and `SameSite=Strict`. That is enough for one trusted user, and it needs no DNS or certificates.
 
+Path mode adds `access-control-allow-origin: *` to its preview responses. The sandbox gives the page an opaque origin, and build tools mark their CSS and JavaScript `crossorigin`, so without that header the browser refuses to load them. The wildcard does not open the console API: the sign-in cookie's `SameSite=Strict` and the sandbox still keep the preview out. Subdomain mode does not add it, because a preview there has an origin of its own and the app decides its own CORS policy.
+
 Set `PREVIEW_BASE_DOMAIN` to give each preview an origin of its own:
 
 ```

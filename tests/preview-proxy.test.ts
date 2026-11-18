@@ -224,6 +224,28 @@ async function waitFor(check: () => boolean, what: string, timeoutMs = 3000): Pr
   }
 }
 
+describe("path-mode preview CORS", () => {
+  test("an upstream without ACAO still gets one, so crossorigin CSS and modules load", async () => {
+    const on = await bed();
+    try {
+      const port = await upstreamOn(on, (_req, res) => {
+        res.writeHead(200, { "content-type": "text/css" });
+        res.end("body {}");
+      });
+      await makeBox(on, "styles");
+
+      const res = await fetch(`${on.base}/box/styles/${port}/app.css`, { headers: { cookie: on.cookie } });
+      expect(res.status).toBe(200);
+      expect(await res.text()).toBe("body {}");
+      expect(res.headers.get("access-control-allow-origin")).toBe("*");
+      // The opaque-origin sandbox is what makes the wildcard safe, so it must stay in place.
+      expect(res.headers.get("content-security-policy")).toBe(PREVIEW_CSP);
+    } finally {
+      on.stop();
+    }
+  });
+});
+
 describe("preview keeps a box awake (#12)", () => {
   test("a preview wakes an idle-sleeping box, serves it, and audits the wake under the console", async () => {
     const on = await bed();
