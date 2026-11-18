@@ -53,6 +53,17 @@ describe("subdomain preview cookies", () => {
   });
 });
 
+describe("path-mode preview CORS", () => {
+  test("a path-mode response allows cross-origin resources, a subdomain response does not", () => {
+    const path = filterResponseHeaders(new Headers(), "/box/x/1", "path");
+    expect(path.get("access-control-allow-origin")).toBe("*");
+    expect(path.get("content-security-policy")).toBe(PREVIEW_CSP);
+
+    const subdomain = filterResponseHeaders(new Headers(), "/box/x/1", "subdomain");
+    expect(subdomain.get("access-control-allow-origin")).toBeNull();
+  });
+});
+
 describe("preview content security policy", () => {
   test("a subdomain preview may use its own storage, because it is its own origin", () => {
     expect(previewCsp("subdomain")).toBe(PREVIEW_SUBDOMAIN_CSP);
