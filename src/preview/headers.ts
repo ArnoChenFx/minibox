@@ -96,6 +96,12 @@ export function filterResponseHeaders(src: Headers, prefix: string, isolation: P
       const kept = hostOnlyCookie(cookie);
       if (kept !== null) out.append("set-cookie", kept);
     }
+  } else {
+    // A path-mode document is sandboxed without `allow-same-origin`, so it has an opaque origin and its requests
+    // carry `Origin: null`. Build tools mark CSS and ES modules `crossorigin`, and the browser refuses those without
+    // this header. `*` is enough: a credentialed CORS request does not accept it, so it opens nothing on the console,
+    // while echoing the request's Origin or adding `allow-credentials` would weaken that for no gain.
+    out.set("access-control-allow-origin", "*");
   }
   out.set("content-security-policy", previewCsp(isolation));
   out.set("x-frame-options", "SAMEORIGIN");
